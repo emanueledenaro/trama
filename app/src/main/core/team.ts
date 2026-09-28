@@ -23,9 +23,13 @@ import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 import { DEFAULT_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
+import { ITALIAN, LANGUAGES, translator } from "@shared/i18n";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { readDeveloperReport } from "./implementation";
 import { pendingQuestion, pendingState } from "./developerQuestions";
+
+/** The fixed roles' profiles in every language: no developer takes a fixed role's name, in Italian or in English. */
+const fixedRoleProfiles = () => LANGUAGES.flatMap((language) => FIXED_ROLES.map((role) => roleProfile(translator(language), role)));
 
 export class TeamError extends Error {
   constructor(
@@ -64,7 +68,7 @@ export function developers(document: ProjectDocument): Specialist[] {
 }
 
 function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Specialist {
-  const profile = roleProfile(role);
+  const profile = roleProfile(ITALIAN, role);
   return {
     ...newSpecialist(
       {
@@ -96,7 +100,7 @@ export function completeTeam(team: ProjectTeam, now = new Date()): Specialist[] 
       identified.push(specialist);
     }
     if (!specialist.tag?.trim()) {
-      specialist.tag = isFixedRole(specialist.role) ? roleProfile(specialist.role).tag : tagFromCompetence(specialist.competence);
+      specialist.tag = isFixedRole(specialist.role) ? roleProfile(ITALIAN, specialist.role).tag : tagFromCompetence(ITALIAN, specialist.competence);
     }
   }
   const missing = FIXED_ROLES.filter((role) => !team.specialists.some((s) => s.role === role && s.status !== "removed"));
@@ -198,7 +202,7 @@ export function proposeTeam(
   }));
   if (members.length === 0) throw new TeamError("invalid_arguments", "A team needs at least one specialist.");
   for (const member of members) {
-    const fixed = FIXED_ROLES.map(roleProfile).find((p) => key(p.name) === key(member.name));
+    const fixed = fixedRoleProfiles().find((p) => key(p.name) === key(member.name));
     if (fixed) throw new TeamError("fixed_role", `${fixed.name} is a fixed role that every team already has: propose developers only.`);
   }
   const names = new Set<string>();
@@ -232,7 +236,7 @@ function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"],
     role: "developer",
     origin,
     color: freeAgentColor(team.specialists),
-    tag: member.tag?.trim() || tagFromCompetence(member.competence),
+    tag: member.tag?.trim() || tagFromCompetence(ITALIAN, member.competence),
     createdAt: now.toISOString(),
     status: "available",
     model: null,
@@ -322,7 +326,7 @@ export function renameSpecialist(document: ProjectDocument, id: string, name: st
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${id} was removed from the team.`);
   refuseFixedRole(specialist);
   const next = required(name, "name");
-  const fixed = FIXED_ROLES.map(roleProfile).find((p) => key(p.name) === key(next));
+  const fixed = fixedRoleProfiles().find((p) => key(p.name) === key(next));
   if (fixed) throw new TeamError("fixed_role", `${fixed.name} is a fixed role of the team: choose another name.`);
   if (teamMembers(document).some((s) => s.id !== specialist.id && key(s.name) === key(next))) {
     throw new TeamError("duplicate_name", `A specialist named ${next} is already in the team.`);

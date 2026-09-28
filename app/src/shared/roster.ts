@@ -1,4 +1,5 @@
 import type { ProjectTeam, Specialist, TeamMoment, TeamRole } from "./domain";
+import type { MessageKey, Translate } from "./i18n";
 
 /**
  * The full team every project has (W09, decision Q10 of #137): the fixed roles and the developers, each with a
@@ -23,53 +24,52 @@ export interface RoleDuty {
   skills: string[];
 }
 
-export const TEAM_MOMENTS: { moment: TeamMoment; label: string; when: string }[] = [
-  { moment: "spec", label: "Chiarimento e spec", when: "Prima del piano, mentre si chiarisce la richiesta." },
-  { moment: "slices", label: "Fette", when: "Durante il lavoro, una fetta alla volta." },
-  { moment: "candidate", label: "Candidato", when: "Sul diff, prima che il risultato arrivi a te." },
-  { moment: "background", label: "In sottofondo", when: "Quando arriva una issue o il team è libero." },
-];
+const MOMENTS: TeamMoment[] = ["spec", "slices", "candidate", "background"];
 
-const PROFILES: RoleProfile[] = [
-  { role: "qa", name: "QA", tag: "QA", competence: "Sceglie i punti di prova da testare e i casi che le verifiche devono coprire." },
-  { role: "ux", name: "UX", tag: "UX", competence: "Cura l'esperienza e l'interfaccia." },
-  { role: "research", name: "Ricerca", tag: "Ricerca", competence: "Studia librerie e API sconosciute su fonti affidabili." },
-  { role: "documentation", name: "Documentazione e dominio", tag: "Documentazione", competence: "Tiene allineati glossario, ADR e documentazione." },
-  { role: "developer", name: "Sviluppatori", tag: "Sviluppo", competence: "Scelti per il progetto: il Coordinatore li propone e tu li confermi." },
-  { role: "bugTriage", name: "Bug triage e debugger", tag: "Triage", competence: "Smista le issue e trova la causa dei bug." },
-  { role: "specReviewer", name: "Revisore della spec", tag: "Spec", competence: "Controlla che il candidato faccia quello che la spec chiede." },
-  { role: "cleanCode", name: "Clean Code", tag: "Clean Code", competence: "Controlla gli standard del repository e la forma dei moduli. Segnala e propone, non modifica il codice." },
-  { role: "regressionGuardian", name: "Guardiano delle regressioni", tag: "Regressioni", competence: "Controlla che quello che funzionava funzioni ancora." },
-  { role: "security", name: "Sicurezza", tag: "Sicurezza", competence: "Cerca vulnerabilità, segreti e dati esposti." },
-  { role: "performance", name: "Prestazioni", tag: "Prestazioni", competence: "Cerca rallentamenti e consumi eccessivi." },
-  { role: "devops", name: "DevOps", tag: "DevOps", competence: "Cura build, pacchetto e rilascio." },
+/** The moments of the flow in order, each with its name and when it comes. */
+export const teamMoments = (t: Translate): { moment: TeamMoment; label: string; when: string }[] =>
+  MOMENTS.map((moment) => ({ moment, label: t(`shared.moment.${moment}`), when: t(`shared.moment.${moment}.when`) }));
+
+const ROLES: TeamRole[] = [
+  "qa",
+  "ux",
+  "research",
+  "documentation",
+  "developer",
+  "bugTriage",
+  "specReviewer",
+  "cleanCode",
+  "regressionGuardian",
+  "security",
+  "performance",
+  "devops",
 ];
 
 /** The spec's table of moments, row by row and in its order. */
-const DUTIES: (RoleDuty & { role: TeamRole })[] = [
-  { moment: "spec", role: "qa", task: "Indica i punti di prova da testare.", skills: ["codebase-design"] },
-  { moment: "spec", role: "ux", task: "Interviene quando la spec tocca l'interfaccia.", skills: ["prototype"] },
-  { moment: "spec", role: "research", task: "Studia le librerie e le API sconosciute.", skills: ["research"] },
-  { moment: "spec", role: "documentation", task: "Aggiorna glossario e decisioni.", skills: ["domain-modeling"] },
-  { moment: "slices", role: "developer", task: "Ogni sviluppatore realizza una fetta alla volta, partendo dai test.", skills: ["implement", "tdd"] },
-  { moment: "slices", role: "bugTriage", task: "Diagnostica una verifica che fallisce.", skills: ["diagnosing-bugs"] },
-  { moment: "candidate", role: "specReviewer", task: "Confronta il diff con la spec.", skills: ["code-review"] },
-  { moment: "candidate", role: "cleanCode", task: "Rivede il diff sugli standard del repository.", skills: ["code-review", "codebase-design"] },
-  { moment: "candidate", role: "regressionGuardian", task: "Esegue la suite completa su base e candidato: una regressione blocca il candidato.", skills: ["diagnosing-bugs"] },
-  { moment: "candidate", role: "security", task: "Cerca vulnerabilità e dati esposti nel diff.", skills: [] },
-  { moment: "candidate", role: "performance", task: "Cerca rallentamenti e consumi eccessivi nel diff.", skills: [] },
-  { moment: "candidate", role: "ux", task: "Rivede le modifiche all'interfaccia.", skills: ["code-review"] },
-  { moment: "candidate", role: "devops", task: "Controlla build e pacchetto.", skills: ["code-review"] },
-  { moment: "candidate", role: "documentation", task: "Controlla che la documentazione segua il diff.", skills: ["code-review"] },
-  { moment: "background", role: "bugTriage", task: "Smista le issue in arrivo.", skills: ["triage"] },
-  { moment: "background", role: "cleanCode", task: "Propone miglioramenti dell'architettura quando il team è libero.", skills: ["improve-codebase-architecture"] },
+const DUTIES: { moment: TeamMoment; role: TeamRole; task: MessageKey; skills: string[] }[] = [
+  { moment: "spec", role: "qa", task: "shared.duty.spec.qa", skills: ["codebase-design"] },
+  { moment: "spec", role: "ux", task: "shared.duty.spec.ux", skills: ["prototype"] },
+  { moment: "spec", role: "research", task: "shared.duty.spec.research", skills: ["research"] },
+  { moment: "spec", role: "documentation", task: "shared.duty.spec.documentation", skills: ["domain-modeling"] },
+  { moment: "slices", role: "developer", task: "shared.duty.slices.developer", skills: ["implement", "tdd"] },
+  { moment: "slices", role: "bugTriage", task: "shared.duty.slices.bugTriage", skills: ["diagnosing-bugs"] },
+  { moment: "candidate", role: "specReviewer", task: "shared.duty.candidate.specReviewer", skills: ["code-review"] },
+  { moment: "candidate", role: "cleanCode", task: "shared.duty.candidate.cleanCode", skills: ["code-review", "codebase-design"] },
+  { moment: "candidate", role: "regressionGuardian", task: "shared.duty.candidate.regressionGuardian", skills: ["diagnosing-bugs"] },
+  { moment: "candidate", role: "security", task: "shared.duty.candidate.security", skills: [] },
+  { moment: "candidate", role: "performance", task: "shared.duty.candidate.performance", skills: [] },
+  { moment: "candidate", role: "ux", task: "shared.duty.candidate.ux", skills: ["code-review"] },
+  { moment: "candidate", role: "devops", task: "shared.duty.candidate.devops", skills: ["code-review"] },
+  { moment: "candidate", role: "documentation", task: "shared.duty.candidate.documentation", skills: ["code-review"] },
+  { moment: "background", role: "bugTriage", task: "shared.duty.background.bugTriage", skills: ["triage"] },
+  { moment: "background", role: "cleanCode", task: "shared.duty.background.cleanCode", skills: ["improve-codebase-architecture"] },
 ];
 
 /** The roles every team always has, beside the developers chosen for the project. */
-export const FIXED_ROLES: TeamRole[] = PROFILES.filter((p) => p.role !== "developer").map((p) => p.role);
+export const FIXED_ROLES: TeamRole[] = ROLES.filter((role) => role !== "developer");
 
-export function roleProfile(role: TeamRole): RoleProfile {
-  return PROFILES.find((p) => p.role === role)!;
+export function roleProfile(t: Translate, role: TeamRole): RoleProfile {
+  return { role, name: t(`shared.role.${role}`), tag: t(`shared.role.${role}.tag`), competence: t(`shared.role.${role}.competence`) };
 }
 
 export function isFixedRole(role: TeamRole): boolean {
@@ -82,9 +82,9 @@ export function momentRoles(moment: TeamMoment): TeamRole[] {
 }
 
 /** The moments a role works at, in the order of the flow. */
-export function roleDuties(role: TeamRole): RoleDuty[] {
-  return TEAM_MOMENTS.flatMap(({ moment }) =>
-    DUTIES.filter((d) => d.role === role && d.moment === moment).map(({ moment, task, skills }) => ({ moment, task, skills })),
+export function roleDuties(t: Translate, role: TeamRole): RoleDuty[] {
+  return MOMENTS.flatMap((moment) =>
+    DUTIES.filter((d) => d.role === role && d.moment === moment).map(({ moment, task, skills }) => ({ moment, task: t(task), skills })),
   );
 }
 
@@ -103,15 +103,15 @@ export interface RosterMoment {
 }
 
 /** The team moment by moment: who works there, what they do and with which skills. Removed members are left out. */
-export function teamRoster(team: ProjectTeam): RosterMoment[] {
+export function teamRoster(t: Translate, team: ProjectTeam): RosterMoment[] {
   const members = team.specialists.filter((s) => s.status !== "removed");
-  return TEAM_MOMENTS.map(({ moment, label, when }) => ({
+  return teamMoments(t).map(({ moment, label, when }) => ({
     moment,
     label,
     when,
     figures: DUTIES.filter((d) => d.moment === moment).map(({ role, task, skills }) => ({
-      profile: roleProfile(role),
-      duty: { moment, task, skills },
+      profile: roleProfile(t, role),
+      duty: { moment, task: t(task), skills },
       specialists: members.filter((s) => s.role === role),
     })),
   }));

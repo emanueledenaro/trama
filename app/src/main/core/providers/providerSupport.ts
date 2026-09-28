@@ -12,6 +12,7 @@ import type { LoadedSkill } from "@shared/skills";
 import type { ProviderId } from "@shared/codex";
 import { classifyProviderFailure, parseResetTime } from "@shared/providerFailure";
 import { type HostToolServer, isInside, ProviderError, type TurnEvent } from "./types";
+import { ITALIAN } from "@shared/i18n";
 
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
 
@@ -369,7 +370,7 @@ export function usageLimitError(
 ): ProviderError | null {
   if (!parsed) return null;
   const detail = raw.trim();
-  const failure = classifyProviderFailure(detail, { provider: label });
+  const failure = classifyProviderFailure(ITALIAN, detail, { provider: label });
   const temporary = failure.kind === "temporaryLimit" && !parsed.until;
   const message = temporary
     ? `${label} ha un limite temporaneo.${detail ? ` ${detail}` : ""}`

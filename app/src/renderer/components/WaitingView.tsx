@@ -12,6 +12,7 @@ import { GoalCard } from "@/components/inspector/GoalsView";
 import { EmptyNote, InspectorSection } from "@/components/inspector/Inspector";
 import { MemoryProposalCard } from "@/components/inspector/MemoryView";
 import { ReferenceText } from "@/components/chat/ReferenceText";
+import { useT } from "@/lib/i18n";
 
 /**
  * "Aspetta te" (issue #240): one place for everything that waits for the person, derived from the project's records.
@@ -30,9 +31,10 @@ export function useWaiting(): WaitingItem[] {
 
 /** The compact summary above the composer; it does not show while nothing waits. One click opens the list. */
 export function WaitingSummary() {
+  const t = useT();
   const items = useWaiting();
   const setInspector = useUi((s) => s.setInspector);
-  const summary = waitingSummary(items.length);
+  const summary = waitingSummary(t, items.length);
   if (!summary) return null;
   const first = items[0]!;
   return (
@@ -53,6 +55,7 @@ export function WaitingSummary() {
 
 /** The list in the inspector: each item with what it holds and the same card the chat showed, to answer it here. */
 export function WaitingList({ focusKey }: { focusKey?: string }) {
+  const t = useT();
   const items = useWaiting();
   const document = useUi((s) => s.app?.project?.document);
   const list = useRef<HTMLDivElement>(null);
@@ -62,7 +65,7 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
   }, [focusKey]);
   return (
     <div ref={list}>
-      <InspectorSection title={waitingSummary(items.length) ?? "Niente aspetta te"}>
+      <InspectorSection title={waitingSummary(t, items.length) ?? "Niente aspetta te"}>
         <p className="text-ui-sm text-muted-foreground">
           {items.length
             ? "Prima le cose che fermano più lavoro, poi le più vecchie. Rispondere qui vale come rispondere nella scheda in chat. Intanto il Coordinatore va avanti con il resto."
@@ -86,7 +89,7 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-sm">
               <span className="font-medium text-foreground">{item.label}</span>
-              <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
+              <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(t, item.blocks)}</Badge>
               {goal ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">Nel dialogo di {goal.title}</span> : null}
             </div>
             <WaitingCard item={item} />

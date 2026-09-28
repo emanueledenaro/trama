@@ -2,14 +2,15 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { copyFile, lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { AIHERO_ATTRIBUTION } from "@shared/skills";
+import { ITALIAN } from "@shared/i18n";
+import { aiHeroAttribution } from "@shared/skills";
 
 export const SKILL_RELEASE = "v1.2.3";
 export const SKILL_COMMIT = "6acc160e4e0cd062dbbbd7a1b26ae92855edf07e";
 /** Upstream release plus Trama's packaging revision: `trama.2` is the full bundle with Trama's names (M08). */
 export const SKILL_VERSION = `${SKILL_RELEASE}+trama.2 (${SKILL_COMMIT})`;
 export const SKILL_SOURCE = "https://github.com/mattpocock/skills";
-export const SKILL_ATTRIBUTION = AIHERO_ATTRIBUTION;
+export const SKILL_ATTRIBUTION = aiHeroAttribution(ITALIAN);
 const MAXIMUM_PACKAGED_BYTES = 3 * 1_024 * 1_024;
 
 export type SkillCategory = "engineering" | "productivity" | "misc";

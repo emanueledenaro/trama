@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { COORDINATOR_PAUSE, FOCUS_STATUS, TASK_SUSPEND } from "@shared/states";
+import { coordinatorPause, focusStatus, taskSuspend } from "@shared/states";
 import {
   IconAlertTriangle,
   IconChevronDown,
@@ -23,6 +23,7 @@ import { cn } from "@/lib/cn";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
+import { useT } from "@/lib/i18n";
 
 /**
  * The focus bar and the task queue at the top of the chat (W02): the task in focus and its phase, the Coordinator's
@@ -76,6 +77,7 @@ function ShortName({ full, short }: { full: string; short: string }) {
  * automatic move that runs, and the person's move last. The Pause is always there, so the person can always reach it.
  */
 function StatusLine({ line }: { line: StatusLineView }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
@@ -122,22 +124,22 @@ function StatusLine({ line }: { line: StatusLineView }) {
           <Button
             size="xs"
             variant={line.action || line.runningMove ? "outline" : "default"}
-            aria-label={COORDINATOR_PAUSE.resume}
+            aria-label={coordinatorPause(t).resume}
             onClick={() => void act("coordinator:pause", { paused: false })}
           >
             <IconPlayerPlay className="size-3.5" stroke={1.8} />
-            <ShortName full={COORDINATOR_PAUSE.resume} short="Riprendi" />
+            <ShortName full={coordinatorPause(t).resume} short="Riprendi" />
           </Button>
         ) : (
           <Button
             size="xs"
             variant="ghost"
             title="Ferma mosse automatiche, giri e lavoro automatico del progetto"
-            aria-label={COORDINATOR_PAUSE.pause}
+            aria-label={coordinatorPause(t).pause}
             onClick={() => void act("coordinator:pause", { paused: true })}
           >
             <IconPlayerPause className="size-3.5" stroke={1.8} />
-            <ShortName full={COORDINATOR_PAUSE.pause} short="Pausa" />
+            <ShortName full={coordinatorPause(t).pause} short="Pausa" />
           </Button>
         )}
         {line.runningMove ? (
@@ -164,6 +166,7 @@ function change(action: "focus" | "pause" | "resume", taskId: string) {
  * request, each with the message to the colleague. A warning only: the task stays in focus and nothing stops.
  */
 function OverlapLine({ items }: { items: OverlapItem[] }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const top = strongest(items);
   if (!top) return null;
@@ -172,7 +175,7 @@ function OverlapLine({ items }: { items: OverlapItem[] }) {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <IconUsers className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
         <OverlapBadge level={top.level} />
-        <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground/85">{overlapSummary(top)}</span>
+        <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground/85">{overlapSummary(t, top)}</span>
         <div className="cta-row ml-auto">
           <Button size="xs" variant="ghost" aria-expanded={open} aria-controls="focus-overlaps" onClick={() => setOpen(!open)}>
             {items.length === 1 ? "Dettagli" : `Dettagli (${items.length})`}
@@ -200,6 +203,7 @@ function focusOverlaps(overlaps: { items: OverlapItem[]; tasks: Record<string, O
 }
 
 function QueueRow({ task }: { task: FocusTask }) {
+  const t = useT();
   const openDialog = useUi((s) => s.openDialog);
   const overlap = useUi((s) => strongest(s.app?.project?.overlaps?.tasks[task.id] ?? []));
   const hold = holdText(task);
@@ -214,14 +218,14 @@ function QueueRow({ task }: { task: FocusTask }) {
         </div>
         {task.status === "paused" || hold ? (
           <span className="min-w-0 text-ui-xs text-muted-foreground">
-            {[task.status === "paused" ? FOCUS_STATUS.paused : null, hold].filter(Boolean).join(". ")}
+            {[task.status === "paused" ? focusStatus(t, "paused") : null, hold].filter(Boolean).join(". ")}
           </span>
         ) : null}
         {overlap ? (
           // Before the task starts (decision 4): who already works where it is going.
           <span className="flex min-w-0 items-center gap-1.5 text-ui-xs text-muted-foreground" data-testid="queue-overlap">
             <OverlapBadge level={overlap.level} />
-            <span className="min-w-0 truncate">{overlapSummary(overlap)}</span>
+            <span className="min-w-0 truncate">{overlapSummary(t, overlap)}</span>
           </span>
         ) : null}
       </div>
@@ -231,7 +235,7 @@ function QueueRow({ task }: { task: FocusTask }) {
         </Button>
         {task.status === "paused" ? (
           <Button size="xs" variant="outline" onClick={() => void change("resume", task.id)}>
-            {TASK_SUSPEND.resume}
+            {taskSuspend(t).resume}
           </Button>
         ) : null}
         <Button size="xs" onClick={() => void change("focus", task.id).then(() => openDialog(task.goalId))}>
@@ -243,6 +247,7 @@ function QueueRow({ task }: { task: FocusTask }) {
 }
 
 export function FocusBar() {
+  const t = useT();
   const view = useUi((s) => s.app?.project?.focus);
   const line = useUi((s) => s.app?.project?.statusLine ?? null);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
@@ -287,7 +292,7 @@ export function FocusBar() {
               ) : null}
               {focus ? (
                 <Button size="xs" variant="outline" title="Toglie questo lavoro dal primo piano: passa al prossimo in coda" onClick={() => void change("pause", focus.id)}>
-                  {TASK_SUSPEND.suspend}
+                  {taskSuspend(t).suspend}
                 </Button>
               ) : null}
               {focus && elsewhere ? (

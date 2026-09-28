@@ -1,6 +1,7 @@
 import { type CandidateReport, isOpenQuestion, pendingMandateRequest, type ProjectDocument, type SliceView, type WorkPlan } from "./domain";
 import { fixedBanInfo } from "./fixedBans";
 import { workingGoals } from "./goals";
+import type { Translate } from "./i18n";
 import { workRequests } from "./grilling";
 
 /**
@@ -107,7 +108,7 @@ const requestGoal = (document: ProjectDocument, requestId: string | null) =>
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /** Derives what waits for the person and orders it: the items that hold the most work first, then the oldest. Pure. */
-export function waitingForYou(document: ProjectDocument, sources: WaitingSources = {}): WaitingItem[] {
+export function waitingForYou(t: Translate, document: ProjectDocument, sources: WaitingSources = {}): WaitingItem[] {
   const items: WaitingItem[] = [];
 
   for (const question of document.decisionRequests.filter(isOpenQuestion)) {
@@ -115,13 +116,15 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `question:${question.id}`,
       kind: "question",
       targetId: question.id,
-      label: question.blocksWork
-        ? "Domanda di uno sviluppatore"
-        : question.grilling
-          ? "Chiarimento"
-          : question.category === "destructive"
-            ? "Caso distruttivo"
-            : "Decisione",
+      label: t(
+        question.blocksWork
+          ? "shared.waiting.developerQuestion"
+          : question.grilling
+            ? "shared.waiting.clarification"
+            : question.category === "destructive"
+              ? "shared.waiting.destructive"
+              : "shared.waiting.decision",
+      ),
       title: oneLine(question.question),
       goalId: question.goalId ?? requestGoal(document, question.requestId),
       askedAt: question.askedAt,
@@ -139,8 +142,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `mandate:${mandate.id}`,
       kind: "mandate",
       targetId: mandate.id,
-      label: granted ? "Proposta di mandato" : mandate.projectCycle ? "Mandato di progetto" : "Mandato",
-      title: oneLine(mandate.reason) || "Il Coordinatore chiede il mandato per lavorare.",
+      label: t(granted ? "shared.waiting.mandateProposal" : mandate.projectCycle ? "shared.waiting.projectMandate" : "shared.waiting.mandate"),
+      title: oneLine(mandate.reason) || t("shared.waiting.mandateTitle"),
       goalId: requestGoal(document, mandate.requestId),
       askedAt: mandate.askedAt,
       // Without a mandate no assignment starts; with one, the proposal holds the work it was asked for.
@@ -154,8 +157,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `team:${proposal.id}`,
       kind: "team",
       targetId: proposal.id,
-      label: "Team",
-      title: oneLine(proposal.summary ?? "") || `Conferma gli sviluppatori proposti: ${names}.`,
+      label: t("shared.waiting.team"),
+      title: oneLine(proposal.summary ?? "") || t("shared.waiting.teamTitle", { names }),
       goalId: requestGoal(document, proposal.requestId),
       askedAt: proposal.askedAt,
       blocks: heldProject(document, sources),
@@ -170,7 +173,7 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `${seams ? "seams" : "slices"}:${plan.id}`,
       kind: seams ? "seams" : "slices",
       targetId: plan.id,
-      label: seams ? "Punti da testare del piano" : "Fette del piano",
+      label: t(seams ? "shared.waiting.seams" : "shared.waiting.slices"),
       title: oneLine(plan.summary),
       goalId: requestGoal(document, plan.requestId),
       askedAt: plan.updatedAt,
@@ -184,7 +187,7 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `goal:${goal.id}`,
       kind: "goal",
       targetId: goal.id,
-      label: "Obiettivo proposto",
+      label: t("shared.waiting.goal"),
       title: oneLine(goal.title),
       goalId: null,
       askedAt: goal.createdAt,
@@ -199,8 +202,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `presence:${presence.pending}`,
       kind: "presence",
       targetId: presence.pending,
-      label: "Presenza",
-      title: "Condividere la presenza in questo progetto?",
+      label: t("shared.waiting.presence"),
+      title: t("shared.waiting.presenceTitle"),
       goalId: null,
       askedAt: (presence.pending === "conflict" ? presence.reproposedAt : presence.proposedAt) ?? "",
       blocks: 0,
@@ -212,7 +215,7 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `route:${route.id}`,
       kind: "route",
       targetId: route.id,
-      label: "Percorso di Ask Trama",
+      label: t("shared.waiting.route"),
       title: oneLine(route.situation),
       goalId: route.goalId,
       askedAt: route.createdAt,
@@ -235,8 +238,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `candidate:${candidate.id}`,
       kind: "candidate",
       targetId: candidate.id,
-      label: report.mergeRoute === "interface" ? "Interfaccia da guardare" : "Candidato da guardare",
-      title: oneLine(assignment?.objective ?? "") || `Candidato ${candidate.id}`,
+      label: t(report.mergeRoute === "interface" ? "shared.waiting.interface" : "shared.waiting.candidate"),
+      title: oneLine(assignment?.objective ?? "") || t("shared.waiting.candidateTitle", { id: candidate.id }),
       goalId: candidate.goalId ?? null,
       askedAt: candidate.updatedAt,
       blocks: 1,
@@ -249,8 +252,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `fixedBan:${refusal.id}`,
       kind: "fixedBan",
       targetId: refusal.id,
-      label: "Azione vietata",
-      title: `${fixedBanInfo(refusal.ban).label}: ${oneLine(refusal.action)}`,
+      label: t("shared.waiting.fixedBan"),
+      title: `${fixedBanInfo(t, refusal.ban).label}: ${oneLine(refusal.action)}`,
       goalId: null,
       askedAt: refusal.refusedAt,
       blocks: 1,
@@ -262,8 +265,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `memory:${proposal.id}`,
       kind: "memory",
       targetId: proposal.id,
-      label: proposal.target === "user" ? "Memoria, profilo" : "Memoria, note sul progetto",
-      title: oneLine(proposal.summary) || "Una revisione propone di cambiare la memoria.",
+      label: t(proposal.target === "user" ? "shared.waiting.memoryUser" : "shared.waiting.memoryProject"),
+      title: oneLine(proposal.summary) || t("shared.waiting.memoryTitle"),
       goalId: null,
       askedAt: proposal.createdAt,
       blocks: 0,
@@ -279,15 +282,15 @@ export function sortWaiting(items: WaitingItem[]): WaitingItem[] {
 }
 
 /** The compact summary above the composer; null with nothing waiting, so the summary does not show. */
-export function waitingSummary(count: number): string | null {
+export function waitingSummary(t: Translate, count: number): string | null {
   if (count <= 0) return null;
-  return count === 1 ? "1 cosa aspetta te" : `${count} cose aspettano te`;
+  return t("shared.waiting.summary", { count });
 }
 
 /** How much work one item holds, in the person's words. */
-export function blocksText(blocks: number): string {
-  if (blocks <= 0) return "Non ferma il lavoro";
-  return blocks === 1 ? "Ferma 1 parte del lavoro" : `Ferma ${blocks} parti del lavoro`;
+export function blocksText(t: Translate, blocks: number): string {
+  if (blocks <= 0) return t("shared.waiting.blocksNone");
+  return t("shared.waiting.blocks", { count: blocks });
 }
 
 /** The item a chat card stands for while it waits, or null when the card no longer waits for the person. */

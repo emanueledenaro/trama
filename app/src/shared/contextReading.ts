@@ -4,6 +4,8 @@
  * so no number past the window ever reaches the person.
  */
 
+import type { Translate } from "./i18n";
+
 /** Tokens the Coordinator's thread holds in its context window now, and the window; null when not known. */
 export interface ContextUsage {
   usedTokens: number | null;
@@ -52,25 +54,20 @@ export function contextReading(usage: ContextUsage | null, threshold: number): C
   return { state, percent, usedTokens: used, contextWindow: window };
 }
 
-const format = (n: number) => n.toLocaleString("it-IT");
-
 /** The detail of the "Contesto oltre la soglia" card: the meter's reading, never a provider name. */
-export function contextNoticeDetail(reading: ContextReading, threshold: number): string {
-  const numbers = reading.usedTokens !== null && reading.contextWindow !== null ? ` (${format(reading.usedTokens)} su ${format(reading.contextWindow)} token)` : "";
-  return (
-    `La finestra di contesto del Coordinatore è piena al ${reading.percent ?? 0}%${numbers}, sopra la soglia del ${threshold}%. ` +
-    "Quando serve, l'agente compatta il contesto da solo, se lo prevede. Puoi cambiare la soglia dal misuratore."
-  );
+export function contextNoticeDetail(t: Translate, reading: ContextReading, threshold: number): string {
+  const numbers = reading.usedTokens !== null && reading.contextWindow !== null ? ` ${t("shared.context.tokens", { used: reading.usedTokens, window: reading.contextWindow })}` : "";
+  return t("shared.context.notice", { percent: reading.percent ?? 0, numbers, threshold });
 }
 
 /** The meter's popover lines: the reading within the window, or that the measure is not available. */
-export function contextMeterLines(reading: ContextReading): { usage: string; behaviour: string; threshold: string } {
+export function contextMeterLines(t: Translate, reading: ContextReading): { usage: string; behaviour: string; threshold: string } {
   return {
     usage:
       reading.state === "unknown" || reading.usedTokens === null || reading.contextWindow === null
-        ? "Misura non disponibile per questo modello."
-        : `${reading.percent}% usato, ${format(reading.usedTokens)} su ${format(reading.contextWindow)} token`,
-    behaviour: "Quando serve, l'agente compatta il contesto da solo, se lo prevede.",
-    threshold: "La soglia vale per questo progetto. Oltre la soglia la chat mostra un avviso una volta; l'avviso torna solo dopo che il contesto è sceso ben sotto la soglia.",
+        ? t("shared.context.unknown")
+        : t("shared.context.usage", { percent: reading.percent ?? 0, used: reading.usedTokens, window: reading.contextWindow }),
+    behaviour: t("shared.context.behaviour"),
+    threshold: t("shared.context.threshold"),
   };
 }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { extractPastes, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "./pastedText";
+import { translator } from "./i18n";
+
+const t = translator("it");
 
 describe("pasted text", () => {
   it("collapses long pastes and round-trips them", () => {
@@ -10,6 +13,6 @@ describe("pasted text", () => {
     expect(extractPastes(message)).toEqual({ prompt: "Guarda questo log", pastes: ["errore 1\nerrore 2"] });
     expect(extractPastes("solo testo")).toEqual({ prompt: "solo testo", pastes: [] });
     expect(pasteTitle("\n  prima riga  \nseconda")).toBe("prima riga");
-    expect(pasteSizeLabel("a\nb\nc")).toBe("3 righe");
+    expect(pasteSizeLabel(t, "a\nb\nc")).toBe("3 righe");
   });
 });

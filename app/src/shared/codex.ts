@@ -1,3 +1,5 @@
+import { LANGUAGES, type Translate, translator } from "./i18n";
+
 export type ProviderId = "codex" | "claudeAgent" | "cursor" | "antigravity" | "grok" | "droid" | "devin" | "opencode" | "pi";
 
 /** The account state of one provider. `chatgpt` is Codex's only accepted account; other providers report `authenticated`. */
@@ -30,10 +32,13 @@ export interface ProviderModel {
 export type CodexModel = ProviderModel;
 
 /** Title of the activity Trama records when a session tried to read outside its folders (issue #206). */
-export const READ_OUTSIDE_SCOPE_TITLE = "Lettura fuori dal progetto bloccata";
+export const readOutsideScopeTitle = (t: Translate): string => t("shared.codex.readOutsideScope");
 
 /** Title of the activity Trama records when it blocked one of the provider's own tools (issue #228). */
-export const TOOL_REFUSED_TITLE = "Strumento del provider bloccato";
+export const toolRefusedTitle = (t: Translate): string => t("shared.codex.toolRefused");
+
+/** Whether a recorded activity title is the blocked read, in whichever language Trama wrote it. */
+export const isReadOutsideScopeTitle = (title: string): boolean => LANGUAGES.some((language) => title === readOutsideScopeTitle(translator(language)));
 
 /** A normalized event from one running turn, forwarded to the renderer. */
 export type TurnEvent =

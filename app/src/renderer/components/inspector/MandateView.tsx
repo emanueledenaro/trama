@@ -4,19 +4,20 @@ import { FixedBansField, MandateCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
-import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@/lib/labels";
+import { actionLabel, DELEGABLE_ACTIONS } from "@/lib/labels";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
 import { useT } from "@/lib/i18n";
+import type { Translate } from "@shared/i18n";
 import { type StoppedWork, workStoppedBy } from "@shared/mandate";
 
 /** What a restriction took away, in one line. */
-function restrictionText(restriction: NonNullable<MandateSnapshot["restriction"]>, moduleName: (id: string) => string): string {
+function restrictionText(t: Translate, restriction: NonNullable<MandateSnapshot["restriction"]>, moduleName: (id: string) => string): string {
   const parts = [
     restriction.removedModuleIds.length ? `tolti ${restriction.removedModuleIds.map(moduleName).join(", ")}` : null,
-    restriction.removedActions.length ? `tolte ${restriction.removedActions.map((a) => ACTION_LABELS[a].toLowerCase()).join(", ")}` : null,
+    restriction.removedActions.length ? `tolte ${restriction.removedActions.map((a) => actionLabel(t, a).toLowerCase()).join(", ")}` : null,
   ].filter(Boolean);
   return `Ristretto: ${parts.join("; ")}.`;
 }
@@ -119,7 +120,7 @@ export function MandateView() {
         ) : (
           <div className="space-y-1.5 text-ui text-foreground/90">
             <p>{mandate.restriction ? `Ristretto il ${formatDate(mandate.grantedAt)}.` : `Concesso il ${formatDate(mandate.grantedAt)}.`}</p>
-            {mandate.restriction ? <p className="text-ui-sm text-muted-foreground" data-testid="mandate-restriction">{restrictionText(mandate.restriction, moduleName)}</p> : null}
+            {mandate.restriction ? <p className="text-ui-sm text-muted-foreground" data-testid="mandate-restriction">{restrictionText(t, mandate.restriction, moduleName)}</p> : null}
             <div className="text-ui-sm text-muted-foreground">
               Obiettivi
               <ul className="list-disc pl-4 text-foreground/90">
@@ -132,7 +133,7 @@ export function MandateView() {
               Azioni
               <ul className="list-disc pl-4 text-foreground/90">
                 {mandate.authorizedActions.map((a) => (
-                  <li key={a}>{ACTION_LABELS[a]}</li>
+                  <li key={a}>{actionLabel(t, a)}</li>
                 ))}
               </ul>
             </div>
@@ -176,7 +177,7 @@ export function MandateView() {
                         checked={keptActions.includes(action)}
                         onChange={(e) => setKeptActions(e.target.checked ? [...keptActions, action] : keptActions.filter((a) => a !== action))}
                       />
-                      {ACTION_LABELS[action]}
+                      {actionLabel(t, action)}
                     </label>
                   ))}
                 </div>
@@ -252,7 +253,7 @@ export function MandateView() {
                       checked={actions.includes(action)}
                       onChange={(e) => setActions(e.target.checked ? [...actions, action] : actions.filter((a) => a !== action))}
                     />
-                    {ACTION_LABELS[action]}
+                    {actionLabel(t, action)}
                   </label>
                 ))}
               </div>
@@ -324,7 +325,7 @@ export function MandateView() {
           <ol className="space-y-1.5 text-ui-sm text-muted-foreground">
             {[...mandate.history].reverse().map((snapshot) => (
               <li key={snapshot.version}>
-                v{snapshot.version}<Sep />{formatDate(snapshot.grantedAt)}<Sep />{snapshot.restriction ? restrictionText(snapshot.restriction, moduleName) : snapshot.objectives.join(", ")}
+                v{snapshot.version}<Sep />{formatDate(snapshot.grantedAt)}<Sep />{snapshot.restriction ? restrictionText(t, snapshot.restriction, moduleName) : snapshot.objectives.join(", ")}
               </li>
             ))}
           </ol>

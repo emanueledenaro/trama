@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
-import { AUTONOMOUS_STEP_LABELS } from "@shared/activity";
+import { autonomousStepLabel } from "@shared/activity";
+import { ITALIAN } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import type { ContinuationGuards } from "./continuousWork";
 import { focusView } from "./focus";
@@ -25,8 +26,10 @@ export const STEP_ACTIONS: Record<DelegableMove, MandateAction> = {
   confirmTeam: "composeTeam",
 };
 
-/** The steps as Activity and the recap name them. */
-export const STEP_LABELS = AUTONOMOUS_STEP_LABELS;
+/** The steps as the Coordinator's instructions and Trama's Italian records name them. */
+export const STEP_LABELS = Object.fromEntries(
+  (Object.keys(STEP_ACTIONS) as DelegableMove[]).map((move) => [move, autonomousStepLabel(ITALIAN, move)]),
+) as Record<DelegableMove, string>;
 
 /** A step the Coordinator can take now: which, in which dialog, on which record, and the modules it touches. */
 export interface DelegatedStep {

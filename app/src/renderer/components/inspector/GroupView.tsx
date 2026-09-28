@@ -16,6 +16,7 @@ import { GROUP_IMPACT_QUESTION } from "@/lib/askCoordinator";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
+import { useT } from "@/lib/i18n";
 
 type Tab = "pulls" | "branches" | "news";
 
@@ -164,6 +165,7 @@ function Board({ board, presenceShown }: { board: GroupBoard; presenceShown: boo
 }
 
 export function GroupView() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const monitor = useUi((s) => s.app?.monitor)!;
   const [tab, setTab] = useState<Tab>("pulls");
@@ -173,7 +175,7 @@ export function GroupView() {
   const monitored = repository ? monitor.repositories.some((r) => r.toLowerCase() === repository.toLowerCase()) : false;
   const askCoordinator = useUi((s) => s.askCoordinator);
   const presence = project.isDemo ? null : project.presence;
-  const board = groupBoard({ presence, snapshot, github: Boolean(repository), now: new Date() });
+  const board = groupBoard(t, { presence, snapshot, github: Boolean(repository), now: new Date() });
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
   // GitHub CLI is read when Gruppo opens too, so a login made in the terminal shows up here (P10).
   useEffect(() => {

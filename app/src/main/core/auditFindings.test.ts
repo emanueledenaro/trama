@@ -15,6 +15,9 @@ import {
   recheckEvidence,
   recheckFindings,
 } from "./auditFindings";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 10, minute));
 
@@ -160,7 +163,7 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
     confirmFinding(missing!, { model: "gpt-5.5", confirmed: true, reason: "Nessun test copre l'ordine non pagato." }, at(4));
     expect(missing).toMatchObject({ status: "confirmed", confirmation: { model: "gpt-5.5", confirmed: true, at: at(4).toISOString() }, basis: expect.stringContaining("Confermato da gpt-5.5") });
     closeAudit(value, at(5));
-    expect(findingTally(value)).toBe("2 verificati da Trama, 1 confermato da un secondo modello, 4 ipotesi");
+    expect(findingTally(t, value)).toBe("2 verificati da Trama, 1 confermato da un secondo modello, 4 ipotesi");
     // No finding is verified without a proof that Trama rechecked.
     for (const f of [...value.standards.items!, ...value.spec.items!]) if (f.status === "verified") expect(f.evidence).not.toBeNull();
   });

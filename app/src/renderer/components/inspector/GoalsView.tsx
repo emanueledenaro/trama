@@ -2,10 +2,10 @@ import { RecordLabel } from "@/components/chat/ReferenceText";
 import { IconArchive, IconArrowLeft, IconMessageCircle, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
-import { GOAL_STATUS_LABELS, findGoal, goalDialogIsEmpty, goalLinks, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
+import { findGoal, goalDialogIsEmpty, goalLinks, goalStatusLabel, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
 import type { GoalExampleInputPayload } from "@shared/ipc";
 import { PROVIDERS } from "@shared/providers";
-import { ASSIGNMENT_STATUS, candidateStatus } from "@shared/states";
+import { assignmentStatus, candidateStatus } from "@shared/states";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
@@ -16,6 +16,7 @@ import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
+import { useT } from "@/lib/i18n";
 
 const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondary"> = {
   proposed: "warning",
@@ -25,7 +26,8 @@ const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondar
 };
 
 export function GoalStatusBadge({ status }: { status: GoalStatus }) {
-  return <Badge tone={STATUS_TONE[status]}>{GOAL_STATUS_LABELS[status]}</Badge>;
+  const t = useT();
+  return <Badge tone={STATUS_TONE[status]}>{goalStatusLabel(t, status)}</Badge>;
 }
 
 /** The status of a goal, and whether the person archived it: archiving keeps the status (W03). */
@@ -180,6 +182,7 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
 }
 
 export function GoalsView({ create }: { create?: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
@@ -240,11 +243,11 @@ export function GoalsView({ create }: { create?: boolean }) {
                     <span className="block truncate text-ui-sm text-muted-foreground">
                       {isArchived(goal) ? (
                         <>
-                          {GOAL_STATUS_LABELS[goal.status]}
+                          {goalStatusLabel(t, goal.status)}
                           <Sep />
                         </>
                       ) : null}
-                      {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
+                      {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(t, project.document, goal.id)}
                     </span>
                   </span>
                 </button>
@@ -276,6 +279,7 @@ function ExampleList({ examples }: { examples: GoalExample[] }) {
 }
 
 export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
@@ -444,7 +448,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
               <span className="min-w-0 flex-1 truncate text-foreground">
                 <AgentName agent={specialist} /> <span className="text-muted-foreground"><Sep />{assignment.objective}</span>
               </span>
-              <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
+              <Badge tone={assignmentStatus(t, assignment.status).tone}>{assignmentStatus(t, assignment.status).label}</Badge>
             </span>
             <span className="block truncate text-ui-sm text-muted-foreground">
               {providerName(assignment.provider)}<Sep />{assignment.model}
@@ -468,7 +472,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
                 <Sep />
                 {candidate.changedFiles.length} file
               </span>
-              {report ? <Badge tone={candidateStatus(report).tone}>{candidateStatus(report).label}</Badge> : null}
+              {report ? <Badge tone={candidateStatus(t, report).tone}>{candidateStatus(t, report).label}</Badge> : null}
             </button>
           );
         })}
@@ -522,6 +526,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
 
 /** Shown at the top of the chat filtered on a goal: what the filter shows and what the next message is about. */
 export function GoalDialogHeader({ goalId }: { goalId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
@@ -540,7 +545,7 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
       </div>
       <p className="mt-1 line-clamp-2 text-ui-sm text-muted-foreground">{goal.outcome}</p>
       <p className="mt-1 text-ui-xs text-muted-foreground">
-        {goal.examples.length ? `${accepted} esempi accettati, ${refused} rifiutati` : "Esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}<Sep />{" "}
+        {goal.examples.length ? `${accepted} esempi accettati, ${refused} rifiutati` : "Esempi da definire"}<Sep />{goalWorkSummary(t, project.document, goal.id)}<Sep />{" "}
         <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
           dettagli
         </button>

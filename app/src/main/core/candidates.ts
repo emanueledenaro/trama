@@ -8,6 +8,7 @@ import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
+import { ITALIAN } from "@shared/i18n";
 
 export class CandidateError extends Error {
   constructor(
@@ -154,7 +155,7 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   } else if (current?.status === "failed") {
     blockers.push({ code: "GATE_FAILED", detail: current.failure ?? "Una figura non ha finito la revisione." });
   } else if (current?.status === "blocked" && !current.checksFailed.length) {
-    const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
+    const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(ITALIAN, r.role).name}: ${f.title}`));
     blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
   }
   // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.

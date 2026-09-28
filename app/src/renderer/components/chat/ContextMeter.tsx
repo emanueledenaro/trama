@@ -2,12 +2,14 @@ import { Popover } from "@base-ui/react/popover";
 import { contextMeterLines, contextReading } from "@shared/contextReading";
 import { act, useUi } from "@/lib/store";
 import { PickerSelect } from "@/components/ui/picker";
+import { useT } from "@/lib/i18n";
 
 /**
  * Ring that shows how much of the Coordinator's context window the thread uses, with its threshold. The reading is
  * the same for every provider and never goes past the window; an invalid one shows as not available (issue #305).
  */
 export function ContextMeter() {
+  const t = useT();
   const usage = useUi((s) => s.app?.project?.contextUsage ?? null);
   const threshold = useUi((s) => s.app?.project?.document.coordinator.contextThreshold ?? 80);
   if (!usage) return null;
@@ -15,7 +17,7 @@ export function ContextMeter() {
   const known = reading.percent !== null;
   // A provider that never gave a window has nothing to measure against: the meter stays hidden.
   if (!known && usage.contextWindow === null && usage.usedTokens !== null) return null;
-  const lines = contextMeterLines(reading);
+  const lines = contextMeterLines(t, reading);
   const fraction = (reading.percent ?? 0) / 100;
   const radius = 6;
   const circumference = 2 * Math.PI * radius;

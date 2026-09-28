@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { firstRunnableStep, TRAMA_FLOWS } from "@shared/askTrama";
+import { FLOW_SKILLS, firstRunnableStep } from "@shared/askTrama";
 import { skillCandidates } from "@shared/skills";
 import {
   answerRoute,
@@ -67,7 +67,7 @@ describe("Ask Trama, the ask-trama skill run by Trama (M07)", () => {
   });
 
   it("maps every skill with a Trama flow and every phase boundary without restating the skill", async () => {
-    for (const skill of Object.keys(TRAMA_FLOWS)) expect(ASK_TRAMA_BINDING).toContain(`"/${skill}":`);
+    for (const skill of FLOW_SKILLS) expect(ASK_TRAMA_BINDING).toContain(`"/${skill}":`);
     for (const word of ["propose_route", "prepare_plan", "assign_task", "review_candidate", "request_decision", "never tell the person to run /name", "never simulate it"]) {
       expect(ASK_TRAMA_BINDING).toContain(word);
     }
@@ -87,7 +87,7 @@ describe("Ask Trama, the ask-trama skill run by Trama (M07)", () => {
     expect(references).toEqual(expect.arrayContaining(["grill-with-docs", "to-spec", "to-tickets", "implement", "tdd", "code-review", "triage", "wayfinder", "handoff", "clear", "compact", "setup-trama"]));
     const steps = references.filter((name) => !["clear", "compact", "handoff"].includes(name));
     expect(steps.filter((name) => !SELECTED_SKILLS.includes(name))).toEqual([]);
-    for (const skill of Object.keys(TRAMA_FLOWS)) expect(references).toContain(skill);
+    for (const skill of FLOW_SKILLS) expect(references).toContain(skill);
   });
 
   it("says how Trama runs each step: its flow, the skill itself, or not yet available", async () => {

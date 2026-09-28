@@ -1,3 +1,4 @@
+import type { Translate } from "./i18n";
 import { formatDuration } from "./states";
 
 /**
@@ -164,21 +165,20 @@ export function presenceFreshness(record: PresenceRecord, now: Date): PresenceFr
 }
 
 /** The freshness in words, as the Gruppo view shows it. */
-export function freshnessLabel(entry: PresenceFreshness, now: Date): string {
-  if (entry.status === "idle") return `inattivo da ${formatDuration(entry.idleMinutes ?? 0)}`;
-  if (entry.status === "offline" || entry.status === "expired") return `visto l'ultima volta ${relativeAgo(entry.lastSeenAt, now)}`;
-  return "attivo ora";
+export function freshnessLabel(t: Translate, entry: PresenceFreshness, now: Date): string {
+  if (entry.status === "idle") return t("shared.presence.idle", { duration: formatDuration(t, entry.idleMinutes ?? 0) });
+  if (entry.status === "offline" || entry.status === "expired") return t("shared.presence.lastSeen", { ago: relativeAgo(t, entry.lastSeenAt, now) });
+  return t("shared.presence.active");
 }
 
-export function relativeAgo(iso: string | null, now: Date): string {
-  if (!iso) return "tempo fa";
+export function relativeAgo(t: Translate, iso: string | null, now: Date): string {
+  if (!iso) return t("shared.presence.longAgo");
   const minutes = Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 60_000));
-  if (minutes < 1) return "adesso";
-  if (minutes < 60) return `${minutes} min fa`;
+  if (minutes < 1) return t("shared.presence.justNow");
+  if (minutes < 60) return t("shared.presence.minutesAgo", { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return hours === 1 ? "un'ora fa" : `${hours} ore fa`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "ieri" : `${days} giorni fa`;
+  if (hours < 24) return t("shared.presence.hoursAgo", { count: hours });
+  return t("shared.presence.daysAgo", { count: Math.round(hours / 24) });
 }
 
 export interface BranchActivity {

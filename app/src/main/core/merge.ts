@@ -6,6 +6,7 @@ import { candidateSuperseded } from "@shared/conflictScope";
 import { contentFingerprint, findCandidate } from "./candidates";
 import { DomainError } from "./pact";
 import { authorize } from "./team";
+import { ITALIAN } from "@shared/i18n";
 
 /**
  * The merge of a verified candidate (issue #247, Q1 and Q9). With the Coordinator's green light within the mandate and
@@ -138,7 +139,7 @@ export function mergeActivity(
       return {
         type: "activity",
         title: "Unione fermata da un divieto fisso",
-        detail: `${fixedBanInfo(outcome.ban).reason} Nessun mandato lo concede: il candidato ${candidate.id} aspetta te.`,
+        detail: `${fixedBanInfo(ITALIAN, outcome.ban).reason} Nessun mandato lo concede: il candidato ${candidate.id} aspetta te.`,
         tone: "error",
       };
   }

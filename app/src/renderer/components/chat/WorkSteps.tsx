@@ -10,7 +10,7 @@ import {
   IconTool,
 } from "@tabler/icons-react";
 import { useState } from "react";
-import { READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
+import { isReadOutsideScopeTitle } from "@shared/codex";
 import { readableFailure } from "@shared/providerFailure";
 import { formatDuration } from "@shared/timeline";
 import type { TechnicalStep, WorkRow } from "@shared/technicalSteps";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
 import { AgentName } from "@/components/AgentIdentity";
 import { ReferenceText } from "./ReferenceText";
+import { useT } from "@/lib/i18n";
 
 /**
  * The steps of a turn of work (issue #271): the chat names the turn in one line, Activity lists its steps. Shared by
@@ -35,7 +36,7 @@ export function DisclosureChevron({ open }: { open: boolean }) {
 
 function stepIcon(step: TechnicalStep) {
   const { title, tone } = step;
-  if (title === READ_OUTSIDE_SCOPE_TITLE) return <IconShieldLock className="text-destructive" />;
+  if (isReadOutsideScopeTitle(title)) return <IconShieldLock className="text-destructive" />;
   if (tone === "error") return <IconAlertTriangle className="text-destructive" />;
   if (title.startsWith("Strumento") || title.includes(":")) return <IconTool />;
   if (title === "Ragionamento") return <IconBrain />;
@@ -45,10 +46,11 @@ function stepIcon(step: TechnicalStep) {
 }
 
 function StepRow({ step }: { step: TechnicalStep }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const { title } = step;
   // A failed turn or assignment never shows a provider's JSON body, also in records written before P10.
-  const details = step.tone === "error" && /non (?:è )?riuscit|in attesa del provider/i.test(title) ? step.details.map((detail) => readableFailure(detail)) : step.details;
+  const details = step.tone === "error" && /non (?:è )?riuscit|in attesa del provider/i.test(title) ? step.details.map((detail) => readableFailure(t, detail)) : step.details;
   const isCommand = !title.includes(" ") || /^(git|ls|cat|rg|sed|grep|find|swift|npm|node|bun)\b/.test(title);
   return (
     <li className="group/tool-row" data-testid="technical-step" data-count={step.count}>
@@ -96,13 +98,14 @@ export function useWorkSpecialist(row: WorkRow) {
 
 /** Who worked and for how long, as the chat line and Activity both say it. */
 export function WorkLabel({ row }: { row: WorkRow }) {
+  const t = useT();
   const specialist = useWorkSpecialist(row);
   // The specialist's identity leads the label (W15): avatar, name and tag in its color.
   const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
   const label = row.running
     ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
     : row.durationMs !== null
-      ? specialist ? <>{who}ha lavorato per {formatDuration(row.durationMs)}</> : `Ha lavorato per ${formatDuration(row.durationMs)}`
+      ? specialist ? <>{who}ha lavorato per {formatDuration(t, row.durationMs)}</> : `Ha lavorato per ${formatDuration(t, row.durationMs)}`
       : specialist
         ? <>{who}attività</>
         : "Attività";

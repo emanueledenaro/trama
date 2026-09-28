@@ -5,11 +5,13 @@ import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
-import { AGENT_PALETTE } from "@shared/identity";
+import { AGENT_PALETTE, colorName } from "@shared/identity";
 import { agentThreadsByRecent, threadParticipants } from "@shared/agentThreads";
-import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
+import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, type RosterFigure, teamMoments, teamRoster } from "@shared/roster";
+import { LANGUAGES, translator } from "@shared/i18n";
 import { AgentAvatar, AgentName, AgentTag, agentStyle } from "@/components/AgentIdentity";
-import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
+import { AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
+import { assignmentStatus } from "@shared/states";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -23,6 +25,7 @@ import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { useT } from "@/lib/i18n";
 
 const STATUS_LABEL: Record<Specialist["status"], string> = {
   available: "libero",
@@ -61,6 +64,7 @@ const ROW = "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left tran
 
 /** A developer of the project: competence, status and the provider and model of its current work (UX05). */
 function DeveloperRow({ specialist }: { specialist: Specialist }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const current = specialist.assignments.at(-1);
@@ -76,7 +80,7 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
         </span>
         <span className="flex items-center gap-1.5 truncate text-ui-sm text-muted-foreground">
           <StatusDot status={specialist.status} />
-          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialistLine(project.document, specialist)}</span>
+          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialistLine(t, project.document, specialist)}</span>
         </span>
         {current ? (
           <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
@@ -92,6 +96,7 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
 
 /** A fixed role at one moment: what it does there and with which skills; it opens the specialist. */
 function FigureRow({ figure }: { figure: RosterFigure }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const document = useUi((s) => s.app?.project?.document ?? null);
   const specialist = figure.specialists[0];
@@ -106,7 +111,7 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
         <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
         {specialist && specialist.status !== "available" ? (
           <span className="block truncate text-ui-sm text-muted-foreground">
-            {STATUS_LABEL[specialist.status]}<Sep />{specialistLine(document, specialist)}
+            {STATUS_LABEL[specialist.status]}<Sep />{specialistLine(t, document, specialist)}
           </span>
         ) : null}
         <SkillList skills={figure.duty.skills} />
@@ -143,6 +148,7 @@ function DevelopersFigure({ figure, confirmed }: { figure: RosterFigure; confirm
 }
 
 export function TeamView() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const team = project.document.team;
   const pending = team.proposals.find((p) => !p.resolution);
@@ -167,7 +173,7 @@ export function TeamView() {
           <TeamProposalCard proposalId={pending.id} />
         </InspectorSection>
       ) : null}
-      {teamRoster(team).map((moment) => (
+      {teamRoster(t, team).map((moment) => (
         <InspectorSection key={moment.moment} title={moment.label}>
           <p className="text-ui-sm text-muted-foreground">{moment.when}</p>
           <div className="-mx-2 mt-1 flex flex-col gap-0.5">
@@ -195,6 +201,7 @@ export function TeamView() {
 }
 
 export function SpecialistView({ id }: { id: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
@@ -291,10 +298,10 @@ export function SpecialistView({ id }: { id: string }) {
       </InspectorSection>
       <InspectorSection title="Quando interviene">
         <div className="flex flex-col gap-1.5">
-          {roleDuties(specialist.role).map((duty) => (
+          {roleDuties(t, specialist.role).map((duty) => (
             <div key={duty.moment}>
               <span className="block text-ui text-foreground/90">
-                {TEAM_MOMENTS.find((m) => m.moment === duty.moment)!.label}
+                {teamMoments(t).find((m) => m.moment === duty.moment)!.label}
                 <Sep />
                 {duty.task}
               </span>
@@ -340,7 +347,7 @@ export function SpecialistView({ id }: { id: string }) {
                   {assignment.goalId ? `, ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
                 </span>
               </span>
-              <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
+              <Badge tone={assignmentStatus(t, assignment.status).tone}>{assignmentStatus(t, assignment.status).label}</Badge>
             </div>
           ),
         )}
@@ -359,7 +366,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
   const [name, setName] = useState(specialist.name);
   const next = name.trim();
   const taken = specialists.some((s) => s.id !== specialist.id && s.status !== "removed" && nameKey(s.name) === nameKey(next));
-  const fixedName = FIXED_ROLES.some((role) => nameKey(roleProfile(role).name) === nameKey(next));
+  const fixedName = FIXED_ROLES.some((role) => LANGUAGES.some((language) => nameKey(roleProfile(translator(language), role).name) === nameKey(next)));
   const unchanged = next === specialist.name;
   const save = () => void act("specialist:rename", { specialistId: specialist.id, name: next }).then(onDone);
   return (
@@ -391,6 +398,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
 
 /** The agent's color (W15): Trama picked a free one; the person may choose another from the palette. */
 function AgentColorPicker({ specialist }: { specialist: Specialist }) {
+  const t = useT();
   return (
     <InspectorSection title="Colore">
       <p className="text-ui-sm text-muted-foreground">Il colore sta solo sul bot e sul tag. Badge e schede restano sui colori di stato.</p>
@@ -398,12 +406,12 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
         {AGENT_PALETTE.map((entry) => {
           const selected = entry.color === specialist.color;
           return (
-            <Tooltip key={entry.color} label={entry.label}>
+            <Tooltip key={entry.color} label={colorName(t, entry.color)}>
               <button
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                aria-label={entry.label}
+                aria-label={colorName(t, entry.color)}
                 data-testid="agent-color"
                 className={cn(
                   "agent-identity inline-flex size-10 items-center justify-center rounded-full transition-shadow",
@@ -475,6 +483,7 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
 
 /** Every conversation between agents the specialist takes part in (W07), the most recent first. */
 function SpecialistThreads({ specialistId }: { specialistId: string }) {
+  const t = useT();
   const document = useUi((s) => s.app?.project?.document);
   const setInspector = useUi((s) => s.setInspector);
   const threads = agentThreadsByRecent(document?.agentThreads ?? []).filter((t) => t.specialistIds.includes(specialistId));
@@ -490,7 +499,7 @@ function SpecialistThreads({ specialistId }: { specialistId: string }) {
             onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
           >
             <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.title}</span>
-            <span className="shrink-0 text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
+            <span className="shrink-0 text-ui-xs text-muted-foreground">{threadParticipants(t, thread, document.team.specialists)}</span>
           </button>
         ))}
       </div>

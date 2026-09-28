@@ -2,6 +2,7 @@ import type { ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { classifyProviderFailure, type ProviderWaitReason, waitReasonOf } from "@shared/providerFailure";
 import { isPaused } from "./continuousWork";
 import { ASSIGNMENT_CRASH_NOTE, ASSIGNMENT_QUIT_NOTE, CRASH_NOTE, QUIT_NOTE } from "./document";
+import { ITALIAN } from "@shared/i18n";
 
 /**
  * Resuming the always active Coordinator (issue #249, on top of C11 and A05). A provider limit holds the moves and the
@@ -57,7 +58,7 @@ export function reopeningResume(document: ProjectDocument, continuousWork: boole
   if (latest?.state === "interrupted" && (latest.failure === QUIT_NOTE || latest.failure === CRASH_NOTE)) {
     turn = { requestId: latest.id, kind: "resume" };
   } else if (latest?.state === "failed" && latest.failure) {
-    const failure = classifyProviderFailure(latest.failure, { now });
+    const failure = classifyProviderFailure(ITALIAN, latest.failure, { now });
     const reason = waitReasonOf(failure.kind);
     if (reason) turn = { requestId: latest.id, kind: "wait", reason, until: failure.until };
   }

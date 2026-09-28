@@ -3,6 +3,7 @@ import { type FixedBan, fixedBanInfo, pushBan } from "@shared/fixedBans";
 import { execFileSync } from "node:child_process";
 import { runProcess } from "./process";
 import { type Authorization, authorize } from "./team";
+import { ITALIAN } from "@shared/i18n";
 
 /**
  * The one path by which Trama pushes a branch to the project's remote (issue #273). A push needs a granted mandate
@@ -45,7 +46,7 @@ export function pushRefusal(authorization: Authorization): string {
 /** The fixed ban on pushing `branch`, with its reason in the person's words; null when none applies (issue #244). */
 export function fixedPushRefusal(branch: string, mainBranches: string[] = []): { ban: FixedBan; reason: string } | null {
   const ban = pushBan(branch, mainBranches);
-  return ban ? { ban, reason: `${fixedBanInfo(ban).reason} Nessun mandato lo concede: Trama non pubblica ${branch}.` } : null;
+  return ban ? { ban, reason: `${fixedBanInfo(ITALIAN, ban).reason} Nessun mandato lo concede: Trama non pubblica ${branch}.` } : null;
 }
 
 /**

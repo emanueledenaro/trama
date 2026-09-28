@@ -1,6 +1,7 @@
 import type { Candidate, NextMove, ProjectDocument } from "@shared/domain";
 import { pendingMandateRequest } from "@shared/domain";
-import { FIXED_BANS } from "@shared/fixedBans";
+import { fixedBans } from "@shared/fixedBans";
+import { ITALIAN } from "@shared/i18n";
 import { autonomyLine } from "./autonomousCycle";
 import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
@@ -166,7 +167,7 @@ function mandateLine(document: ProjectDocument): string {
 
 /** The fixed bans (issue #244): Trama refuses them by rule; the line tells the Coordinator not to plan work on them. */
 function fixedBansLine(): string {
-  return `Divieti fissi, esclusi da ogni mandato: ${FIXED_BANS.map((b) => b.label.toLowerCase()).join("; ")}. Trama li rifiuta prima che partano e li mette in "Aspetta te": non pianificarli e non cercare altre strade, restano alla persona.`;
+  return `Divieti fissi, esclusi da ogni mandato: ${fixedBans(ITALIAN).map((b) => b.label.toLowerCase()).join("; ")}. Trama li rifiuta prima che partano e li mette in "Aspetta te": non pianificarli e non cercare altre strade, restano alla persona.`;
 }
 
 const SLICING_TEXT = {

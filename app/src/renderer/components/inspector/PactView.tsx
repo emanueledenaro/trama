@@ -1,10 +1,10 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import { IconArrowLeft, IconPlus, IconTarget } from "@tabler/icons-react";
 import { useState } from "react";
-import { checkOutcome } from "@shared/states";
+import { assignmentStatus, checkOutcome } from "@shared/states";
 import { isOpenQuestion } from "@shared/domain";
 import { decisionDependents } from "@shared/goals";
-import { ASSIGNMENT_STATUS, DecisionCard } from "@/components/chat/Cards";
+import { DecisionCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
@@ -12,6 +12,7 @@ import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
+import { useT } from "@/lib/i18n";
 
 function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: string; acceptedExample: string; rationale: string }; onDone: () => void }) {
   const [value, setValue] = useState(initial?.value ?? "");
@@ -114,6 +115,7 @@ const DEMO_BLOCKERS: Record<string, string> = {
 };
 
 function PactDemoBox() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const demo = project.document.pactDemo;
   const blockers = project.pactDemoBlockers;
@@ -139,7 +141,7 @@ function PactDemoBox() {
           <Badge tone={blockers.length === 0 ? "success" : "warning"}>{blockers.length === 0 ? "Simulazione verificata e revisionata" : "Revisione da completare"}</Badge>
           {demo.evidence.map((e) => (
             <p key={e.check} className="text-ui-xs text-muted-foreground">
-              {checkOutcome(e.check, e.result === "pass" || e.result === "fail" ? e.result : null)}<Sep />{e.output}
+              {checkOutcome(t, e.check, e.result === "pass" || e.result === "fail" ? e.result : null)}<Sep />{e.output}
             </p>
           ))}
           {blockers.map((b) => (
@@ -155,6 +157,7 @@ function PactDemoBox() {
 
 /** The work that relies on a decision (UX04): what a change would suspend, and the goals it serves. */
 function DecisionDependentsSection({ id }: { id: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
@@ -181,7 +184,7 @@ function DecisionDependentsSection({ id }: { id: string }) {
             <span title={assignment.id}>{assignment.objective}</span>
           </span>
           <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `delegato su v${version}`}</Badge>
-          <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
+          <Badge tone={assignmentStatus(t, assignment.status).tone}>{assignmentStatus(t, assignment.status).label}</Badge>
         </button>
       ))}
       {dependents.candidates.map(({ candidate, version, current }) => (

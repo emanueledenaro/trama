@@ -1,1 +1,1 @@
-export { ACTION_LABELS, DELEGABLE_ACTIONS } from "@shared/labels";
+export { actionLabel, DELEGABLE_ACTIONS } from "@shared/labels";

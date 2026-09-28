@@ -7,6 +7,9 @@ import { answerFromFacts, askCoordinator, blockOnPerson, personAnswered } from "
 import { emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, resumePausedAssignment } from "./team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 9, minute));
 
@@ -96,8 +99,8 @@ describe("the developer and the Coordinator talk in their own conversation (W07)
     expect(thread!.messages[1]!.text).toBe("Sì, come una carta.\n\nFonti: spec #7");
     expect(thread!.updatedAt).toBe(at(6).toISOString());
 
-    expect(threadParticipants(thread!, document.team.specialists)).toBe("Ada e il Coordinatore");
-    expect(thread!.messages.map((m) => authorName(m.author, document.team.specialists))).toEqual(["Ada", "Coordinatore"]);
+    expect(threadParticipants(t, thread!, document.team.specialists)).toBe("Ada e il Coordinatore");
+    expect(thread!.messages.map((m) => authorName(t, m.author, document.team.specialists))).toEqual(["Ada", "Coordinatore"]);
 
     // A long answer keeps every source: each part is bounded by itself, never the message as a whole.
     resumePausedAssignment(document, assignment.id);
@@ -171,7 +174,7 @@ describe("the reviewers and the guardian talk to the developer (W07)", () => {
     const review = document.agentThreads!.find((t) => t.kind === "review")!;
     expect(review.specialistIds).toEqual([ada(document).id, role(document, "cleanCode").id, role(document, "security").id]);
     expect(review.withCoordinator).toBe(false);
-    expect(threadParticipants(review, document.team.specialists)).toBe("Ada, Clean Code e Sicurezza");
+    expect(threadParticipants(t, review, document.team.specialists)).toBe("Ada, Clean Code e Sicurezza");
     // A reviewer with nothing to report writes nothing.
     expect(review.messages.map((m) => m.author)).toEqual([
       { kind: "specialist", specialistId: role(document, "cleanCode").id },

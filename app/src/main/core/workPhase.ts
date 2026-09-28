@@ -1,4 +1,5 @@
-import { BLOCKER_TEXT } from "@shared/plainLanguage";
+import { ITALIAN } from "@shared/i18n";
+import { blockerText } from "@shared/plainLanguage";
 import type {
   Candidate,
   CandidateBlocker,
@@ -235,7 +236,7 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
     case "WORKTREE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
     default:
-      return `Il candidato ${candidate.id} è bloccato: ${(BLOCKER_TEXT[blocker.code] ?? blocker.code).toLowerCase()}. ${blocker.detail}`.trim();
+      return `Il candidato ${candidate.id} è bloccato: ${blockerText(ITALIAN, blocker.code).toLowerCase()}. ${blocker.detail}`.trim();
   }
 }
 
@@ -323,7 +324,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("spec");
       case "failed":
         preparePlan();
-        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${readableFailure(plan.failure)}` : "."}`, undefined, "Il piano non è riuscito: va rifatto.");
+        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${readableFailure(ITALIAN, plan.failure)}` : "."}`, undefined, "Il piano non è riuscito: va rifatto.");
       case "stale":
         preparePlan();
         return finish("blocked", `Il repository è cambiato mentre si scriveva il piano ${plan.id}: va rifatto.`, undefined, "Il repository è cambiato mentre si scriveva il piano: va rifatto.");
@@ -365,7 +366,7 @@ function readyPlan(
       moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       return moves.finish(
         "blocked",
-        `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(slicing.failure)}` : "."}`,
+        `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(ITALIAN, slicing.failure)}` : "."}`,
         undefined,
         "La divisione del piano in fette non è riuscita: va rivista.",
       );

@@ -14,6 +14,9 @@ import {
   withdrawalMessage,
   withdrawDecisionRequest,
 } from "./pact";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 describe("Pact", () => {
   it("increments the version of a decision and keeps its history", () => {
@@ -143,9 +146,9 @@ describe("timeline", () => {
   });
 
   it("formats durations like the Swift app", () => {
-    expect(formatDuration(450)).toBe("450 ms");
-    expect(formatDuration(2_500)).toBe("2,5 s");
-    expect(formatDuration(12_000)).toBe("12 s");
-    expect(formatDuration(65_000)).toBe("1m 5s");
+    expect(formatDuration(t, 450)).toBe("450 ms");
+    expect(formatDuration(t, 2_500)).toBe("2,5 s");
+    expect(formatDuration(t, 12_000)).toBe("12 s");
+    expect(formatDuration(t, 65_000)).toBe("1m 5s");
   });
 });

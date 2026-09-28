@@ -7,6 +7,7 @@ import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { act, useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 /**
  * The slices of a spec, split with AI Hero's to-tickets (M05): the breakdown the person approves or corrects, as the
@@ -40,6 +41,7 @@ function Ticket({
   who: { name: string; selfPicked: boolean } | null;
   showCriteria: boolean;
 }) {
+  const t = useT();
   return (
     <li
       data-testid="plan-slice"
@@ -56,7 +58,7 @@ function Ticket({
             <Badge tone="outline">#{ticket.issue.number}</Badge>
           </button>
         ) : null}
-        {state ? <Badge tone={sliceStatus(state, ticket).tone}>{sliceStatus(state, ticket).label}</Badge> : null}
+        {state ? <Badge tone={sliceStatus(t, state, ticket).tone}>{sliceStatus(t, state, ticket).label}</Badge> : null}
       </div>
       <div className="mt-0.5 text-ui-sm text-muted-foreground">
         {ticket.blockedBy.length ? `Bloccata da: ${ticket.blockedBy.map(number).join(", ")}` : "Può iniziare subito"}
@@ -81,6 +83,7 @@ function Ticket({
 }
 
 export function PlanSlices({ plan }: { plan: WorkPlan }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const views = project.sliceViews?.[plan.id] ?? [];
   const [correction, setCorrection] = useState<string | null>(null);
@@ -107,7 +110,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       ) : null}
       {slicing.status === "failed" ? (
         <div className="mt-1">
-          <p className="text-ui-sm text-warning">{readableFailure(slicing.failure) ?? "La divisione in fette non è riuscita."}</p>
+          <p className="text-ui-sm text-warning">{readableFailure(t, slicing.failure) ?? "La divisione in fette non è riuscita."}</p>
           <div className="cta-row mt-2">
             <Button size="sm" onClick={() => void act("plan:slice", { planId: plan.id })}>
               Dividi di nuovo in fette

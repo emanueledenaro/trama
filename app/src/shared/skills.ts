@@ -1,3 +1,4 @@
+import type { Translate } from "./i18n";
 import { textScore } from "./mentions";
 
 export interface LoadedSkill {
@@ -8,7 +9,7 @@ export interface LoadedSkill {
 }
 
 /** Shown wherever Trama lists the bundled AI Hero skills (M08, MIT attribution). */
-export const AIHERO_ATTRIBUTION = "Basato sulle skill di Matt Pocock, licenza MIT";
+export const aiHeroAttribution = (t: Translate): string => t("shared.skills.attribution");
 
 const INVOCATION = /(^|\s)([/$])([A-Za-z0-9_:-]+)(?=\s|$|[,.;!?)])/g;
 

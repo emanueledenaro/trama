@@ -5,6 +5,9 @@ import { emptyDocument } from "./document";
 import { createMandateRequest } from "./pact";
 import { markTold, MAX_DONE, milestones, newMilestones, writeRecap } from "./recap";
 import { NOTHING_GOING_ON } from "./statusLine";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute)).toISOString();
 
@@ -98,9 +101,9 @@ describe("asking for a recap", () => {
   ])("leaves %s to the Coordinator", (text) => expect(asksForRecap(text)).toBe(false));
 
   it("titles the card by what made it", () => {
-    expect(recapTitle({ reason: "request", milestones: [] })).toBe("Riepilogo");
-    expect(recapTitle({ reason: "milestone", milestones: ["a"] })).toBe("Riepilogo: un traguardo");
-    expect(recapTitle({ reason: "milestone", milestones: ["a", "b"] })).toBe("Riepilogo: 2 traguardi");
+    expect(recapTitle(t, { reason: "request", milestones: [] })).toBe("Riepilogo");
+    expect(recapTitle(t, { reason: "milestone", milestones: ["a"] })).toBe("Riepilogo: un traguardo");
+    expect(recapTitle(t, { reason: "milestone", milestones: ["a", "b"] })).toBe("Riepilogo: 2 traguardi");
   });
 });
 

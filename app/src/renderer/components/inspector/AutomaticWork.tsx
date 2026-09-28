@@ -2,13 +2,14 @@ import { ReferenceText } from "@/components/chat/ReferenceText";
 import { IconPlayerPlay } from "@tabler/icons-react";
 import { useState } from "react";
 import type { AutomaticWorkStatus, TeamRole } from "@shared/domain";
-import { AUTOMATIC_WORK_LABEL, AUTOMATIC_WORK_STATE } from "@shared/duties";
+import { automaticWorkLabel, automaticWorkState } from "@shared/duties";
 import { roleProfile } from "@shared/roster";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { act, useUi } from "@/lib/store";
 import { InspectorSection } from "./Inspector";
+import { useT } from "@/lib/i18n";
 
 /** The CTA of work the person may start now; a triage starts from its issue, so here it only says where. */
 function StartNow({ work }: { work: AutomaticWorkStatus }) {
@@ -43,16 +44,17 @@ function StartNow({ work }: { work: AutomaticWorkStatus }) {
 }
 
 function AutomaticWorkRow({ work, withRole }: { work: AutomaticWorkStatus; withRole: boolean }) {
-  const state = AUTOMATIC_WORK_STATE[work.state];
+  const t = useT();
+  const state = automaticWorkState(t, work.state);
   return (
     <div data-testid="automatic-work" data-work={work.kind} data-state={work.state} className="py-1.5">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 text-ui text-foreground">
-          {AUTOMATIC_WORK_LABEL[work.kind]}
+          {automaticWorkLabel(t, work.kind)}
           {withRole ? (
             <span className="text-muted-foreground">
               <Sep />
-              {roleProfile(work.role).name}
+              {roleProfile(t, work.role).name}
             </span>
           ) : null}
         </span>

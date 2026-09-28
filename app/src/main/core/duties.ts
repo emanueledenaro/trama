@@ -19,7 +19,8 @@ import type {
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
 import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
-import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
+import { STRENGTH_ORDER, TRIAGE_STATES, triageCategoryLabel, triageStateLabel } from "@shared/duties";
+import { ITALIAN } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import { openedForProblem } from "@shared/problems";
 import { activeTerms, coversAssignment, workLeftOut } from "@shared/mandate";
@@ -480,7 +481,7 @@ function requestBlocker(document: ProjectDocument, kind: AutomaticWorkRequest["k
   if (!context.runner) return new DutyRequestError("provider_unavailable", "Nessun provider collegato può eseguire ora il lavoro dei ruoli fissi.");
   const role = kind === "triage" ? "bugTriage" : "cleanCode";
   const busy = roleWork(document, role);
-  if (busy) return new DutyRequestError("role_busy", `${roleProfile(role).name} è già al lavoro sull'incarico ${busy.id}: riprova quando finisce.`);
+  if (busy) return new DutyRequestError("role_busy", `${roleProfile(ITALIAN, role).name} è già al lavoro sull'incarico ${busy.id}: riprova quando finisce.`);
   if (kind === "architectureReview") {
     const card = openArchitectureCard(document);
     if (card) return new DutyRequestError("card_open", `La scheda ${card} con le proposte della revisione precedente aspetta ancora la tua risposta.`);
@@ -1019,7 +1020,7 @@ function parseArchitecture(answer: Json): ArchitectureOutcome | null {
 
 function triageResult(issueNumber: number | null, outcome: TriageOutcome, openedByCoordinator: boolean): string {
   return [
-    `**Triage della issue #${issueNumber}: ${TRIAGE_CATEGORY_LABEL[outcome.category]}, \`${outcome.state}\` (${TRIAGE_STATE_LABEL[outcome.state]}).**`,
+    `**Triage della issue #${issueNumber}: ${triageCategoryLabel(ITALIAN, outcome.category)}, \`${outcome.state}\` (${triageStateLabel(ITALIAN, outcome.state)}).**`,
     outcome.reasoning,
     ...(outcome.verification ? [`### Verifica\n${outcome.verification}`] : []),
     ...(outcome.alreadyImplemented ? [`### Già presente nel codice\n${outcome.alreadyImplemented}`] : []),
@@ -1106,7 +1107,7 @@ function outcomeLine(assignment: SpecialistAssignment): string {
   const outcome = assignment.duty?.outcome;
   switch (outcome?.kind) {
     case "triage":
-      return `Triage della issue #${assignment.issueNumber}: ${TRIAGE_CATEGORY_LABEL[outcome.category]}, ${outcome.state}`;
+      return `Triage della issue #${assignment.issueNumber}: ${triageCategoryLabel(ITALIAN, outcome.category)}, ${outcome.state}`;
     case "diagnosis":
       return outcome.reproduced ? `Diagnosi: bug riprodotto.${outcome.cause ? ` ${outcome.cause}` : ""}` : "Diagnosi: bug non riprodotto";
     case "architecture":

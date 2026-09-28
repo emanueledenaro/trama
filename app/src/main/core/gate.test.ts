@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CandidateEvidence, ProjectDocument } from "@shared/domain";
-import { GATE_ROLES, NO_SPEC, NOTHING_TO_REPORT, latestGate, reviewOutcome } from "@shared/gate";
+import { GATE_ROLES, NO_SPEC, latestGate, nothingToReport, reviewOutcome } from "@shared/gate";
 import { declareCandidate, recordEvidence } from "./candidates";
 import { emptyDocument } from "./document";
 import {
@@ -38,6 +38,9 @@ import { loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
 import { assign, beginTurn, confirmTeam, endTurn, proposeTeam, recordThread, recordWorkspace, reopenForFindings } from "./team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 10, minute));
@@ -178,8 +181,8 @@ describe("the candidate gate (W10)", () => {
     const gate = openGate(document, candidate, at(3));
     beginReviews(gate, { spec: true, model: "mini", cleanCodeModel: "gpt-5.5" }, at(4));
     for (const role of GATE_ROLES) finishReview(gate, role, { report: "Ho letto il diff e va bene.", findings: [] }, at(5));
-    expect(gate.reviews.every((r) => r.report === NOTHING_TO_REPORT)).toBe(true);
-    expect(reviewOutcome(gateReview(gate, "ux"))).toEqual({ label: "Niente da segnalare", tone: "success" });
+    expect(gate.reviews.every((r) => r.report === nothingToReport(t))).toBe(true);
+    expect(reviewOutcome(t, gateReview(gate, "ux"))).toEqual({ label: "Niente da segnalare", tone: "success" });
     closeGate(gate, at(6));
     expect(gate.status).toBe("passed");
     expect(gateSummary(document, gate)).toContain("Sicurezza: niente da segnalare.");

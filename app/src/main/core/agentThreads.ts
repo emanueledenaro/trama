@@ -13,7 +13,8 @@ import type {
   GateFinding,
   TeamRole,
 } from "@shared/domain";
-import { AGENT_THREAD_KIND_LABEL } from "@shared/agentThreads";
+import { agentThreadKindLabel } from "@shared/agentThreads";
+import { ITALIAN } from "@shared/i18n";
 import { isRegression } from "@shared/gate";
 import { shortId } from "@shared/ids";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
@@ -56,7 +57,7 @@ export function threadFor(document: ProjectDocument, kind: AgentThreadKind, assi
     assignmentId: assignment.id,
     specialistIds: [assignment.specialistId, ...(counterpart ? [counterpart.id] : [])],
     withCoordinator: kind === "question",
-    title: `${AGENT_THREAD_KIND_LABEL[kind]}, ${subject}`,
+    title: `${agentThreadKindLabel(ITALIAN, kind)}, ${subject}`,
     createdAt: at,
     updatedAt: at,
     messages: [],

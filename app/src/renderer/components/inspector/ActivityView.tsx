@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ACTIVITY_OUTCOME_LABELS, type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/activity";
+import { type ActivityEntry, type ActivityOutcome, activityLog, activityOutcomeLabel } from "@shared/activity";
 import { projectGoals } from "@shared/goals";
 import { problemBacklog } from "@shared/problems";
 import { compactSteps, workTurns, type WorkRow } from "@shared/technicalSteps";
@@ -12,6 +12,7 @@ import { act, useUi } from "@/lib/store";
 import { InspectorSection } from "./Inspector";
 import { ReferenceText } from "@/components/chat/ReferenceText";
 import { DisclosureChevron, StepList, WorkLabel } from "@/components/chat/WorkSteps";
+import { useT } from "@/lib/i18n";
 
 /**
  * Activity (Q6): the Coordinator's automatic moves of the project, the rounds that did something (A05), the steps of
@@ -35,6 +36,7 @@ const OUTCOME_TONES: Record<ActivityOutcome, "info" | "success" | "warning" | "d
  * own words, which starts the work again from that step.
  */
 function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
+  const t = useT();
   const openDialog = useUi((s) => s.openDialog);
   const [correcting, setCorrecting] = useState(false);
   const [note, setNote] = useState("");
@@ -49,7 +51,7 @@ function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
     <li className="py-2" data-testid="activity-step" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
-        <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
+        <Badge tone={OUTCOME_TONES[entry.outcome]}>{activityOutcomeLabel(t, entry.outcome)}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
         {formatDate(entry.startedAt)}
@@ -96,11 +98,12 @@ function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
 
 /** Trama's merge of a candidate (issue #247): merged on whose authority, or why it stopped, with its pull request. */
 function MergeRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
+  const t = useT();
   return (
     <li className="py-2" data-testid="activity-merge" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
-        <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
+        <Badge tone={OUTCOME_TONES[entry.outcome]}>{activityOutcomeLabel(t, entry.outcome)}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
         {formatDate(entry.startedAt)}
@@ -141,11 +144,12 @@ function RoundRow({ entry }: { entry: ActivityEntry }) {
 
 /** A step of a found problem (A08): the issue opened or linked, or where the problem went after the triage. */
 function ProblemRow({ entry }: { entry: ActivityEntry }) {
+  const t = useT();
   return (
     <li className="py-2" data-testid="activity-problem" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
-        <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
+        <Badge tone={OUTCOME_TONES[entry.outcome]}>{activityOutcomeLabel(t, entry.outcome)}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
         {formatDate(entry.startedAt)}
@@ -207,20 +211,21 @@ function ProblemBacklog() {
 }
 
 function ActivityRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
+  const t = useT();
   const openDialog = useUi((s) => s.openDialog);
   const duration = entry.endedAt ? Math.max(0, Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) : null;
   return (
     <li className="py-2" data-testid="activity-entry" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
-        <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
+        <Badge tone={OUTCOME_TONES[entry.outcome]}>{activityOutcomeLabel(t, entry.outcome)}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
         {formatDate(entry.startedAt)}
         {duration !== null ? (
           <>
             <Sep />
-            {formatDuration(duration)}
+            {formatDuration(t, duration)}
           </>
         ) : null}
         <Sep />
@@ -347,13 +352,14 @@ function TechnicalWork({ focusWork }: { focusWork?: string }) {
 }
 
 export function ActivityView({ focusWork }: { focusWork?: string }) {
+  const t = useT();
   const document = useUi((s) => s.app?.project?.document);
   const entries = useMemo(
     () =>
       document
-        ? activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], document.problems?.items ?? [], document.autonomousSteps ?? [], document.candidates)
+        ? activityLog(t, document.requests, document.events, document.continuousWork?.rounds ?? [], document.problems?.items ?? [], document.autonomousSteps ?? [], document.candidates)
         : [],
-    [document],
+    [document, t.language],
   );
   const titles = useMemo(() => new Map((document ? projectGoals(document) : []).map((g) => [g.id, g.title])), [document]);
   return (

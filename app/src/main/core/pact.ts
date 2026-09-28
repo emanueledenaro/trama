@@ -8,7 +8,7 @@ import type {
   ProjectMandate,
 } from "@shared/domain";
 import { shortId } from "@shared/ids";
-import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@shared/labels";
+import { actionLabel, DELEGABLE_ACTIONS } from "@shared/labels";
 
 export class DomainError extends Error {}
 
@@ -41,7 +41,7 @@ export function decide(
   return decision;
 }
 
-export { ACTION_LABELS, DELEGABLE_ACTIONS };
+export { actionLabel, DELEGABLE_ACTIONS };
 
 export function grantMandate(
   document: ProjectDocument,

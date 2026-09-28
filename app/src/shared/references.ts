@@ -1,4 +1,5 @@
 import type { GitHubState, ProjectDocument, Specialist, SpecialistAssignment } from "./domain";
+import { localeOf, type Translate } from "./i18n";
 import type { RepositoryModule } from "./repository";
 
 /**
@@ -72,7 +73,8 @@ const MENTION_PATTERN = /(?<![\w@])@(?:"((?:\\.|[^"\\])*)"|([^\s@]+))/g;
 const PATH_PATTERN = /(?<![\w./@-])((?:[\w.-]+\/)+[\w.-]*[\w]|[\w-][\w.-]*\.[A-Za-z][A-Za-z0-9]{0,7})(?::\d+(?::\d+)?)?(?![\w/])/g;
 const SHA_PATTERN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 /** Nouns a text may write before a reference; the reference then shows its short name. */
-const NOUN_BEFORE = /(?:^|[^\p{L}])(incarico|candidato|decisione|domanda|mandato|piano|fetta|obiettivo|issue|ticket|pr|pull request|modulo|file|commit|branch|revisione|esame|percorso)\s*$/iu;
+const NOUN_BEFORE =
+  /(?:^|[^\p{L}])(incarico|candidato|decisione|domanda|mandato|piano|fetta|obiettivo|issue|ticket|pr|pull request|modulo|file|commit|branch|revisione|esame|percorso|assignment|candidate|decision|question|mandate|plan|slice|goal|module|review|route)\s*$/iu;
 
 const clip = (text: string, limit = 60) => {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -89,7 +91,7 @@ const make = (target: ReferenceTarget, id: string, noun: string, name: string, d
 });
 
 /** Every reference of the project, built from Trama's records, the repository and GitHub's last reading. */
-export function buildReferenceIndex({ document, modules, github }: ReferenceSources): ReferenceIndex {
+export function buildReferenceIndex(t: Translate, { document, modules, github }: ReferenceSources): ReferenceIndex {
   const index: ReferenceIndex = {
     ids: new Map(),
     issues: new Map(),
@@ -101,6 +103,8 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
     commits: [],
   };
   const repository = github.repository;
+  // The day a mandate was asked, as the language writes a short date: "05/03" in Italian, "03/05" in English.
+  const asked = new Intl.DateTimeFormat(localeOf(t.language), { day: "2-digit", month: "2-digit", timeZone: "UTC" });
   const specialists = document.team.specialists;
   const owner = (specialistId: string) => specialists.find((s) => s.id === specialistId);
   const assignments = specialists.flatMap((s) => s.assignments.map((assignment) => ({ assignment, specialist: s })));
@@ -110,9 +114,9 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
     return ticket ? `${sliceId.replace(/^S/, "")}, ${clip(ticket.title)}` : sliceId;
   };
   const ofWork = (assignment: SpecialistAssignment | undefined, specialist: Specialist | undefined) => {
-    const who = specialist ? `di ${specialist.name}` : "";
-    const slice = assignment?.slice ? `, fetta ${sliceName(assignment.slice.planId, assignment.slice.sliceId)}` : "";
-    return `${who}${slice}`.trim() || "senza autore";
+    const who = specialist ? t("shared.reference.of", { name: specialist.name }) : "";
+    const slice = assignment?.slice ? t("shared.reference.ofSlice", { name: sliceName(assignment.slice.planId, assignment.slice.sliceId) }) : "";
+    return `${who}${slice}`.trim() || t("shared.reference.noAuthor");
   };
   // Two works of the same agent read the same: the second and later get their number, in the order they began.
   const numbered = (names: [string, string][]) => {
@@ -123,7 +127,7 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
       names.map(([key, name]) => {
         const count = (seen.get(name) ?? 0) + 1;
         seen.set(name, count);
-        return [key, total.get(name)! > 1 ? `${name}, n. ${count}` : name];
+        return [key, total.get(name)! > 1 ? t("shared.reference.numbered", { name, count: String(count) }) : name];
       }),
     );
   };
@@ -144,66 +148,66 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
   for (const { assignment, specialist } of assignments) {
     index.ids.set(
       assignment.id,
-      make({ kind: "assignment", id: assignment.id, specialistId: specialist.id }, assignment.id, "incarico", workNames.get(assignment.id)!, clip(assignment.objective, 120)),
+      make({ kind: "assignment", id: assignment.id, specialistId: specialist.id }, assignment.id, t("shared.reference.assignment"), workNames.get(assignment.id)!, clip(assignment.objective, 120)),
     );
     if (assignment.workspace?.branch) {
-      index.branches.set(assignment.workspace.branch, make({ kind: "branch", name: assignment.workspace.branch }, assignment.workspace.branch, "", assignment.workspace.branch, `Branch dell'incarico ${assignment.id}`));
+      index.branches.set(assignment.workspace.branch, make({ kind: "branch", name: assignment.workspace.branch }, assignment.workspace.branch, "", assignment.workspace.branch, t("shared.reference.assignmentBranch", { id: assignment.id })));
     }
   }
   for (const candidate of document.candidates) {
     const found = assignments.find((a) => a.assignment.id === candidate.assignmentId);
     const name = candidateNames.get(candidate.id)!;
-    const reference = make({ kind: "candidate", id: candidate.id }, candidate.id, "candidato", name, found ? clip(found.assignment.objective, 120) : null);
+    const reference = make({ kind: "candidate", id: candidate.id }, candidate.id, t("shared.reference.candidate"), name, found ? clip(found.assignment.objective, 120) : null);
     index.ids.set(candidate.id, reference);
     if (candidate.technicalReview) {
       index.ids.set(
         candidate.technicalReview.id,
-        make({ kind: "review", id: candidate.technicalReview.id, candidateId: candidate.id }, candidate.technicalReview.id, "revisione del candidato", name, clip(candidate.technicalReview.summary, 120)),
+        make({ kind: "review", id: candidate.technicalReview.id, candidateId: candidate.id }, candidate.technicalReview.id, t("shared.reference.review"), name, clip(candidate.technicalReview.summary, 120)),
       );
     }
-    index.commits.push({ sha: candidate.baseSHA, reference: make({ kind: "commit", sha: candidate.baseSHA }, candidate.baseSHA, "", candidate.baseSHA.slice(0, 7), `Base del candidato ${candidate.id}`, repository ? `https://github.com/${repository}/commit/${candidate.baseSHA}` : null) });
+    index.commits.push({ sha: candidate.baseSHA, reference: make({ kind: "commit", sha: candidate.baseSHA }, candidate.baseSHA, "", candidate.baseSHA.slice(0, 7), t("shared.reference.candidateBase", { id: candidate.id }), repository ? `https://github.com/${repository}/commit/${candidate.baseSHA}` : null) });
     if (candidate.pullRequest) {
       const pr = candidate.pullRequest;
-      index.branches.set(pr.branch, make({ kind: "branch", name: pr.branch }, pr.branch, "", pr.branch, `Branch della PR #${pr.number}`));
+      index.branches.set(pr.branch, make({ kind: "branch", name: pr.branch }, pr.branch, "", pr.branch, t("shared.reference.pullBranch", { number: String(pr.number) })));
     }
   }
   for (const audit of document.audits ?? []) {
     const candidate = index.ids.get(audit.target.candidateId);
-    index.ids.set(audit.id, make({ kind: "audit", id: audit.id }, audit.id, "esame del candidato", candidate?.short ?? audit.target.candidateId));
+    index.ids.set(audit.id, make({ kind: "audit", id: audit.id }, audit.id, t("shared.reference.audit"), candidate?.short ?? audit.target.candidateId));
   }
   for (const decision of [...document.decisionHistory, ...document.decisions]) {
-    index.ids.set(decision.id, make({ kind: "decision", id: decision.id }, decision.id, "decisione", `«${clip(decision.value, 48)}»`, clip(decision.value, 160)));
+    index.ids.set(decision.id, make({ kind: "decision", id: decision.id }, decision.id, t("shared.reference.decision"), `«${clip(decision.value, 48)}»`, clip(decision.value, 160)));
   }
   for (const request of document.decisionRequests) {
-    index.ids.set(request.id, make({ kind: "question", id: request.id }, request.id, "domanda", `«${clip(request.question, 48)}»`, clip(request.question, 160)));
+    index.ids.set(request.id, make({ kind: "question", id: request.id }, request.id, t("shared.reference.question"), `«${clip(request.question, 48)}»`, clip(request.question, 160)));
   }
   for (const request of document.mandateRequests) {
-    const [, month, day] = request.askedAt.slice(0, 10).split("-");
-    index.ids.set(request.id, make({ kind: "mandate", id: request.id }, request.id, "mandato", `richiesto il ${day}/${month}`, clip(request.reason, 160)));
+    const date = asked.format(new Date(`${request.askedAt.slice(0, 10)}T00:00:00Z`));
+    index.ids.set(request.id, make({ kind: "mandate", id: request.id }, request.id, t("shared.reference.mandate"), t("shared.reference.mandateAsked", { date }), clip(request.reason, 160)));
   }
   for (const plan of plans) {
     const title = plan.spec?.sections?.title ?? plan.proposal?.summary ?? plan.summary;
-    index.ids.set(plan.id, make({ kind: "plan", id: plan.id }, plan.id, "piano", `«${clip(title, 48)}»`, clip(title, 160)));
+    index.ids.set(plan.id, make({ kind: "plan", id: plan.id }, plan.id, t("shared.reference.plan"), `«${clip(title, 48)}»`, clip(title, 160)));
     for (const ticket of plan.slicing?.tickets ?? []) {
       // The same slice id comes back in each breakdown: the latest plan that has it wins.
-      const reference = make({ kind: "slice", planId: plan.id, sliceId: ticket.id }, ticket.id, "fetta", sliceName(plan.id, ticket.id), clip(ticket.whatToBuild, 160));
+      const reference = make({ kind: "slice", planId: plan.id, sliceId: ticket.id }, ticket.id, t("shared.reference.slice"), sliceName(plan.id, ticket.id), clip(ticket.whatToBuild, 160));
       index.slices.set(ticket.id, reference);
     }
   }
   for (const goal of document.goals ?? []) {
-    index.ids.set(goal.id, make({ kind: "goal", id: goal.id }, goal.id, "obiettivo", `«${clip(goal.title, 48)}»`, clip(goal.outcome, 160)));
+    index.ids.set(goal.id, make({ kind: "goal", id: goal.id }, goal.id, t("shared.reference.goal"), `«${clip(goal.title, 48)}»`, clip(goal.outcome, 160)));
   }
   // A route of Ask Trama by the situation it answers (issue #270): "Avvia il percorso AT-..." names it.
   for (const route of document.routes ?? []) {
-    index.ids.set(route.id, make({ kind: "route", id: route.id }, route.id, "percorso di Ask Trama", `«${clip(route.situation, 48)}»`, clip(route.reason, 160)));
+    index.ids.set(route.id, make({ kind: "route", id: route.id }, route.id, t("shared.reference.route"), `«${clip(route.situation, 48)}»`, clip(route.reason, 160)));
   }
   for (const module of modules) {
-    const reference = make({ kind: "module", id: module.id }, module.relativePath, "modulo", module.name, clip(module.summary, 160));
+    const reference = make({ kind: "module", id: module.id }, module.relativePath, t("shared.reference.module"), module.name, clip(module.summary, 160));
     if (module.relativePath !== ".") index.paths.set(module.relativePath.replace(/\/+$/, ""), reference);
-    for (const file of module.files) index.paths.set(file.relativePath, make({ kind: "file", path: file.relativePath }, file.relativePath, "", file.relativePath, `File del modulo ${module.name}`));
+    for (const file of module.files) index.paths.set(file.relativePath, make({ kind: "file", path: file.relativePath }, file.relativePath, "", file.relativePath, t("shared.reference.moduleFile", { module: module.name })));
   }
   for (const issue of github.issues) {
-    index.issues.set(issue.number, make({ kind: "issue", number: issue.number }, `#${issue.number}`, "issue", `#${issue.number}`, clip(issue.title, 160), issue.url));
+    index.issues.set(issue.number, make({ kind: "issue", number: issue.number }, `#${issue.number}`, t("shared.reference.issue"), `#${issue.number}`, clip(issue.title, 160), issue.url));
   }
   const pullUrl = (number: number) => (repository ? `https://github.com/${repository}/pull/${number}` : null);
   const pulls = new Map<number, { title: string | null; url: string | null }>();
@@ -211,17 +215,17 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
   for (const candidate of document.candidates) if (candidate.pullRequest) pulls.set(candidate.pullRequest.number, { title: null, url: candidate.pullRequest.url });
   for (const pr of github.snapshot?.pullRequests ?? []) {
     pulls.set(pr.number, { title: pr.title, url: pr.url });
-    index.branches.set(pr.headRef, make({ kind: "branch", name: pr.headRef }, pr.headRef, "", pr.headRef, `Branch della PR #${pr.number}`));
-    index.commits.push({ sha: pr.headSHA, reference: make({ kind: "commit", sha: pr.headSHA }, pr.headSHA, "", pr.headSHA.slice(0, 7), `Ultimo commit della PR #${pr.number}`, repository ? `https://github.com/${repository}/commit/${pr.headSHA}` : null) });
+    index.branches.set(pr.headRef, make({ kind: "branch", name: pr.headRef }, pr.headRef, "", pr.headRef, t("shared.reference.pullBranch", { number: String(pr.number) })));
+    index.commits.push({ sha: pr.headSHA, reference: make({ kind: "commit", sha: pr.headSHA }, pr.headSHA, "", pr.headSHA.slice(0, 7), t("shared.reference.pullCommit", { number: String(pr.number) }), repository ? `https://github.com/${repository}/commit/${pr.headSHA}` : null) });
   }
   for (const [number, pr] of pulls) {
     // A number that GitHub lists as an issue stays an issue: GitHub numbers both in one sequence.
     if (index.issues.has(number)) continue;
-    index.issues.set(number, make({ kind: "pullRequest", number }, `#${number}`, "PR", `#${number}`, pr.title ? clip(pr.title, 160) : null, pr.url));
+    index.issues.set(number, make({ kind: "pullRequest", number }, `#${number}`, t("shared.reference.pullRequest"), `#${number}`, pr.title ? clip(pr.title, 160) : null, pr.url));
   }
   for (const branch of github.snapshot?.branches ?? []) {
     if (!index.branches.has(branch.name)) index.branches.set(branch.name, make({ kind: "branch", name: branch.name }, branch.name, "", branch.name));
-    index.commits.push({ sha: branch.sha, reference: make({ kind: "commit", sha: branch.sha }, branch.sha, "", branch.sha.slice(0, 7), `Ultimo commit di ${branch.name}`, repository ? `https://github.com/${repository}/commit/${branch.sha}` : null) });
+    index.commits.push({ sha: branch.sha, reference: make({ kind: "commit", sha: branch.sha }, branch.sha, "", branch.sha.slice(0, 7), t("shared.reference.branchCommit", { branch: branch.name }), repository ? `https://github.com/${repository}/commit/${branch.sha}` : null) });
   }
   return index;
 }
@@ -449,7 +453,10 @@ export function parseReferenceHref(href: string): ReferenceTarget | null {
   }
 }
 
-/** Trama's records the Coordinator may cite, one line each with the name the person reads; null when there are none. */
+/**
+ * Trama's records the Coordinator may cite, one line each with the name the person reads; null when there are none.
+ * i18n-exempt: written for the Coordinator, which receives the person's language with its rules.
+ */
 export function referenceListing(index: ReferenceIndex, limit = 80): string | null {
   const agents: string[] = [];
   const records: string[] = [];

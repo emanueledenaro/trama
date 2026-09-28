@@ -14,14 +14,10 @@ import {
   type Specialist,
   type SpecialistAssignment,
 } from "./domain";
+import type { Translate } from "./i18n";
 import type { TimelineRow } from "./timeline";
 
-export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
-  proposed: "Proposto dal Coordinatore",
-  open: "Aperto",
-  achieved: "Raggiunto",
-  abandoned: "Abbandonato",
-};
+export const goalStatusLabel = (t: Translate, status: GoalStatus): string => t(`shared.goal.${status}`);
 
 export function projectGoals(document: ProjectDocument): ProjectGoal[] {
   return document.goals ?? [];
@@ -145,14 +141,14 @@ export function goalLinks(document: ProjectDocument, goalId: string): GoalLinks 
 }
 
 /** A short, factual state of the work of a goal: counts from the records, no invented progress. */
-export function goalWorkSummary(document: ProjectDocument, goalId: string): string {
+export function goalWorkSummary(t: Translate, document: ProjectDocument, goalId: string): string {
   const links = goalLinks(document, goalId);
   const running = links.assignments.filter((a) => ["preparing", "running", "stopRequested"].includes(a.assignment.status)).length;
   const parts: string[] = [];
-  if (links.openQuestions.length) parts.push(`${links.openQuestions.length} decisioni da prendere`);
-  if (running) parts.push(`${running} incarichi in corso`);
-  if (links.candidates.length) parts.push(`${links.candidates.length} candidati`);
-  if (!links.assignments.length) parts.push("nessun incarico");
+  if (links.openQuestions.length) parts.push(t("shared.goal.decisions", { count: links.openQuestions.length }));
+  if (running) parts.push(t("shared.goal.running", { count: running }));
+  if (links.candidates.length) parts.push(t("shared.goal.candidates", { count: links.candidates.length }));
+  if (!links.assignments.length) parts.push(t("shared.goal.noAssignments"));
   return parts.join(", ");
 }
 

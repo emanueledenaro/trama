@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AssignmentDuty, ProjectDocument, SpecialistAssignment } from "./domain";
 import { assignmentLine, dutyOutcomeText, dutyTriggerText, issueTriage } from "./duties";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const document = {
   duties: {
@@ -18,18 +21,18 @@ const duty = (trigger: AssignmentDuty["trigger"], outcome: AssignmentDuty["outco
 
 describe("automatic work in the person's words (W11)", () => {
   it("says what started the work", () => {
-    expect(dutyTriggerText(document, duty({ kind: "newIssue", issueNumber: 4, title: "Salva non va" }))).toBe("Nuova issue #4: Salva non va");
-    expect(dutyTriggerText(document, duty({ kind: "failedCheck", failureId: "F-1" }))).toBe("Regressione: test Node sul checkout al commit abcdef1");
-    expect(dutyTriggerText(document, duty({ kind: "failedCheck", failureId: "F-2" }))).toBe("Verifica non superata: swift test sul candidato C-1");
-    expect(dutyTriggerText(document, duty({ kind: "idleTeam", headSHA: "1234567890", afterWork: [] }))).toBe("Team libero dopo aver cambiato il codice, commit 1234567");
-    expect(dutyTriggerText(document, duty({ kind: "diagnosisFix", diagnosisId: "A-2" }))).toBe("Bug riprodotto dalla diagnosi A-2");
+    expect(dutyTriggerText(t, document, duty({ kind: "newIssue", issueNumber: 4, title: "Salva non va" }))).toBe("Nuova issue #4: Salva non va");
+    expect(dutyTriggerText(t, document, duty({ kind: "failedCheck", failureId: "F-1" }))).toBe("Regressione: test Node sul checkout al commit abcdef1");
+    expect(dutyTriggerText(t, document, duty({ kind: "failedCheck", failureId: "F-2" }))).toBe("Verifica non superata: swift test sul candidato C-1");
+    expect(dutyTriggerText(t, document, duty({ kind: "idleTeam", headSHA: "1234567890", afterWork: [] }))).toBe("Team libero dopo aver cambiato il codice, commit 1234567");
+    expect(dutyTriggerText(t, document, duty({ kind: "diagnosisFix", diagnosisId: "A-2" }))).toBe("Bug riprodotto dalla diagnosi A-2");
   });
 
   it("sums up the outcome, without dashes", () => {
     const trigger = { kind: "newIssue" as const, issueNumber: 4, title: "t" };
     const texts = [
-      dutyOutcomeText(duty(trigger, { kind: "triage", category: "bug", state: "needs-info", reasoning: "", verification: "", alreadyImplemented: null, comment: "" })),
-      dutyOutcomeText(
+      dutyOutcomeText(t, duty(trigger, { kind: "triage", category: "bug", state: "needs-info", reasoning: "", verification: "", alreadyImplemented: null, comment: "" })),
+      dutyOutcomeText(t, 
         duty(trigger, {
           kind: "diagnosis",
           loopCommand: "npm test",
@@ -46,8 +49,8 @@ describe("automatic work in the person's words (W11)", () => {
           fixWaiting: null,
         }),
       ),
-      dutyOutcomeText(duty(trigger, { kind: "architecture", proposals: [], topRecommendation: null, decisionRequestId: null })),
-      dutyOutcomeText({ ...duty(trigger), unreadable: true }),
+      dutyOutcomeText(t, duty(trigger, { kind: "architecture", proposals: [], topRecommendation: null, decisionRequestId: null })),
+      dutyOutcomeText(t, { ...duty(trigger), unreadable: true }),
     ];
     expect(texts).toEqual([
       "bug, needs-info (servono informazioni)",
@@ -55,7 +58,7 @@ describe("automatic work in the person's words (W11)", () => {
       "Niente da segnalare.",
       "Trama non ha potuto leggere la risposta: la trovi nel risultato.",
     ]);
-    expect(dutyOutcomeText(duty(trigger))).toBeNull();
+    expect(dutyOutcomeText(t, duty(trigger))).toBeNull();
     for (const text of texts) expect(text).not.toMatch(/[\u2013\u2014]/);
   });
 
@@ -66,15 +69,15 @@ describe("automatic work in the person's words (W11)", () => {
     const card = { id: "Q-1", alternatives: [{ behavior: "Unire i pagamenti" }, { behavior: "Approfondire l'annullamento" }], withdrawal: null };
     const open = { decisionRequests: [{ ...card, outcome: null }] } as unknown as ProjectDocument;
     const answered = { decisionRequests: [{ ...card, outcome: { alternativeIndex: 0, answer: "" } }] } as unknown as ProjectDocument;
-    expect(assignmentLine(open, work)).toBe("Revisione dell'architettura: 2 proposte da decidere");
-    expect(dutyOutcomeText(work.duty!, open)).toBe("2 proposte: scegli nella scheda del Patto quale approfondire.");
-    expect(assignmentLine(answered, work)).toBe("Revisione dell'architettura: hai scelto «Unire i pagamenti»");
-    expect(dutyOutcomeText(work.duty!, answered)).toBe("2 proposte: hai scelto «Unire i pagamenti».");
+    expect(assignmentLine(t, open, work)).toBe("Revisione dell'architettura: 2 proposte da decidere");
+    expect(dutyOutcomeText(t, work.duty!, open)).toBe("2 proposte: scegli nella scheda del Patto quale approfondire.");
+    expect(assignmentLine(t, answered, work)).toBe("Revisione dell'architettura: hai scelto «Unire i pagamenti»");
+    expect(dutyOutcomeText(t, work.duty!, answered)).toBe("2 proposte: hai scelto «Unire i pagamenti».");
   });
 
   it("says a paused work waits for an answer, as its badge does, also in records written before (issue #272)", () => {
     const paused = { status: "paused", lastUpdate: "In pausa: aspetta la risposta alla domanda Q-1" } as SpecialistAssignment;
-    expect(assignmentLine(null, paused)).toBe("Aspetta la risposta alla domanda Q-1");
+    expect(assignmentLine(t, null, paused)).toBe("Aspetta la risposta alla domanda Q-1");
   });
 
   it("finds the latest triage of an issue", () => {

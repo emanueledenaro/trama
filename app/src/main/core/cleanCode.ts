@@ -6,7 +6,7 @@ import {
   CLEAN_CODE_RULES,
   CLEAN_CODE_SOURCE,
   CLEAN_CODE_VERSION,
-  type CleanCodeRule,
+  type CleanCodeRuleSpec,
   type CleanCodeRuleId,
   type CleanCodeSettings,
   type CodeMeasure,
@@ -29,7 +29,7 @@ const PRECEDENCE =
 const DEEP_MODULES =
   "Deep modules with small interfaces (codebase-design, improve-codebase-architecture) do not conflict with small functions: small functions hold inside a module and never justify splitting an interface.";
 
-function ruleLines(rules: CleanCodeRule[], settings: CleanCodeSettings | undefined): string[] {
+function ruleLines(rules: CleanCodeRuleSpec[], settings: CleanCodeSettings | undefined): string[] {
   const lines = rules.map((rule) => `- ${rule.id}: ${rule.instruction}`);
   const off = CLEAN_CODE_RULES.filter((rule) => !rules.includes(rule));
   if (off.length) lines.push(`Switched off for this project: ${off.map((rule) => rule.id).join(", ")}.`);

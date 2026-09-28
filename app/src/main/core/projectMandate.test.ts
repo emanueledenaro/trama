@@ -15,6 +15,9 @@ import {
   restrictionMessage,
   restrictMandate,
 } from "./projectMandate";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const MODULES = ["Sources/Orders", "Sources/Catalog"];
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute));
@@ -33,7 +36,7 @@ describe("project mandate proposal (issue #244)", () => {
     expect(request.projectCycle).toBe(true);
     expect(request.scopeModuleIds).toEqual(MODULES);
     expect(request.authorizedActions).toEqual(DELEGABLE_ACTIONS);
-    const [item] = waitingForYou(document);
+    const [item] = waitingForYou(t, document);
     expect(item).toMatchObject({ kind: "mandate", targetId: request.id, label: "Mandato di progetto" });
     // A request already waits: opening the project again asks nothing more.
     expect(needsProjectMandate(document, MODULES)).toBe(false);
@@ -64,7 +67,7 @@ describe("project mandate proposal (issue #244)", () => {
     const mandate = grantMandate(document, request, at(2));
     resolveMandateRequest(document, request.id, "granted", mandate.version, at(2));
     expect(authorize(document.mandate, "integrateCandidate", MODULES)).toBe("authorized");
-    expect(waitingForYou(document)).toEqual([]);
+    expect(waitingForYou(t, document)).toEqual([]);
   });
 });
 
@@ -135,12 +138,12 @@ describe("refused actions in Aspetta te (issue #244)", () => {
       { ban: "forcePush", action: "git push --force origin feature/x", by: { kind: "specialist", specialistId: "dev-1", assignmentId: "A-1" } },
       at(7),
     );
-    const [item] = waitingForYou(document);
+    const [item] = waitingForYou(t, document);
     expect(item).toMatchObject({ kind: "fixedBan", targetId: refusal.id, label: "Azione vietata", title: "Force push: git push --force origin feature/x", blocks: 1 });
     expect(fixedBanActivity(refusal).detail).toContain("Nessun mandato la concede");
 
     acknowledgeFixedBanRefusal(document, refusal.id, at(8));
-    expect(waitingForYou(document)).toEqual([]);
+    expect(waitingForYou(t, document)).toEqual([]);
     expect(document.fixedBanRefusals).toHaveLength(1);
   });
 
@@ -151,8 +154,8 @@ describe("refused actions in Aspetta te (issue #244)", () => {
     const document = normalizeDocument(raw, "p");
     expect(document.mandate?.status).toBe("granted");
     expect(authorize(document.mandate, "openPullRequest", MODULES)).toBe("authorized");
-    expect(waitingForYou(document)).toEqual([]);
+    expect(waitingForYou(t, document)).toEqual([]);
     recordFixedBanRefusal(document, { ban: "tagOrRelease", action: "git tag v1", by: { kind: "coordinator" } });
-    expect(waitingForYou(document).map((i) => i.kind)).toEqual(["fixedBan"]);
+    expect(waitingForYou(t, document).map((i) => i.kind)).toEqual(["fixedBan"]);
   });
 });

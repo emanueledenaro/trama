@@ -1,7 +1,7 @@
 import { plainText } from "@shared/plainLanguage";
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { AuditAxis, AuditFinding, FindingStatus, FocusAudit } from "@shared/domain";
-import { evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
+import { evidenceLabel, findingStatusText, findingTally } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -11,6 +11,7 @@ import { Sep } from "@/components/ui/sep";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { useT } from "@/lib/i18n";
 
 const STATUS_TEXT: Record<FocusAudit["status"], string> = {
   checking: "Verifiche reali nella sandbox",
@@ -31,16 +32,17 @@ const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "war
 
 /** One finding with its proof and how Trama verified it (F02): a hypothesis is shown as one, never as a fact. */
 function FindingRow({ finding }: { finding: AuditFinding }) {
+  const t = useT();
   const { evidence } = finding;
   return (
     <li className="space-y-1 py-1.5" data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+        <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
         {finding.severity === "serious" ? <Badge tone="destructive">Grave</Badge> : null}
         <span className="text-ui-sm text-foreground">{finding.title}</span>
       </div>
       <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
-        Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence)}
+        Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</span> : evidenceLabel(t, evidence)}
       </p>
       {evidence?.kind === "reproduction" ? <p className="whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p> : null}
       {finding.basis ? <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-basis">{finding.basis}</p> : null}
@@ -54,6 +56,7 @@ function FindingRow({ finding }: { finding: AuditFinding }) {
 }
 
 function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" }) {
+  const t = useT();
   if (axis.status === "waiting") return <EmptyNote>Parte dopo le verifiche reali.</EmptyNote>;
   if (axis.status === "running") {
     return (
@@ -66,7 +69,7 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
     return (
       <div className="space-y-1">
         {/* The skill's own words ("no spec available") stay in the record; the person reads them in Italian (issue #270). */}
-        <p className="text-ui text-foreground/85">{axis.report ? plainText(axis.report) : null}</p>
+        <p className="text-ui text-foreground/85">{axis.report ? plainText(t, axis.report) : null}</p>
         <p className="text-ui-sm text-muted-foreground">
           {name === "spec" ? "Il candidato non viene da una fetta di un piano né da una issue collegata all'incarico." : null}
         </p>
@@ -99,13 +102,14 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
  * apart, as the skill presents them, each finding with its proof and its verification (F02). A simple view in the inspector; the full-screen view comes later.
  */
 export function AuditView({ id }: { id: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
   if (!audit) return <div className="p-4"><EmptyNote>Esame non trovato.</EmptyNote></div>;
   const candidate = project.document.candidates.find((c) => c.id === audit.target.candidateId);
   const running = audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
-  const tally = findingTally(audit);
+  const tally = findingTally(t, audit);
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
     <div data-testid="focus-audit" data-status={audit.status}>
@@ -148,7 +152,7 @@ export function AuditView({ id }: { id: string }) {
       </InspectorSection>
       {audit.summary ? (
         <InspectorSection title="Sintesi">
-          <p className="text-ui-sm text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
+          <p className="text-ui-sm text-foreground" data-testid="focus-audit-summary">{plainText(t, audit.summary)}</p>
           {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </InspectorSection>
       ) : null}

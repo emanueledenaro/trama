@@ -9,6 +9,9 @@ import { git } from "./core/process";
 import { developers, findSpecialist } from "./core/team";
 import { sliceViews } from "./core/slices";
 import { workState } from "./core/workPhase";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -186,7 +189,7 @@ describe("team flow", () => {
     expect(plan.slicing!.approvedBy).toBe("coordinator");
     expect((document.autonomousSteps ?? []).map((s) => s.move)).toEqual(["confirmUnderstanding", "confirmSeams", "confirmSlices"]);
     // Activity tells them from the records; the chat keeps no line for them (Q6).
-    const told = activityLog(document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
+    const told = activityLog(t, document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
     expect(told).toEqual(["Fette confermate dal Coordinatore", "Seam confermati dal Coordinatore", "Comprensione confermata dal Coordinatore"]);
     expect(document.events.some((e) => e.content.type === "activity" && /dal Coordinatore$/.test(e.content.title))).toBe(false);
 

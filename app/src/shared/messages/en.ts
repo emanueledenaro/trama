@@ -1,7 +1,9 @@
 // The English catalog (issue #301): the same keys and placeholders as `it.ts`, in plain English.
 import type { it } from "./it";
+import { sharedEn } from "./shared.en";
 
 export const en: Record<keyof typeof it, string> = {
+  ...sharedEn,
   // Time
   "time.now": "now",
   "time.minutes": "{count}m",

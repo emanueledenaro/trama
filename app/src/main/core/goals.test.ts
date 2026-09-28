@@ -25,6 +25,9 @@ import { ciSummary, orderByAttention, summarizeProject, unreadableProject } from
 import { createDecisionRequest, decide, DomainError, grantMandate } from "./pact";
 import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const input = {
   title: "Revisione degli ordini",
@@ -196,7 +199,7 @@ describe("goals (UX01)", () => {
     const goal = createGoal(reopened, input);
     const links = goalLinks(reopened, goal.id);
     expect([links.assignments, links.candidates, links.decisions, links.openQuestions]).toEqual([[], [], [], []]);
-    expect(goalWorkSummary(reopened, goal.id)).toBe("nessun incarico");
+    expect(goalWorkSummary(t, reopened, goal.id)).toBe("nessun incarico");
   });
 
   it("gives the Coordinator the goal context", () => {

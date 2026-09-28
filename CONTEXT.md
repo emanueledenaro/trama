@@ -14,6 +14,41 @@ Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, i
 
 Nei testi per la persona Trama usa l'italiano semplice del glossario dell'interfaccia (`docs/glossario.md`): nomi al posto degli id, che restano al passaggio del mouse, e parole comuni al posto del gergo. Nell'interfaccia il task in focus si chiama lavoro in primo piano, la focus mode esame approfondito, i seam punti di prova e il worktree copia di lavoro.
 
+### Termini in inglese
+
+Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese semplice. Il catalogo è in `app/src/shared/messages/`.
+
+| Italiano | Inglese |
+| --- | --- |
+| Coordinatore | Coordinator |
+| Aspetta te | Waiting for you |
+| Mandato, mandato di progetto | Mandate, project mandate |
+| Patto Vivo, scheda del Patto | Living Pact, Pact card |
+| Squadra, capo squadra | Squad, squad lead |
+| Missione | Mission |
+| Obiettivo | Goal |
+| Piano | Plan |
+| Fetta | Slice |
+| Incarico | Assignment |
+| Sviluppatore | Developer |
+| Candidato | Candidate |
+| Verifica | Check |
+| Revisori | Reviewers |
+| Esame approfondito | In-depth review |
+| Punti di prova | Test points |
+| Chiarimento | Clarification |
+| Attività | Activity |
+| Giro del Coordinatore | Coordinator round |
+| Riepilogo, traguardo | Recap, milestone |
+| Memoria | Memory |
+| Lavoro in primo piano | Work in focus |
+| Pausa del Coordinatore | Coordinator pause |
+| Sospendere un lavoro | Suspend work |
+| Divieti fissi | Fixed bans |
+| Percorso di Ask Trama | Ask Trama route |
+| Presenza | Presence |
+| Guardiano delle regressioni | Regression guardian |
+
 ## Ruoli e coordinamento
 
 Product Owner: la persona che decide obiettivi, priorità, comportamenti del prodotto e compromessi. La responsabilità di queste decisioni resta umana.

@@ -65,6 +65,7 @@ import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
+import { ITALIAN } from "@shared/i18n";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -797,7 +798,7 @@ function specialistDetail(specialist: Specialist): JsonObject {
     ...specialistSummary(specialist),
     competence: specialist.competence,
     reason: specialist.reason,
-    moments: roleDuties(specialist.role) as unknown as Json,
+    moments: roleDuties(ITALIAN, specialist.role) as unknown as Json,
     moduleIDs: specialist.moduleIds,
     model: specialist.model,
     assignment: current

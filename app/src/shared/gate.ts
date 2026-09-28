@@ -1,4 +1,5 @@
 import type { CandidateGate, GateReview, GateRole, SuiteComparison } from "./domain";
+import type { Translate } from "./i18n";
 import { momentRoles } from "./roster";
 
 /**
@@ -10,18 +11,16 @@ import { momentRoles } from "./roster";
 export const GATE_ROLES = momentRoles("candidate") as GateRole[];
 
 /** What a figure without findings signs. */
-export const NOTHING_TO_REPORT = "Niente da segnalare.";
+export const nothingToReport = (t: Translate): string => t("shared.gate.nothing");
 
 /** What code-review says the Spec sub-agent reports when there is no spec. */
 export const NO_SPEC = "no spec available";
 
-export const GATE_STATUS: Record<CandidateGate["status"], { label: string; tone: "info" | "success" | "warning" | "destructive" | "secondary" }> = {
-  checking: { label: "Verifiche in corso", tone: "info" },
-  reviewing: { label: "Revisori al lavoro", tone: "info" },
-  passed: { label: "Superato", tone: "success" },
-  blocked: { label: "Bloccato", tone: "destructive" },
-  failed: { label: "Non riuscito", tone: "warning" },
-};
+type Tone = "info" | "success" | "warning" | "destructive" | "secondary";
+
+const GATE_TONE: Record<CandidateGate["status"], Tone> = { checking: "info", reviewing: "info", passed: "success", blocked: "destructive", failed: "warning" };
+
+export const gateStatus = (t: Translate, status: CandidateGate["status"]): { label: string; tone: Tone } => ({ label: t(`shared.gate.${status}`), tone: GATE_TONE[status] });
 
 export const isGateRunning = (gate: CandidateGate) => gate.status === "checking" || gate.status === "reviewing";
 
@@ -36,28 +35,27 @@ export function latestGate(gates: CandidateGate[] | undefined, candidateId: stri
 }
 
 /** One figure's outcome in a few words. */
-export function reviewOutcome(review: GateReview): { label: string; tone: "info" | "success" | "warning" | "destructive" | "secondary" } {
+export function reviewOutcome(t: Translate, review: GateReview): { label: string; tone: Tone } {
   switch (review.status) {
     case "waiting":
-      return { label: "In attesa", tone: "secondary" };
+      return { label: t("shared.review.waiting"), tone: "secondary" };
     case "running":
-      return { label: "Al lavoro", tone: "info" };
+      return { label: t("shared.review.running"), tone: "info" };
     case "skipped":
-      return { label: "Saltato", tone: "secondary" };
+      return { label: t("shared.review.skipped"), tone: "secondary" };
     case "failed":
-      return { label: "Non riuscito", tone: "warning" };
+      return { label: t("shared.review.failed"), tone: "warning" };
     case "done": {
       const blocking = blockingFindings(review).length;
-      if (blocking) return { label: blocking === 1 ? "1 rilievo bloccante" : `${blocking} rilievi bloccanti`, tone: "destructive" };
-      if (review.findings.length) return { label: review.findings.length === 1 ? "1 suggerimento" : `${review.findings.length} suggerimenti`, tone: "info" };
-      return { label: "Niente da segnalare", tone: "success" };
+      if (blocking) return { label: t("shared.review.blocking", { count: blocking }), tone: "destructive" };
+      if (review.findings.length) return { label: t("shared.review.suggestions", { count: review.findings.length }), tone: "info" };
+      return { label: t("shared.review.nothing"), tone: "success" };
     }
   }
 }
 
-const RESULT: Record<SuiteComparison["base"], string> = { pass: "passa", fail: "fallisce", notRun: "non eseguita" };
-
 /** A suite check on the base and on the candidate, in one line. */
-export function suiteLine(c: SuiteComparison, title: string): string {
-  return `${title}: sulla base ${RESULT[c.base]}, sul candidato ${RESULT[c.candidate]}${isRegression(c) ? ": regressione" : ""}.`;
+export function suiteLine(t: Translate, c: SuiteComparison, title: string): string {
+  const params = { title, base: t(`shared.suite.${c.base}`), candidate: t(`shared.suite.${c.candidate}`) };
+  return t(isRegression(c) ? "shared.suite.regression" : "shared.suite.line", params);
 }

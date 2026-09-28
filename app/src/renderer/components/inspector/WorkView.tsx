@@ -1,13 +1,15 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { CandidateState } from "@shared/domain";
-import { CANDIDATE_STATE, candidateStatus, planStatus } from "@shared/states";
+import { candidateState, candidateStatus, planStatus } from "@shared/states";
 import { Badge } from "@/components/ui/field";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { useT } from "@/lib/i18n";
 
 const ORDER: CandidateState[] = ["decided", "building", "verified", "superseded"];
 
 export function WorkView() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const candidates = project.document.candidates;
@@ -25,11 +27,11 @@ export function WorkView() {
         const list = candidates.filter((c) => project.candidateReports[c.id]?.state === state);
         if (!list.length) return null;
         return (
-          <InspectorSection key={state} title={`${CANDIDATE_STATE[state].label} (${list.length})`}>
+          <InspectorSection key={state} title={`${candidateState(t, state).label} (${list.length})`}>
             <div className="-mx-2 flex flex-col gap-0.5">
               {list.map((candidate) => {
                 const assignment = project.document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
-                const status = candidateStatus(project.candidateReports[candidate.id]!);
+                const status = candidateStatus(t, project.candidateReports[candidate.id]!);
                 return (
                   <button
                     key={candidate.id}
@@ -60,7 +62,7 @@ export function WorkView() {
                   <Badge tone="success">Issue #{plan.spec.issue.number}</Badge>
                 </button>
               ) : null}
-              <Badge tone={planStatus(plan).tone}>{planStatus(plan).label}</Badge>
+              <Badge tone={planStatus(t, plan).tone}>{planStatus(t, plan).label}</Badge>
             </div>
           ))}
         </InspectorSection>

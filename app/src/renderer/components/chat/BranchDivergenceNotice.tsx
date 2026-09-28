@@ -4,6 +4,7 @@ import { divergenceQuestion, divergenceSummary } from "@shared/conflictScope";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 /**
  * The divergence of the project's branch from the default branch on GitHub (U02), said once for the whole project and
@@ -11,6 +12,7 @@ import { useUi } from "@/lib/store";
  * the mandate: the action puts the question in the composer and nothing leaves until the person sends it.
  */
 export function BranchDivergenceNotice() {
+  const t = useT();
   const divergence = useUi((s) => s.app?.project?.document.branchDivergence ?? null);
   const askCoordinator = useUi((s) => s.askCoordinator);
   const [open, setOpen] = useState(false);
@@ -23,7 +25,7 @@ export function BranchDivergenceNotice() {
           <div className="flex min-w-[12rem] flex-1 items-start gap-2">
             <IconGitBranch className="mt-0.5 size-4 shrink-0 text-warning" stroke={1.8} />
             <p className="min-w-0 text-ui-sm text-foreground/90" data-testid="branch-divergence-text">
-              {divergenceSummary(divergence)}
+              {divergenceSummary(t, divergence)}
             </p>
           </div>
           <div className="cta-row ml-auto">
@@ -31,7 +33,7 @@ export function BranchDivergenceNotice() {
               {files.length === 1 ? "Mostra il file" : `Mostra i ${files.length} file`}
               <IconChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
             </Button>
-            <Button size="xs" onClick={() => askCoordinator(divergenceQuestion(divergence))}>
+            <Button size="xs" onClick={() => askCoordinator(divergenceQuestion(t, divergence))}>
               Chiedi al Coordinatore come riallineare
             </Button>
           </div>

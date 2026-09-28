@@ -3966,6 +3966,26 @@ if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) awai
 await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
+// Issue #301, the shared texts: in English the moves of Activity, their outcomes, the states of the cards and the
+// pause of the status line read in English at once, without a restart, and fit the layout; back in Italian they read
+// as before. The screenshots of the pull request are docs/images/issue-301/shared-en-light.png and -dark.png.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.waitForFunction(() => document.documentElement.lang === "en");
+const sharedActivity = page.getByTestId("activity-log");
+await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with your approval" }).first().waitFor({ timeout: 20_000 });
+await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with the Coordinator's green light" }).first().waitFor();
+if (await sharedActivity.getByText(/Candidato unito|Fatta$|Non riuscita$/).count()) throw new Error("Activity keeps Italian texts in English");
+await page.getByTestId("status-line").getByRole("button", { name: /^(Pause the Coordinator|Resume the Coordinator)$/ }).first().waitFor();
+await noHorizontalScroll("shared texts in English");
+// No English label of Activity spills out of its row.
+const spilled = await sharedActivity.evaluate((log) =>
+  [...log.querySelectorAll("li")].filter((row) => row.scrollWidth > row.clientWidth + 1).map((row) => row.textContent?.slice(0, 80)),
+);
+if (spilled.length) throw new Error(`Activity rows spill out in English: ${spilled.join(" | ")}`);
+await themeShots("301-shared-en");
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.waitForFunction(() => document.documentElement.lang === "it");
+await sharedActivity.locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).first().waitFor();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

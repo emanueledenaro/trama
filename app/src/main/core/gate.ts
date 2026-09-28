@@ -1,7 +1,7 @@
 import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
 import { randomUUID } from "node:crypto";
 import type { Candidate, CandidateGate, GateFinding, GateReview, GateRole, ProjectDocument, SpecialistAssignment, SuiteComparison } from "@shared/domain";
-import { GATE_ROLES, NO_SPEC, NOTHING_TO_REPORT, blockingFindings, isGateRunning, isRegression, latestGate, suiteLine } from "@shared/gate";
+import { GATE_ROLES, NO_SPEC, nothingToReport, blockingFindings, isGateRunning, isRegression, latestGate, suiteLine } from "@shared/gate";
 import { shortId } from "@shared/ids";
 import { roleDuties, roleProfile } from "@shared/roster";
 import type { LoadedSkill } from "@shared/skills";
@@ -11,6 +11,7 @@ import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { extractJsonAnswer } from "./providers/types";
 import { findAssignment } from "./team";
+import { ITALIAN } from "@shared/i18n";
 
 /**
  * The candidate gate (W10, spec #137 Q10): before a candidate reaches the person, Trama's real checks, then every
@@ -196,7 +197,7 @@ export function finishReview(gate: CandidateGate, role: GateRole, outcome: { rep
     review.status = "done";
     review.findings = outcome.findings;
     // Who has no findings signs the same words, whatever it wrote.
-    review.report = outcome.findings.length ? outcome.report.trim() || null : NOTHING_TO_REPORT;
+    review.report = outcome.findings.length ? outcome.report.trim() || null : nothingToReport(ITALIAN);
   }
   gate.updatedAt = now.toISOString();
 }
@@ -222,10 +223,10 @@ export function guardianOutcome(suite: SuiteComparison[]): { report: string; fin
   for (const c of suite) {
     const title = checkTitle(c.check);
     if (isRegression(c)) findings.push({ severity: "blocking", title: `Regressione: ${title}`, detail: `${title} passa sulla base e fallisce sul candidato.`, file: null });
-    else if (c.base === "notRun" || c.candidate === "notRun") findings.push({ severity: "advisory", title: `${title} non confrontabile`, detail: suiteLine(c, title), file: null });
-    else if (c.base === "fail" && c.candidate === "fail") findings.push({ severity: "advisory", title: `${title} fallisce già sulla base`, detail: suiteLine(c, title), file: null });
+    else if (c.base === "notRun" || c.candidate === "notRun") findings.push({ severity: "advisory", title: `${title} non confrontabile`, detail: suiteLine(ITALIAN, c, title), file: null });
+    else if (c.base === "fail" && c.candidate === "fail") findings.push({ severity: "advisory", title: `${title} fallisce già sulla base`, detail: suiteLine(ITALIAN, c, title), file: null });
   }
-  return { report: suite.map((c) => `- ${suiteLine(c, checkTitle(c.check))}`).join("\n"), findings };
+  return { report: suite.map((c) => `- ${suiteLine(ITALIAN, c, checkTitle(c.check))}`).join("\n"), findings };
 }
 
 /** Clean Code's part is the technical review (Q03): its blocking findings, or a request for changes, block the candidate. */
@@ -251,7 +252,7 @@ export function closeGate(gate: CandidateGate, now = new Date()): void {
   const blocked = gate.checksFailed.length > 0 || gate.reviews.some((r) => r.status === "done" && blockingFindings(r).length > 0);
   const failed = gate.reviews.filter((r) => r.status === "failed");
   gate.status = blocked ? "blocked" : failed.length ? "failed" : "passed";
-  if (!blocked && failed.length) gate.failure = `${failed.map((r) => roleProfile(r.role).name).join(", ")}: revisione non riuscita. Rilancia la revisione.`;
+  if (!blocked && failed.length) gate.failure = `${failed.map((r) => roleProfile(ITALIAN, r.role).name).join(", ")}: revisione non riuscita. Rilancia la revisione.`;
   gate.finishedAt = now.toISOString();
   gate.updatedAt = now.toISOString();
 }
@@ -278,7 +279,7 @@ export function interruptGates(document: ProjectDocument, now = new Date()): voi
 }
 
 const figureName = (document: ProjectDocument, role: GateRole) =>
-  document.team.specialists.find((s) => s.role === role && s.status !== "removed")?.name ?? roleProfile(role).name;
+  document.team.specialists.find((s) => s.role === role && s.status !== "removed")?.name ?? roleProfile(ITALIAN, role).name;
 
 /** One line per figure, in the order of the spec's table: what the Coordinator and the pull request read. */
 export function gateSummary(document: ProjectDocument, gate: CandidateGate): string {
@@ -392,7 +393,7 @@ export const ROLE_BRIEFS: Record<GateRole, string> = {
 };
 
 /** Whether the figure relies on code-review at the candidate moment (W09's roster); security and performance are Trama's. */
-export const usesCodeReview = (role: GateRole) => roleDuties(role).some((d) => d.moment === "candidate" && d.skills.includes("code-review"));
+export const usesCodeReview = (role: GateRole) => roleDuties(ITALIAN, role).some((d) => d.moment === "candidate" && d.skills.includes("code-review"));
 
 export interface ReviewerTurn {
   instructions: string;
@@ -419,7 +420,7 @@ export function reviewerTurn(
   nativeInput: boolean,
 ): ReviewerTurn {
   const { gate, candidate, assignment, spec } = input;
-  const name = roleProfile(role).name;
+  const name = roleProfile(ITALIAN, role).name;
   const delivery = skill ? deliverNativeSkill(skill, `${GATE_BINDING}\n${ROLE_BRIEFS[role]}`, nativeInput) : null;
   const parts = [
     `Cancello del candidato ${candidate.id}, revisore: ${name} (incarico ${assignment.id}: ${assignment.objective}).`,

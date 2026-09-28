@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { commandBan, FIXED_BANS, isSecretPath, pathBan, pushBan } from "./fixedBans";
+import { commandBan, fixedBans, isSecretPath, pathBan, pushBan } from "./fixedBans";
+import { LANGUAGES, translator } from "./i18n";
 
 describe("fixed bans on commands (issue #244)", () => {
   it.each([
@@ -157,7 +158,10 @@ describe("fixed bans on files and pushes", () => {
   });
 
   it("lists every ban once, with a reason for the person", () => {
-    expect(new Set(FIXED_BANS.map((b) => b.id)).size).toBe(6);
-    for (const ban of FIXED_BANS) expect(ban.reason).toMatch(/\.$/);
+    for (const language of LANGUAGES) {
+      const bans = fixedBans(translator(language));
+      expect(new Set(bans.map((b) => b.id)).size).toBe(6);
+      for (const ban of bans) expect(ban.reason).toMatch(/\.$/);
+    }
   });
 });

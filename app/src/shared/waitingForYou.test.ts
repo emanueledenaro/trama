@@ -4,6 +4,9 @@ import type { AskTramaRoute } from "./askTrama";
 import { emptyConsent } from "./presence";
 import { emptyDocument } from "../main/core/document";
 import { blocksText, sortWaiting, type WaitingItem, waitingForYou, waitingItemFor, waitingSummary } from "./waitingForYou";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 function withRequests(...ids: [string, string | null][]): ProjectDocument {
   const document = emptyDocument("p");
@@ -80,7 +83,7 @@ describe("Aspetta te (issue #240)", () => {
     document.team.proposals.push(proposal);
     document.plans.push(plan("P1", "R1", { status: "seams" }));
 
-    const items = waitingForYou(document, {
+    const items = waitingForYou(t, document, {
       memoryProposals: [{ id: "L1", target: "user", summary: "Togli una nota ripetuta", createdAt: "2026-09-01T08:00:00Z" }],
     });
 
@@ -98,9 +101,9 @@ describe("Aspetta te (issue #240)", () => {
       mandateRequest("M1", "R1", "2026-09-01T09:00:00Z", { kind: "superseded", version: null, resolvedAt: "", supersededBy: "M2" }),
       mandateRequest("M2", "R1", "2026-09-01T09:05:00Z"),
     );
-    expect(waitingForYou(document).map((i) => i.key)).toEqual(["mandate:M2"]);
+    expect(waitingForYou(t, document).map((i) => i.key)).toEqual(["mandate:M2"]);
     document.mandateRequests[1]!.resolution = { kind: "granted", version: 1, resolvedAt: "" };
-    expect(waitingForYou(document)).toEqual([]);
+    expect(waitingForYou(t, document)).toEqual([]);
   });
 
   it("counts the slices a developer's question holds: its own and every slice that waits for it", () => {
@@ -113,7 +116,7 @@ describe("Aspetta te (issue #240)", () => {
     document.team.specialists.push(developer);
     document.decisionRequests.push(question("D1", "R1", "2026-09-01T10:00:00Z", { blocksWork: { assignmentId: "A1", questionId: "Q1" } }));
 
-    const [item] = waitingForYou(document, { sliceViews: { P1: [view("S1", "paused"), view("S2", "blocked"), view("S3", "blocked"), view("S4", "working")] } });
+    const [item] = waitingForYou(t, document, { sliceViews: { P1: [view("S1", "paused"), view("S2", "blocked"), view("S3", "blocked"), view("S4", "working")] } });
     expect(item).toMatchObject({ label: "Domanda di uno sviluppatore", blocks: 3 });
   });
 
@@ -126,7 +129,7 @@ describe("Aspetta te (issue #240)", () => {
       question("D2", "R2", "2026-09-01T09:00:00Z"),
       question("D3", "R3", "2026-09-01T08:00:00Z"),
     );
-    const items = waitingForYou(document, { sliceViews: { P1: [view("S1", "ready"), view("S2", "blocked"), view("S3", "blocked")] } });
+    const items = waitingForYou(t, document, { sliceViews: { P1: [view("S1", "ready"), view("S2", "blocked"), view("S3", "blocked")] } });
     // D1 holds the three slices of its plan; D2 and D3 hold their work alone, so the older D3 comes first.
     expect(items.map((i) => [i.targetId, i.blocks])).toEqual([
       ["D1", 3],
@@ -140,13 +143,13 @@ describe("Aspetta te (issue #240)", () => {
     document.plans.push(plan("P1", "R1", { slicing: approved([ticket("S1"), ticket("S2")]) }), plan("P2", "R2", { slicing: approved([ticket("S1")]) }));
     document.mandateRequests.push(mandateRequest("M1", "R2", "2026-09-01T09:00:00Z"));
     const sliceViews = { P1: [view("S1", "done"), view("S2", "ready")], P2: [view("S1", "ready")] };
-    expect(waitingForYou(document, { sliceViews })[0]).toMatchObject({ kind: "mandate", label: "Mandato", blocks: 2 });
+    expect(waitingForYou(t, document, { sliceViews })[0]).toMatchObject({ kind: "mandate", label: "Mandato", blocks: 2 });
   });
 
   it("lists a breakdown to confirm with the number of its slices", () => {
     const document = withRequests(["R1", null]);
     document.plans.push(plan("P1", "R1", { slicing: { ...approved([ticket("S1"), ticket("S2")])!, status: "proposed" } }));
-    expect(waitingForYou(document)).toEqual([
+    expect(waitingForYou(t, document)).toEqual([
       expect.objectContaining({ key: "slices:P1", label: "Fette del piano", title: "Piano P1", blocks: 2 }),
     ]);
   });
@@ -162,24 +165,24 @@ describe("Aspetta te (issue #240)", () => {
   });
 
   it("says in plain words how many things wait and how much each one holds", () => {
-    expect(waitingSummary(0)).toBeNull();
-    expect(waitingSummary(1)).toBe("1 cosa aspetta te");
-    expect(waitingSummary(2)).toBe("2 cose aspettano te");
-    expect(blocksText(0)).toBe("Non ferma il lavoro");
-    expect(blocksText(1)).toBe("Ferma 1 parte del lavoro");
-    expect(blocksText(4)).toBe("Ferma 4 parti del lavoro");
+    expect(waitingSummary(t, 0)).toBeNull();
+    expect(waitingSummary(t, 1)).toBe("1 cosa aspetta te");
+    expect(waitingSummary(t, 2)).toBe("2 cose aspettano te");
+    expect(blocksText(t, 0)).toBe("Non ferma il lavoro");
+    expect(blocksText(t, 1)).toBe("Ferma 1 parte del lavoro");
+    expect(blocksText(t, 4)).toBe("Ferma 4 parti del lavoro");
   });
 
   it("finds the item a chat card stands for, and none once the card is answered", () => {
     const document = withRequests(["R1", null]);
     document.decisionRequests.push(question("D1", "R1", "2026-09-01T10:00:00Z"));
     document.plans.push(plan("P1", "R1", { status: "seams" }));
-    const items = waitingForYou(document);
+    const items = waitingForYou(t, document);
     expect(waitingItemFor(items, "question", "D1")?.key).toBe("question:D1");
     expect(waitingItemFor(items, "plan", "P1")?.key).toBe("seams:P1");
     expect(waitingItemFor(items, "mandate", "D1")).toBeNull();
     document.decisionRequests[0]!.outcome = { answer: "a", alternativeIndex: 0, decisionId: "PD1", version: 1, answeredAt: "" };
-    expect(waitingItemFor(waitingForYou(document), "question", "D1")).toBeNull();
+    expect(waitingItemFor(waitingForYou(t, document), "question", "D1")).toBeNull();
   });
 
   describe("every card that waits for the person (issue #292)", () => {
@@ -225,7 +228,7 @@ describe("Aspetta te (issue #240)", () => {
         candidate("C4"),
         candidate("C5", { pullRequest: { url: "", number: 1, branch: "b", at: "" } }),
       );
-      const items = waitingForYou(document, {
+      const items = waitingForYou(t, document, {
         candidateReports: { C1: report("verified"), C2: report("decided"), C3: report("verified", true), C4: report("building"), C5: report("verified") },
       });
 
@@ -246,7 +249,7 @@ describe("Aspetta te (issue #240)", () => {
         candidate("C4", { humanRejection: { actor: "Persona", note: "Illeggibile in scuro", fingerprint: "x", at: "" } }),
       );
       const routed = (route: CandidateReport["mergeRoute"]): CandidateReport => ({ ...report("decided"), mergeRoute: route });
-      const items = waitingForYou(document, {
+      const items = waitingForYou(t, document, {
         candidateReports: { C1: routed("coordinator"), C2: routed("interface"), C3: routed("person"), C4: routed("interface") },
       });
       expect(items.map((i) => [i.key, i.label])).toEqual([
@@ -261,7 +264,7 @@ describe("Aspetta te (issue #240)", () => {
       document.presence = { ...emptyConsent(), pending: "conflict", proposedAt: "2026-09-01T01:00:00Z", reproposedAt: "2026-09-01T04:00:00Z" };
       document.decisionRequests.push(question("D1", "R1", "2026-09-01T10:00:00Z"));
       document.candidates.push(candidate("C1"));
-      const items = waitingForYou(document, {
+      const items = waitingForYou(t, document, {
         candidateReports: { C1: report("verified") },
         memoryProposals: [{ id: "L1", target: "memory", summary: "Nota", createdAt: "2026-09-01T03:00:00Z" }],
       });
@@ -276,13 +279,13 @@ describe("Aspetta te (issue #240)", () => {
       document.routes = [route("AT-1", "R1", "proposed")];
       document.candidates.push(candidate("C1"));
       const sources = { candidateReports: { C1: report("verified") } };
-      expect(waitingItemFor(waitingForYou(document, sources), "goal", "G1")?.key).toBe("goal:G1");
+      expect(waitingItemFor(waitingForYou(t, document, sources), "goal", "G1")?.key).toBe("goal:G1");
 
       document.goals[0]!.status = "open";
       document.presence.pending = null;
       document.routes[0]!.status = "started";
       document.candidates[0]!.humanApproval = { actor: "persona", fingerprint: "x", at: "" };
-      expect(waitingForYou(document, sources)).toEqual([]);
+      expect(waitingForYou(t, document, sources)).toEqual([]);
     });
   });
 });

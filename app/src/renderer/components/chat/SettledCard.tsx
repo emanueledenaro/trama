@@ -18,6 +18,7 @@ import { REVEAL_EVENT } from "@/lib/nextStep";
 import { useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
 import { DisclosureChevron } from "./WorkSteps";
+import { useT } from "@/lib/i18n";
 
 function lineIcon(row: TimelineRow) {
   if (row.kind === "grillingRound") return <IconListCheck stroke={1.8} />;
@@ -44,6 +45,7 @@ function lineIcon(row: TimelineRow) {
 
 /** The settled line of a row, recomputed only when the records it reads change. */
 function useSettled(row: TimelineRow): SettledCard | null {
+  const t = useT();
   const project = useUi((s) => s.app?.project);
   const document = project?.document;
   const reports = project?.candidateReports;
@@ -52,7 +54,7 @@ function useSettled(row: TimelineRow): SettledCard | null {
     if (!document) return null;
     const candidateStates: Record<string, CandidateState> = {};
     for (const [id, report] of Object.entries(reports ?? {})) candidateStates[id] = report.state;
-    return settledCard(document, row, { candidateStates, colleagues: (others ?? []).map((o) => o.record) });
+    return settledCard(t, document, row, { candidateStates, colleagues: (others ?? []).map((o) => o.record) });
   }, [document, reports, others, row]);
 }
 

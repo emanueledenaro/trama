@@ -2,7 +2,8 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { NO_SPEC, NOTHING_TO_REPORT } from "@shared/gate";
+import { NO_SPEC, nothingToReport } from "@shared/gate";
+import { ITALIAN } from "@shared/i18n";
 import { SECRET_NOTE } from "./core/gate";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
@@ -141,7 +142,7 @@ describe("the candidate gate (W10)", () => {
     const performance = gate.reviews.find((r) => r.role === "performance")!;
     expect(performance.findings).toEqual([expect.objectContaining({ severity: "blocking", title: "Ciclo senza limite in NOTE.md", file: "NOTE.md:2" })]);
     for (const role of ["specReviewer", "security", "ux", "devops", "documentation"]) {
-      expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "done", findings: [], report: NOTHING_TO_REPORT });
+      expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "done", findings: [], report: nothingToReport(ITALIAN) });
     }
     expect(gate.reviews.find((r) => r.role === "cleanCode")).toMatchObject({ status: "done", threadId: candidate.technicalReview!.reviewerThreadId });
     expect(gate.reviews.find((r) => r.role === "regressionGuardian")).toMatchObject({ status: "done", findings: [expect.objectContaining({ title: "Nessuna suite da confrontare" })] });

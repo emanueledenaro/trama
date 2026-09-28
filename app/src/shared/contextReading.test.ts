@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { contextMeterLines, contextNoticeDetail, contextReading, invalidContextUsage } from "./contextReading";
 import { PROVIDERS } from "./providers";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 describe("contextReading (issue #305)", () => {
   it("gives the percent within the window and the state against the threshold", () => {
@@ -32,12 +35,12 @@ describe("contextReading (issue #305)", () => {
 
   it("says the meter and the threshold card without a provider name or a number past the window", () => {
     const over = contextReading({ usedTokens: 260_000, contextWindow: 258_000 }, 80);
-    const texts = [contextNoticeDetail(over, 80), ...Object.values(contextMeterLines(over)), ...Object.values(contextMeterLines(contextReading(null, 80)))];
+    const texts = [contextNoticeDetail(t, over, 80), ...Object.values(contextMeterLines(t, over)), ...Object.values(contextMeterLines(t, contextReading(null, 80)))];
     for (const text of texts) {
       for (const provider of PROVIDERS) expect(text).not.toContain(provider.name);
       expect(text).not.toMatch(/[–—]/u);
     }
-    expect(contextMeterLines(contextReading({ usedTokens: 9_820_158, contextWindow: 828_400 }, 80)).usage).toBe("Misura non disponibile per questo modello.");
-    expect(contextMeterLines(over).usage).toBe("100% usato, 258.000 su 258.000 token");
+    expect(contextMeterLines(t, contextReading({ usedTokens: 9_820_158, contextWindow: 828_400 }, 80)).usage).toBe("Misura non disponibile per questo modello.");
+    expect(contextMeterLines(t, over).usage).toBe("100% usato, 258.000 su 258.000 token");
   });
 });

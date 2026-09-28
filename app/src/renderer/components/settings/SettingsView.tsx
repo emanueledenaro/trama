@@ -19,7 +19,7 @@ import type { GitHubCliState } from "@shared/onboarding";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
-import { AIHERO_ATTRIBUTION } from "@shared/skills";
+import { aiHeroAttribution } from "@shared/skills";
 import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
@@ -28,7 +28,7 @@ import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { RuleLabel } from "@/components/chat/RuleLabel";
-import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
+import { activeRules, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION, cleanCodeRules } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
@@ -252,7 +252,7 @@ export function providerStatus(
       return { label: t("provider.status.unsupported"), detail: account.type, tone: "warning" };
     case "blocked": {
       // The provider's text stays out of the row: its class in plain words (P10).
-      const failure = classifyProviderFailure(account.message);
+      const failure = classifyProviderFailure(t, account.message);
       const until = !failure.until && account.until ? ` ${t("provider.status.unlocksAt", { date: formatDateTime(language, account.until) })}` : "";
       const label = failure.kind === "temporaryLimit" ? t("provider.status.temporaryLimit") : t("provider.status.quotaExhausted");
       return { label, detail: `${failure.explanation}${until}`, tone: "warning" };
@@ -284,9 +284,10 @@ function CapabilityToggle({ open, onToggle }: { open: boolean; onToggle: () => v
 }
 
 function CapabilityList({ provider }: { provider: ProviderDescriptor }) {
+  const t = useT();
   return (
     <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg bg-[var(--color-background-button-secondary)] px-3 py-2 text-ui-xs @xl/chat:grid-cols-2">
-      {capabilityLines(provider.capabilities).map((line) => (
+      {capabilityLines(t, provider.capabilities).map((line) => (
         <div key={line.label} className="flex justify-between gap-2">
           <span className="text-muted-foreground">{line.label}</span>
           <span className="text-foreground/90">{line.value}</span>
@@ -422,7 +423,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
               {t("settings.provider.signInCommand")} <code className="font-mono text-foreground/90">{provider.signInCommand}</code>
             </span>
           ) : null}
-          {coordinatorUnavailableReason(id) ? <span className="block text-warning">{coordinatorUnavailableReason(id)}</span> : null}
+          {coordinatorUnavailableReason(t, id) ? <span className="block text-warning">{coordinatorUnavailableReason(t, id)}</span> : null}
           {hint ? <span className="block text-foreground/80">{hint}</span> : null}
         </>
       }
@@ -465,7 +466,7 @@ function MethodSection() {
   return (
     <>
       <PageHeader title={t("settings.section.method")} description={t("settings.method.description")} />
-      <Group note={t("settings.method.note", { attribution: AIHERO_ATTRIBUTION })}>
+      <Group note={t("settings.method.note", { attribution: aiHeroAttribution(t) })}>
         <ToggleRow
           label={t("settings.method.autoPrepare")}
           checked={autoPrepare}
@@ -621,7 +622,7 @@ function StandardSection() {
             title={t("settings.standard.rulesFor", { name: project.name })}
             note={t("settings.standard.note", { source: CLEAN_CODE_SOURCE })}
           >
-            {CLEAN_CODE_RULES.map((rule) => (
+            {cleanCodeRules(t).map((rule) => (
               <Row
                 key={rule.id}
                 label={

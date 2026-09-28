@@ -36,15 +36,15 @@ import {
   developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
-import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
+import { cleanCodeRules, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
-import { candidateSuperseded, CONFLICT_SIDE_TITLE, conflictSide, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
+import { candidateSuperseded, conflictSide, conflictSideTitle, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
 import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
-import { FIXED_BANS, fixedBanInfo } from "@shared/fixedBans";
+import { fixedBanInfo, fixedBans } from "@shared/fixedBans";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
-import { BOUNDARY_LABELS, findRoute, firstRunnableStep, ROUTE_PATH_LABELS, type RouteStatus, STEP_KIND_LABELS, TRAMA_FLOWS } from "@shared/askTrama";
+import { boundaryLabel, findRoute, firstRunnableStep, flowLabel, routePathLabel, type RouteStatus, stepKindLabel } from "@shared/askTrama";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
@@ -54,10 +54,10 @@ import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { useT } from "@/lib/i18n";
-import { ACTION_LABELS } from "@/lib/labels";
+import { actionLabel } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RecordName, ReferenceText } from "./ReferenceText";
-import { BLOCKER_TEXT, plainConflictReference, plainText } from "@shared/plainLanguage";
+import { blockerText, plainConflictReference, plainText } from "@shared/plainLanguage";
 import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
@@ -66,7 +66,7 @@ import { RuleLabel } from "./RuleLabel";
 import { InterfaceShotsField } from "./InterfaceShots";
 import { latestGate } from "@shared/gate";
 import { assignmentLine } from "@shared/duties";
-import { ASSIGNMENT_STATUS, CANDIDATE_STATE, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
+import { assignmentStatus, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
@@ -153,6 +153,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
 }
 
 export function ContextNoticeCard({ title, detail }: { title: string; detail: string | null }) {
+  const t = useT();
   return (
     <div className="my-3 flex items-start gap-2 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5 text-ui" data-testid="context-notice">
       <IconInfoCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
@@ -162,7 +163,7 @@ export function ContextNoticeCard({ title, detail }: { title: string; detail: st
         </div>
         {detail ? (
           <div className="text-ui-sm text-muted-foreground">
-            <ReferenceText text={readableFailure(detail)} />
+            <ReferenceText text={readableFailure(t, detail)} />
           </div>
         ) : null}
       </div>
@@ -188,13 +189,14 @@ function ItemList({ items, testId }: { items: string[]; testId?: string }) {
  * grants them.
  */
 export function FixedBansField() {
+  const t = useT();
   return (
     <div className="mt-2" data-testid="fixed-bans">
       <div className="flex items-center gap-1 text-ui-xs text-muted-foreground/70">
         <IconLock className="size-3" stroke={1.8} /> Divieti fissi, sempre esclusi
       </div>
       <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-ui text-foreground/90">
-        {FIXED_BANS.map((ban) => (
+        {fixedBans(t).map((ban) => (
           <li key={ban.id} className="break-words">
             {ban.label}
           </li>
@@ -239,7 +241,7 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
         ) : (
           <>
             <ChangeRow label="Perimetro" change={named(diff.modules, moduleName)} testId="mandate-diff-modules" />
-            <ChangeRow label="Azioni autorizzate" change={named(diff.actions, (a) => ACTION_LABELS[a as MandateAction])} testId="mandate-diff-actions" />
+            <ChangeRow label="Azioni autorizzate" change={named(diff.actions, (a) => actionLabel(t, a as MandateAction))} testId="mandate-diff-actions" />
             <ChangeRow label="Obiettivi" change={diff.objectives} testId="mandate-diff-objectives" />
             <ChangeRow label="Priorità" change={diff.priorities} testId="mandate-diff-priorities" />
             <ChangeRow label="Limiti" change={diff.limits} testId="mandate-diff-limits" />
@@ -268,6 +270,7 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
 }
 
 export function MandateCard({ requestId }: { requestId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [rejecting, setRejecting] = useState(false);
@@ -334,7 +337,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
         <ItemList items={request.scopeModuleIds.map(moduleName)} />
       </Field>
       <Field label="Azioni autorizzate">
-        <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+        <ItemList items={request.authorizedActions.map((a) => actionLabel(t, a))} />
       </Field>
       {request.limits.length ? (
         <Field label="Limiti">
@@ -403,10 +406,11 @@ export function MandateCard({ requestId }: { requestId: string }) {
  * The person handles it outside Trama if they want it; "Ho visto" takes it out of Aspetta te.
  */
 export function FixedBanCard({ refusalId }: { refusalId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const refusal = project.document.fixedBanRefusals?.find((r) => r.id === refusalId);
   if (!refusal) return null;
-  const info = fixedBanInfo(refusal.ban);
+  const info = fixedBanInfo(t, refusal.ban);
   const by = refusal.by;
   const specialist = by.kind === "specialist" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
   return (
@@ -437,6 +441,7 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
 }
 
 export function DecisionCard({ requestId }: { requestId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [choice, setChoice] = useState<number | null>(null);
@@ -517,12 +522,12 @@ export function DecisionCard({ requestId }: { requestId: string }) {
               )}
             >
               <div className="flex items-start gap-2">
-                <span className="min-w-0 flex-1 text-ui text-foreground">{plainText(alternative.behavior)}</span>
+                <span className="min-w-0 flex-1 text-ui text-foreground">{plainText(t, alternative.behavior)}</span>
                 {grilling?.recommendedIndex === index ? <Badge tone="success">Consigliata</Badge> : null}
               </div>
               {/* Inside a button a reference cannot be a link: the text reads plain (issue #270). */}
-              <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {plainText(alternative.example)}</div>
-              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {plainText(alternative.consequence)}</div> : null}
+              <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {plainText(t, alternative.example)}</div>
+              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {plainText(t, alternative.consequence)}</div> : null}
             </button>
           );
         })}
@@ -638,7 +643,6 @@ export function GrillingRoundCard({
 }
 
 // The one vocabulary of states (issue #272): the other views import these from here or from @shared/states.
-export { ASSIGNMENT_STATUS, CANDIDATE_STATE };
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   const project = useUi((s) => s.app?.project)!;
@@ -731,6 +735,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
 }
 
 export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const record = useRecord(assignmentId);
   const specialist = project.document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId));
@@ -740,7 +745,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   if (!specialist || !assignment) return null;
   const goal = findGoal(project.document, assignment.goalId);
   const lastTurn = assignment.turns.at(-1);
-  const status = ASSIGNMENT_STATUS[assignment.status];
+  const status = assignmentStatus(t, assignment.status);
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
   // Paused work whose question has its answer (W06): Trama resumes it by itself, the person can resume it now.
@@ -800,15 +805,15 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       </Field>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
         <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>
-        {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.map(checkName).join(", ")}</span> : null}
+        {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.map((check) => checkName(t, check)).join(", ")}</span> : null}
       </div>
       {assignment.workspace ? (
         <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
-      {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
+      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(t, project.document, assignment)}</p>
+      {assignment.failure ? <Field label="Errore">{readableFailure(t, assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
       <ThreadLinks assignmentId={assignment.id} />
@@ -948,6 +953,7 @@ const CHECK_BLOCKERS = new Set(["EVIDENCE_MISSING", "EVIDENCE_STALE", "CHECK_FAI
 
 /** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
 export function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const failed = evidence?.result === "fail";
   return (
@@ -960,8 +966,8 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
         ) : (
           <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
         )}
-        <span title={check}>{checkName(check)}</span>
-        <span className="text-muted-foreground">{checkResult(check, evidence?.result ?? null)}</span>
+        <span title={check}>{checkName(t, check)}</span>
+        <span className="text-muted-foreground">{checkResult(t, check, evidence?.result ?? null)}</span>
         {failed ? (
           <button
             type="button"
@@ -1201,10 +1207,11 @@ const REVIEW_NOTE = "I rilievi sono il giudizio del revisore, non un'evidenza. C
 
 /** The technical review (V05) with the findings against the Clean Code standard and Trama's own measures (Q03). */
 function TechnicalReviewField({ review }: { review: TechnicalReview }) {
+  const t = useT();
   const findings = [...(review.findings ?? [])].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
   const standard = review.standard;
   const ruleLabel = (id: string | null) => {
-    const rule = CLEAN_CODE_RULES.find((r) => r.id === id);
+    const rule = cleanCodeRules(t).find((r) => r.id === id);
     return rule ? <RuleLabel rule={rule} /> : "Altro";
   };
   return (
@@ -1324,6 +1331,7 @@ function DecisionLink({ id, version }: { id: string; version: number | undefined
 }
 
 export function CandidateCard({ candidateId }: { candidateId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   // The inspector already showing this candidate has the diff right below: the button would do nothing (W12).
@@ -1335,7 +1343,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
   if (!candidate || !report) return null;
-  const state = candidateStatus(report);
+  const state = candidateStatus(t, report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
   const approved = candidate.humanApproval && !report.approvalInvalidated;
   const quality = report.quality ?? [];
@@ -1380,11 +1388,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <ul className="space-y-0.5 text-ui-sm">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
-                {BLOCKER_TEXT[b.code] ?? b.code}
+                {blockerText(t, b.code)}
                 {b.code === "BASE_CHANGED" ? null : (
                   <span className="text-muted-foreground">
                     <Sep />
-                    <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(b.detail) : b.detail} />
+                    <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(t, b.detail) : b.detail} />
                   </span>
                 )}
               </li>
@@ -1524,6 +1532,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
 }
 
 export function PlanCard({ planId }: { planId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const plan = project.document.plans.find((p) => p.id === planId);
@@ -1534,7 +1543,7 @@ export function PlanCard({ planId }: { planId: string }) {
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
-  const status = planStatus(plan);
+  const status = planStatus(t, plan);
   if (plan.status === "superseded") {
     // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
     return (
@@ -1569,7 +1578,7 @@ export function PlanCard({ planId }: { planId: string }) {
       <p className="text-ui-sm text-muted-foreground">
         {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"}<Sep />{plan.summary}
       </p>
-      {plan.failure ? <Field label="Errore">{readableFailure(plan.failure)}</Field> : null}
+      {plan.failure ? <Field label="Errore">{readableFailure(t, plan.failure)}</Field> : null}
       {plan.spec ? <PlanSpecBody plan={plan} /> : null}
       {proposal ? (
         <>
@@ -1683,6 +1692,7 @@ const CONFLICT_FILES_SHOWN = 5;
 
 /** The files of a conflict: the first few, the rest on request (issue #271). */
 function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<string, LineRange[]> | null }) {
+  const t = useT();
   const [all, setAll] = useState(false);
   const shown = all ? files : files.slice(0, CONFLICT_FILES_SHOWN);
   return (
@@ -1690,7 +1700,7 @@ function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<strin
       {shown.map((file) => (
         <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
           {file}
-          {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(lines[file]!)}</span> : null}
+          {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(t, lines[file]!)}</span> : null}
         </span>
       ))}
       {files.length > shown.length ? (
@@ -1703,6 +1713,7 @@ function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<strin
 }
 
 export function ConflictCard({ assessmentId }: { assessmentId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const assessment = project.document.conflicts?.find((a) => a.id === assessmentId);
@@ -1710,7 +1721,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const label = CONFLICT_LABEL[assessment.classification];
   const exercise = isExerciseAssessment(assessment);
   const side = conflictSide(assessment, (project.presence?.others ?? []).map((o) => o.record));
-  const title = exercise ? "Esercizio di conflitto" : CONFLICT_SIDE_TITLE[side];
+  const title = exercise ? "Esercizio di conflitto" : conflictSideTitle(t, side);
   // The divergence of the project's branch is one notice above the chat (U02): the card only points to it.
   if (!exercise && explainedByDivergence(project.document, assessment)) {
     return (
@@ -1839,6 +1850,7 @@ const ROUTE_STATUS: Record<RouteStatus, { label: string; tone: "info" | "success
  * not carry says it is not yet available. "Avvia il percorso" applies the phase boundary and starts the first step.
  */
 export function RouteCard({ routeId }: { routeId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project);
   const route = project ? findRoute(project.document, routeId) : null;
   if (!project || !route) return null;
@@ -1856,23 +1868,23 @@ export function RouteCard({ routeId }: { routeId: string }) {
     >
       <div data-testid="route" data-route={route.id}>
         <Field label="La tua situazione">{route.situation}</Field>
-        <Field label={ROUTE_PATH_LABELS[route.path]}>
+        <Field label={routePathLabel(t, route.path)}>
           <ol className="mt-1 space-y-1">
             {route.steps.map((step, index) => (
               <li key={step.skill} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
                 <code className="rounded bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
                 {step.kind === "unavailable" ? (
-                  <Badge tone="warning">{STEP_KIND_LABELS.unavailable}</Badge>
+                  <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge>
                 ) : (
-                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? TRAMA_FLOWS[step.skill] : STEP_KIND_LABELS.skill}</span>
+                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? flowLabel(t, step.skill) : stepKindLabel(t, "skill")}</span>
                 )}
               </li>
             ))}
           </ol>
         </Field>
-        <Field label={`Confine di fase: ${BOUNDARY_LABELS[route.boundary].label}`}>
-          <span className="text-ui-sm text-muted-foreground">{BOUNDARY_LABELS[route.boundary].detail}</span>
+        <Field label={`Confine di fase: ${boundaryLabel(t, route.boundary).label}`}>
+          <span className="text-ui-sm text-muted-foreground">{boundaryLabel(t, route.boundary).detail}</span>
         </Field>
         <Field label="Perché questo percorso">{route.reason}</Field>
         {route.status === "proposed" && !runnable ? (

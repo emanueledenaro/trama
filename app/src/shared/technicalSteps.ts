@@ -22,7 +22,7 @@ export interface TechnicalStep {
   details: string[];
 }
 
-/** Steps that say nothing without their text: the model's notes and reasoning. */
+/** Steps that say nothing without their text: the model's notes and reasoning. i18n-exempt: titles of the records. */
 const EMPTY_WITHOUT_TEXT = new Set(["Nota dello specialista", "Nota del Coordinatore", "Ragionamento"]);
 
 /** Whether an activity is a note or a reasoning without text. */
