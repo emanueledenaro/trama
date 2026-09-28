@@ -335,6 +335,24 @@ export const it = {
   "audit.publication.comment": "commento alla pull request #{number}",
   "audit.publication.publish": "Pubblica su GitHub",
 
+  // Focus mode lenses (F05)
+  "audit.lenses.title": "Lenti di Trama",
+  "audit.lenses.addedBy": "Aggiunte di Trama",
+  "audit.lens.addedBy": "Aggiunta di Trama",
+  "audit.lenses.note":
+    "Sicurezza, qualità dei test e allineamento tra documenti e codice sono controlli in più di Trama: non vengono dal metodo AI Hero, che dà gli assi Standards e Spec. Ogni lente legge il candidato in sola lettura e i suoi rilievi passano la stessa verifica degli assi.",
+  "audit.lens.security": "Sicurezza",
+  "audit.lens.tests": "Qualità dei test",
+  "audit.lens.docs": "Documenti e codice",
+  "audit.lenses.summary": "Lenti di Trama: {summary}",
+  "audit.lens.noFindings": "{lens}: nessun rilievo.",
+  "audit.lens.findings": "{lens}: {count} rilievi.",
+  "audit.lens.findings.one": "{lens}: 1 rilievo.",
+  "audit.lens.findingsWorst": "{lens}: {count} rilievi, il più grave: {worst}.",
+  "audit.lens.findingsWorst.one": "{lens}: 1 rilievo, il più grave: {worst}.",
+  "audit.lens.failed": "{lens}: non riuscita.",
+  "audit.lens.running": "{lens}: in corso.",
+
   // Context managed by Trama (ADR 0018)
   "context.meter.aria": "Contesto del Coordinatore: {percent}%, riordino sopra il {threshold}%",
   "context.meter.ariaUnknown": "Contesto del Coordinatore: misura non disponibile, riordino sopra il {threshold}%",
