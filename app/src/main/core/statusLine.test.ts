@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { emptyDocument } from "./document";
 import { createGoal } from "./goals";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { setPaused } from "./continuousWork";
+import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON, PAUSED_SENTENCE, statusLine } from "./statusLine";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
@@ -254,5 +255,22 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     expect(statusLine(idle, null)).toMatchObject({ paused: true, state: "waiting", text: PAUSED_SENTENCE });
     setPaused(idle, false, at(6).toISOString());
     expect(statusLine(idle, null)).toMatchObject({ paused: false, text: NOTHING_GOING_ON });
+  });
+});
+
+describe("statusLine in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the line in English", () => {
+    setPersonLanguage("en");
+    const document = confirmed();
+    request(document, "r3");
+    slicedPlan(document, "r3");
+    team(document);
+    work(document, "Luca", "r3", "S1");
+    expect(statusLine(document, null).text).toMatch(/^Luca works on S1\./);
+    setPaused(document, true, at(5).toISOString());
+    expect(statusLine(document, null).text).toBe("Luca works on S1. Coordinator paused: running turns finish, then nothing starts until you resume it.");
+    expect(statusLine(emptyDocument("p"), null).text).toBe("Nothing in progress.");
   });
 });

@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, ProjectDocument } from "@shared/domain";
 import { setPaused } from "./continuousWork";
 import { ASSIGNMENT_CRASH_NOTE, ASSIGNMENT_QUIT_NOTE, CRASH_NOTE, emptyDocument, QUIT_NOTE } from "./document";
 import { grantMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { providerWaitLine, reopeningResume, stoppedByClosing, untilText } from "./resumeWork";
 import { resumeInput } from "./specialistBriefing";
 import { statusLine } from "./statusLine";
@@ -192,5 +193,19 @@ describe("providerWaitLine: the status line while a provider limit holds the wor
     // In Pause the Pause says it: nothing starts anyway.
     setPaused(document, true, at(1).toISOString());
     expect(statusLine(document, null, wait, now)).toMatchObject({ paused: true, providerWait: null });
+  });
+});
+
+describe("providerWaitLine in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("says what the Coordinator waits for, and until when, in English", () => {
+    setPersonLanguage("en");
+    const now = at(0);
+    const line = providerWaitLine({ provider: "ChatGPT", reason: "temporaryLimit", until: new Date(2026, 8, 28, 15, 30).toISOString() }, now);
+    expect(line.text).toMatch(/^Waiting for the ChatGPT limit to end, expected at 03:30\sPM\.$/);
+    expect(line.reason).toBe("No turn starts until then. Then I resume on my own.");
+    expect(providerWaitLine({ provider: "Claude", reason: "quotaExhausted", until: null }, now).text).toBe("Waiting for the Claude quota to unlock: the provider does not say when.");
+    expect(untilText(new Date(2026, 9, 3, 15, 30).toISOString(), now)).toMatch(/^on October 3 at 03:30\sPM$/);
   });
 });

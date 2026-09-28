@@ -11,6 +11,8 @@ import { ACTIVITY_OUTCOME_LABELS, type ActivityOutcome, activityLog } from "@sha
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
 import { COORDINATOR_MOVES, PERSON_MOVE_LABELS } from "./workPhase";
+import { LANGUAGES, type MessageKey, translate } from "@shared/i18n";
+import { t } from "./personLanguage";
 
 export { asksForRecap, RECAP_COMMAND, recapTitle } from "@shared/recap";
 
@@ -51,22 +53,23 @@ export function milestones(document: ProjectDocument, sliceViews: Record<string,
     const tickets = plan.slicing?.status === "approved" ? plan.slicing.tickets : [];
     for (const view of sliceViews[plan.id] ?? []) {
       if (view.state !== "done") continue;
-      const ticket = tickets.find((t) => t.id === view.id);
+      const ticket = tickets.find((candidate) => candidate.id === view.id);
+      const slice = { slice: sliceNumber(view.id), issue: issueSuffix(ticket?.issue) };
       reached.push({
         key: `slice:${plan.id}:${view.id}`,
         kind: "sliceDone",
         // The slice by its number, not its id "S1" (issue #270).
-        text: `Fetta ${sliceNumber(view.id)} fatta${ticket ? `: ${ticket.title}` : ""}${issueSuffix(ticket?.issue)}`,
+        text: ticket ? t("main.recap.sliceDoneTitled", { ...slice, title: ticket.title }) : t("main.recap.sliceDone", slice),
       });
     }
   }
   for (const candidate of document.candidates) {
     const pull = candidate.pullRequest;
     if (!pull?.mergedAt) continue;
-    reached.push({ key: `merged:${candidate.id}`, kind: "candidateMerged", text: `Candidato unito con la pull request #${pull.number}` });
+    reached.push({ key: `merged:${candidate.id}`, kind: "candidateMerged", text: t("main.recap.candidateMerged", { number: String(pull.number) }) });
   }
   for (const goal of document.goals ?? []) {
-    if (goal.status === "achieved") reached.push({ key: `goal:${goal.id}`, kind: "goalAchieved", text: `Obiettivo raggiunto: ${goal.title}` });
+    if (goal.status === "achieved") reached.push({ key: `goal:${goal.id}`, kind: "goalAchieved", text: t("main.recap.goalAchieved", { title: goal.title }) });
   }
   return reached;
 }
@@ -101,11 +104,14 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
   for (const plan of document.plans) {
     const spec = plan.spec;
     if (spec?.issue && after(spec.issue.at)) {
-      facts.push({ text: `Aperta la issue #${spec.issue.number} della spec${spec.sections ? `: ${spec.sections.title}` : ""}`, number: spec.issue.number, url: spec.issue.url, at: spec.issue.at });
+      const number = String(spec.issue.number);
+      const text = spec.sections ? t("main.recap.specIssueTitled", { number, title: spec.sections.title }) : t("main.recap.specIssue", { number });
+      facts.push({ text, number: spec.issue.number, url: spec.issue.url, at: spec.issue.at });
     }
     for (const ticket of plan.slicing?.tickets ?? []) {
       if (ticket.issue && after(ticket.issue.at)) {
-        facts.push({ text: `Aperta la issue #${ticket.issue.number} della fetta ${sliceNumber(ticket.id)}: ${ticket.title}`, number: ticket.issue.number, url: ticket.issue.url, at: ticket.issue.at });
+        const text = t("main.recap.sliceIssue", { number: String(ticket.issue.number), slice: sliceNumber(ticket.id), title: ticket.title });
+        facts.push({ text, number: ticket.issue.number, url: ticket.issue.url, at: ticket.issue.at });
       }
     }
   }
@@ -113,7 +119,7 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
   for (const problem of document.problems?.items ?? []) {
     const issue = problem.issue;
     if (issue?.opened && after(issue.at)) {
-      facts.push({ text: `Aperta la issue #${issue.number} per un problema trovato: ${problem.title}`, number: issue.number, url: issue.url, at: issue.at });
+      facts.push({ text: t("main.recap.problemIssue", { number: String(issue.number), title: problem.title }), number: issue.number, url: issue.url, at: issue.at });
     }
   }
   return facts.sort((a, b) => a.at.localeCompare(b.at));
@@ -123,44 +129,48 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
  * What a move did, as a fact and not as the button that asks for it (issue #270): "Esegui le verifiche" is the
  * button, "Verifica del lavoro" what the recap tells. Each name is feminine and singular, like the outcomes below.
  */
-const MOVE_FACTS: Record<string, string> = {
-  [COORDINATOR_MOVES.preparePlan.label]: "Preparazione del piano",
-  [COORDINATOR_MOVES.assignWork.label]: "Assegnazione del lavoro",
-  [COORDINATOR_MOVES.verifyCandidate.label]: "Verifica del lavoro",
-  [COORDINATOR_MOVES.answerQuestion.label]: "Risposta allo sviluppatore",
-  [PERSON_MOVE_LABELS.answerQuestions]: "Risposta alla domanda",
-  [PERSON_MOVE_LABELS.confirmUnderstanding]: "Conferma della comprensione",
-  [PERSON_MOVE_LABELS.grantMandate]: "Concessione del mandato",
-  [PERSON_MOVE_LABELS.confirmTeam]: "Conferma del team",
-  [PERSON_MOVE_LABELS.confirmSeams]: "Conferma dei punti di prova",
-  [PERSON_MOVE_LABELS.confirmSlices]: "Conferma delle fette",
-  [PERSON_MOVE_LABELS.reviewPlan]: "Revisione del piano",
-  [PERSON_MOVE_LABELS.reviewCandidate]: "Verifica del candidato",
-  [PERSON_MOVE_LABELS.mergePullRequest]: "Unione della pull request",
+const MOVE_FACTS: Record<string, MessageKey> = {
+  [COORDINATOR_MOVES.preparePlan.label]: "main.recap.fact.preparePlan",
+  [COORDINATOR_MOVES.assignWork.label]: "main.recap.fact.assignWork",
+  [COORDINATOR_MOVES.verifyCandidate.label]: "main.recap.fact.verifyCandidate",
+  [COORDINATOR_MOVES.answerQuestion.label]: "main.recap.fact.answerQuestion",
+  [PERSON_MOVE_LABELS.answerQuestions]: "main.recap.fact.answerQuestions",
+  [PERSON_MOVE_LABELS.confirmUnderstanding]: "main.recap.fact.confirmUnderstanding",
+  [PERSON_MOVE_LABELS.grantMandate]: "main.recap.fact.grantMandate",
+  [PERSON_MOVE_LABELS.confirmTeam]: "main.recap.fact.confirmTeam",
+  [PERSON_MOVE_LABELS.confirmSeams]: "main.recap.fact.confirmSeams",
+  [PERSON_MOVE_LABELS.confirmSlices]: "main.recap.fact.confirmSlices",
+  [PERSON_MOVE_LABELS.reviewPlan]: "main.recap.fact.reviewPlan",
+  [PERSON_MOVE_LABELS.reviewCandidate]: "main.recap.fact.reviewCandidate",
+  [PERSON_MOVE_LABELS.mergePullRequest]: "main.recap.fact.mergePullRequest",
 };
 
-const FACT_OUTCOMES: Record<ActivityOutcome, string> = {
-  running: "in corso",
-  done: "fatta",
-  stalled: "non riuscita",
-  stopped: "fermata",
-  failed: "finita con un errore",
-  corrected: "corretta da te",
+const FACT_OUTCOMES: Record<ActivityOutcome, MessageKey> = {
+  running: "main.recap.outcome.running",
+  done: "main.recap.outcome.done",
+  stalled: "main.recap.outcome.stalled",
+  stopped: "main.recap.outcome.stopped",
+  failed: "main.recap.outcome.failed",
+  corrected: "main.recap.outcome.corrected",
 };
+
+/** The opening of a stalled move's reason, in every language: a record keeps the language it was written in. */
+const MOVE_FAILED_PREFIXES = LANGUAGES.map((language) => translate(language, "main.continuousWork.moveFailed").split("{reason}")[0]!.trim());
 
 /** A move in "Cosa ho fatto": "Verifica del lavoro non riuscita. L'incarico A-1 è concluso ma ...". */
 function moveLine(label: string, outcome: ActivityOutcome, detail: string | null): string {
   // The outcome already says the move was not made: the reason follows without repeating it.
-  const reason = detail?.replace(/^La mossa automatica non è riuscita:\s*/, "").trim();
+  const prefix = detail ? MOVE_FAILED_PREFIXES.find((opening) => detail.startsWith(opening)) : undefined;
+  const reason = (prefix ? detail!.slice(prefix.length) : detail)?.trim();
   const sentence = reason ? `. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}` : "";
   const fact = MOVE_FACTS[label];
-  return fact ? `${fact} ${FACT_OUTCOMES[outcome]}${sentence}` : `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
+  return fact ? `${t(fact)} ${t(FACT_OUTCOMES[outcome])}${sentence}` : `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
 }
 
 /** A round, or a step the Coordinator took for the person (A06): "Seam confermati dal Coordinatore: ...". */
 function stepLine(entry: { label: string; outcome: ActivityOutcome; detail: string | null }): string {
-  const corrected = entry.outcome === "corrected" ? " (corretto da te)" : "";
-  return `${entry.label}${corrected}: ${entry.detail ?? ""}`.trim();
+  const detail = entry.detail ?? "";
+  return (entry.outcome === "corrected" ? t("main.recap.stepCorrected", { label: entry.label, detail }) : `${entry.label}: ${detail}`).trim();
 }
 
 /**
@@ -186,7 +196,7 @@ export function doneSince(document: ProjectDocument, since: string | null): Reca
   const hidden = facts.length - shown.length;
   return [
     ...shown.map(({ at: _at, ...fact }) => fact),
-    { text: hidden === 1 ? "Un'altra mossa è in Attività" : `Altre ${hidden} mosse sono in Attività`, number: null, url: null },
+    { text: t("main.recap.moreMoves", { count: hidden }), number: null, url: null },
   ];
 }
 

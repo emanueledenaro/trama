@@ -40,7 +40,7 @@ export function specialistInstructions(
   return lines.join("\n");
 }
 
-/** The Pact decisions the assignment relies on, at the version it is delegated against. */
+/** The Pact decisions the assignment relies on, at the version it is delegated against. @model-text */
 function decisionLines(assignment: SpecialistAssignment, decisions: PactDecision[]): string[] {
   const relied = Object.keys(assignment.decisionVersions ?? {});
   if (!relied.length) return [];
@@ -53,6 +53,7 @@ function decisionLines(assignment: SpecialistAssignment, decisions: PactDecision
   ];
 }
 
+/** The first message of an assignment's session. @model-text */
 export function openingInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
   const lines = [`Incarico ${assignment.id}: ${assignment.objective}`];
   if (assignment.issueNumber) lines.push(`Issue #${assignment.issueNumber}.`);
@@ -68,6 +69,7 @@ export function openingInput(assignment: SpecialistAssignment, decisions: PactDe
   return lines.join("\n");
 }
 
+/** The message that resumes an assignment's session. @model-text */
 export function resumeInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
   const lines = [`Riprendi l'incarico ${assignment.id}: ${assignment.objective}`];
   const stop = assignment.stops.at(-1);
@@ -93,7 +95,7 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   return lines.join("\n");
 }
 
-/** The blocking findings of the candidate gate (W10), for the first turn after the work came back; empty otherwise. */
+/** The blocking findings of the candidate gate (W10), for the first turn after the work came back; empty otherwise. @model-text */
 export function gateReturnBriefing(assignment: SpecialistAssignment): string[] {
   const returned = assignment.gateReturn;
   if (!returned) return [];
