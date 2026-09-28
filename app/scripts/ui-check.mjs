@@ -607,12 +607,11 @@ const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-
 if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
 const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
 if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
-// W16, cost: CSS runs the steady moves; the frame loop runs only while the cursor moves or a bot morphs, at most
-// 24 times per second, and not at all at rest. Reduced motion stops everything and keeps the still pose.
+// W16, cost: CSS runs the steady moves; the frame loop runs only while a bot morphs, at most 24 times per second,
+// and not at all at rest. The eyes do not follow the cursor. Reduced motion stops everything and keeps the still pose.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
 await page.waitForFunction(() => !document.documentElement.classList.contains("bots-paused"), null, { timeout: 5_000 });
 const botFrames = () => page.evaluate(() => ({ frames: window.__tramaBots.frames, at: performance.now() }));
-const perSecond = (from, to) => ((to.frames - from.frames) * 1000) / (to.at - from.at);
 // CPU of the renderer and GPU processes over a few seconds, from Electron's own metrics.
 const cpuOver = async (ms) => {
   await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics());
@@ -634,18 +633,30 @@ const smooth = await page.evaluate(() =>
     .filter((a) => !a.effect.getKeyframes().slice(0, -1).every((k) => String(k.easing).startsWith("steps"))).length,
 );
 if (smooth) throw new Error(`${smooth} bot animations run at every frame instead of in steps`);
-const eyeOf = (bot) => bot.locator('[data-part="eye-0"]').getAttribute("transform");
-const follower = teamPanel.locator('[data-testid="agent-bot"][data-live]:is([data-activity="idle"], [data-activity="done"], [data-activity="waiting"])').first();
-const followerBox = await follower.boundingBox();
-const eyesBefore = await eyeOf(follower);
+// The eyes stay where they are while the cursor moves, and the loop draws no frame for it. The cursor moves over the
+// composer, away from every bot, so no hover wink starts a morph; blinks and winks change the eyes' size, not where
+// they sit, so only the position is compared.
+const eyePositions = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="agent-bot"] [data-part^="eye-"]')].map((eye) => /translate\([^)]*\)/.exec(eye.getAttribute("transform") ?? "")?.[0]),
+  );
+const composerBox = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
+// First let any morph under way finish: the loop is idle once a whole second passes without a frame.
+for (let quiet = 0, last = (await botFrames()).frames, tries = 0; quiet < 4 && tries < 40; tries++) {
+  await page.waitForTimeout(250);
+  const now = (await botFrames()).frames;
+  quiet = now === last ? quiet + 1 : 0;
+  last = now;
+}
+const eyesBefore = await eyePositions();
 const movingFrom = await botFrames();
 for (let i = 0; i < 40; i++) {
-  await page.mouse.move(followerBox.x + followerBox.width / 2 + 200 * Math.cos(i / 6), followerBox.y + followerBox.height / 2 + 120 * Math.sin(i / 6));
+  await page.mouse.move(composerBox.x + composerBox.width / 2 + (composerBox.width / 3) * Math.cos(i / 6), composerBox.y + composerBox.height / 2 + 10 * Math.sin(i / 6));
   await page.waitForTimeout(50);
 }
-const movingRate = perSecond(movingFrom, await botFrames());
-if (movingRate > 24 * 1.1) throw new Error(`The bot loop ran ${movingRate.toFixed(1)} frames per second while the cursor moved, over 24`);
-if ((await eyeOf(follower)) === eyesBefore) throw new Error("The eyes do not follow the cursor");
+const movingFrames = (await botFrames()).frames - movingFrom.frames;
+if (movingFrames > 0) throw new Error(`The bot loop ran ${movingFrames} frames while only the cursor moved`);
+if (JSON.stringify(await eyePositions()) !== JSON.stringify(eyesBefore)) throw new Error("The eyes moved with the cursor");
 await page.waitForTimeout(800);
 const restFrom = await botFrames();
 await page.waitForTimeout(3_000);
@@ -657,7 +668,7 @@ const cpuStill = await cpuOver(3_000);
 await page.emulateMedia({ reducedMotion: "no-preference" });
 if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
 console.log(
-  `bots: ${botSizes.length} on screen, ${movingRate.toFixed(1)} frames/s with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
+  `bots: ${botSizes.length} on screen, ${movingFrames} frames with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
     `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
 );
 const firstBot = teamPanel.getByTestId("agent-bot").first();
@@ -683,7 +694,7 @@ await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Memoria/ }).first().click();
 await page.getByRole("button", { name: "Rivedi ora" }).click();
-await page.getByText("Skill 'release-flow' created").first().waitFor({ timeout: 30_000 });
+await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
@@ -747,39 +758,146 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
+// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
+// provider: no provider name and no number past the window, in light and dark.
+{
+  const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
+  const noProviderName = (text, where) => {
+    const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
+    if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
+  };
+  await composer().fill("[pieno] Quanto contesto resta?");
+  await page.keyboard.press("Enter");
+  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
+  await notice.waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
+  noProviderName(noticeText, "The threshold card");
+  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
+  await notice.scrollIntoViewIfNeeded();
+  await themeShots("04l-context-threshold-card");
+  const meter = page.getByTestId("context-meter");
+  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await meter.click();
+  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  await meterPopup.waitFor();
+  const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
+  noProviderName(meterText, "The context meter");
+  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  await themeShots("04m-context-meter");
+  await page.keyboard.press("Escape");
+  await meterPopup.waitFor({ state: "hidden" });
+}
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
-// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
-// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+// #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
+// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
+// focusBorder, and while dragged it stays lit. Double-click and the arrow keys change the width. The panels meet edge
+// to edge as in VS Code: sidebar and inspector a shade darker than the chat, a 1px border that shows in light and dark.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
   const look = (sash) =>
     sash.evaluate((element) => {
       const style = getComputedStyle(element);
-      const probe = document.createElement("span");
-      probe.style.color = "var(--color-text-accent)";
-      element.append(probe);
-      const accent = getComputedStyle(probe).color;
-      probe.remove();
-      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
-      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+      const color = (value) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        element.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const strip = getComputedStyle(element, "::before");
+      return {
+        background: style.backgroundColor,
+        strip: strip.backgroundColor,
+        stripWidth: strip.width,
+        after: getComputedStyle(element, "::after").content,
+        accent: color("var(--app-focus-border)"),
+        width: element.getBoundingClientRect().width,
+        cursor: style.cursor,
+        zIndex: style.zIndex,
+        children: element.childElementCount,
+        text: element.textContent,
+      };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
+      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
+  }
+  // The line at rest is the panels' border: the sidebar's right edge and the inspector's left edge.
+  const borders = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--app-panel-border)";
+    document.body.append(probe);
+    const border = getComputedStyle(probe).color;
+    probe.remove();
+    const sidebar = getComputedStyle(document.querySelector(".app-sidebar-surface"));
+    const inspector = getComputedStyle(document.querySelector('[data-testid="inspector"]'));
+    return { border, sidebar: [sidebar.borderRightWidth, sidebar.borderRightColor], inspector: [inspector.borderLeftWidth, inspector.borderLeftColor] };
+  });
+  for (const [width, color] of [borders.sidebar, borders.inspector])
+    if (width !== "1px" || color !== borders.border) throw new Error(`A panel has no 1px border line: ${JSON.stringify(borders)}`);
+  // On screen, in light and dark: the border differs from the panels on both sides, and the sidebar and the inspector
+  // differ from the chat between them. Pixels come from the window capture, [r, g, b].
+  const pixel = (x, y) =>
+    app.evaluate(
+      async ({ BrowserWindow }, point) => {
+        const [b, g, r] = (await BrowserWindow.getAllWindows()[0].webContents.capturePage({ ...point, width: 1, height: 1 })).toBitmap();
+        return [r, g, b];
+      },
+      { x: Math.round(x), y: Math.round(y) },
+    );
+  const apart = (one, other) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index])));
+  await page.mouse.move(640, 500);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(400);
+    const edges = await page.evaluate(() => ({
+      sidebar: document.querySelector(".app-sidebar-surface").getBoundingClientRect().right,
+      inspector: document.querySelector('[data-testid="inspector"]').getBoundingClientRect().left,
+    }));
+    const y = 620;
+    const [sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel] = await Promise.all([
+      pixel(edges.sidebar - 1, y),
+      pixel(edges.sidebar - 12, y),
+      pixel(edges.sidebar + 12, y),
+      pixel(edges.inspector, y),
+      pixel(edges.inspector + 12, y),
+    ]);
+    const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel });
+    if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8 || apart(inspectorLine, inspectorPanel) < 8 || apart(inspectorLine, chat) < 8)
+      throw new Error(`A panel border does not show at rest: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3 || apart(inspectorPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
+    await shot(`22-sash-rest-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  // Nothing covers the grip: it sits over the content on both sides of each edge.
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const box = await sash.boundingBox();
+    const onTop = await sash.evaluate((element, points) => points.every(([x, y]) => document.elementFromPoint(x, y) === element), [
+      [box.x + 0.5, 620],
+      [box.x + box.width - 0.5, 620],
+    ]);
+    if (!onTop) throw new Error(`Something covers the sash ${await sash.getAttribute("aria-label")}`);
   }
   const sidebarBox = await sidebarSash.boundingBox();
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
-  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(500);
+  if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(250);
   const hovered = await look(sidebarSash);
-  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
-  for (const mode of ["light", "dark"]) {
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
+  for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(200);
+    const lit = (await look(sidebarSash)).strip;
+    if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -790,12 +908,12 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
   await page.waitForTimeout(200);
   const dragged = await look(inspectorSash);
-  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
   await page.mouse.move(640, 500);
   if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]'), "::before").backgroundColor === "rgba(0, 0, 0, 0)");
   await inspectorSash.dblclick();
   await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
   await inspectorSash.focus();
@@ -1263,6 +1381,11 @@ const settings = page.getByTestId("settings");
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
+// Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
+const capabilityToggles = settings.getByRole("button", { name: /^Capacità/ });
+await capabilityToggles.first().click();
+await themeShots("11b-connections-capabilities");
+await capabilityToggles.first().click();
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 // Issue #301: the language sits in Generale and changes the page at once.
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano", checked: true }).waitFor();
@@ -2406,6 +2529,88 @@ const presenceReply = await presenceAnswer.innerText();
 if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
 await presenceAnswer.scrollIntoViewIfNeeded();
 await shot("16d-presence-coordinator");
+// Issue #328: editorial typography. A message and its titles read in Newsreader, the controls in Inter and the code in
+// JetBrains Mono, all bundled with the app: the computed families use the tokens and each font is really loaded.
+// Every provider theme, light and dark, and the narrow window keep the 18px body inside the chat.
+await composer().fill("## Annullare un ordine\n\nUn ordine pagato e annullato va in revisione, come in `CancelPaidOrder.swift`.\n\n```swift\nlet stato = ordine.annulla()\n```");
+await page.keyboard.press("Enter");
+const typeMessage = page.locator(".chat-markdown--user").filter({ hasText: "Annullare un ordine" }).last();
+await typeMessage.locator("pre code").waitFor({ timeout: 20_000 });
+await page.getByText("Questa risposta arriva dal server di prova").last().waitFor({ timeout: 30_000 });
+const typography = () =>
+  page.evaluate(async () => {
+    await document.fonts.ready;
+    const user = [...document.querySelectorAll(".chat-markdown--user")].filter((node) => node.textContent.includes("Annullare un ordine")).pop();
+    const reply = [...document.querySelectorAll(".chat-markdown:not(.chat-markdown--user)")].filter((node) => node.textContent.includes("server di prova")).pop();
+    const style = (node) => {
+      if (!node) return null;
+      const s = getComputedStyle(node);
+      return { family: s.fontFamily, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, optical: s.fontOpticalSizing };
+    };
+    const loaded = (family) => [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+    return {
+      message: style(reply?.querySelector("p") ?? reply),
+      title: style(user?.querySelector("h2")),
+      button: style(document.querySelector("form.chat-composer-surface button")),
+      code: style(user?.querySelector("pre code")),
+      inline: style(user?.querySelector("p code")),
+      fonts: Object.fromEntries(
+        [
+          ["Newsreader Variable", '400 18px "Newsreader Variable"'],
+          ["Newsreader Variable 500", '500 24px "Newsreader Variable"'],
+          ["Inter Variable", '500 13px "Inter Variable"'],
+          ["JetBrains Mono Variable", '400 14px "JetBrains Mono Variable"'],
+        ].map(([name, font]) => [name, document.fonts.check(font, "Aa") && loaded(name.replace(/ 500$/, ""))]),
+      ),
+    };
+  });
+const types = await typography();
+const firstFamily = (style) => style?.family.split(",")[0].replace(/["']/g, "").trim();
+if (firstFamily(types.message) !== "Newsreader Variable" || types.message.size !== "18px" || types.message.optical !== "auto") throw new Error(`Message typography: ${JSON.stringify(types.message)}`);
+if (Math.abs(parseFloat(types.message.lineHeight) / 18 - 1.68) > 0.01) throw new Error(`Message line height: ${JSON.stringify(types.message)}`);
+if (firstFamily(types.title) !== "Newsreader Variable" || types.title.weight !== "500") throw new Error(`Title typography: ${JSON.stringify(types.title)}`);
+const titleLeading = parseFloat(types.title.lineHeight) / parseFloat(types.title.size);
+if (titleLeading < 1.3 || titleLeading > 1.35) throw new Error(`Title line height: ${JSON.stringify(types.title)}`);
+if (firstFamily(types.button) !== "Inter Variable") throw new Error(`Button typography: ${JSON.stringify(types.button)}`);
+if (firstFamily(types.code) !== "JetBrains Mono Variable" || firstFamily(types.inline) !== "JetBrains Mono Variable") throw new Error(`Code typography: ${JSON.stringify([types.code, types.inline])}`);
+const missingFonts = Object.entries(types.fonts).filter(([, ok]) => !ok).map(([name]) => name);
+if (missingFonts.length) throw new Error(`Fonts not loaded: ${missingFonts.join(", ")}`);
+// Nothing leaves the chat: no horizontal page scroll, every message inside the timeline, no text wider than its box.
+const typographyOverflow = () =>
+  page.evaluate(() => {
+    const timeline = document.querySelector(".chat-timeline-scroll")?.getBoundingClientRect();
+    const problems = [];
+    if (document.documentElement.scrollWidth > innerWidth) problems.push("page scroll");
+    for (const node of document.querySelectorAll(".chat-timeline-scroll .chat-markdown")) {
+      const box = node.getBoundingClientRect();
+      if (!box.width) continue;
+      if (timeline && (box.left < timeline.left - 1 || box.right > timeline.right + 1)) problems.push(`message outside the timeline: ${node.textContent.slice(0, 40)}`);
+      for (const child of node.querySelectorAll(":scope > :not(pre, table, .chat-compare)")) {
+        if (child.scrollWidth > child.clientWidth + 1) problems.push(`text wider than its box: ${child.textContent.slice(0, 40)}`);
+      }
+    }
+    return problems;
+  });
+const typeLook = await lookOf();
+await typeMessage.scrollIntoViewIfNeeded();
+for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok", "droid", "devin", "opencode", "pi"]) {
+  for (const dark of [false, true]) {
+    await setLookTo(provider, dark);
+    const problems = await typographyOverflow();
+    if (problems.length) throw new Error(`Typography with ${provider} ${dark ? "dark" : "light"}: ${problems.join("; ")}`);
+    if (provider === "codex" || provider === "claudeAgent") await shot(`16d1-typography-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLookTo(typeLook.provider, typeLook.dark);
+// In a narrow window the inspector floats over the chat: closed, the messages are what the shot shows.
+if (await page.getByTestId("inspector").count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await typeMessage.scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);
+const narrowProblems = await typographyOverflow();
+if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
+await shot("16d2-typography-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 // G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
 // "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();

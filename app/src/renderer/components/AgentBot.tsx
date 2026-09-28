@@ -47,11 +47,11 @@ export function AgentBot({
   const svg = useRef<SVGSVGElement>(null);
   const handle = useRef<ReturnType<typeof registerBot> | null>(null);
   const previous = useRef<AgentActivity | null>(null);
-  const state = { shape, animation: look.animation, expression: look.expression, followsCursor: look.followsCursor, detail, seed: number };
+  const state = { shape, animation: look.animation, expression: look.expression, detail, seed: number };
 
   // The first frame, drawn by React: the still pose of the expression, the same the loop starts from.
   const still = useMemo(
-    () => renderPose(botPose({ ...state, t: 0, look: null, moving: false })),
+    () => renderPose(botPose({ ...state, t: 0, moving: false })),
     [shape, look.animation, look.expression, detail, number],
   );
 
