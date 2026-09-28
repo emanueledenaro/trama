@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { dirname, join } from "node:path";
 import type { LearnedSkillView, LearningReviewRun, LearningSettings, LearningView } from "@shared/domain";
 import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
+import { curatorRunView } from "@shared/curatorReport";
 import { CuratorStateStore, DEFAULT_CURATOR_CONFIG, type CuratorConfig } from "./curator";
 import {
   applyMemoryProposal,
@@ -282,7 +283,8 @@ export class ProjectLearning {
       reviews: this.reviews(),
       curator: {
         lastRunAt: curator.lastRunAt,
-        lastRunSummary: curator.lastRunSummary,
+        lastRun: curatorRunView(curator.lastReport),
+        firstRunPending: curator.lastRunAt !== null && curator.lastReport === null && curator.runCount === 0,
         paused: curator.paused,
         runCount: curator.runCount,
         backups: existsSync(this.backupsRoot) ? readdirSync(this.backupsRoot).sort().reverse() : [],
