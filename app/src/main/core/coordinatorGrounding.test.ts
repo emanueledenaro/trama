@@ -234,6 +234,16 @@ describe("currentStateText: the state the Coordinator reads every turn (issue #2
     expect(currentStateText(document, "r3", "base")).toContain("pronto per la revisione della persona");
   });
 
+  it("says a candidate that lags the worktree is not the work of now (issue #388)", () => {
+    const document = shop();
+    const assignment = work(document, "Luca", "Sources/Orders", 2);
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    assignment.worktreeSnapshot = { snapshotId: "after-the-fix", at: "2026-09-28T16:26:00.000Z" };
+    const text = currentStateText(document, "r3");
+    expect(text).toContain(`- ${ready.id} di Luca (incarico ${assignment.id}): non verificato, non è pronto per la persona (la copia di lavoro è cambiata dopo questo candidato`);
+    expect(text).not.toContain("pronto per la revisione della persona");
+  });
+
   it("says when there is no mandate, plan, candidate or button", () => {
     const document = emptyDocument("vuoto");
     request(document, "r1");

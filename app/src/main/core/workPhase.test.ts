@@ -276,6 +276,29 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     ]);
   });
 
+  it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {
+    const { document, assignment } = withAssignment();
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    expect(workState(document, "r3").phase).toBe("candidate");
+    // The developer's last turn changed the worktree and Trama could not declare the new candidate.
+    assignment.worktreeSnapshot = { snapshotId: "snap-after-the-fix", at: at(9).toISOString() };
+    const state = workState(document, "r3");
+    expect(state).toMatchObject({
+      phase: "verification",
+      verification: { undeclared: [assignment.id], unverified: [], outdated: [assignment.id] },
+      moves: [{ move: "verifyCandidate", actor: "coordinator", targetId: null }],
+    });
+    const text = workStateText(state);
+    expect(text).toContain(`Incarichi con la copia di lavoro cambiata dopo l'ultimo candidato: ${assignment.id}.`);
+    expect(text).toContain("non dire che il lavoro è finito");
+    expect(text).not.toContain("Incarichi conclusi senza candidato");
+    // The candidate of the worktree as it is now takes the work back to the person.
+    assignment.worktreeSnapshot = { snapshotId: ready.snapshotId, at: at(10).toISOString() };
+    expect(workState(document, "r3").moves).toEqual([
+      { move: "reviewCandidate", actor: "person", label: "Verifica il candidato", targetId: ready.id, url: null, message: null },
+    ]);
+  });
+
   it("is merged when every pull request of the work is merged, with no move", () => {
     const { document, assignment } = withAssignment();
     const done = candidate(document, assignment.id, "pass", "approved");
