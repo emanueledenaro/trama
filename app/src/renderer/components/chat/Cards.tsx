@@ -796,7 +796,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         ) : null}
       </Field>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>{assignment.tools.includes("edits") ? "Worktree proprio" : "Sola lettura"}</span>
+        <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>
         {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
       </div>
       {assignment.workspace ? (
