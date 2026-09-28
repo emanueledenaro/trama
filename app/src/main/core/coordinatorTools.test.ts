@@ -6,6 +6,7 @@ import { placeGrillingQuestion } from "@shared/grilling";
 import { FIXED_ROLES } from "@shared/roster";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
+import { proposeGoal, updateGoal } from "./goals";
 import { DutyRequestError } from "./duties";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, decide, grantMandate, revokeMandate } from "./pact";
@@ -108,6 +109,30 @@ describe("Coordinator tools for the full team (W09)", () => {
     expect(accepted).toMatchObject({ specialistID: ada!.id, status: expect.any(String) });
     expect(started).toEqual([accepted.assignmentID]);
     expect(COORDINATOR_TOOLS.find((t) => t.name === "assign_task")!.description).toMatch(/only to developers/);
+  });
+
+  it("assign_task refuses work for a goal the Coordinator only proposed, until the person confirms it (A06)", async () => {
+    const document = emptyDocument("p");
+    const started: string[] = [];
+    const context = {
+      ...teamContext(document),
+      snapshot: { modules: [{ id: "Sources/Orders", name: "Orders", relativePath: "Sources/Orders", files: [] }] },
+      startAssignment: (id: string) => void started.push(id),
+    } as unknown as ToolContext;
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+    proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: ["Sources/Orders"] }] });
+    confirmTeam(document, document.team.proposals[0]!.id, null, null);
+    const goal = proposeGoal(document, { title: "Esportare gli ordini", outcome: "Il supporto scarica gli ordini", examples: [{ kind: "accepted", text: "Un CSV con l'ordine 42" }] });
+    const order = { ...CONTRACT, specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: ["git_status"], tools: ["edits"], instructions: "i", goalID: goal.id };
+
+    const refused = await runCoordinatorTool("assign_task", order, context);
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("goal_not_confirmed");
+    expect(started).toEqual([]);
+
+    updateGoal(document, goal.id, { status: "open" });
+    const accepted = parse(await runCoordinatorTool("assign_task", order, context));
+    expect(started).toEqual([accepted.assignmentID]);
   });
 
   it("assign_task delivers one unblocked slice of an approved breakdown, with its issue (M05)", async () => {

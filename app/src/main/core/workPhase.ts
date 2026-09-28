@@ -8,6 +8,7 @@ import type {
   ProjectDocument,
   SliceView,
   SpecialistAssignment,
+  TechnicalBlock,
   WorkPhase,
   WorkPlan,
 } from "@shared/domain";
@@ -45,6 +46,8 @@ export interface WorkState {
   blocker: string | null;
   /** The same reason for the person, without ids, branches or file lists (issue #241); set only in the blocked phase. */
   why?: string | null;
+  /** The technical block the Coordinator resolves by itself within the mandate (A06, Q3); absent for other blocks. */
+  block?: TechnicalBlock;
   moves: MoveOption[];
   /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
   slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number; limit: number };
@@ -161,6 +164,18 @@ const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", 
 
 const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !WAITING_BLOCKERS.includes(b.code));
 
+/**
+ * Candidate blockers that are technical (A06, Q3): a red check, the reviewers' blocking finding, a conflict between
+ * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the others (a Pact
+ * decision that changed, a choice left open, an external effect) wait for the person.
+ */
+const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
+  CHECK_FAILED: "checkFailed",
+  GATE_BLOCKED: "checkFailed",
+  WORKTREE_CONFLICT: "worktreeConflict",
+  REMOTE_CONFLICT: "worktreeConflict",
+};
+
 /** Whose work an assignment is, in the person's words and without the article: "lavoro di Luca su S2". */
 function workOf(document: ProjectDocument, assignment: SpecialistAssignment): string {
   const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name;
@@ -250,7 +265,13 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     if (may("plan")) add(coordinator("preparePlan"));
   };
   const questionList = questionViews(document, assignments);
-  const finish = (phase: WorkPhase | null, blocker: string | null = null, verification?: VerificationTargets, why: string | null = null): WorkState => {
+  const finish = (
+    phase: WorkPhase | null,
+    blocker: string | null = null,
+    verification?: VerificationTargets,
+    why: string | null = null,
+    block?: TechnicalBlock,
+  ): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
     if (pendingMandate) add(person("grantMandate", PERSON_MOVE_LABELS.grantMandate, pendingMandate.id));
@@ -258,6 +279,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
       phase,
       blocker,
       ...(blocker ? { why: why ?? blocker } : {}),
+      ...(blocker && block ? { block } : {}),
       moves,
       ...(slices ? { slices } : {}),
       ...(verification ? { verification } : {}),
@@ -269,7 +291,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   if (assignments.length) {
     const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable });
     if (state) {
-      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification, state.why);
+      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification, state.why, state.block);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
       assignWork();
       const unfinished = views.some((v) => v.state !== "done");
@@ -297,7 +319,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   }
   if (grilled) {
     if (!open.length) {
-      if (!understandingConfirmed(document, scope, questions)) {
+      if (!understandingConfirmed(document, scope, questions, requestId!)) {
         add(person("confirmUnderstanding", PERSON_MOVE_LABELS.confirmUnderstanding, null, { message: "Confermo la comprensione condivisa: procedi." }));
       }
       preparePlan();
@@ -344,13 +366,18 @@ function readyPlan(
 }
 
 /**
- * Whether the person confirmed the shared understanding with the step's button (W04) after every grilling question
- * of the work was asked. A typed message is not recorded as the confirmation, and a question asked later needs a new one.
+ * Whether the person confirmed the shared understanding with the step's button (W04), or the Coordinator confirmed it
+ * within the mandate (A06), after every grilling question of the work was asked. A typed message is not recorded as the
+ * confirmation, a question asked later needs a new one, and a confirmation the person corrected no longer counts.
  */
-function understandingConfirmed(document: ProjectDocument, scope: Set<string>, questions: DecisionRequest[]): boolean {
+function understandingConfirmed(document: ProjectDocument, scope: Set<string>, questions: DecisionRequest[], requestId: string): boolean {
   const index = (id: string | null) => document.requests.findIndex((r) => r.id === id);
   const lastAsked = Math.max(-1, ...questions.map((q) => index(q.requestId)));
-  return document.requests.some((r, i) => i > lastAsked && scope.has(r.id) && r.step?.move === "confirmUnderstanding");
+  if (document.requests.some((r, i) => i > lastAsked && scope.has(r.id) && r.step?.move === "confirmUnderstanding")) return true;
+  const askedAt = questions.reduce((latest, q) => (q.askedAt > latest ? q.askedAt : latest), "");
+  return (document.autonomousSteps ?? []).some(
+    (step) => step.move === "confirmUnderstanding" && !step.correction && step.at > askedAt && step.requestId !== null && (scope.has(step.requestId) || step.requestId === requestId),
+  );
 }
 
 function answerQuestions(open: DecisionRequest[]): MoveOption {
@@ -362,7 +389,7 @@ function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
   moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
-): { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets } | null {
+): { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets; block?: TechnicalBlock } | null {
   // A developer's question pauses its work (W06): the Coordinator answers it before its other moves.
   const paused = assignments.filter((a) => a.status === "paused");
   for (const assignment of paused) {
@@ -386,7 +413,7 @@ function assignedWork(
       moves.assignWork();
       const reason = assignment.status === "failed" ? `non è riuscito${assignment.failure ? `: ${assignment.failure}` : "."}` : "è stato fermato.";
       const outcome = assignment.status === "failed" ? "non è riuscito" : "è stato fermato";
-      return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}`, why: `Il ${workOf(document, assignment)} ${outcome}.` };
+      return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}`, why: `Il ${workOf(document, assignment)} ${outcome}.`, block: "stalledAssignment" };
     }
     if (!candidate) continue;
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
@@ -394,7 +421,12 @@ function assignedWork(
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     if (blocker) {
       moves.assignWork();
-      return { phase: "blocked", blocker: candidateBlockerText(candidate, blocker), why: candidateBlockerWhy(workOf(document, assignment), blocker) };
+      return {
+        phase: "blocked",
+        blocker: candidateBlockerText(candidate, blocker),
+        why: candidateBlockerWhy(workOf(document, assignment), blocker),
+        ...(TECHNICAL_BLOCKS[blocker.code] ? { block: TECHNICAL_BLOCKS[blocker.code] } : {}),
+      };
     }
     // A gate that failed asks for the review again, not for new work.
     const gateFailed = inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_FAILED");
@@ -404,6 +436,7 @@ function assignedWork(
         phase: "blocked",
         blocker: `La revisione tecnica del candidato ${candidate.id} chiede modifiche.`,
         why: `La revisione tecnica chiede modifiche al ${workOf(document, assignment)}.`,
+        block: "checkFailed",
       };
     }
   }

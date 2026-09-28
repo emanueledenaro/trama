@@ -1,4 +1,4 @@
-import type { ConversationEvent, CoordinatorRequest, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousStep, ConversationEvent, CoordinatorRequest, DelegableMove, NextMove, RoundRecord, WorkEvent } from "./domain";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -6,14 +6,17 @@ import type { ConversationEvent, CoordinatorRequest, NextMove, RoundRecord, Work
  * listed here with name, time, what started them and outcome.
  */
 
-/** How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, or failed on an error. */
-export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed";
+/**
+ * How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, or failed on an error.
+ * A step the Coordinator took for the person (A06) is made, or corrected by the person.
+ */
+export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed" | "corrected";
 
 export interface ActivityEntry {
   /** The request of the move, or the round's id. */
   id: string;
-  /** An automatic move of the Coordinator, or a round of continuous work (A05). */
-  kind: "move" | "round";
+  /** An automatic move of the Coordinator, a round of continuous work (A05), or a person's step the Coordinator took (A06). */
+  kind: "move" | "round" | "step";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round. */
@@ -37,6 +40,15 @@ export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
   stalled: "Non riuscita",
   stopped: "Fermata",
   failed: "Errore",
+  corrected: "Corretto",
+};
+
+/** The steps the Coordinator takes for the person within the mandate (A06), as Activity and the recap name them. */
+export const AUTONOMOUS_STEP_LABELS: Record<DelegableMove, string> = {
+  confirmUnderstanding: "Comprensione confermata dal Coordinatore",
+  confirmTeam: "Team confermato dal Coordinatore",
+  confirmSeams: "Seam confermati dal Coordinatore",
+  confirmSlices: "Fette confermate dal Coordinatore",
 };
 
 /** Whether a request is a turn Trama started by itself with continuous work (W04), not a message of the person. */
@@ -50,8 +62,13 @@ function outcomeOf(request: CoordinatorRequest): { outcome: ActivityOutcome; det
       return { outcome: "stopped", detail: null };
     case "failed":
       return { outcome: "failed", detail: request.failure };
-    case "completed":
-      return request.step?.stalled ? { outcome: "stalled", detail: request.step.stalled } : { outcome: "done", detail: null };
+    case "completed": {
+      if (request.step?.stalled) return { outcome: "stalled", detail: request.step.stalled };
+      // A move that resolved a technical block says the outcome Trama read at the end of the turn (A06).
+      const outcome = request.step?.block?.outcome;
+      if (outcome) return { outcome: outcome.resolved ? "done" : "stalled", detail: outcome.detail };
+      return { outcome: "done", detail: null };
+    }
   }
 }
 
@@ -74,7 +91,12 @@ export const ROUND_LABEL = "Giro del Coordinatore";
  * The automatic moves and the rounds with an outcome of the project, newest first, from the requests, the move lines
  * Trama recorded and the rounds. Pure.
  */
-export function activityLog(requests: CoordinatorRequest[], events: ConversationEvent[], rounds: RoundRecord[] = []): ActivityEntry[] {
+export function activityLog(
+  requests: CoordinatorRequest[],
+  events: ConversationEvent[],
+  rounds: RoundRecord[] = [],
+  steps: AutonomousStep[] = [],
+): ActivityEntry[] {
   const labels = new Map<string, string>();
   for (const event of events) {
     const content = event.content;
@@ -110,7 +132,22 @@ export function activityLog(requests: CoordinatorRequest[], events: Conversation
       detail: round.detail,
     }),
   );
-  if (!done.length) return moves;
+  const taken = [...steps].reverse().map(
+    (step): ActivityEntry => ({
+      id: step.id,
+      kind: "step",
+      requestId: step.requestId,
+      move: step.move,
+      trigger: null,
+      label: AUTONOMOUS_STEP_LABELS[step.move],
+      goalId: step.goalId,
+      startedAt: step.at,
+      endedAt: null,
+      outcome: step.correction ? "corrected" : "done",
+      detail: step.correction ? `${step.summary} Correzione: ${step.correction.note}` : step.summary,
+    }),
+  );
+  if (!done.length && !taken.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...taken].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

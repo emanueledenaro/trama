@@ -161,23 +161,15 @@ describe("team flow", () => {
     });
     await controller.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
     for (const question of [...document.decisionRequests]) await controller.answerDecision(question.id, 1, null);
-    // Every question is answered, but the shared understanding is the person's to confirm: nothing starts.
-    await idle();
-    expect(automatic()).toEqual([]);
-
-    await controller.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
-    const summary = document.requests.at(-1)!;
-    await until(() => Boolean(project.nextSteps[summary.id]));
-    expect(project.nextSteps[summary.id]).toMatchObject({ move: "confirmUnderstanding", label: "Conferma la comprensione" });
-    expect(automatic()).toEqual([]);
-    await controller.takeStep(summary.id);
-    const confirmation = document.requests.find((r) => r.step?.move === "confirmUnderstanding")!;
-    expect(confirmation).toMatchObject({ text: "Confermo la comprensione condivisa: procedi.", step: { by: "person" } });
+    // Every question is answered: within the mandate the Coordinator confirms the shared understanding by itself (A06).
+    await until(() => (document.autonomousSteps ?? []).some((s) => s.move === "confirmUnderstanding"), 20_000);
+    expect(document.requests.some((r) => r.step?.move === "confirmUnderstanding")).toBe(false);
 
     // Trama starts the plan by itself: a line in the chat, not a message of the person.
-    await until(() => document.plans.length === 1 && document.plans[0]!.status === "seams", 20_000);
+    await until(() => document.plans.length === 1, 20_000);
     const plan = document.plans[0]!;
     const planning = automatic()[0]!;
+    await until(() => planning.state === "completed", 20_000);
     expect(planning).toMatchObject({ text: "Prepara il piano.", step: { move: "preparePlan", by: "trama" }, state: "completed" });
     expect(plan.requestId).toBe(planning.id);
     const line = document.events.find((e) => e.requestId === planning.id && e.content.type === "card");
@@ -186,18 +178,14 @@ describe("team flow", () => {
     const sent = document.events.find((e) => e.requestId === planning.id && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore");
     expect(sent?.content).toMatchObject({ detail: expect.stringContaining("mossa automatica: Prepara il piano") });
 
-    // The plan proposes the seams to test (to-spec, M04): confirming them is the person's, so the work waits.
-    await idle();
-    expect(automatic()).toHaveLength(1);
-    expect(workState(document, document.requests.at(-1)!.id).moves).toEqual([expect.objectContaining({ move: "confirmSeams", actor: "person" })]);
-    controller.answerSeams({ planId: plan.id, confirmed: true, note: null });
-
-    // The spec written, to-tickets splits it (M05): the breakdown is the person's to approve, so the work waits again.
-    await until(() => plan.slicing?.status === "proposed", 20_000);
-    await idle();
-    expect(automatic()).toHaveLength(1);
-    expect(workState(document, document.requests.at(-1)!.id)).toMatchObject({ phase: "slices", moves: [{ move: "confirmSlices", actor: "person" }] });
-    await controller.answerSlices({ planId: plan.id, confirmed: true, note: null });
+    // The seams to-spec proposes (M04) and the slices to-tickets proposes (M05) are confirmed by the Coordinator within the
+    // mandate, each recorded as its own step and told in Activity (A06): the person pressed no button.
+    await until(() => plan.slicing?.status === "approved", 30_000);
+    expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
+    expect(plan.slicing!.approvedBy).toBe("coordinator");
+    expect((document.autonomousSteps ?? []).map((s) => s.move)).toEqual(["confirmUnderstanding", "confirmSeams", "confirmSlices"]);
+    const told = document.events.filter((e) => e.origin === "coordinator" && e.content.type === "activity").map((e) => (e.content as { title: string }).title);
+    expect(told).toEqual(expect.arrayContaining(["Comprensione confermata dal Coordinatore", "Seam confermati dal Coordinatore", "Fette confermate dal Coordinatore"]));
 
     // Then Trama assigns the first unblocked slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
     const specialist = findSpecialist(document, "Ada")!;

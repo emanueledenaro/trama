@@ -129,7 +129,7 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
         </div>
       </Section>
       {answer ? (
-        <p className="mt-1 text-ui-xs text-muted-foreground">{answer.confirmed ? "Confermati da te." : `Corretti da te: «${answer.note ?? ""}»`}</p>
+        <p className="mt-1 text-ui-xs text-muted-foreground">{answer.confirmed ? (answer.by === "coordinator" ? "Confermati dal Coordinatore dentro il mandato. Puoi correggerli da Attività." : "Confermati da te.") : `Corretti da te: «${answer.note ?? ""}»`}</p>
       ) : null}
 
       {plan.status === "seams" ? (

@@ -115,17 +115,23 @@ function moveLine(label: string, outcome: ActivityOutcome, detail: string | null
   return `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
 }
 
+/** A round, or a step the Coordinator took for the person (A06): "Seam confermati dal Coordinatore: ...". */
+function stepLine(entry: { label: string; outcome: ActivityOutcome; detail: string | null }): string {
+  const corrected = entry.outcome === "corrected" ? " (corretto da te)" : "";
+  return `${entry.label}${corrected}: ${entry.detail ?? ""}`.trim();
+}
+
 /**
  * "Cosa ho fatto": the moves and rounds in Activity since the last recap, oldest first, and the issues the Coordinator
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
-  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [])
+  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], document.autonomousSteps ?? [])
     .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({
     at: entry.startedAt,
-    text: entry.kind === "round" ? `${entry.label}: ${entry.detail ?? ""}`.trim() : moveLine(entry.label, entry.outcome, entry.detail),
+    text: entry.kind === "move" ? moveLine(entry.label, entry.outcome, entry.detail) : stepLine(entry),
     number: null,
     url: null,
   }));

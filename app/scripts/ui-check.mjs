@@ -1066,12 +1066,14 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // The check stops that move, which belongs to the other dialog, before the goal dialog's own work.
 await page.getByRole("button", { name: "Interrompi" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama went on before the person confirmed the shared understanding");
+// A06: the corrected mandate allows planning, so the Coordinator confirms the shared understanding by itself: the
+// person has no step button to press, and the next turn of the goal dialog ends with Trama starting the plan.
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso");
 await page.keyboard.press("Enter");
-const confirmStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma la comprensione" });
-await confirmStep.waitFor({ timeout: 20_000 });
-await confirmStep.click();
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+if (await page.getByTestId("next-step").getByRole("button", { name: "Conferma la comprensione" }).count()) {
+  throw new Error("The shared understanding still waits for the person within a mandate that allows planning");
+}
 // Issue #241: the automatic move is in the status line, "Sto preparando il piano", with its stop on the right before
 // the person's move; the chat keeps no row for it.
 const stopMove = statusLine.getByRole("button", { name: "Ferma: Prepara il piano" });
@@ -1757,11 +1759,29 @@ await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await send("[piano]");
-await (await openWaiting("seams")).getByRole("button", { name: "Conferma i seam" }).click({ timeout: 20_000 });
-await (await openWaiting("slices")).getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
-await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// A06: the mandate now allows planning, so the Coordinator confirms the seams and the slices by itself. The plan card
+// says who confirmed them, and Activity lists each step with a Correggi on the right.
+await page.getByText("Fette confermate dal Coordinatore").last().waitFor({ timeout: 30_000 });
+if (await page.locator('[data-testid="waiting-reference"]:is([data-waiting-kind="seams"], [data-waiting-kind="slices"])').count()) {
+  throw new Error("The seams or the slices still wait for the person within a mandate that allows planning");
+}
 const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
 await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
+await sliceSpec.getByText(/Confermati dal Coordinatore dentro il mandato/).scrollIntoViewIfNeeded();
+await themeShots("18f-plan-confirmed-by-coordinator");
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+const stepRows = page.getByTestId("activity-log").getByTestId("activity-step");
+await stepRows.filter({ hasText: "Seam confermati dal Coordinatore" }).first().waitFor({ timeout: 20_000 });
+const slicesStep = stepRows.filter({ hasText: "Fette confermate dal Coordinatore" }).first();
+await slicesStep.waitFor();
+await themeShots("18g-activity-steps");
+await slicesStep.getByRole("button", { name: "Correggi" }).click();
+await slicesStep.getByLabel("Correzione del passo").fill("Tieni insieme S2 e S3: toccano lo stesso modulo.");
+const correctActions = await slicesStep.locator(".cta-row").last().locator("button").allTextContents();
+if (correctActions.join("|") !== "Annulla|Invia la correzione") throw new Error(`Correction buttons out of order: ${correctActions.join(", ")}`);
+await themeShots("18h-activity-step-correct");
+await slicesStep.getByRole("button", { name: "Annulla" }).click();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
 await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });

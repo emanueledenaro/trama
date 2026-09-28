@@ -114,6 +114,9 @@ import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
   automaticMoveSection,
+  BLOCK_LABELS,
+  blockOutcome,
+  blockOutcomeActivity,
   choicesWithoutCard,
   confirmationFeedback,
   type ContinuationGuards,
@@ -130,6 +133,16 @@ import {
   type WorkEvent,
 } from "./core/continuousWork";
 import { openGrillingQuestions } from "@shared/grilling";
+import {
+  AUTONOMOUS_STEP_DETAIL,
+  correctAutonomousStep,
+  correctionMessage,
+  type DelegatedStep,
+  delegatedSteps,
+  planWorkStarted,
+  recordAutonomousStep,
+  STEP_LABELS,
+} from "./core/autonomousCycle";
 import {
   archiveGoal,
   createGoal,
@@ -2338,7 +2351,13 @@ export class TramaController {
       appendEvent(
         document,
         "trama",
-        { type: "card", kind: "automaticStep", title: COORDINATOR_MOVES[automatic].label, detail: AUTOMATIC_MOVE_DETAIL, referenceId: request.id },
+        {
+          type: "card",
+          kind: "automaticStep",
+          title: step?.block ? BLOCK_LABELS[step.block.kind] : COORDINATOR_MOVES[automatic].label,
+          detail: step?.block ? `${step.block.why} ${AUTOMATIC_MOVE_DETAIL}` : AUTOMATIC_MOVE_DETAIL,
+          referenceId: request.id,
+        },
         request.id,
       );
     } else {
@@ -2414,7 +2433,7 @@ export class TramaController {
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
       sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
-      if (automatic) sections.push(automaticMoveSection(automatic));
+      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
@@ -2512,6 +2531,12 @@ export class TramaController {
       if (stalled && request.step) {
         request.step.stalled = stalled.reason;
         request.nextStep = { move: stalled.move, reason: stalled.reason, declaredAt: new Date().toISOString() };
+      }
+      // A technical block the move resolved: the person is told the outcome afterwards, in Activity (A06, Q3).
+      const unblocked = blockOutcome(document, request.id);
+      if (unblocked && request.step?.block) {
+        request.step.block.outcome = { ...unblocked, at: new Date().toISOString() };
+        appendEvent(document, "coordinator", blockOutcomeActivity(request.step.block, unblocked), request.id);
       }
     } catch (error) {
       if (closed()) return;
@@ -2742,8 +2767,110 @@ export class TramaController {
     this.startAutomaticMove(project, [{ requestId, event: "turnEnded" }, ...deferred]);
   }
 
+  /**
+   * Takes the person's steps the mandate lets the Coordinator take by itself (A06): the team, the shared understanding,
+   * the seams and the slices. Each is recorded as the Coordinator's and told in Activity. Returns what was taken.
+   */
+  private takeDelegatedSteps(project: ActiveProjectState): string[] {
+    const document = project.document;
+    const taken: string[] = [];
+    // One step can open the next (the understanding opens the plan): the loop stops when no new step is possible.
+    for (let pass = 0; pass < 4; pass++) {
+      const steps = delegatedSteps(document, this.continuationGuards(project));
+      if (!steps.length) break;
+      for (const step of steps) {
+        const summary = this.takeDelegatedStep(project, step);
+        if (!summary) continue;
+        const record = recordAutonomousStep(document, step, summary);
+        appendEvent(
+          document,
+          "coordinator",
+          { type: "activity", title: STEP_LABELS[step.move], detail: `${summary}\n${AUTONOMOUS_STEP_DETAIL}`, tone: "info" },
+          step.requestId,
+        );
+        taken.push(STEP_LABELS[record.move]);
+      }
+    }
+    if (taken.length) this.changedIn(project);
+    return taken;
+  }
+
+  /** Makes one delegated step on the records, as the person's button would; returns what was confirmed, or null. */
+  private takeDelegatedStep(project: ActiveProjectState, step: DelegatedStep): string | null {
+    const document = project.document;
+    const plan = document.plans.find((p) => p.id === step.targetId);
+    switch (step.move) {
+      case "confirmTeam": {
+        const created = confirmTeam(document, step.targetId!, null, null);
+        return `Team: ${created.map((s) => s.name).join(", ")}.`;
+      }
+      case "confirmUnderstanding": {
+        const request = document.requests.find((r) => r.id === step.requestId);
+        return `Comprensione della richiesta "${(request?.text ?? "").replace(/\s+/g, " ").slice(0, 120)}".`;
+      }
+      case "confirmSeams": {
+        if (!plan?.spec || plan.status !== "seams") return null;
+        this.applySeamsAnswer(project, plan, { confirmed: true, note: null, by: "coordinator" });
+        return `Seam del piano ${plan.id}: ${plan.spec.seams.map((seam) => seam.seam).join("; ")}.`;
+      }
+      case "confirmSlices": {
+        if (!plan || plan.slicing?.status !== "proposed") return null;
+        const tickets = plan.slicing.tickets.map((t) => `${t.id} ${t.title}`).join("; ");
+        void this.approveSlices(project, plan, "coordinator").catch((error) => this.fail(error));
+        return `Fette del piano ${plan.id}: ${tickets}.`;
+      }
+    }
+  }
+
+  /**
+   * The person corrects a step the Coordinator took within the mandate (A06), in their own words: the correction is
+   * recorded and the work starts again from that step. The seams and the slices are redrawn with the correction while no
+   * work started on them; otherwise, and for the understanding and the team, the correction goes to the Coordinator.
+   */
+  async correctAutonomousStep(stepId: string, note: string): Promise<boolean> {
+    const project = this.requireProject();
+    const document = project.document;
+    const existing = document.autonomousSteps?.find((s) => s.id === stepId);
+    const plan = existing?.targetId ? document.plans.find((p) => p.id === existing.targetId) : undefined;
+    if (plan && this.planners.has(existing?.move === "confirmSlices" ? `${plan.id}:slices` : plan.id)) {
+      throw new DomainError("Il Coordinatore sta ancora scrivendo questo passo: correggilo quando ha finito.");
+    }
+    const step = correctAutonomousStep(document, stepId, note);
+    const redraw = plan && !planWorkStarted(document, plan) ? step.move : null;
+    appendEvent(
+      document,
+      "person",
+      { type: "activity", title: `${STEP_LABELS[step.move]}: corretto`, detail: step.correction!.note, tone: "info" },
+      step.requestId,
+    );
+    if (redraw === "confirmSeams" && plan?.spec) {
+      plan.spec.sections = null;
+      plan.slicing = null;
+      this.applySeamsAnswer(project, plan, { confirmed: false, note: step.correction!.note, by: null });
+      return true;
+    }
+    if (redraw === "confirmSlices" && plan?.slicing?.status === "approved") {
+      const published = plan.slicing.tickets.filter((t) => t.issue).map((t) => `#${t.issue!.number}`);
+      if (published.length) {
+        appendEvent(
+          document,
+          "trama",
+          { type: "activity", title: `Le fette del piano ${plan.id} tornano in preparazione`, detail: `Le issue già pubblicate (${published.join(", ")}) restano su GitHub: il Coordinatore le aggiorna o le chiude.`, tone: "info" },
+          plan.requestId,
+        );
+      }
+      plan.slicing = { ...plan.slicing, status: "proposed", approvedAt: null, approvedBy: null };
+      this.startSlicing(project, plan, step.correction!.note);
+      return true;
+    }
+    this.changed();
+    await this.send(correctionMessage(step), null, null, null, [], null, step.goalId, false);
+    return true;
+  }
+
   /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). Returns its name, or null. */
   private startAutomaticMove(project: ActiveProjectState, events: { requestId: string | null; event: WorkEvent }[]): string | null {
+    this.takeDelegatedSteps(project);
     const guards = this.continuationGuards(project);
     for (const { requestId, event } of events) {
       const move = requestId && !PROJECT_EVENTS.includes(event)
@@ -2754,7 +2881,7 @@ export class TramaController {
       const provider = this.coordinatorProvider(project.document);
       const models = this.state.providers[provider]?.models ?? [];
       const model = move.model && (models.length === 0 || catalogOffers(provider, models, move.model)) ? move.model : null;
-      const step: RequestStep = { move: move.move, by: "trama", trigger: event };
+      const step: RequestStep = { move: move.move, by: "trama", trigger: event, ...(move.block ? { block: move.block } : {}) };
       const starting = { projectId: project.id };
       this.automaticStarting = starting;
       void this.send(move.message, null, model, model ? move.effort : null, [], null, move.goalId, false, step)
@@ -2799,6 +2926,8 @@ export class TramaController {
         return assignment?.slice ? `${name} lavora sulla fetta ${assignment.slice.sliceId}` : `${name} lavora sull'incarico ${id}`;
       });
       const busy = this.continuationGuards(project).busy;
+      // The person's steps the mandate lets the Coordinator take (A06) go first: they can open its next move.
+      if (!busy) details.push(...this.takeDelegatedSteps(project));
       const move = busy ? null : this.startAutomaticMove(project, [{ requestId: null, event: "round" }]);
       if (move) details.push(`Avviata la mossa "${move}"`);
       if (!details.length) return;
@@ -4990,18 +5119,28 @@ export class TramaController {
     if (!plan?.spec || plan.status !== "seams") throw new DomainError("Il piano non aspetta una risposta sui seam.");
     const note = input.note?.trim() || null;
     if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nei seam.");
+    this.applySeamsAnswer(project, plan, { confirmed: input.confirmed, note, by: "person" });
+  }
+
+  /**
+   * Records the answer on the seams and starts the planner that writes the spec with it: the person's, or the
+   * Coordinator's within the mandate (A06), or a correction of the Coordinator's (by null: already told by the caller).
+   */
+  private applySeamsAnswer(project: ActiveProjectState, plan: WorkPlan, answer: { confirmed: boolean; note: string | null; by: "person" | "coordinator" | null }): void {
     const now = new Date().toISOString();
-    plan.spec.seamsAnswer = { confirmed: input.confirmed, note: input.confirmed ? null : note, at: now };
+    plan.spec!.seamsAnswer = { confirmed: answer.confirmed, note: answer.confirmed ? null : answer.note, at: now, ...(answer.by === "coordinator" ? { by: "coordinator" as const } : {}) };
     plan.status = "planning";
     plan.failure = null;
     plan.updatedAt = now;
-    appendEvent(
-      project.document,
-      "person",
-      { type: "activity", title: input.confirmed ? `Seam del piano ${plan.id} confermati` : `Seam del piano ${plan.id} corretti`, detail: plan.spec.seamsAnswer.note, tone: "info" },
-      plan.requestId,
-    );
-    this.changed();
+    if (answer.by === "person") {
+      appendEvent(
+        project.document,
+        "person",
+        { type: "activity", title: answer.confirmed ? `Seam del piano ${plan.id} confermati` : `Seam del piano ${plan.id} corretti`, detail: plan.spec!.seamsAnswer.note, tone: "info" },
+        plan.requestId,
+      );
+    }
+    this.changedIn(project);
     void this.runPlanner(project, plan);
   }
 
@@ -5120,7 +5259,9 @@ export class TramaController {
         return;
       }
       plan.status = "ready";
-      await this.publishSpec(project, plan);
+      // A spec rewritten after a correction (A06) updates the issue it was published as.
+      if (spec.issue) await this.updatePublishedSpec(project, plan);
+      else await this.publishSpec(project, plan);
       // The spec written, to-tickets splits it into vertical slices (M05).
       this.startSlicing(project, plan, null);
     } catch (error) {
@@ -5159,7 +5300,6 @@ export class TramaController {
     if (!plan || slicing?.status !== "proposed") throw new DomainError("Il piano non aspetta una risposta sulle fette.");
     const note = input.note?.trim() || null;
     if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nelle fette.");
-    const now = new Date().toISOString();
     appendEvent(
       project.document,
       "person",
@@ -5170,11 +5310,19 @@ export class TramaController {
       this.startSlicing(project, plan, note);
       return;
     }
+    await this.approveSlices(project, plan, "person");
+  }
+
+  /** Approves the proposed breakdown, publishes it and lets the work go on: the person's answer, or the Coordinator's (A06). */
+  private async approveSlices(project: ActiveProjectState, plan: WorkPlan, by: "person" | "coordinator"): Promise<void> {
+    const slicing = plan.slicing!;
+    const now = new Date().toISOString();
     slicing.status = "approved";
     slicing.approvedAt = now;
+    slicing.approvedBy = by === "coordinator" ? "coordinator" : null;
     slicing.failure = null;
     plan.updatedAt = now;
-    this.changed();
+    this.changedIn(project);
     await this.publishSlices(project, plan);
     this.continueWork(project, plan.requestId, "planEnded");
   }

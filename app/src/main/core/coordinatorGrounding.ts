@@ -1,6 +1,7 @@
 import type { Candidate, NextMove, ProjectDocument } from "@shared/domain";
 import { pendingMandateRequest } from "@shared/domain";
 import { FIXED_BANS } from "@shared/fixedBans";
+import { autonomyLine } from "./autonomousCycle";
 import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
 
@@ -144,6 +145,7 @@ export function currentStateText(document: ProjectDocument, requestId: string, h
     "Nomina alla persona solo questi pulsanti, o quello che dichiari in questo turno con declare_next_step, con le stesse parole. Un pulsante che non è in questo elenco ora non c'è: non dire alla persona di premerlo.",
     mandateLine(document),
     fixedBansLine(),
+    autonomyLine(document),
     ...planLines(document, requestId),
     ...candidateLines(document, headSHA),
   ];

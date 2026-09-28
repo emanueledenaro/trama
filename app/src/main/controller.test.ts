@@ -45,12 +45,18 @@ async function interruptOnceSent(document: ProjectDocument, requestId: string): 
  * Answers a grilling and confirms the shared understanding with the step's button, within a mandate that allows
  * planning (W04): the next move is the Coordinator's plan.
  */
-async function confirmUnderstanding(document: ProjectDocument): Promise<void> {
+async function confirmUnderstanding(document: ProjectDocument, byPerson = false): Promise<void> {
   await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
   await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
   for (const question of [...document.decisionRequests]) await controller!.answerDecision(question.id, 1, null);
-  await controller!.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
-  await controller!.takeStep(document.requests.at(-1)!.id);
+  if (byPerson) {
+    // In pause the step stays the person's, with its button.
+    await controller!.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
+    await controller!.takeStep(document.requests.at(-1)!.id);
+    return;
+  }
+  // Within the mandate the Coordinator confirms the shared understanding by itself once no question is open (A06).
+  await until(() => (document.autonomousSteps ?? []).some((s) => s.move === "confirmUnderstanding"), 20_000);
 }
 
 const automaticRequests = (document: ProjectDocument) => document.requests.filter((r) => r.step?.by === "trama");
@@ -451,6 +457,8 @@ describe("TramaController", () => {
 
   it("grills a request in rounds and starts the plan only when no question is open (M01)", async () => {
     await setup();
+    // The Coordinator's own steps would start the plan at the first settled round (A06): here the rounds are the subject.
+    await controller!.updateSettings({ continuousWork: false });
     const project = controller!.snapshot.project!;
     const document = project.document;
     await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
@@ -573,7 +581,7 @@ describe("TramaController", () => {
       const document = project.document;
       await controller!.pauseContinuousWork(true);
       expect(controller!.snapshot.project!.statusLine).toMatchObject({ paused: true });
-      await confirmUnderstanding(document);
+      await confirmUnderstanding(document, true);
       await new Promise((r) => setTimeout(r, 300));
       // In pause the Coordinator's move stays a move: nothing automatic starts, the round included.
       expect(automaticRequests(document)).toEqual([]);
@@ -1032,12 +1040,29 @@ describe("TramaController", () => {
     await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
     await controller!.send("[piano]", null, null, null);
     expect(project.document.plans[0]?.orderedBy).toBe("coordinator");
-    await until(() => project.document.plans[0]!.status === "seams");
+    // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
+    await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
+    expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
+    expect(activityLog(project.document.requests, project.document.events, [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
+
+    // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
+    const plan = project.document.plans[0]!;
+    await until(() => plan.status === "ready" && plan.slicing?.status !== "drafting");
+    const step = project.document.autonomousSteps!.find((s) => s.move === "confirmSeams")!;
+    await expect(controller!.correctAutonomousStep(step.id, "Testa anche il rimborso")).resolves.toBe(true);
+    expect(step.correction).toMatchObject({ note: "Testa anche il rimborso" });
+    expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: false, note: "Testa anche il rimborso" });
+    await until(() => plan.status === "ready");
+    expect(plan.spec!.sections!.furtherNotes).toContain("Testa anche il rimborso");
+    const corrected = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Seam confermati dal Coordinatore: corretto");
+    expect(corrected?.origin).toBe("person");
   });
 
   // A grilling round, two planner turns and a restart: slower than the default timeout on a loaded machine.
   it("writes the spec with to-spec once the person confirms the seams, keeps it in Trama and after a restart (M04)", async () => {
     const { data } = await setup();
+    // With continuous work off the seams stay the person's step, as without a mandate (A06).
+    await controller!.updateSettings({ continuousWork: false });
     const project = controller!.snapshot.project!;
     const document = project.document;
     await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);

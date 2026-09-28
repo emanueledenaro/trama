@@ -1,4 +1,4 @@
-import type { NextMove, ProjectDocument, WorkEvent } from "@shared/domain";
+import type { NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
 import { focusView } from "./focus";
 import { isActive } from "./team";
 import { COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
@@ -15,7 +15,8 @@ export type { WorkEvent } from "@shared/domain";
 
 /**
  * The person's moves that hold the work: a product decision, the shared understanding, the mandate, the team,
- * the seams to-spec proposed for the spec (M04) and the slices to-tickets proposed for the work (M05).
+ * the seams to-spec proposed for the spec (M04) and the slices to-tickets proposed for the work (M05). Within the project
+ * mandate the Coordinator takes the understanding, the team, the seams and the slices by itself (A06, `autonomousCycle`).
  */
 const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"];
 
@@ -51,6 +52,8 @@ export interface AutomaticMove {
   goalId: string | null;
   model: string | null;
   effort: string | null;
+  /** The technical block the move resolves (A06, Q3); absent when the work is not blocked by one. */
+  block?: NonNullable<RequestStep["block"]>;
 }
 
 /** Whether the person paused the project's continuous work (A05). A document written before the Pause is not paused. */
@@ -81,8 +84,9 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   if (!workRequests(document, latest.id)?.has(subject.id)) return null;
   const state = workState(document, latest.id);
   if (!state.phase) return null;
-  // A block waits for the person, except the ones the Coordinator resolves by itself within the mandate (Q3).
-  if (state.phase === "blocked" && !RESOLVES_BLOCKS.includes(event)) return null;
+  // A block waits for the person, except the technical ones the Coordinator resolves by itself within the mandate (A06, Q3),
+  // whatever event brought it: a red check, a conflict between worktrees, an assignment that stopped.
+  if (state.phase === "blocked" && !state.block && !RESOLVES_BLOCKS.includes(event)) return null;
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
   const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
   const option = state.moves.find((m) => m.actor === "coordinator");
@@ -92,8 +96,23 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   const move = option.move as CoordinatorMove;
   // The round does not repeat the move the latest automatic turn of the dialog already made or tried: a new event does.
   if (event === "round" && latest.step?.by === "trama" && latest.step.move === move) return null;
-  return { move, ...COORDINATOR_MOVES[move], goalId, model: latest.model, effort: latest.effort };
+  const block = state.phase === "blocked" && state.block && state.blocker ? { kind: state.block, blocker: state.blocker, why: state.why ?? state.blocker } : null;
+  return {
+    move,
+    ...COORDINATOR_MOVES[move],
+    ...(block ? { label: BLOCK_LABELS[block.kind], block } : {}),
+    goalId,
+    model: latest.model,
+    effort: latest.effort,
+  };
 }
+
+/** The name of the move that resolves a technical block (A06), as Activity and the recap show it. */
+export const BLOCK_LABELS: Record<TechnicalBlock, string> = {
+  checkFailed: "Risolvi la verifica rossa",
+  worktreeConflict: "Risolvi il conflitto",
+  stalledAssignment: "Riprendi l'incarico fermo",
+};
 
 /**
  * The latest request of each dialog with an open task, the task in focus first, then the queue; paused tasks stay out.
@@ -152,11 +171,12 @@ export function setPaused(document: ProjectDocument, paused: boolean, at: string
 
 
 /** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. */
-export function automaticMoveSection(move: CoordinatorMove): string {
+export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null): string {
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
     "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    ...(block ? [blockSection(block)] : []),
     ...(move === "verifyCandidate"
       ? [
           "Le verifiche girano su un candidato, non su un incarico: per un incarico concluso senza candidato chiama prima declare_candidate, poi verify_candidate con il candidateID che restituisce. La fase del lavoro qui sopra elenca gli incarichi e i candidati.",
@@ -164,6 +184,66 @@ export function automaticMoveSection(move: CoordinatorMove): string {
       : []),
   ].join("\n");
 }
+
+/** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. */
+const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
+  checkFailed:
+    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi assegna allo stesso sviluppatore, o a un altro libero, la correzione con assign_task: stessa fetta, stessi moduli, le verifiche che devono passare.",
+  worktreeConflict:
+    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi assegna con assign_task il riallineamento del lavoro più recente sul più vecchio, o sul branch principale, sugli stessi moduli.",
+  stalledAssignment:
+    "Leggi con read_team perché l'incarico si è fermato, poi riassegnalo con assign_task, allo stesso sviluppatore o a un altro libero, con le istruzioni per superare il motivo.",
+};
+
+function blockSection(block: NonNullable<RequestStep["block"]>): string {
+  return [
+    `Blocco tecnico da risolvere: ${block.blocker}`,
+    `${BLOCK_GUIDANCE[block.kind]} Il blocco è tecnico: lo risolvi da solo dentro il mandato, senza chiedere alla persona. Trama avvisa la persona dell'esito in Attività a fine turno. Non usare mai force push, push sul branch principale o cancellazioni di branch: restano vietati.`,
+  ].join("\n");
+}
+
+/**
+ * The outcome of the automatic move of `requestId` that resolved a technical block (A06), when its turn ended, or null
+ * for any other request. Pure. The block is resolved when the work is no longer blocked by it: new work took it on, or
+ * the work moved to another phase.
+ */
+export function blockOutcome(document: ProjectDocument, requestId: string): { resolved: boolean; detail: string } | null {
+  const request = document.requests.find((r) => r.id === requestId);
+  const block = request?.step?.block;
+  if (!request || !block || request.state !== "completed") return null;
+  const state = workState(document, request.id);
+  const resolved = state.phase !== "blocked" || state.blocker !== block.blocker;
+  return resolved
+    ? { resolved, detail: `${block.why} Il Coordinatore ha sbloccato il lavoro: ora è in ${state.phase ? PHASE_NAMES[state.phase] : "attesa"}.` }
+    : { resolved, detail: `${block.why} Il Coordinatore non l'ha risolto in questo turno: ci riprova al prossimo evento o giro.` };
+}
+
+const PHASE_NAMES: Record<NonNullable<WorkState["phase"]>, string> = {
+  clarification: "chiarimento",
+  spec: "spec",
+  slices: "fette",
+  execution: "esecuzione",
+  verification: "verifica",
+  candidate: "attesa di unione",
+  merged: "unione fatta",
+  blocked: "blocco",
+};
+
+/** The Activity line of a block's outcome (A06): what was blocked, and whether the Coordinator resolved it. */
+export function blockOutcomeActivity(block: NonNullable<RequestStep["block"]>, outcome: { resolved: boolean; detail: string }) {
+  return {
+    type: "activity" as const,
+    title: outcome.resolved ? `Blocco risolto dal Coordinatore: ${BLOCK_KIND_NAMES[block.kind]}` : `Blocco ancora aperto: ${BLOCK_KIND_NAMES[block.kind]}`,
+    detail: outcome.detail,
+    tone: outcome.resolved ? ("info" as const) : ("error" as const),
+  };
+}
+
+const BLOCK_KIND_NAMES: Record<TechnicalBlock, string> = {
+  checkFailed: "verifica rossa",
+  worktreeConflict: "conflitto tra lavori",
+  stalledAssignment: "incarico fermo",
+};
 
 /** A Coordinator move Trama started that the turn did not make, and why, in the person's words (issue #204). */
 export interface StalledMove {
