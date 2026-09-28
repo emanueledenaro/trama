@@ -55,7 +55,9 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
-import { ReferenceText } from "./ReferenceText";
+import { RecordName, ReferenceText } from "./ReferenceText";
+import { BLOCKER_TEXT, plainConflictReference, plainText } from "@shared/plainLanguage";
+import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
 import { GateField } from "./GateField";
@@ -73,9 +75,12 @@ export function CardFrame({
   children,
   className,
   anchor,
+  hint,
 }: {
   icon: React.ReactNode;
   title: string;
+  /** The hover of the title: the id of the record the card names by its name (issue #270). */
+  hint?: string;
   aside?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
@@ -86,7 +91,9 @@ export function CardFrame({
     <div data-anchor={anchor} className={cn("chat-card my-3 overflow-hidden", className)}>
       <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 text-ui">
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={hint} data-record-id={hint}>
+          {title}
+        </span>
         {aside}
       </div>
       <div className="px-3.5 pb-3">{children}</div>
@@ -468,7 +475,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
           <div data-testid="blocked-work">
             <AgentName agent={blocked} />
             <Sep />
-            {blockedWork.slice ? `fetta ${blockedWork.slice.sliceId}, ` : ""}incarico {blockedWork.id}
+            <RecordName id={blockedWork.id} />
             {blockedQuestion ? <div className="mt-0.5 text-ui-sm text-foreground/90">«{blockedQuestion.question}»</div> : null}
             <div className="mt-0.5 text-ui-sm text-muted-foreground">
               {!closed
@@ -480,7 +487,9 @@ export function DecisionCard({ requestId }: { requestId: string }) {
           </div>
         </Field>
       ) : null}
-      <Field label="Caso concreto">{request.concreteCase}</Field>
+      <Field label="Caso concreto">
+        <ReferenceText text={request.concreteCase} />
+      </Field>
       <div className="mt-3 space-y-1.5">
         {request.alternatives.map((alternative, index) => {
           const chosen = outcome ? outcome.alternativeIndex === index : !withdrawal && choice === index;
@@ -502,19 +511,20 @@ export function DecisionCard({ requestId }: { requestId: string }) {
               )}
             >
               <div className="flex items-start gap-2">
-                <span className="min-w-0 flex-1 text-ui text-foreground">{alternative.behavior}</span>
+                <span className="min-w-0 flex-1 text-ui text-foreground">{plainText(alternative.behavior)}</span>
                 {grilling?.recommendedIndex === index ? <Badge tone="success">Consigliata</Badge> : null}
               </div>
-              <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {alternative.example}</div>
-              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {alternative.consequence}</div> : null}
+              {/* Inside a button a reference cannot be a link: the text reads plain (issue #270). */}
+              <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {plainText(alternative.example)}</div>
+              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {plainText(alternative.consequence)}</div> : null}
             </button>
           );
         })}
       </div>
       {outcome ? (
         <div className="mt-3 flex items-center gap-2 text-ui-sm text-muted-foreground">
-          <span>
-            Decisione {outcome.decisionId}<Sep />versione {outcome.version}
+          <span title={outcome.decisionId} data-decision-id={outcome.decisionId}>
+            Decisione presa<Sep />versione {outcome.version}
           </span>
           <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id: outcome.decisionId })}>
             Apri nel Patto
@@ -723,6 +733,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
 
 export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const project = useUi((s) => s.app?.project)!;
+  const record = useRecord(assignmentId);
   const specialist = project.document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId));
   const assignment = specialist?.assignments.find((a) => a.id === assignmentId);
   const [showResult, setShowResult] = useState(false);
@@ -740,7 +751,8 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   return (
     <CardFrame
       icon={<IconBriefcase stroke={1.8} />}
-      title={`Incarico ${assignment.id}`}
+      title={record ? asTitle(record.label) : "Incarico"}
+      hint={assignment.id}
       aside={
         <span className="flex items-center gap-1.5">
           {active ? <Spinner /> : null}
@@ -788,7 +800,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         ) : null}
       </Field>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>{assignment.tools.includes("edits") ? "Worktree proprio" : "Sola lettura"}</span>
+        <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>
         {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
       </div>
       {assignment.workspace ? (
@@ -808,7 +820,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           </button>
           {showResult ? (
             <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
-              <ChatMarkdown text={assignment.result} />
+              <ChatMarkdown text={assignment.result} plain />
             </div>
           ) : null}
         </div>
@@ -853,7 +865,8 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
     <CardFrame
       anchor="domain-proposal"
       icon={<IconBook2 stroke={1.8} />}
-      title={`Glossario e ADR ${proposal.id}`}
+      title="Glossario e ADR"
+      hint={proposal.id}
       aside={<Badge tone={status.tone}>{status.label}</Badge>}
     >
       <div data-testid="domain-proposal">
@@ -885,10 +898,10 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
           {!assignment
             ? (proposal.waiting ?? "Il Coordinatore non scrive file: la proposta aspetta il mandato.")
             : written
-              ? `Documentazione e dominio ha scritto la proposta nel worktree dell'incarico ${assignment.id}. La rivedi come candidato.`
+              ? <ReferenceText text={`Documentazione e dominio ha scritto la proposta nella copia di lavoro dell'incarico ${assignment.id}. La rivedi come candidato.`} />
               : writing
-                ? `Documentazione e dominio la scrive nel worktree dell'incarico ${assignment.id}, con la skill domain-modeling.`
-                : `L'incarico ${assignment.id} si è fermato prima di finire: lo trovi nella sua scheda.`}
+                ? <ReferenceText text={`Documentazione e dominio la scrive nella copia di lavoro dell'incarico ${assignment.id}, con la skill domain-modeling.`} />
+                : <ReferenceText text={`L'incarico ${assignment.id} si è fermato prima di finire: lo trovi nella sua scheda.`} />}
         </p>
       </div>
     </CardFrame>
@@ -900,21 +913,6 @@ export const CANDIDATE_STATE: Record<CandidateState, { label: string; tone: "inf
   verified: { label: "Verificato", tone: "info" },
   decided: { label: "Deciso", tone: "success" },
   superseded: { label: "Superato", tone: "secondary" },
-};
-
-const BLOCKER_TEXT: Record<string, string> = {
-  BASE_CHANGED: "La base del progetto è cambiata",
-  DECISION_CHANGED: "Una decisione è cambiata",
-  UNRESOLVED_CHOICE: "Scelta non risolta",
-  EXTERNAL_EFFECT_UNSUPPORTED: "Effetto esterno non supportato",
-  EVIDENCE_MISSING: "Verifica da eseguire",
-  EVIDENCE_STALE: "Verifica non più valida",
-  CHECK_FAILED: "Verifica non superata",
-  GATE_BLOCKED: "Rilievo bloccante dei revisori",
-  GATE_RUNNING: "Revisori al lavoro",
-  GATE_FAILED: "Revisione da rilanciare",
-  REMOTE_CONFLICT: "Conflitto con il lavoro su GitHub",
-  WORKTREE_CONFLICT: "Conflitto con il lavoro di un altro incarico",
 };
 
 const QUALITY_LABEL: Record<QualityItem["code"], string> = {
@@ -1015,14 +1013,14 @@ function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; i
 /** The seams the developer of a slice says it tested (M06): its statement, shown apart from Trama's evidence. */
 function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
   return (
-    <Field label="Seam testati, secondo lo sviluppatore">
+    <Field label="Punti di prova testati, secondo lo sviluppatore">
       <div data-testid="candidate-tested-seams">
         {seams === null ? (
-          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha riportato i seam testati.</p>
+          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha riportato i punti di prova testati.</p>
         ) : seams.length === 0 ? (
-          <p className="text-ui-sm text-muted-foreground">La spec non ha seam confermati.</p>
+          <p className="text-ui-sm text-muted-foreground">Il piano non ha punti di prova confermati.</p>
         ) : (
-          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside="fuori dai seam confermati" />
+          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside="fuori dai punti di prova confermati" />
         )}
         <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
       </div>
@@ -1037,7 +1035,7 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
   const relied = Object.entries(assignment.decisionVersions ?? {});
   return (
     <div data-testid="assignment-contract">
-      <Field label="Seam da testare">
+      <Field label="Punti di prova da testare">
         {seams.length ? (
           <ol className="space-y-0.5 text-ui-sm">
             {seams.map((s) => (
@@ -1056,10 +1054,10 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
           relied.map(([id, version]) => {
             const current = decisions.find((d) => d.id === id);
             return (
-              <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
-                {id} v{version}
-                {current && current.version !== version ? <span className="text-warning"> (ora v{current.version})</span> : null}
-              </button>
+              <span key={id}>
+                <DecisionLink id={id} version={version} />
+                {current && current.version !== version ? <span className="mr-2 text-ui-sm text-warning">(ora versione {current.version})</span> : null}
+              </span>
             );
           })
         ) : (
@@ -1067,7 +1065,7 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
         )}
       </Field>
       <Field label="Dipendenze">
-        {assignment.dependencies.length ? assignment.dependencies.join(", ") : <span className="text-ui-sm text-muted-foreground">Nessuna</span>}
+        {assignment.dependencies.length ? <ReferenceText text={assignment.dependencies.join(", ")} /> : <span className="text-ui-sm text-muted-foreground">Nessuna</span>}
       </Field>
     </div>
   );
@@ -1136,7 +1134,7 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
                 </div>
               ) : answer?.kind === "person" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  {answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla scheda ${answer.decisionRequestId}.`}
+                  {answer.text ? `Risposta della persona: ${answer.text}` : <ReferenceText text={`Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />}
                 </div>
               ) : null}
             </li>
@@ -1177,7 +1175,7 @@ function ReportField({ report }: { report: DeveloperReport | null }) {
             <ReportList label="File toccati" items={report.filesTouched} testId="report-files" />
             <ReportList label="Test scritti" items={report.testsWritten} testId="report-tests" />
             <div className="mt-1" data-testid="report-seams" data-reported={report.seams === null ? "no" : "yes"}>
-              <div className="text-ui-xs text-muted-foreground/70">Seam coperti</div>
+              <div className="text-ui-xs text-muted-foreground/70">Punti di prova coperti</div>
               {report.seams === null ? (
                 <p className="text-ui-sm text-muted-foreground">Non riportati</p>
               ) : report.seams.length ? (
@@ -1306,6 +1304,27 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   );
 }
 
+/**
+ * A decision the work relies on, by what that version decided, with its version; the id on hover (issue #270). A
+ * decision changed since then shows the words of the version the work used, not the current ones.
+ */
+function DecisionLink({ id, version }: { id: string; version: number | undefined }) {
+  const setInspector = useUi((s) => s.setInspector);
+  const record = useRecord(id);
+  const used = useUi((s) => {
+    const document = s.app?.project?.document;
+    if (!document || version === undefined) return null;
+    return [...document.decisions, ...document.decisionHistory].find((d) => d.id === id && d.version === version) ?? null;
+  });
+  const words = used ? `«${used.value.length > 48 ? `${used.value.slice(0, 47).trimEnd()}…` : used.value}»` : (record?.short ?? id);
+  return (
+    <button type="button" title={id} className="mr-2 text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
+      {words}
+      {version !== undefined ? `, versione ${version}` : ""}
+    </button>
+  );
+}
+
 export function CandidateCard({ candidateId }: { candidateId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -1316,6 +1335,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const [preview, setPreview] = useState<ActionResult<"candidate:previewPullRequest"> | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [rejection, setRejection] = useState("");
+  const record = useRecord(candidateId);
   if (!candidate || !report) return null;
   const state = CANDIDATE_STATE[report.state];
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
@@ -1328,9 +1348,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const open = report.blockers.length === 0 && report.state !== "superseded" && !merged;
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
   return (
-    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
+    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
-        {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+        {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />
+        <RecordName id={candidate.assignmentId} />
+        <Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
       {report.state === "superseded" ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded">
@@ -1339,9 +1361,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       ) : null}
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (
-          <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
-            {id} v{candidate.decisionVersions[id]}
-          </button>
+          <DecisionLink key={id} id={id} version={candidate.decisionVersions[id]} />
         ))}
       </Field>
       {candidate.testedSeams !== undefined ? <TestedSeamsField seams={candidate.testedSeams} /> : null}
@@ -1363,7 +1383,12 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
-                {b.code === "BASE_CHANGED" ? null : <span className="text-muted-foreground"><Sep />{b.detail}</span>}
+                {b.code === "BASE_CHANGED" ? null : (
+                  <span className="text-muted-foreground">
+                    <Sep />
+                    <ReferenceText text={b.detail} />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -1377,7 +1402,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <Field label="Confronti con altro lavoro">
             {conflicts.map((a) => (
               <div key={a.id} className="text-ui-sm">
-                {CONFLICT_LABEL[a.classification].label} con {a.references.join(", ")}
+                {CONFLICT_LABEL[a.classification].label} con <ReferenceText text={a.references.map(plainConflictReference).join(", ")} />
               </div>
             ))}
           </Field>
@@ -1433,7 +1458,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             else void act("candidate:focusAudit", { candidateId }).then((id) => id && setInspector({ kind: "audit", id }));
           }}
         >
-          <IconFocus2 /> Focus mode
+          <IconFocus2 /> Esame approfondito
         </Button>
         {route === "person" && report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
@@ -1504,6 +1529,8 @@ export function PlanCard({ planId }: { planId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const plan = project.document.plans.find((p) => p.id === planId);
+  const record = useRecord(planId);
+  const planTitle = record ? asTitle(record.label) : "Piano";
   const [editing, setEditing] = useState<{ steps: string; behavior: string; example: string } | null>(null);
   if (!plan) return null;
   const proposal = plan.proposal;
@@ -1512,10 +1539,10 @@ export function PlanCard({ planId }: { planId: string }) {
   if (plan.status === "superseded") {
     // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
     return (
-      <CardFrame icon={<IconListCheck stroke={1.8} />} title={`Piano ${plan.id}`} aside={<Badge tone="secondary">Superato</Badge>}>
+      <CardFrame icon={<IconListCheck stroke={1.8} />} title={planTitle} hint={plan.id} aside={<Badge tone="secondary">Superato</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="plan-superseded">
           {plan.summary}<Sep />
-          {plan.supersededBy ? `Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.` : "Sostituito da un piano più recente dell'obiettivo."}
+          {plan.supersededBy ? <ReferenceText text={`Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.`} /> : "Sostituito da un piano più recente dell'obiettivo."}
         </p>
       </CardFrame>
     );
@@ -1523,7 +1550,8 @@ export function PlanCard({ planId }: { planId: string }) {
   return (
     <CardFrame
       icon={<IconListCheck stroke={1.8} />}
-      title={`Piano ${plan.id}`}
+      title={planTitle}
+      hint={plan.id}
       aside={
         plan.status === "planning" ? (
           <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
@@ -1533,7 +1561,7 @@ export function PlanCard({ planId }: { planId: string }) {
             </button>
           </span>
         ) : plan.status === "seams" ? (
-          <Badge tone="warning">Seam da rivedere</Badge>
+          <Badge tone="warning">Punti di prova da rivedere</Badge>
         ) : plan.status === "ready" && plan.slicing?.status === "drafting" ? (
           <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
             <Spinner /> Divisione in fette
@@ -1756,13 +1784,13 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
       ) : null}
       <p className="text-ui text-foreground/90">
         Candidato{" "}
-        <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>
-          {assessment.candidateId}
-        </button>{" "}
-        e {assessment.references.join(", ")}
+        <RecordName id={assessment.candidateId} short />
+        {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
         {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
       </p>
-      <p className="mt-1 text-ui-sm text-muted-foreground">{assessment.detail}</p>
+      <p className="mt-1 text-ui-sm text-muted-foreground">
+        <ReferenceText text={assessment.detail} />
+      </p>
       {assessment.conflictingFiles.length ? (
         <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
           <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
@@ -1834,7 +1862,8 @@ export function RouteCard({ routeId }: { routeId: string }) {
     <CardFrame
       anchor="route"
       icon={<IconRoute stroke={1.8} />}
-      title={`Percorso di Ask Trama ${route.id}`}
+      title="Percorso di Ask Trama"
+      hint={route.id}
       className={cn(route.status === "superseded" && "opacity-80")}
       aside={<Badge tone={status.tone}>{status.label}</Badge>}
     >

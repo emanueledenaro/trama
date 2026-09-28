@@ -16,6 +16,7 @@ Su Linux nel container (xvfb), dopo il merge di `origin/main` a `d550ab7`:
 - `npm run check:names`, `npm run check:upstream-names`: ok.
 - `node scripts/conventional-commits/cli.mjs commit-range origin/main HEAD`: ok.
 - Dopo il merge di `origin/main` a `6b6e33a` (#219, nessun file in `app/`): `npx tsc --noEmit -p .` senza errori, `npx vitest run` con 135 file e 1265 test superati, `npm run build` riuscito. La ui-check non è stata rieseguita su questa base: il codice dell'app è lo stesso della corsa verde su `d550ab7`.
+- Dopo il merge di `origin/main` a `be82ad6` (#299, conflitto in `Cards.tsx` risolto tenendo le due parti): `npm ci` riuscito, `npx tsc --noEmit -p .` senza errori, `npx vitest run` con 136 file e 1276 test superati (3 saltati), `npm run build` riuscito, `xvfb-run -a node scripts/ui-check.mjs` completata con uscita 0 e 359 schermate.
 
 ## Comportamento
 

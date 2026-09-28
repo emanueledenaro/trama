@@ -86,7 +86,10 @@ export function SettledOr({ row, children }: { row: TimelineRow; children: React
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{lineIcon(row)}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate">
-            <span className="text-foreground">{settled.title}</span>
+            <span className="text-foreground">
+              {/* The title names its record, the id on hover (issue #270); the line itself opens the card. */}
+              <ReferenceText text={settled.title} links={false} />
+            </span>
             <Sep />
             <span className="text-muted-foreground">
               <ReferenceText text={settled.subject} />

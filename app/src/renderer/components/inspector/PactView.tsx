@@ -1,3 +1,4 @@
+import { RecordLabel } from "@/components/chat/ReferenceText";
 import { IconArrowLeft, IconPlus, IconTarget } from "@tabler/icons-react";
 import { useState } from "react";
 import { isOpenQuestion } from "@shared/domain";
@@ -91,8 +92,9 @@ export function PactView() {
               className="rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)] -mx-2"
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-muted-foreground">{decision.id}</span>
-                <Badge>v{decision.version}</Badge>
+                <Badge>
+                  <span title={decision.id}>Versione {decision.version}</span>
+                </Badge>
               </div>
               <div className="mt-0.5 line-clamp-2 text-ui text-foreground/90">{decision.value}</div>
             </button>
@@ -173,7 +175,9 @@ function DecisionDependentsSection({ id }: { id: string }) {
       {dependents.assignments.map(({ assignment, specialist, version, current }) => (
         <button key={assignment.id} type="button" className={row} onClick={() => setInspector({ kind: "specialist", id: specialist.id })}>
           <span className="min-w-0 flex-1 truncate">
-            <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span> <AgentName agent={specialist} /><Sep />{assignment.objective}
+            <AgentName agent={specialist} />
+            <Sep />
+            <span title={assignment.id}>{assignment.objective}</span>
           </span>
           <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `delegato su v${version}`}</Badge>
           <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
@@ -182,7 +186,9 @@ function DecisionDependentsSection({ id }: { id: string }) {
       {dependents.candidates.map(({ candidate, version, current }) => (
         <button key={candidate.id} type="button" className={row} onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
           <span className="min-w-0 flex-1 truncate">
-            <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span> candidato<Sep />{candidate.changedFiles.length} file
+            <RecordLabel id={candidate.id} />
+            <Sep />
+            {candidate.changedFiles.length} file
           </span>
           <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `evidenze su v${version}: da riverificare`}</Badge>
         </button>
@@ -220,8 +226,9 @@ export function DecisionView({ id }: { id: string }) {
           <IconArrowLeft className="size-3.5" /> Apri il Patto completo
         </button>
         <div className="mt-2 flex items-center gap-2">
-          <span className="font-mono text-ui-sm text-foreground">{decision.id}</span>
-          <Badge>Versione {decision.version}</Badge>
+          <Badge>
+            <span title={decision.id}>Versione {decision.version}</span>
+          </Badge>
         </div>
       </div>
       <InspectorSection title="Comportamento" aside={!editing ? <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>Modifica</Button> : null}>

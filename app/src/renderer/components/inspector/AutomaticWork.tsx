@@ -1,3 +1,4 @@
+import { ReferenceText } from "@/components/chat/ReferenceText";
 import { IconPlayerPlay } from "@tabler/icons-react";
 import { useState } from "react";
 import type { AutomaticWorkStatus, TeamRole } from "@shared/domain";
@@ -19,7 +20,11 @@ function StartNow({ work }: { work: AutomaticWorkStatus }) {
   const blocked = work.onRequest.allowed ? null : work.onRequest.reason;
   return (
     <>
-      {blocked ? <p className="mt-1 text-ui-xs text-muted-foreground">Non si avvia ora. {blocked}</p> : null}
+      {blocked ? (
+        <p className="mt-1 text-ui-xs text-muted-foreground">
+          Non si avvia ora. <ReferenceText text={blocked} />
+        </p>
+      ) : null}
       <div className="cta-row mt-1.5">
         <Button
           size="sm"
