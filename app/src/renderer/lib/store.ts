@@ -24,7 +24,8 @@ export type InspectorTarget =
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
-  | { kind: "issues" }
+  /** `backlog` opens the issues on the "Nel backlog" filter, where the found problems wait (issue #337). */
+  | { kind: "issues"; backlog?: boolean }
   | { kind: "issue"; number: number }
   /** A pull request, a commit or a branch a message cites (issue #277). */
   | { kind: "pullRequest"; number: number }

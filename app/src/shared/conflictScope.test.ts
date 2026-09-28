@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conflictSide, divergenceQuestion, divergenceSummary, explainedByDivergence, replacedBy } from "./conflictScope";
+import { conflictSide, divergenceHolds, divergenceQuestion, divergenceSummary, explainedByDivergence, replacedBy } from "./conflictScope";
 import type { BranchDivergence, ConflictAssessment, ProjectDocument, SpecialistAssignment } from "./domain";
 import type { PresenceRecord } from "./presence";
 
@@ -66,5 +66,11 @@ describe("conflict scope (U02)", () => {
     expect(explainedByDivergence(document, assessment({ remoteSHA: "other", references: ["#7 feature"] }))).toBe(false);
     expect(explainedByDivergence(document, assessment({ otherCandidateId: "C-2", remoteSHA: "4df3c14" }))).toBe(false);
     expect(explainedByDivergence({ branchDivergence: null } as ProjectDocument, assessment({}))).toBe(false);
+  });
+
+  it("holds the divergence only on the head it compared, so a realigned branch loses the notice (issue #390)", () => {
+    expect(divergenceHolds(divergence, divergence.headSHA.toUpperCase())).toBe(true);
+    expect(divergenceHolds(divergence, "9e0f1a2b3c4d5e4df3c14a0b1c2d3e4f5a6b7c8d")).toBe(false);
+    expect(divergenceHolds(divergence, null)).toBe(false);
   });
 });

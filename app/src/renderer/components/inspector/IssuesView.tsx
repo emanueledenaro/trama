@@ -32,7 +32,7 @@ function ProblemBacklog() {
         <li key={problem.id} className="py-2" data-testid="problem-backlog-item">
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-ui text-foreground" title={problem.id}>
-              {problem.title}
+              <ReferenceText text={problem.title} links={false} />
             </span>
             {problem.issue ? (
               <Tooltip label={t("issues.backlog.openIssue", { number: problem.issue.number })}>
@@ -61,12 +61,12 @@ function ProblemBacklog() {
   );
 }
 
-export function IssuesView() {
+export function IssuesView({ backlog: onBacklog = false }: { backlog?: boolean }) {
   const t = useT();
   const github = useUi((s) => s.app?.project?.github)!;
   const setInspector = useUi((s) => s.setInspector);
   const backlog = useUi((s) => (s.app?.project ? problemBacklog(s.app.project.document).length : 0));
-  const [chosen, setFilter] = useState<"open" | "closed" | "backlog">("open");
+  const [chosen, setFilter] = useState<"open" | "closed" | "backlog">(onBacklog ? "backlog" : "open");
   // Without GitHub the backlog is the only list; an empty backlog falls back to the open issues.
   const filter = github.status !== "ready" && backlog ? "backlog" : chosen === "backlog" && !backlog ? "open" : chosen;
   const filters = [...(github.status === "ready" ? (["open", "closed"] as const) : []), ...(backlog ? (["backlog"] as const) : [])];

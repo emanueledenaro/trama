@@ -25,13 +25,16 @@ import {
   type Candidate,
   type CandidateEvidence,
   type CandidateState,
+  type ConflictAssessment,
   type DeveloperQuestion,
   type DeveloperReport,
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
   type MandateAction,
+  type ProjectDocument,
   type MergeRoute,
+  type MergeStop,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
@@ -53,7 +56,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
-import { useT } from "@/lib/i18n";
+import { useT, withNodes } from "@/lib/i18n";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RecordName, ReferenceText } from "./ReferenceText";
@@ -70,6 +73,7 @@ import { latestGate } from "@shared/gate";
 import { assignmentLine } from "@shared/duties";
 import { ASSIGNMENT_STATUS, CANDIDATE_STATE, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
 import { Sep } from "@/components/ui/sep";
+import { formatTime } from "@/lib/format";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
@@ -776,7 +780,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.seams ? (
         <ContractFields assignment={assignment} decisions={project.document.decisions} />
       ) : assignment.dependencies.length ? (
-        <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field>
+        <Field label="Dipendenze">
+          <ReferenceText text={assignment.dependencies.join(", ")} />
+        </Field>
       ) : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
@@ -811,7 +817,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
+      <p className="mt-2 text-ui-sm text-muted-foreground">
+        <ReferenceText text={assignmentLine(project.document, assignment)} />
+      </p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
@@ -936,7 +944,7 @@ function QualityField({ items }: { items: QualityItem[] }) {
                 <span className="text-foreground">{QUALITY_LABEL[item.code]}</span>
                 <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
                   <Sep />
-                  {item.detail}
+                  {item.code === "COMMIT_MESSAGE" ? item.detail : <ReferenceText text={item.detail} />}
                 </span>
                 {item.fix ? <span className="block text-ui-xs text-muted-foreground">Come sistemarlo: {item.fix}</span> : null}
               </span>
@@ -1129,12 +1137,12 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
               {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
               {answer?.kind === "facts" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  Risposta del Coordinatore: {answer.text}
+                  Risposta del Coordinatore: <ReferenceText text={answer.text} />
                   <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
                 </div>
               ) : answer?.kind === "person" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  {answer.text ? `Risposta della persona: ${answer.text}` : <ReferenceText text={`Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />}
+                  <ReferenceText text={answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />
                 </div>
               ) : null}
             </li>
@@ -1155,7 +1163,7 @@ function ThreadLinks({ assignmentId }: { assignmentId: string }) {
       <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
         {threads.map((thread) => (
           <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
-            {thread.title} ({thread.messages.length})
+            <ReferenceText text={thread.title} links={false} /> ({thread.messages.length})
           </button>
         ))}
       </div>
@@ -1284,7 +1292,8 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   if (pull?.mergedAt) {
     text = pull.mergedBy === "coordinator" ? "Unito da Trama con il via libera del Coordinatore." : pull.mergedBy === "person" ? "Unito da Trama con il tuo ok sulle schermate." : "Unito su GitHub.";
   } else if (merge && open && merge.status !== "merged") {
-    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.detail;
+    // A destructive stop says it in its own field, with consequences and alternatives (issue #41).
+    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.stop ? null : merge.detail;
     if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
   } else if (open && candidate.humanRejection) {
     text = `Hai rifiutato il candidato: ${candidate.humanRejection.note}`;
@@ -1303,8 +1312,60 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   return (
     <p className={cn("mt-2 text-ui-sm", tone)} data-testid="candidate-merge" data-route={route} data-status={pull?.mergedAt ? "merged" : (merge?.status ?? "none")}>
       {text}
+      {pull?.mergedAt && pull.mergedBy === "coordinator" && merge?.mandateVersion ? <MergeMandate version={merge.mandateVersion} /> : null}
     </p>
   );
+}
+
+/**
+ * A merge the Coordinator stopped because it destroys something (issue #41): the reasons, what happens and what the
+ * person can do. The texts of the stop are Trama's records, in Italian.
+ */
+function MergeStopField({ stop }: { stop: MergeStop }) {
+  const t = useT();
+  return (
+    <div className="mt-2 space-y-1 text-ui-sm" data-testid="candidate-merge-stop">
+      <p className="text-foreground/90">
+        {t("mergeStop.title")} {stop.reasons.join(" ")}
+      </p>
+      <p className="font-medium text-foreground">{t("mergeStop.consequences")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.consequences.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+      <p className="font-medium text-foreground">{t("mergeStop.alternatives")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.alternatives.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ul>
+      {stop.acknowledgedAt ? <p className="text-muted-foreground">{t("mergeStop.declined")}</p> : null}
+    </div>
+  );
+}
+
+/** The person's choice on a stopped merge: leave it, or merge it with their ok (issue #41). Primary last. */
+function MergeStopActions({ candidateId, declined }: { candidateId: string; declined: boolean }) {
+  const t = useT();
+  return (
+    <>
+      {declined ? null : (
+        <Button size="sm" variant="outline" onClick={() => void act("candidate:declineMerge", { candidateId })}>
+          {t("mergeStop.decline")}
+        </Button>
+      )}
+      <Button size="sm" onClick={() => void act("candidate:approve", { candidateId })}>
+        <IconGitMerge /> {t("mergeStop.merge")}
+      </Button>
+    </>
+  );
+}
+
+/** The mandate a merge on the Coordinator's green light ran under (issue #41). */
+function MergeMandate({ version }: { version: number }) {
+  const t = useT();
+  return <span data-testid="candidate-merge-mandate"> {t("merge.mandateVersion", { version })}</span>;
 }
 
 /**
@@ -1350,6 +1411,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const merged = Boolean(candidate.pullRequest?.mergedAt);
   const open = report.blockers.length === 0 && report.state !== "superseded" && !merged;
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
+  // Issue #41: a destructive change the Coordinator stopped waits for the person's choice.
+  const stop = candidate.merge?.status === "stopped" ? (candidate.merge.stop ?? null) : null;
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
@@ -1382,7 +1445,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length && report.state !== "superseded" ? (
         <Field label="Cosa manca">
-          <ul className="space-y-0.5 text-ui-sm">
+          <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
@@ -1436,6 +1499,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
+      {stop && open ? <MergeStopField stop={stop} /> : null}
       {candidate.pullRequest ? (
         <button
           type="button"
@@ -1478,6 +1542,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             </Button>
           </>
         ) : null}
+        {stop && open && !approved ? <MergeStopActions candidateId={candidateId} declined={Boolean(stop.acknowledgedAt)} /> : null}
         {route === "person" && approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
@@ -1681,7 +1746,101 @@ const CONFLICT_LABEL = {
   overlap: { label: "Stessi file", tone: "warning" as const },
   clean: { label: "Nessun conflitto", tone: "success" as const },
   unknown: { label: "Non verificato", tone: "secondary" as const },
+  hypothesis: { label: "Ipotesi", tone: "info" as const },
+  semantic: { label: "Incompatibili", tone: "destructive" as const },
 };
+
+/** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
+function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
+  const candidate = document.candidates.find((c) => c.id === candidateId);
+  if (!candidate) return null;
+  const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const assignment = specialist?.assignments.find((a) => a.id === candidate.assignmentId);
+  return [specialist?.name, assignment?.objective].filter(Boolean).join(", ") || null;
+}
+
+/**
+ * Where a comparison comes from (issue #40): the project, the assignments, the base and the copies compared, and each
+ * source with its own time, so the reading on GitHub, the merge probe and the AI's analysis are never one moment.
+ */
+function ConflictProvenance({ assessment, projectName, document }: { assessment: ConflictAssessment; projectName: string; document: ProjectDocument }) {
+  const t = useT();
+  const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
+  const works = [candidateWork(document, assessment.candidateId), assessment.otherCandidateId ? candidateWork(document, assessment.otherCandidateId) : null].filter(
+    (w): w is string => Boolean(w),
+  );
+  const copies = [assessment.snapshotId, assessment.otherSnapshotId].filter((id): id is string => Boolean(id)).map((id) => id.slice(0, 7));
+  const semantic = assessment.semantic;
+  const times = [
+    assessment.remoteReadAt ? t("conflict.githubReadAt", { time: formatTime(assessment.remoteReadAt) }) : null,
+    semantic
+      ? t(semantic.carriedFrom ? "conflict.analyzedAtEarlier" : "conflict.analyzedAt", { time: formatTime(semantic.analyzedAt) })
+      : t("conflict.probedAt", { time: formatTime(assessment.checkedAt) }),
+    semantic?.scenario ? t("conflict.scenarioAt", { time: formatTime(semantic.scenario.ranAt) }) : null,
+  ].filter((time): time is string => Boolean(time));
+  const mono = (text: string) => <span className="font-mono text-[11px]">{text}</span>;
+  return (
+    <Field label={t("conflict.origin")}>
+      <div className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="conflict-provenance">
+        <p>
+          {t("conflict.project", { name: projectName })}
+          {works.length ? (
+            <>
+              <Sep />
+              {t("conflict.assignments", { count: works.length, works: works.join("; ") })}
+            </>
+          ) : null}
+        </p>
+        <p>
+          {t("conflict.base")} {mono((candidate?.baseSHA ?? assessment.remoteSHA).slice(0, 7))}
+          <Sep />
+          {t("conflict.copies", { count: copies.length })} {mono(copies.join(` ${t("conflict.and")} `))}
+          {assessment.otherCandidateId ? null : (
+            <>
+              <Sep />
+              {t("conflict.remote")} {mono(assessment.remoteSHA.slice(0, 7))}
+            </>
+          )}
+        </p>
+        <p>
+          {times.map((time, index) => (
+            <span key={time}>
+              {index ? <Sep /> : null}
+              {time}
+            </span>
+          ))}
+        </p>
+      </div>
+    </Field>
+  );
+}
+
+/** The AI's reading of a semantic risk and the scenario that tests it on the combined candidate (issue #40). */
+function SemanticFields({ assessment }: { assessment: ConflictAssessment }) {
+  const t = useT();
+  const semantic = assessment.semantic!;
+  const scenario = semantic.scenario;
+  const reading = t(assessment.classification === "semantic" ? "conflict.reading.semantic" : "conflict.reading.hypothesis");
+  return (
+    <>
+      <Field label={t("conflict.reading")}>
+        <p data-testid="semantic-reading">
+          <span className="text-muted-foreground">{withNodes(reading, { explanation: <span className="text-foreground/90">{semantic.explanation}</span> })}</span>
+        </p>
+      </Field>
+      <Field label={t("conflict.scenario")}>
+        <p className="text-ui-sm" data-testid="semantic-scenario" data-result={scenario?.result ?? "pending"}>
+          <span className="font-mono text-[11.5px]">{semantic.check}</span> {t(scenario ? `conflict.scenario.${scenario.result}` : "conflict.scenario.pending")}
+        </p>
+        {scenario?.result === "fail" && scenario.output ? (
+          <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-background-button-secondary)] p-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+            {scenario.output.slice(-800)}
+          </pre>
+        ) : null}
+      </Field>
+    </>
+  );
+}
 
 /** How many files a conflict lists before "Mostra tutti" (issue #271). */
 const CONFLICT_FILES_SHOWN = 5;
@@ -1771,23 +1930,27 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
             : "Il candidato o il lavoro su GitHub sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
         </p>
       ) : null}
-      {exercise ? (
-        <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
-      ) : null}
-      <p className="text-ui text-foreground/90">
-        Candidato{" "}
-        <RecordName id={assessment.candidateId} short />
-        {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
-        {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
-      </p>
-      <p className="mt-1 text-ui-sm text-muted-foreground">
-        <ReferenceText text={assessment.detail} />
-      </p>
-      {assessment.conflictingFiles.length ? (
-        <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
-          <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
-        </Field>
-      ) : null}
+      <div data-testid="conflict-card" data-classification={assessment.classification}>
+        {exercise ? (
+          <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
+        ) : null}
+        <p className="text-ui text-foreground/90">
+          Candidato{" "}
+          <RecordName id={assessment.candidateId} short />
+          {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
+          {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
+        </p>
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={assessment.detail} />
+        </p>
+        {assessment.semantic ? <SemanticFields assessment={assessment} /> : null}
+        {assessment.conflictingFiles.length ? (
+          <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
+            <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
+          </Field>
+        ) : null}
+        {exercise ? null : <ConflictProvenance assessment={assessment} projectName={project.name} document={project.document} />}
+      </div>
     </CardFrame>
   );
 }

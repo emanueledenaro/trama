@@ -59,7 +59,7 @@ function StepRow({ step }: { step: TechnicalStep }) {
         className="flex w-full min-w-0 items-center gap-1.5 text-left text-muted-foreground transition-colors group-hover/tool-row:text-foreground disabled:cursor-default"
       >
         <span className="flex size-4 shrink-0 items-center justify-center [&>svg]:size-3.5 [&>svg]:stroke-[1.8]">{stepIcon(step)}</span>
-        <span className={cn("min-w-0 truncate leading-5", isCommand && "font-mono text-chat-code")}>{title}</span>
+        <span className={cn("min-w-0 truncate leading-5", isCommand && "font-mono text-chat-code")}>{isCommand ? title : <ReferenceText text={title} links={false} />}</span>
         {step.count > 1 ? <span className="shrink-0 text-ui-xs text-muted-foreground/70 tabular-nums">×{step.count}</span> : null}
         {details.length ? <DisclosureChevron open={open} /> : null}
       </button>
