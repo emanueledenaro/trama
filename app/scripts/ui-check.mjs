@@ -1,6 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -2930,6 +2931,193 @@ for (const dark of [false, true]) {
 }
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #41: the Coordinator merges within the mandate, and says so as its own act. One pull request it merged, with
+// the mandate version and no human review claimed; one it stopped because it deletes a file, waiting for the person in
+// Aspetta te with consequences and alternatives. Both themes. GitHub is not reachable here: the records are Trama's.
+const integrationProject = await mkdtemp(join(tmpdir(), "trama-ui-unione-"));
+await cp(resolve("resources/DemoProject"), integrationProject, { recursive: true });
+const integrationGit = (...args) => execFileSync("git", ["-C", integrationProject, ...args], { encoding: "utf8" });
+integrationGit("init", "-q", "-b", "main");
+integrationGit("add", ".");
+integrationGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+const integrationHead = integrationGit("rev-parse", "HEAD").trim();
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), integrationProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let integrationPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-unione-")) integrationPath = join(dataDir, "Projects", file);
+}
+if (!integrationPath) throw new Error("Merge by mandate: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(integrationPath, "utf8"));
+  const at = (hour) => `2026-09-28T${String(hour).padStart(2, "0")}:00:00.000Z`;
+  const pending = document.mandateRequests.find((r) => !r.resolution);
+  const scope = pending?.scopeModuleIds.length ? pending.scopeModuleIds : ["Sources/Orders"];
+  document.mandate = {
+    version: 1,
+    objectives: ["Portare avanti il ciclo di lavoro del progetto."],
+    priorities: [],
+    scopeModuleIds: scope,
+    authorizedActions: ["plan", "executeInWorktree", "openPullRequest", "integrateCandidate", "composeTeam"],
+    limits: [],
+    grantedAt: at(8),
+    status: "granted",
+    revocation: null,
+    history: [],
+  };
+  if (pending) pending.resolution = { kind: "granted", version: 1, resolvedAt: at(8) };
+  const work = (id, objective, hour, branch) => ({
+    id,
+    specialistId: "S-ADA",
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber: null,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(hour),
+    status: "completed",
+    workspace: { sourceRoot: integrationProject, worktreeRoot: join(integrationProject, "..", `wt-${id}`), branch, baseSHA: integrationHead },
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Fatto.",
+    failure: null,
+    updatedAt: at(hour),
+    lastUpdate: "",
+    reportedStatus: "completed",
+  });
+  const merged = work("A-5E1D0C1A", "Mostrare lo stato dell'ordine annullato", 9, "feature/stato-ordine-annullato");
+  const removal = work("A-7B2F4E90", "Togliere il vecchio export degli ordini", 10, "feature/togliere-export-ordini");
+  document.team.specialists.push({
+    id: "S-ADA",
+    name: "Ada",
+    competence: "Ordini",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color: "violet",
+    tag: "Ordini",
+    createdAt: at(8),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(10),
+    lastUpdate: "",
+    removal: null,
+    assignments: [merged, removal],
+  });
+  const headSHA = "3c9e1f0a2b4d6e8f0a1b2c3d4e5f60718293a4b5";
+  // The digest a green light covers (contentFingerprint): snapshot, no decisions, the one piece of evidence.
+  const fingerprint = (snapshotId, hour) => createHash("sha256").update(`${snapshotId}\n\ngit_status:pass:${snapshotId}:${at(hour)}`).digest("hex");
+  const candidate = (id, assignment, snapshotId, hour, extra) => ({
+    id,
+    assignmentId: assignment.id,
+    specialistId: "S-ADA",
+    snapshotId,
+    baseSHA: integrationHead,
+    diff: "",
+    changedFiles: ["src/orders.js"],
+    touchedModules: [],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["git_status"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(hour),
+    updatedAt: at(hour),
+    evidence: { git_status: { check: "git_status", result: "pass", command: "git status", output: "", snapshotId, decisionVersions: {}, recordedAt: at(hour) } },
+    technicalReview: { id: `R-${id.slice(2)}`, reviewerThreadId: "revisore", authorThreadId: "autore", verdict: "approved", summary: "Il cambiamento fa quello che dice.", at: at(hour) },
+    clearance: { actor: "Coordinatore", fingerprint: fingerprint(snapshotId, hour), at: at(hour), mandateVersion: 1 },
+    humanApproval: { actor: "Persona", fingerprint: fingerprint(snapshotId, hour), at: at(hour) },
+    ...extra,
+  });
+  const destination = (number) => ({ repository: "esempio/negozio", pullRequestNumber: number, baseBranch: "main", headSHA });
+  const mergedCandidate = candidate("C-6D0A21F4", merged, "snap-unione-1", 9, {
+    pullRequest: { url: "https://github.com/esempio/negozio/pull/12", number: 12, branch: merged.workspace.branch, at: at(11), headSHA, mergedAt: at(12) },
+    integration: { actor: "Coordinatore", mandateVersion: 1, destination: destination(12), status: "merged", startedAt: at(12), updatedAt: at(12), mergeSHA: "8f2d4b6a0c1e3f5a7b9d0e2f4a6b8c0d1e3f5a7b", failure: null, stop: null },
+  });
+  const stoppedCandidate = candidate("C-9B3E57C2", removal, "snap-unione-2", 10, {
+    changedFiles: ["src/export.js"],
+    pullRequest: { url: "https://github.com/esempio/negozio/pull/13", number: 13, branch: removal.workspace.branch, at: at(11), headSHA },
+    integration: {
+      actor: "Coordinatore",
+      mandateVersion: 1,
+      destination: destination(13),
+      status: "stopped",
+      startedAt: at(12),
+      updatedAt: at(12),
+      mergeSHA: null,
+      failure: null,
+      stop: {
+        reasons: ["Cancella un file."],
+        consequences: ["Dopo il merge sul branch principale non ci sono più: src/export.js."],
+        alternatives: [
+          "Unisci tu la pull request su GitHub, se le conseguenze ti vanno bene.",
+          "Chiedi al Coordinatore una versione che non toglie niente, per esempio prima deprecare e poi rimuovere.",
+          "Chiudi la pull request e lascia le cose come sono.",
+        ],
+        acknowledgedAt: null,
+      },
+    },
+  });
+  document.candidates.push(mergedCandidate, stoppedCandidate);
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const event = (content) => ({ id: `E-int-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(12), content });
+  document.events.push(
+    event({ type: "card", kind: "candidate", title: "candidate", detail: null, referenceId: mergedCandidate.id }),
+    event({ type: "activity", title: "Pull request #12 unita dal Coordinatore", detail: "Con il mandato versione 1, dopo CI verde e una revisione distinta dall'autore.", tone: "tool" }),
+    event({ type: "card", kind: "candidate", title: "candidate", detail: null, referenceId: stoppedCandidate.id }),
+  );
+  await writeFile(integrationPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), integrationProject);
+const stoppedItem = await openWaiting("candidate", undefined, 30_000);
+if ((await stoppedItem.getAttribute("data-waiting-key")) !== "integration:C-9B3E57C2") throw new Error("Merge by mandate: the stopped merge is not in Aspetta te");
+const stoppedField = stoppedItem.locator('[data-testid="candidate-integration"][data-status="stopped"]');
+await stoppedField.getByText("Il Coordinatore non unisce #13, la scelta è tua.").waitFor();
+await stoppedField.getByText("Conseguenze", { exact: true }).waitFor();
+await stoppedField.getByText("Cosa puoi fare", { exact: true }).waitFor();
+if (/[–—]|(Candidato|incarico) [AC]-[0-9A-F]{8}/.test(await stoppedItem.innerText())) throw new Error(`Merge by mandate: the stopped merge shows dashes or raw ids: ${await stoppedItem.innerText()}`);
+await primaryLast(stoppedItem.locator(".cta-row").last(), "Stopped merge");
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await stoppedField.scrollIntoViewIfNeeded();
+  await shot(`26a-merge-stopped-${dark ? "dark" : "light"}`);
+}
+await stoppedItem.getByRole("button", { name: "Ho visto" }).click();
+await stoppedItem.waitFor({ state: "detached", timeout: 10_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const mergedLine = page.locator('.chat-card, [data-testid="settled-card"]').filter({ has: page.locator('[data-reference-id="A-5E1D0C1A"]') }).first();
+await mergedLine.waitFor({ timeout: 20_000 });
+await openSettled(mergedLine);
+const mergedField = mergedLine.locator('[data-testid="candidate-integration"][data-status="merged"]');
+await mergedField.getByText(/Pull request #12 unita dal Coordinatore con il mandato versione 1/).waitFor();
+await mergedField.getByText(/non una tua revisione/).waitFor();
+await mergedField.getByText(/non parte nessuna distribuzione/).waitFor();
+if (await mergedLine.getByText(/via libera del Coordinatore non vale più/).count()) throw new Error("Merge by mandate: the merged candidate's green light reads as withdrawn");
+if (await mergedLine.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("Merge by mandate: the merged candidate asks the person's approval again");
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await mergedField.scrollIntoViewIfNeeded();
+  await shot(`26b-merge-by-mandate-${dark ? "dark" : "light"}`);
+}
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
