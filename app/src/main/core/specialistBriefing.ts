@@ -1,4 +1,5 @@
 import type { PactDecision, Specialist, SpecialistAssignment } from "@shared/domain";
+import { DEFAULT_LANGUAGE, type Language } from "@shared/i18n";
 import { messageStyle } from "./messageStyle";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
@@ -7,7 +8,12 @@ import { answerBriefing, asksCoordinator } from "./developerQuestions";
 import { providerToolsRule } from "./providers/toolRefusal";
 import { stoppedByClosing } from "./resumeWork";
 
-export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
+export function specialistInstructions(
+  projectName: string,
+  specialist: Specialist,
+  assignment: SpecialistAssignment,
+  language: Language = DEFAULT_LANGUAGE,
+): string {
   const lines = [
     `You are ${specialist.name}, a specialist of the project "${projectName}" in Trama, working under its Coordinator.`,
     `Your competence: ${specialist.competence.replace(/\.$/, "")}.`,
@@ -18,7 +24,7 @@ export function specialistInstructions(projectName: string, specialist: Speciali
     `Stay inside these modules: ${assignment.moduleIds.join(", ")}.`,
     "Do not start other agents and do not ask for broader permissions. If the sandbox stops you, say so in your answer instead of working around it.",
     providerToolsRule(asksCoordinator(specialist, assignment) ? "developer" : "none"),
-    messageStyle("the Coordinator"),
+    messageStyle("the Coordinator", language),
     "Name the files you touched with their path relative to the worktree root.",
   ];
   if (asksCoordinator(specialist, assignment)) {
