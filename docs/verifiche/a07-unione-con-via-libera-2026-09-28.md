@@ -19,6 +19,7 @@ Su Linux nel container (xvfb), dopo il merge di `origin/main` a `d550ab7`:
 - Dopo il merge di `origin/main` a `be82ad6` (#299, conflitto in `Cards.tsx` risolto tenendo le due parti): `npm ci` riuscito, `npx tsc --noEmit -p .` senza errori, `npx vitest run` con 136 file e 1276 test superati (3 saltati), `npm run build` riuscito, `xvfb-run -a node scripts/ui-check.mjs` completata con uscita 0 e 359 schermate.
 - Dopo il merge di `origin/main` a `c4e8aff` (#308, dipendenze aggiornate): `npm ci` riuscito, tsc senza errori, vitest con 136 file e 1276 test superati, build riuscita, ui-check completata con uscita 0 e 359 schermate.
 - Dopo il merge di `origin/main` a `7e13d3f` (#304, cancello dei revisori): tsc senza errori, vitest con 136 file e 1277 test superati, build riuscita, ui-check completata con uscita 0 e 359 schermate.
+- Dopo il merge di `origin/main` a `8bf9f4a` (#303, scelta della lingua): `npm ci` riuscito, tsc senza errori, vitest con 139 file e 1297 test superati (3 saltati), build riuscita, ui-check completata con uscita 0 e 363 schermate.
 
 ## Comportamento
 
