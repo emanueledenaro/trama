@@ -252,7 +252,7 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     expect(notified).toEqual([]);
     expect(controller.snapshot.focusMode?.pausedNotifications).toBe(1);
     // The checks ran on the checkout at the pinned HEAD; both axes are open and wait for their gate.
-    await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null, 45_000);
+    await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null);
     expect(audit.specSource).toBe("Issue #12 citata nei commit");
 
     // The authorized work goes on while focus mode is open.
@@ -268,13 +268,13 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     });
     await controller.send("[assegna]", null, null, null);
     const work = findSpecialist(document, "Ada")!.assignments[0]!;
-    await until(() => work.status === "completed", 45_000);
+    await until(() => work.status === "completed");
     expect(controller.snapshot.focusMode?.auditId).toBe(auditId);
     expect(audit.status).toBe("reviewing");
 
     // The axes read the project; the Spec axis read the issue a commit cites.
     await writeFile(join(gates, "module"), "");
-    await until(() => audit.status === "done", 45_000);
+    await until(() => audit.status === "done");
     expect(audit.checks.length).toBeGreaterThan(0);
     expect(audit.checks.every((c) => c.snapshotId === audit.snapshotId)).toBe(true);
     expect(audit.standards.report).toContain(`git diff ${audit.fixedPoint}`);
@@ -304,5 +304,5 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     expect(notified).toHaveLength(2);
     notify("Trama: dopo");
     expect(notified).toHaveLength(3);
-  }, 150_000);
+  }, 60_000);
 });
