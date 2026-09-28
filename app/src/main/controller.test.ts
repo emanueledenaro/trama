@@ -966,14 +966,16 @@ describe("TramaController", () => {
     expect(document.fixedBanRefusals).toEqual([
       expect.objectContaining({ ban: "forcePush", action: "git push --force origin main", by: { kind: "coordinator" }, acknowledgedAt: null }),
     ]);
-    expect(waitingForYou(document).map((i) => i.kind)).toEqual(["fixedBan"]);
+    // The goal the study proposed waits as well (issue #292): only the refusals are counted here.
+    const refusals = () => waitingForYou(document).filter((i) => i.kind === "fixedBan");
+    expect(refusals()).toHaveLength(1);
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Azione fermata da un divieto fisso"))).toBe(true);
     // The same command tried again is a second refusal, not folded into the first.
     await controller!.send("[vietato:git push --force origin main]", null, null, null);
     await until(() => project.runningRequestId === null && document.fixedBanRefusals!.length === 2, 20_000);
-    expect(waitingForYou(document).map((i) => i.kind)).toEqual(["fixedBan", "fixedBan"]);
+    expect(refusals()).toHaveLength(2);
     for (const refusal of document.fixedBanRefusals!) controller!.acknowledgeFixedBan(refusal.id);
-    expect(waitingForYou(document)).toEqual([]);
+    expect(refusals()).toEqual([]);
   });
 
   it("supersedes a pending mandate request with a newer one, which alone can be granted (W14)", async () => {

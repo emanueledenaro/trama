@@ -48,10 +48,16 @@ const waitingItem = async (reference, timeout = 20_000) => {
   await item.waitFor();
   return item;
 };
-const openWaiting = (kind, text) => {
+const openWaiting = (kind, text, timeout) => {
   let reference = page.locator(`[data-testid="waiting-reference"][data-waiting-kind="${kind}"]`);
   if (text) reference = reference.filter({ hasText: text });
-  return waitingItem(reference.last());
+  return waitingItem(reference.last(), timeout);
+};
+// Issue #292: a verified candidate waits for the person in Aspetta te, where its card is. Opens the list if closed.
+const showWaiting = async () => {
+  if (await page.getByTestId("inspector").locator('[data-testid="waiting-item"]').count()) return;
+  await page.getByTestId("waiting-summary").getByRole("button").click();
+  await page.getByTestId("inspector").locator('[data-testid="waiting-item"]').first().waitFor();
 };
 // W12: "Chiedi al Coordinatore" leaves a question in the composer, ready to edit or send, with the cursor in it.
 const composer = () => page.getByLabel("Messaggio al Coordinatore");
@@ -129,6 +135,15 @@ const setLookTo = (provider, dark) =>
     },
     [provider, dark],
   );
+// Light and dark, then the theme the check had.
+const themeShots = async (name) => {
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await shot(`${name}-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+};
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
 const introFrames = async (label, times) => {
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
@@ -345,8 +360,11 @@ await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
-// Issue #240: with nothing waiting for the person, the summary above the composer does not show.
-if (await page.getByTestId("waiting-summary").count()) throw new Error("The Aspetta te summary shows with nothing waiting");
+// Issue #292: at the start only the goal the Coordinator proposed waits for the person, in the summary, in the sidebar
+// counter and as a reference in the chat.
+const startSummary = (await page.getByTestId("waiting-summary").innerText()).replace(/\s+/g, " ");
+if (!startSummary.includes("Obiettivo proposto") || !startSummary.includes("1 cosa aspetta te")) throw new Error(`Aspetta te at the start: ${startSummary}`);
+await page.locator('[data-testid="waiting-reference"][data-waiting-kind="goal"]').waitFor();
 // A place to fill: the project has no goal yet. Files dragged over the composer take the seam while they are there.
 await page.getByTestId("first-goal").scrollIntoViewIfNeeded();
 await seamShots("firstGoal", "first-goal");
@@ -635,10 +653,13 @@ const assignmentId = body.match(/Incarico (A-[0-9A-F]{8})/)[1];
 const decisionId = body.match(/Decisione (D-[0-9A-F]{8})/)[1];
 await page.getByLabel("Messaggio al Coordinatore").fill(`[candidato:${assignmentId}:${decisionId}]`);
 await page.keyboard.press("Enter");
-await page.getByText("Deciso", { exact: true }).first().waitFor({ timeout: 30_000 });
+// Issue #292: the verified candidate waits for the person in Aspetta te; the chat keeps its reference.
+const demoCandidate = await openWaiting("candidate", undefined, 30_000);
+await demoCandidate.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_000 });
 await page.waitForTimeout(500);
 await shot("04f-candidate");
-await page.getByRole("button", { name: "Apri il diff" }).first().click();
+await themeShots("04f2-waiting-candidate");
+await demoCandidate.getByRole("button", { name: "Apri il diff" }).click();
 await shot("04g-candidate-diff");
 await page.getByRole("button", { name: "Approva questo candidato" }).first().click();
 await page.waitForTimeout(500);
@@ -766,7 +787,12 @@ await shot("10-dark");
 await page.locator(".chat-card", { has: page.getByTestId("domain-proposal") }).last().scrollIntoViewIfNeeded();
 await shot("10a-dark-domain-proposal");
 // Goals (UX01, UX02, UX07): the project has only the goal the Coordinator proposed, so it offers the first one.
-await page.getByTestId("goal-card").first().waitFor();
+// Issue #292: the proposed goal waits for the person in Aspetta te; the chat keeps its reference.
+await page.locator('[data-testid="waiting-reference"][data-waiting-kind="goal"]').first().waitFor();
+// Issue #292: what waits for the person while the Coordinator's goal is proposed, with the list open.
+if (await page.getByTestId("waiting-summary").count()) await page.getByTestId("waiting-summary").getByRole("button").click();
+await themeShots("10b-waiting-proposed-goal");
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByRole("button", { name: "Formula il primo obiettivo" }).first().click();
 await page.getByLabel("Titolo dell'obiettivo").fill("Ordini annullati in revisione");
 await page.getByLabel("Risultato atteso").fill("Un ordine pagato e annullato resta in revisione finché una persona non decide.");
@@ -983,7 +1009,7 @@ const refreshed = page.getByRole("status").filter({ hasText: "Progetto riletto" 
 await refreshed.waitFor({ timeout: 10_000 });
 await refreshed.getByRole("button", { name: "Chiudi" }).click();
 // Goal card: "Modifica la proposta" opens the proposal with its editor ready.
-await page.getByTestId("goal-card").getByRole("button", { name: "Modifica la proposta" }).first().click();
+await (await openWaiting("goal")).getByTestId("goal-card").getByRole("button", { name: "Modifica la proposta" }).click();
 const editor = page.getByTestId("inspector").getByTestId("goal-editor");
 await editor.waitFor();
 await shot("16a-goal-proposal-edit");
@@ -1083,15 +1109,6 @@ if (await page.getByText(/Il Coordinatore va avanti da solo|^Mossa automatica/).
 const stopBox = await stopMove.boundingBox();
 const lineBox = await statusLine.boundingBox();
 if (!stopBox || !lineBox || lineBox.x + lineBox.width - (stopBox.x + stopBox.width) > 2) throw new Error("The stop of the automatic move is not on the right");
-// Light and dark, then the theme the check had.
-const themeShots = async (name) => {
-  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
-  for (const dark of [false, true]) {
-    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
-    await shot(`${name}-${dark ? "dark" : "light"}`);
-  }
-  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
-};
 await themeShots("15a-status-line-move");
 await stopMove.click();
 await stopMove.waitFor({ state: "detached", timeout: 20_000 });
@@ -1482,6 +1499,14 @@ await declinedMandate.getByLabel("Motivo del rifiuto").fill("Scrivo io un mandat
 await declinedMandate.getByRole("button", { name: "Rifiuta la proposta" }).click();
 await declinedMandate.waitFor({ state: "detached", timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// Issue #292: after the study only the goal the Coordinator proposed waits. Discarded, it leaves Aspetta te, and with
+// nothing waiting for the person the summary above the composer does not show (issue #240).
+const proposedGoal = page.locator('[data-testid="waiting-reference"][data-waiting-kind="goal"]').first();
+await proposedGoal.waitFor({ timeout: 30_000 });
+const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).replace(/^goal:/, "");
+await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
+await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
+if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
@@ -1565,7 +1590,9 @@ const spacesCard = assignmentCards.nth(2);
 await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
 const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
-const failedCard = candidateCards.first();
+// The card of an assignment's candidate, in the chat or, while it waits for the person, in Aspetta te (issue #292).
+const candidateOf = async (card) => candidateCards.filter({ hasText: `incarico ${await cardAssignment(card)}` }).first();
+const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
 await failedCard.getByText("In costruzione", { exact: true }).waitFor();
@@ -1592,7 +1619,9 @@ await send("[assegna] [correggi-spazi]");
 const fixCard = assignmentCards.nth(3);
 await fixCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(fixCard)}:${candidateDecision}:tutte]`);
-const correctedCard = candidateCards.nth(1);
+const correctedCard = await candidateOf(fixCard);
+await page.locator('[data-testid="waiting-reference"][data-waiting-kind="candidate"]').waitFor({ timeout: 30_000 });
+await showWaiting();
 await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_000 });
 await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
@@ -1626,7 +1655,7 @@ await send("[assegna] [segreto]");
 const secretWork = assignmentCards.nth(4);
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(secretWork)}:${candidateDecision}]`);
-const secretCandidate = candidateCards.nth(2);
+const secretCandidate = await candidateOf(secretWork);
 const blockedGate = secretCandidate.locator('[data-testid="candidate-gate"][data-status="blocked"]');
 await blockedGate.waitFor({ timeout: 60_000 });
 if ((await blockedGate.getByTestId("gate-review").count()) !== 8) throw new Error("The gate does not show every candidate figure");
@@ -1664,6 +1693,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
 // Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
 // evidence and the reviewer's findings, with file and line, as judgement; in the light and the dark theme.
+await showWaiting();
 const review = correctedCard.getByTestId("technical-review");
 await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
 const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
@@ -1698,6 +1728,7 @@ await page.getByRole("checkbox", { name: /Aprire pull request/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await showWaiting();
 const correctedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="yes"]');
 await correctedQuality.waitFor({ timeout: 20_000 });
 await correctedQuality.locator('[data-testid="quality-item"][data-code="MANDATE"][data-passed="yes"]').getByText("Il mandato permette di aprire pull request.").waitFor();
@@ -1743,6 +1774,7 @@ await solid.click();
 await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="true"]').waitFor({ timeout: 10_000 });
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await standardSettings.waitFor({ state: "hidden" });
+await showWaiting();
 const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
 await send(`[riverifica:${correctedId}:git_status]`);
 await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
@@ -1814,7 +1846,7 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // The Coordinator asks for the green light without the candidate gate (W10), so Trama's build and tests never ran.
 await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}] [senza-revisione]`);
-const sliceCandidate = candidateCards.nth(3);
+const sliceCandidate = await candidateOf(sliceWork);
 const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");
 await testedSeams.waitFor({ timeout: 30_000 });
 await testedSeams.locator('[data-testid="candidate-tested-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
@@ -1883,6 +1915,7 @@ await app.evaluate(({ nativeTheme }) => {
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await showWaiting();
 await correctedCard.scrollIntoViewIfNeeded();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
 await auditDone();
@@ -1900,6 +1933,7 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // Opened again, the card shows the same examination instead of starting a new one.
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await showWaiting();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
 await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
@@ -2041,7 +2075,8 @@ await page.getByRole("button", { name: "Ask Trama", exact: true }).click();
 await expectAsked("/ask-trama ", "Ask Trama");
 await page.keyboard.type("Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.");
 await page.keyboard.press("Enter");
-const routeCard = page.locator('[data-anchor="route"]').last();
+// Issue #292: the proposed route waits for the person in Aspetta te; the chat keeps its reference.
+const routeCard = (await openWaiting("route")).locator('[data-anchor="route"]');
 await routeCard.getByText("Proposto", { exact: true }).waitFor({ timeout: 20_000 });
 for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione del candidato e focus mode", "Confine di fase: Continua"]) {
   if (!(await routeCard.innerText()).includes(expected)) throw new Error(`The Ask Trama route does not show "${expected}"`);
@@ -2064,10 +2099,12 @@ for (const provider of ["codex", "claudeAgent"]) {
 }
 await setLook(routeLook.provider, routeLook.dark);
 await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
-await routeCard.getByText("Avviato", { exact: true }).waitFor({ timeout: 20_000 });
+// Started, the route leaves Aspetta te and the chat shows its card again in full.
+const startedRoute = page.getByRole("main").locator('[data-anchor="route"]').last();
+await startedRoute.getByText("Avviato", { exact: true }).waitFor({ timeout: 20_000 });
 await page.getByText(/^Avvia il percorso AT-[0-9A-F]{8} di Ask Trama/).last().waitFor({ timeout: 20_000 });
 await page.getByText("Chi vede gli ordini in revisione?").last().waitFor({ timeout: 20_000 });
-if (await routeCard.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
+if (await startedRoute.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await page.getByText("Chi vede gli ordini in revisione?").last().scrollIntoViewIfNeeded();
 await shot("21c-ask-trama-started");
@@ -2134,7 +2171,8 @@ presenceGit(presenceProject, "checkout", "-q", "-b", "feature/carrello");
 await writeFile(join(presenceProject, "src", "payments.js"), "export const pay = () => 'CONTENUTO PRIVATO';\n");
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), presenceProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-squadra" }).waitFor({ timeout: 30_000 });
-const consentCard = page.locator('[data-anchor="presence-consent"]');
+// Issue #292: the proposal waits for the person in Aspetta te; the chat keeps its reference.
+const consentCard = (await openWaiting("presence", undefined, 30_000)).locator('[data-anchor="presence-consent"]');
 await consentCard.getByRole("button", { name: "Condividi" }).waitFor({ timeout: 30_000 });
 const notNow = await consentCard.getByRole("button", { name: "Non ora" }).boundingBox();
 const share = await consentCard.getByRole("button", { name: "Condividi" }).boundingBox();
@@ -2144,8 +2182,10 @@ if (!notNow || !share || !consentBox || notNow.x >= share.x || consentBox.x + co
 }
 if (presenceGit(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) throw new Error("Presence shared before consent");
 await shot("16-presence-consent");
+await themeShots("16a-waiting-presence");
 await consentCard.getByRole("button", { name: "Condividi" }).click();
-await consentCard.getByText("Condivisa").waitFor({ timeout: 10_000 });
+// Answered, the proposal leaves Aspetta te and the chat shows its card again in full.
+await page.getByRole("main").locator('[data-anchor="presence-consent"]').getByText("Condivisa").waitFor({ timeout: 10_000 });
 let adaRecord = "";
 for (let attempt = 0; attempt < 60 && !adaRecord; attempt++) {
   await page.waitForTimeout(250);
@@ -2819,7 +2859,8 @@ await fixedBans.scrollIntoViewIfNeeded();
 await mandateShots("26a-project-mandate");
 await projectMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
-if (await page.getByTestId("waiting-summary").count()) throw new Error("The granted project mandate still waits in Aspetta te");
+// The goal the study proposed may still wait (issue #292): only the mandate must have left Aspetta te.
+if (await page.locator('[data-waiting-kind="mandate"]').count()) throw new Error("The granted project mandate still waits in Aspetta te");
 
 // Restricting: the mandate stays in force, one action less, a new version in the history.
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
@@ -2849,7 +2890,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[vietato:git push --for
 await page.keyboard.press("Enter");
 // The refusal is not a card of the chat: the summary above the composer opens it in Aspetta te.
 await page.getByTestId("waiting-summary").getByText("Azione vietata").waitFor({ timeout: 20_000 });
-await page.getByTestId("waiting-summary").getByRole("button", { name: /aspetta te$/ }).click();
+await page.getByTestId("waiting-summary").getByRole("button", { name: /aspett(a|ano) te$/ }).click();
 const bannedItem = page.getByTestId("inspector").locator('[data-testid="waiting-item"][data-waiting-kind="fixedBan"]');
 await bannedItem.waitFor();
 const bannedCard = bannedItem.getByTestId("fixed-ban-card");
