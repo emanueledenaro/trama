@@ -14,6 +14,24 @@ export const it = {
   // Coordinator replies
   "toolError.placeholder": "uno strumento di Trama ha rifiutato la richiesta (il dettaglio è in Attività)",
 
+  // Automatic repair of a provider's CLI
+  "providerRepair.title": "Trama ha riparato {cli}",
+  "providerRepair.failedTitle": "Trama non è riuscito a riparare {cli}",
+  "providerRepair.retry": "Trama riprova il turno una volta.",
+  "providerRepair.updateCli.done": "Aggiornato con {command}: ora è la versione {detail}.",
+  "providerRepair.updateCli.failed": "{command} non è riuscito: {detail}",
+  "providerRepair.updateCli.notNeeded": "Versione {detail}: non serve aggiornarla.",
+  "providerRepair.reinstallPlugin.done": "Plugin di Trama reinstallato con {command}.",
+  "providerRepair.reinstallPlugin.failed": "Il plugin di Trama non si è reinstallato: {detail}",
+  "providerRepair.checkHook.done": "L'hook di Trama risponde come deve.",
+  "providerRepair.checkHook.failed": "L'hook di Trama non risponde come deve: {detail}",
+  "providerRepair.problem.notCalled": "{cli} non ha chiamato l'hook di Trama, il controllo che tiene il turno in sola lettura.",
+  "providerRepair.problem.notReady": "Il plugin di Trama per {cli} non è pronto, e senza il suo hook Trama non controlla cosa fa l'agente.",
+  "providerRepair.gaveUp": "{problem} Trama ha provato a ripararlo da solo. {steps} Senza l'hook Trama non fa partire il turno. Resta una cosa da fare: {action}",
+  "providerRepair.action.update": "aggiorna {cli} da un terminale con {command}, poi riprova.",
+  "providerRepair.action.reinstall": "reinstalla {cli}, poi riprova.",
+  "providerRepair.outdated": "{cli} {version} è troppo vecchio per Trama, che ha provato ad aggiornarlo da solo. {steps} Resta una cosa da fare: aggiornalo da un terminale con {command} alla versione {minimum} o successiva.",
+
   // Language
   "language.label": "Lingua",
   "language.description":
@@ -158,8 +176,10 @@ export const it = {
   "settings.guide.description":
     "Collegamenti, progetto, metodo AI Hero ed esercizi sulla copia di esempio. Riprende dal punto in cui ti eri fermato.",
   "settings.guide.open": "Apri la guida",
+  "menu.about": "Informazioni su Trama",
   "settings.about": "Informazioni",
   "settings.about.version": "Versione {version}. Coordina decisioni, lavoro e verifiche su un repository locale.",
+  "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "L'accesso avviene nel browser ufficiale o nel terminale. Trama non copia le credenziali.",
   "settings.connections.checkAll": "Verifica tutti",
@@ -268,6 +288,32 @@ export const it = {
   "settings.presence.openProject": "Apri un progetto per scegliere se condividere la presenza.",
   "settings.presence.demo": "Il progetto di esempio non condivide la presenza.",
   "settings.presence.share": "Condividi la presenza in {name}",
+
+  // Ticket updates in Activity (C10)
+  "ticket.issue": "Issue #{number} «{title}»",
+  "ticket.issueUntitled": "Issue #{number}",
+  "ticket.registered": "{issue}: avanzamento registrato",
+  "ticket.duplicate": "{issue}: avanzamento già registrato",
+  "ticket.closed": "{issue}: chiusa con le prove",
+  "ticket.failed": "{issue}: aggiornamento non riuscito",
+  "ticket.stillOpen": "Resta aperta: {blockers}.",
+  "ticket.checked": "Criteri spuntati: {criteria}.",
+  "ticket.checked.one": "Criterio spuntato: {criteria}.",
+  "ticket.criterion": "«{text}»",
+  "ticket.failedDetail": "GitHub non ha risposto come atteso: {done}.",
+  "ticket.failed.reportAlreadyThere": "il resoconto era già sulla issue",
+  "ticket.failed.reportPosted": "il resoconto è stato pubblicato",
+  "ticket.failed.reportNotPosted": "il resoconto non è stato pubblicato",
+  "ticket.failed.criteriaChecked": "i criteri sono stati spuntati",
+  "ticket.failed.criteriaNotChecked": "i criteri non sono stati spuntati",
+  "ticket.failed.stillOpen": "la issue resta aperta",
+  "ticket.blocker.noChecklist": "la issue non ha criteri da spuntare",
+  "ticket.blocker.criterionOpen": "manca «{text}»",
+  "ticket.blocker.notMerged": "nessuna pull request di questo lavoro è stata unita",
+  "ticket.blocker.checks.failure": "le verifiche della PR #{number} non sono passate",
+  "ticket.blocker.checks.pending": "le verifiche della PR #{number} sono ancora in corso",
+  "ticket.blocker.checks.none": "le verifiche della PR #{number} non sono state eseguite",
+  "ticket.blocker.checks.success": "le verifiche della PR #{number} sono passate",
 
   // Work a change of the mandate stops (C06)
   "mandate.stoppedWork.revokeLead": "Senza mandato il Coordinatore legge e propone, ma non agisce.",

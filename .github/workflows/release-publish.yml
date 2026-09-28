@@ -1,7 +1,8 @@
 name: Pubblicazione del rilascio
 # When main carries a version of app/package.json with a CHANGELOG.md section
 # and no v* tag yet, creates a draft release, builds the packages, attaches
-# them and publishes the release, which creates the tag. Tags are never moved.
+# them with the SHA-256 checksums and publishes the release, which creates the
+# tag. Tags are never moved. Policy in docs/agents/versioning.md.
 on:
   push:
     branches: [main]
@@ -44,7 +45,10 @@ jobs:
             echo "La bozza $tag esiste già: la riprendo sul commit $ref."
           else
             ref="$GITHUB_SHA"
-            gh release create "$tag" --draft --target "$ref" --title "$tag" --notes-file notes.md
+            prerelease=()
+            # A beta (X.Y.Z-beta.N) is a pre-release on GitHub (docs/agents/versioning.md).
+            case "$version" in *-*) prerelease=(--prerelease) ;; esac
+            gh release create "$tag" --draft "${prerelease[@]}" --target "$ref" --title "$tag" --notes-file notes.md
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"

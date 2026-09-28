@@ -22,6 +22,7 @@ import {
   retryDelayMs,
   waitReasonOf,
 } from "@shared/providerFailure";
+import { REPAIRABLE_CLIS, repairActivity } from "@shared/providerRepair";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -94,7 +95,20 @@ import {
   revisePractice,
   rollbackPractice,
 } from "./core/practices";
-import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
+import {
+  blockerMessage,
+  blockerText,
+  checkItems,
+  citedCommits,
+  closeBlockers,
+  type CloseBlocker,
+  evidenceProblems,
+  isCommitReference,
+  parseChecklist,
+  progressComment,
+  progressKey,
+  progressMarker,
+} from "./core/tickets";
 import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import {
   type CleanCodeChange,
@@ -219,7 +233,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -472,6 +486,12 @@ const CHOICES_IN_TEXT_TITLE = "Scelta scritta nel testo invece che in una scheda
 
 /** How Trama records one of the provider's own tools it blocked, with what the agent was told to use (issue #228). */
 const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
+
+/** The Activity entry for a repair Trama made by itself on a provider's CLI, in the person's language. */
+const providerRepairEntry = (language: Language, event: Extract<TurnEvent, { type: "providerRepaired" }>) => {
+  const cli = REPAIRABLE_CLIS[event.provider];
+  return cli ? repairActivity(language, cli, event) : null;
+};
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
 
@@ -1086,7 +1106,7 @@ export class TramaController {
     if (id === "codex") return this.discovery;
     let runtime = this.providerDiscovery.get(id);
     if (!runtime) {
-      runtime = createRuntime(id, { onAccountChanged: () => void this.refreshProvider(id) });
+      runtime = createRuntime(id, { onAccountChanged: () => void this.refreshProvider(id), language: () => this.state.language });
       this.providerDiscovery.set(id, runtime);
     }
     return runtime;
@@ -2176,6 +2196,7 @@ export class TramaController {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
       requestTimeoutMs: 15_000,
+      language: () => this.state.language,
     });
     this.runtime = { client, provider, toolServer, projectId: project.id };
     return this.runtime;
@@ -2392,6 +2413,10 @@ export class TramaController {
         } else if (event.type === "toolRefused") {
           // A refusal during the study is visible too (issue #228).
           appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
+          this.changed();
+        } else if (event.type === "providerRepaired") {
+          const entry = providerRepairEntry(this.state.language, event);
+          if (entry) appendEvent(document, "trama", { type: "activity", ...entry }, null);
           this.changed();
         }
       },
@@ -3307,6 +3332,11 @@ export class TramaController {
       case "toolRefused":
         activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
         return;
+      case "providerRepaired": {
+        const entry = providerRepairEntry(this.state.language, event);
+        if (entry) activity(entry.title, entry.detail, entry.tone);
+        return;
+      }
       case "fixedBanRefused":
         this.recordFixedBan(project, event, { kind: "coordinator" }, request.id);
         return;
@@ -4044,6 +4074,7 @@ export class TramaController {
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
+      language: () => this.state.language,
       ...(toolServer ? { toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames } } : {}),
     });
     this.specialistRuntimes.set(assignmentId, { client, projectId: project.id });
@@ -4184,6 +4215,11 @@ export class TramaController {
             case "toolRefused":
               this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
               return;
+            case "providerRepaired": {
+              const entry = providerRepairEntry(this.state.language, event);
+              if (entry) this.specialistActivity(project, assignmentId, key, entry.title, entry.detail, entry.tone);
+              return;
+            }
             case "fixedBanRefused": {
               const specialistId = findAssignment(project.document, assignmentId)?.specialistId ?? "";
               this.recordFixedBan(project, event, { kind: "specialist", specialistId, assignmentId }, null, { assignmentId, workKey: `${assignmentId}:${key}` });
@@ -5022,7 +5058,7 @@ export class TramaController {
     const document = project.document;
     const { provider, model } = reviewer;
     if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
-    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     clients.add(client);
     try {
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
@@ -5110,7 +5146,7 @@ export class TramaController {
       finishReview(gate, role, { failure: "Nessun modello in sola lettura disponibile per i revisori del candidato." });
       return;
     }
-    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.gateRuns.get(gate.id);
     run?.clients.add(client);
     try {
@@ -5283,7 +5319,7 @@ export class TramaController {
       for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
       return;
     }
-    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
     try {
@@ -5307,7 +5343,7 @@ export class TramaController {
 
   /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
   private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
-    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
     try {
@@ -5653,7 +5689,8 @@ export class TramaController {
   /**
    * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
    * idempotent, so a retry after a timeout duplicates nothing; the issue closes only when every
-   * criterion is ticked and a merged pull request has green checks.
+   * criterion is ticked and a merged pull request has green checks. A GitHub write that fails is
+   * recorded in the chat as not done, with what did reach GitHub, and the error goes back to the caller.
    */
   async updateTicket(input: TicketUpdate, requestId: string | null = null): Promise<TicketUpdateResult> {
     const project = this.requireProject();
@@ -5672,51 +5709,98 @@ export class TramaController {
       document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
     );
     const pullRequests = new Set(document.candidates.flatMap((c) => (c.pullRequest ? [c.pullRequest.number] : [])));
-    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests }));
+    const commits = new Set<string>();
+    for (const sha of citedCommits(input.criteria)) {
+      const found = await git(["cat-file", "-e", `${sha}^{commit}`], project.rootPath).then(
+        () => true,
+        () => false,
+      );
+      if (found) commits.add(sha);
+    }
+    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests, commits }));
     if (problems.length) throw new TicketRefusal("evidence_insufficient", problems.join(" "));
 
+    const references = this.referenceIndex(project);
+    const describe = (reference: string) => {
+      const candidate = document.candidates.find((c) => c.id === reference);
+      if (candidate) {
+        const name = references.ids.get(reference)?.label ?? "candidato";
+        return candidate.pullRequest ? `${name} (PR #${candidate.pullRequest.number})` : name;
+      }
+      return isCommitReference(reference) ? reference.slice(0, 12) : reference;
+    };
+    const t = translator(this.state.language);
+    const number = String(input.issueNumber);
+    const issueName = issue.title.trim() ? t("ticket.issue", { number, title: issue.title.trim() }) : t("ticket.issueUntitled", { number });
     const key = progressKey(input.issueNumber, input.criteria, input.summary);
     const duplicate = issue.comments.some((c) => c.includes(progressMarker(key)));
-    if (!duplicate) await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts));
     const met = input.criteria.filter((c) => c.outcome === "met" && !items[c.index]!.checked).map((c) => c.index);
-    let body = issue.body;
-    if (met.length) {
-      body = checkItems(issue.body, met);
-      await updateIssueBody(repository, input.issueNumber, body);
-    }
+    let commentPosted = false;
+    let checklistUpdated = false;
     let closed = issue.state === "closed";
-    let blockers: string[] = [];
-    if (input.close && !closed) {
-      const numbers = new Set<number>();
-      for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
-        for (const reference of criterion.evidence) {
-          const pull = /^#(\d+)$/.exec(reference);
-          if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
-          const number = candidates.get(reference)?.pullRequestNumber;
-          if (number) numbers.add(number);
+    let blockers: CloseBlocker[] = [];
+    try {
+      if (!duplicate) {
+        await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts, describe));
+        commentPosted = true;
+      }
+      let body = issue.body;
+      if (met.length) {
+        body = checkItems(issue.body, met);
+        await updateIssueBody(repository, input.issueNumber, body);
+        checklistUpdated = true;
+      }
+      if (input.close && !closed) {
+        const numbers = new Set<number>();
+        for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
+          for (const reference of criterion.evidence) {
+            const pull = /^#(\d+)$/.exec(reference);
+            if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
+            const number = candidates.get(reference)?.pullRequestNumber;
+            if (number) numbers.add(number);
+          }
+        }
+        const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
+        blockers = closeBlockers(parseChecklist(body), statuses);
+        if (!blockers.length) {
+          await closeIssue(repository, input.issueNumber);
+          closed = true;
         }
       }
-      const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
-      blockers = closeBlockers(parseChecklist(body), statuses);
-      if (!blockers.length) {
-        await closeIssue(repository, input.issueNumber);
-        closed = true;
-      }
+    } catch (error) {
+      const done = [
+        t(duplicate ? "ticket.failed.reportAlreadyThere" : commentPosted ? "ticket.failed.reportPosted" : "ticket.failed.reportNotPosted"),
+        met.length ? t(checklistUpdated ? "ticket.failed.criteriaChecked" : "ticket.failed.criteriaNotChecked") : null,
+        input.close ? t("ticket.failed.stillOpen") : null,
+      ].filter(Boolean);
+      appendEvent(
+        document,
+        "trama",
+        { type: "activity", title: t("ticket.failed", { issue: issueName }), detail: t("ticket.failedDetail", { done: done.join(", ") }), tone: "error" },
+        requestId,
+      );
+      this.changed();
+      throw error;
     }
+    const criterionNames = met.map((i) => t("ticket.criterion", { text: items[i]!.text })).join(", ");
     appendEvent(
       document,
       "trama",
       {
         type: "activity",
-        title: `Issue #${input.issueNumber}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
-        detail: blockers.length ? `Resta aperta: ${blockers.join(" ")}` : met.length ? `Criteri spuntati: ${met.map((i) => i + 1).join(", ")}` : null,
+        title: t(closed && input.close ? "ticket.closed" : duplicate ? "ticket.duplicate" : "ticket.registered", { issue: issueName }),
+        detail: blockers.length
+          ? t("ticket.stillOpen", { blockers: blockers.map((b) => blockerText(b, t)).join("; ") })
+          : met.length
+            ? t("ticket.checked", { criteria: criterionNames, count: met.length })
+            : null,
         tone: "tool",
       },
       requestId,
     );
     this.changed();
     void this.refreshGitHub();
-    return { commentPosted: !duplicate, duplicate, checkedCriteria: met, closed, closeBlockers: blockers };
+    return { commentPosted, duplicate, checkedCriteria: met, closed, closeBlockers: blockers.map(blockerMessage) };
   }
 
   // MARK: Team monitor
@@ -5979,7 +6063,7 @@ export class TramaController {
     if (plan.status !== "planning") return;
     const provider = this.coordinatorProvider(document);
     const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
-    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     this.planners.set(plan.id, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
@@ -6155,7 +6239,7 @@ export class TramaController {
     const key = `${plan.id}:slices`;
     const provider = this.coordinatorProvider(document);
     const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
-    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     this.planners.set(key, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per dividere il lavoro in fette.");
