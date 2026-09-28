@@ -3,6 +3,7 @@
 // With FAKE_GH_TEAM a colleague who does not use Trama has one open pull request and there is one more branch,
 // for the Gruppo view (G02). With FAKE_GH_MERGED_PULL the issues list also holds a merged pull request that names #7,
 // as GitHub lists pull requests with the issues (issue #231).
+// With FAKE_GH_PULLS it also opens and merges pull requests (issue #247).
 // It never reaches GitHub; anything it does not know fails like a gh error. With FAKE_GH_LOG it writes every call,
 // one JSON array per line, to that file, and it answers the issue writes Trama makes when it publishes a spec (M04)
 // and its slices with their blocking links (M05). With FAKE_GH_ISSUE_BASE as well, a new issue takes the next number
@@ -32,6 +33,10 @@ if (ticket && args[0] === "pr" && args[1] === "view") {
   reply({ number: Number(args[2]), state: pull.state, mergedAt: pull.mergedAt ?? null, statusCheckRollup: pull.checks ? [{ conclusion: pull.checks, status: pull.checks === "PENDING" ? "IN_PROGRESS" : "COMPLETED" }] : [] });
 }
 if (args[0] === "auth" && args[1] === "status") reply("github.com\n  ✓ Logged in to github.com account trama-ui (keyring)\n");
+// With FAKE_GH_PULLS Trama may publish and merge (issue #247): the account can push, a new pull request takes number 21,
+// `gh pr view` says it is open with no checks, and a merge at the head Trama pushed succeeds.
+const pulls = Boolean(process.env.FAKE_GH_PULLS);
+if (pulls && args[0] === "pr" && args[1] === "view") reply({ number: Number(args[2]), state: "OPEN", mergedAt: null, statusCheckRollup: [] });
 if (args[0] !== "api") fail(`fake gh: ${args.join(" ")} not supported`);
 
 const endpoint = args.slice(1).find((arg, index, list) => !arg.startsWith("-") && list[index - 1] !== "--method" && list[index - 1] !== "--jq" && list[index - 1] !== "--raw-field" && list[index - 1] !== "--field");
@@ -86,8 +91,14 @@ if (method === "PATCH" && /^\/issues\/\d+$/.test(rest)) reply({});
 if (method === "POST" && /^\/issues\/\d+\/dependencies\/blocked_by$/.test(rest)) reply({});
 if (issueBase !== null && method === "POST" && /^\/issues\/\d+\/labels$/.test(rest)) reply([]);
 if (issueBase !== null && method === "DELETE" && /^\/issues\/\d+\/labels\/[^/]+$/.test(rest)) reply([]);
+if (pulls && method === "POST" && rest === "/pulls") reply({ number: 21, html_url: `https://github.com/${name}/pull/21` });
+if (pulls && method === "PUT" && /^\/pulls\/\d+\/merge$/.test(rest)) {
+  const sha = args.find((arg) => arg.startsWith("sha="))?.slice(4);
+  if (!sha) fail("gh: Head branch was modified. Review and try the merge again. (HTTP 409)");
+  reply({ merged: true, sha: "feedfacefeedfacefeedfacefeedfacefeedface", message: "Pull Request successfully merged" });
+}
 if (method !== "GET") fail(`fake gh: ${method} ${endpoint} not supported`);
-if (rest === "") reply({ default_branch: "main", full_name: name, private: false, permissions: { pull: true, push: false, admin: false } });
+if (rest === "") reply({ default_branch: "main", full_name: name, private: false, permissions: { pull: true, push: pulls, admin: false } });
 if (rest === "/issues") {
   reply(
     firstPage

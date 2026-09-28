@@ -251,6 +251,8 @@ export function approveCandidate(document: ProjectDocument, candidateId: string,
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
+  // An ok on the same content takes back an earlier refusal (issue #247).
+  if (candidate.humanRejection) candidate.humanRejection = null;
   candidate.updatedAt = now.toISOString();
   return candidate;
 }
