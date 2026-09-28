@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { formatRelativeTime } from "@/lib/format";
+import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
@@ -31,28 +32,21 @@ const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "war
 
 /** What the person made of a finding (F04), each with a link to its record. */
 function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
+  const link = (label: string, onClick: () => void) => (
+    <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={onClick}>
+      {label}
+    </button>
+  );
   if (followUp.kind === "ticket") {
-    return followUp.issue ? (
-      <>
-        Issue{" "}
-        <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "issue", number: followUp.issue!.number })}>
-          #{followUp.issue.number}
-        </button>{" "}
-        su GitHub
-      </>
-    ) : (
-      <>
-        Nel{" "}
-        <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "activity" })}>
-          backlog di Trama
-        </button>
-        , senza GitHub
-      </>
-    );
+    const issue = followUp.issue;
+    return issue
+      ? withNodes(t("audit.finding.issueLink"), { number: link(`#${issue.number}`, () => setInspector({ kind: "issue", number: issue.number })) })
+      : withNodes(t("audit.finding.backlogLink"), { backlog: link(t("audit.finding.backlogName"), () => setInspector({ kind: "activity" })) });
   }
-  if (followUp.kind === "assignment") return <>Incarico: <RecordName id={followUp.assignmentId} /></>;
-  return <>Scheda del Patto: <RecordName id={followUp.questionId} /></>;
+  if (followUp.kind === "assignment") return withNodes(t("audit.finding.assignmentLink"), { name: <RecordName id={followUp.assignmentId} /> });
+  return withNodes(t("audit.finding.pactLink"), { name: <RecordName id={followUp.questionId} /> });
 }
 
 /**
@@ -60,6 +54,7 @@ function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
  * finding is a trade-off. Only a finding whose proof held becomes an assignment; each action is offered once.
  */
 function FindingActions({ auditId, finding }: { auditId: string; finding: AuditFinding }) {
+  const t = useT();
   const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
   const done = new Set((finding.followUps ?? []).map((f) => f.kind));
   const correctable = finding.status === "verified" || finding.status === "confirmed";
@@ -68,18 +63,18 @@ function FindingActions({ auditId, finding }: { auditId: string; finding: AuditF
   return (
     <div className="cta-row pt-0.5" data-testid="audit-finding-actions">
       {done.has("ticket") ? null : (
-        <Button size="xs" variant="ghost" title={linked ? "Apre una issue su GitHub con la prova del rilievo." : "GitHub non è collegato: il rilievo va nel backlog di Trama."} onClick={() => followUp("ticket")}>
-          {linked ? "Apri una issue" : "Metti nel backlog"}
+        <Button size="xs" variant="ghost" title={t(linked ? "audit.finding.issueHint" : "audit.finding.backlogHint")} onClick={() => followUp("ticket")}>
+          {t(linked ? "audit.finding.issue" : "audit.finding.backlog")}
         </Button>
       )}
       {done.has("pactCard") ? null : (
-        <Button size="xs" variant="ghost" title="Il rilievo è un compromesso: diventa una domanda del Patto." onClick={() => followUp("pactCard")}>
-          È un compromesso
+        <Button size="xs" variant="ghost" title={t("audit.finding.tradeOffHint")} onClick={() => followUp("pactCard")}>
+          {t("audit.finding.tradeOff")}
         </Button>
       )}
       {correctable && !done.has("assignment") ? (
-        <Button size="xs" variant="outline" title="Uno sviluppatore libero corregge il rilievo, solo dentro il mandato." onClick={() => followUp("assignment")}>
-          Affida la correzione
+        <Button size="xs" variant="outline" title={t("audit.finding.assignHint")} onClick={() => followUp("assignment")}>
+          {t("audit.finding.assign")}
         </Button>
       ) : null}
     </div>
@@ -167,6 +162,7 @@ function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: "standards" | 
  */
 export function AuditView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const linked = project.github.status === "ready" && project.github.repository !== null;
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
@@ -221,25 +217,26 @@ export function AuditView({ id }: { id: string }) {
         </InspectorSection>
       ) : null}
       {audit.status === "done" ? (
-        <InspectorSection title="Pubblicazione">
+        <InspectorSection title={t("audit.publication.title")}>
           {audit.publication ? (
             <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
-              Pubblicato su GitHub:{" "}
-              <button
-                type="button"
-                className="text-[var(--color-text-accent)] hover:underline"
-                onClick={() => setInspector(audit.publication!.kind === "issue" ? { kind: "issue", number: audit.publication!.number } : { kind: "pullRequest", number: audit.publication!.number })}
-              >
-                {audit.publication.kind === "issue" ? `issue #${audit.publication.number}` : `commento alla pull request #${audit.publication.number}`}
-              </button>
+              {withNodes(t("audit.publication.done"), {
+                link: (
+                  <button
+                    type="button"
+                    className="text-[var(--color-text-accent)] hover:underline"
+                    onClick={() => setInspector(audit.publication!.kind === "issue" ? { kind: "issue", number: audit.publication!.number } : { kind: "pullRequest", number: audit.publication!.number })}
+                  >
+                    {t(audit.publication.kind === "issue" ? "audit.publication.issue" : "audit.publication.comment", { number: String(audit.publication.number) })}
+                  </button>
+                ),
+              })}
               <Sep />
               {formatRelativeTime(audit.publication.at)}
             </p>
           ) : (
             <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-publication">
-              {linked
-                ? "Il rapporto resta in Trama. Pubblicarlo su GitHub è facoltativo: va come commento alla pull request del candidato, o in una issue nuova se non ne ha una."
-                : "Il rapporto resta in Trama. Con GitHub collegato puoi pubblicarlo, se vuoi."}
+              {t(linked ? "audit.publication.optional" : "audit.publication.noGitHub")}
             </p>
           )}
         </InspectorSection>
@@ -248,7 +245,7 @@ export function AuditView({ id }: { id: string }) {
         <div className="cta-row px-4 py-3">
           {audit.status === "done" && linked && !audit.publication ? (
             <Button size="sm" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
-              Pubblica su GitHub
+              {t("audit.publication.publish")}
             </Button>
           ) : null}
           <Button

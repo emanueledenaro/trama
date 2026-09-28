@@ -272,6 +272,7 @@ export function findingPactCard(document: ProjectDocument, audit: FocusAudit, fi
     },
     now,
   );
+  request.fromFinding = { auditId: audit.id, findingId: finding.id };
   recordFollowUp(audit, finding, { kind: "pactCard", questionId: request.id, at: request.askedAt });
   return request;
 }

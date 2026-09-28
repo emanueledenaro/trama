@@ -440,6 +440,8 @@ export interface DecisionRequest {
   withdrawal?: { reason: string; withdrawnAt: string } | null;
   /** Set when the card answers a developer's question (W06): it blocks that work until the person answers. */
   blocksWork?: { assignmentId: string; questionId: string } | null;
+  /** Set when the person turned a finding of an examination into a trade-off card (F04): no work waits for it. */
+  fromFinding?: { auditId: string; findingId: string } | null;
 }
 
 /** A question still waiting for the person: neither answered nor withdrawn. */

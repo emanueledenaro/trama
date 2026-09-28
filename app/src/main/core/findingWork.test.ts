@@ -234,6 +234,7 @@ describe("finding to Pact card", () => {
       "Correggere il rilievo «Rilievo standards-2».",
     ]);
     expect(document.decisionRequests).toContain(request);
+    expect(request.fromFinding).toEqual({ auditId: audit.id, findingId: "standards-2" });
     expect(item(audit, "standards-2").followUps).toEqual([{ kind: "pactCard", questionId: request.id, at: at(6).toISOString() }]);
     expect(() => findingPactCard(document, audit, "standards-2")).toThrow("hai già creato una scheda del Patto");
   });
