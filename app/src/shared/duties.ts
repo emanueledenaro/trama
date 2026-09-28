@@ -1,4 +1,14 @@
-import type { ArchitectureStrength, AssignmentDuty, AutomaticWorkStatus, ProjectDocument, SpecialistAssignment, TriageCategory, TriageState } from "./domain";
+import {
+  type ArchitectureOutcome,
+  type ArchitectureStrength,
+  type AssignmentDuty,
+  type AutomaticWorkStatus,
+  isOpenQuestion,
+  type ProjectDocument,
+  type SpecialistAssignment,
+  type TriageCategory,
+  type TriageState,
+} from "./domain";
 
 /** The fixed roles' automatic work (W11) in the person's words; the rules that start it live in main/core/duties.ts. */
 
@@ -50,8 +60,39 @@ export function dutyTriggerText(document: ProjectDocument, duty: AssignmentDuty)
   }
 }
 
+/**
+ * Where the Pact card of an architecture review stands, read from the card itself: the review's words follow the
+ * person's answer instead of saying "da decidere" after it (issue #272). Null without a card.
+ */
+export function architectureAnswer(document: Pick<ProjectDocument, "decisionRequests"> | null, outcome: ArchitectureOutcome): { state: "open" | "answered" | "withdrawn"; chosen: string | null } | null {
+  const card = outcome.decisionRequestId && document ? document.decisionRequests.find((r) => r.id === outcome.decisionRequestId) : null;
+  if (!card) return null;
+  if (isOpenQuestion(card)) return { state: "open", chosen: null };
+  if (card.withdrawal || !card.outcome) return { state: "withdrawn", chosen: null };
+  const index = card.outcome.alternativeIndex;
+  return { state: "answered", chosen: index === null ? card.outcome.answer : (card.alternatives[index]?.behavior ?? card.outcome.answer) };
+}
+
+/** The line under a work's card and in Team: for an architecture review it follows the Pact card; otherwise the last update. */
+export function assignmentLine(document: Pick<ProjectDocument, "decisionRequests"> | null, assignment: SpecialistAssignment): string {
+  // Records written before issue #272 keep "In pausa: aspetta la risposta ...": the line says it as the badge does.
+  if (assignment.status === "paused") return assignment.lastUpdate.replace(/^In pausa: aspetta /, "Aspetta ");
+  const outcome = assignment.duty?.outcome;
+  if (outcome?.kind !== "architecture" || !outcome.proposals.length) return assignment.lastUpdate;
+  const answer = architectureAnswer(document, outcome);
+  if (answer?.state === "answered") return `Revisione dell'architettura: hai scelto «${answer.chosen}»`;
+  if (answer?.state === "withdrawn") return "Revisione dell'architettura: scheda del Patto ritirata";
+  return `Revisione dell'architettura: ${outcome.proposals.length === 1 ? "una proposta da decidere" : `${outcome.proposals.length} proposte da decidere`}`;
+}
+
+/** A developer's last update: the line of its latest work while that is what the update says. */
+export function specialistLine(document: Pick<ProjectDocument, "decisionRequests"> | null, specialist: { lastUpdate: string; assignments: SpecialistAssignment[] }): string {
+  const latest = specialist.assignments.at(-1);
+  return latest && latest.lastUpdate === specialist.lastUpdate ? assignmentLine(document, latest) : specialist.lastUpdate;
+}
+
 /** The outcome in a few words, or null while the work has none. */
-export function dutyOutcomeText(duty: AssignmentDuty): string | null {
+export function dutyOutcomeText(duty: AssignmentDuty, document: Pick<ProjectDocument, "decisionRequests"> | null = null): string | null {
   if (duty.unreadable) return "Trama non ha potuto leggere la risposta: la trovi nel risultato.";
   const outcome = duty.outcome;
   switch (outcome?.kind) {
@@ -61,10 +102,14 @@ export function dutyOutcomeText(duty: AssignmentDuty): string | null {
       if (!outcome.reproduced) return "Bug non riprodotto: nessuna correzione automatica.";
       if (outcome.fixAssignmentId) return `Bug riprodotto. Correzione con test di regressione nell'incarico ${outcome.fixAssignmentId}.`;
       return `Bug riprodotto.${outcome.fixWaiting ? ` ${outcome.fixWaiting}` : ""}`;
-    case "architecture":
-      return outcome.proposals.length
-        ? `${outcome.proposals.length === 1 ? "Una proposta" : `${outcome.proposals.length} proposte`}: scegli nella scheda del Patto quale approfondire.`
-        : "Niente da segnalare.";
+    case "architecture": {
+      if (!outcome.proposals.length) return "Niente da segnalare.";
+      const count = outcome.proposals.length === 1 ? "Una proposta" : `${outcome.proposals.length} proposte`;
+      const answer = architectureAnswer(document, outcome);
+      if (answer?.state === "answered") return `${count}: hai scelto «${answer.chosen}».`;
+      if (answer?.state === "withdrawn") return `${count}: la scheda del Patto è stata ritirata.`;
+      return `${count}: scegli nella scheda del Patto quale approfondire.`;
+    }
     default:
       return null;
   }

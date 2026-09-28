@@ -30,8 +30,8 @@ const request = (over: Partial<MandateRequest> = {}): MandateRequest => ({
   ...over,
 });
 
-const work = (id: string, moduleIds: string[], status: SpecialistAssignment["status"] = "running") =>
-  ({ id, moduleIds, status, tools: ["commands", "edits"], objective: `Lavoro ${id}` }) as unknown as SpecialistAssignment;
+const work = (id: string, moduleIds: string[], status: SpecialistAssignment["status"] = "running", dependencies: string[] = []) =>
+  ({ id, moduleIds, status, dependencies, tools: ["commands", "edits"], objective: `Lavoro ${id}` }) as unknown as SpecialistAssignment;
 
 const specialist = (name: string, ...assignments: SpecialistAssignment[]) => ({ id: name, name, assignments }) as unknown as Specialist;
 
@@ -76,5 +76,27 @@ describe("mandate proposal diff (U03)", () => {
   it("stops every running piece of work when no mandate is left", () => {
     const doc = document([specialist("Ada", work("A-1", ["Root"])), specialist("Bea", work("A-2", ["Orders"], "failed"))]);
     expect(workStoppedBy(doc, null).map((w) => w.assignment.id)).toEqual(["A-1"]);
+  });
+
+  it("stops the work that depends on work the new perimeter leaves out, and nothing else (C06)", () => {
+    const doc = document([
+      specialist("Ada", work("A-1", ["Orders"], "completed")),
+      specialist("Bea", work("A-2", ["Root"], "running", ["A-1"])),
+      specialist("Cy", work("A-3", ["Root"], "running")),
+      specialist("Dan", work("A-4", ["Root"], "running", ["A-2"])),
+    ]);
+    const stopped = workStoppedBy(doc, request());
+    expect(stopped.map((w) => [w.assignment.id, w.dependsOn?.id ?? null])).toEqual([
+      ["A-2", "A-1"],
+      ["A-4", "A-1"],
+    ]);
+  });
+
+  it("keeps going the work that builds on merged work outside the new perimeter (C06)", () => {
+    const doc = {
+      ...document([specialist("Ada", work("A-1", ["Orders"], "completed")), specialist("Bea", work("A-2", ["Root"], "running", ["A-1"]))]),
+      candidates: [{ assignmentId: "A-1", pullRequest: { mergedAt: "2026-09-27T12:00:00.000Z" } }] as never,
+    };
+    expect(workStoppedBy(doc, request())).toEqual([]);
   });
 });

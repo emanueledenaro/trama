@@ -55,7 +55,7 @@ function MessageRow({ message, specialists }: { message: AgentThreadMessage; spe
         {agent ? <AgentTag agent={agent} className="shrink-0" /> : null}
         <span className="ml-auto shrink-0 text-ui-xs text-muted-foreground">{formatDate(message.at)}</span>
       </div>
-      <p className="mt-1 text-ui-sm whitespace-pre-wrap text-foreground/90">{message.text}</p>
+      <p className="content-text mt-1 whitespace-pre-wrap text-foreground/90">{message.text}</p>
     </li>
   );
 }
