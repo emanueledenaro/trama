@@ -418,19 +418,13 @@ export function resolveAntigravityCliModelLabel(
   return chosen ? `${parsed.model} (${effortLabel(chosen)})` : parsed.model;
 }
 
-/** The values `agy --effort` documents. */
-const EFFORT_FLAG_VALUES = ["low", "medium", "high"];
-
 /**
- * `--model` and `--effort` for a resolved label. With `--effort` (agy 1.1.5 and later) the name and the
- * level travel apart, as agy reports them: `--model "Gemini 3.8 Flash" --effort "high"`. A level the flag
- * does not document, such as Thinking, stays in the label, and so does every level on an older CLI.
+ * `--model` for a resolved label: the full name with its level, as `agy models` lists it
+ * (`--model "Gemini 3.8 Flash (High)"`). The level never travels apart in `--effort`: agy 1.2.12 refuses
+ * `--model "Gemini 3.8 Flash" --effort "high"` with "--effort is not supported for model", while the full
+ * label works on every CLI version Trama supports.
  */
-export function antigravityModelArgs(label: string, effortFlag: boolean): string[] {
-  const parsed = parseAntigravityCliModelLabel(label);
-  if (effortFlag && parsed?.effort && EFFORT_FLAG_VALUES.includes(parsed.effort)) {
-    return ["--model", parsed.model, "--effort", parsed.effort];
-  }
+export function antigravityModelArgs(label: string): string[] {
   return ["--model", label];
 }
 
@@ -812,11 +806,6 @@ export function antigravityHelpOffersSandbox(help: string): boolean {
   return false;
 }
 
-/** True when `agy --help` lists `--effort` (agy 1.1.5 and later). */
-export function antigravityHelpOffersEffort(help: string): boolean {
-  return /^\s*(?:-\w,\s*)?--effort(?![\w-])/m.test(help);
-}
-
 /**
  * Levels `agy models` listed, shared by every runtime: the controller discovers models on one instance
  * and runs the Coordinator and the specialists on others.
@@ -838,7 +827,6 @@ function helpText(binary: string): Promise<string> {
 }
 
 const sandboxFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersSandbox);
-const effortFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersEffort);
 
 // ── Hook events and transcript ───────────────────────────────────────────
 
@@ -1138,7 +1126,6 @@ export class AntigravityRuntime implements AgentRuntime {
 
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
     let sandboxFlag = false;
-    let effortFlag = false;
     const named = parseAntigravityCliModelLabel(options.model);
     const contextWindow = antigravityContextWindow(options.model);
     this.pending = pending;
@@ -1155,8 +1142,6 @@ export class AntigravityRuntime implements AgentRuntime {
         sandboxFlag = await sandboxFlagAvailable(binary);
         pending.checkpoint();
       }
-      effortFlag = await effortFlagAvailable(binary);
-      pending.checkpoint();
       if (named && !named.effort && !effortsByModel.has(named.model) && !ANTIGRAVITY_KNOWN_MODELS[named.model]) {
         // A model Trama has no levels for: ask `agy models` once, since agy rejects a name without its level.
         await this.listModels().catch(() => undefined);
@@ -1207,7 +1192,7 @@ export class AntigravityRuntime implements AgentRuntime {
       "--dangerously-skip-permissions",
       // Extra layer for read-only turns; the capture hook stays the rule Trama relies on.
       ...(sandboxFlag ? ["--sandbox"] : []),
-      ...antigravityModelArgs(cliModel, effortFlag),
+      ...antigravityModelArgs(cliModel),
       "--output-format",
       "stream-json",
       "--log-file",
