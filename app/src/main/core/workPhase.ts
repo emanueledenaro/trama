@@ -177,7 +177,7 @@ const providerName = (id: string) => PROVIDERS.find((p) => p.id === id)?.name ??
 
 /** Candidate blockers that new work must fix; missing or stale evidence only waits for a check. */
 /** Blockers that wait for Trama or the reviewers, not for new work: a check to run, the candidate gate running or to run again. */
-const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED", "WORKTREE_CHANGED"];
+const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"];
 
 const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !WAITING_BLOCKERS.includes(b.code));
 
