@@ -333,7 +333,7 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
+import { AuditError, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginLenses, beginVerification, closeAudit, failAudit, findAudit, finishAxis, lensTurn, openAudit, readAxisAnswer, recordAuditCheck, type ReviewName } from "./core/audit";
 import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict, combineWorktrees } from "./core/conflicts";
@@ -343,7 +343,7 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
-import { CHECKS_RETRY_MS, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./core/merge";
+import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
@@ -5770,7 +5770,7 @@ export class TramaController {
 
   /**
    * The person opens focus mode on a candidate (F01): the fixed point is its base. Trama runs the real checks in the
-   * sandbox first, then the two axes of code-review in parallel, read-only. Returns the examination's id at once;
+   * sandbox first, then the two axes of code-review and Trama's three lenses (F05) in parallel, read-only. Returns the examination's id at once;
    * the report fills in as the work goes and stays in the project.
    */
   startFocusAudit(candidateId: string): string {
@@ -5934,9 +5934,15 @@ export class TramaController {
       const skill = await this.nativeSkill("code-review");
       const spec = auditSpec(document, assignment, project.github.issues);
       const axes = beginAxes(audit, spec?.source ?? null, runner.model);
+      // Trama's lenses run next to the axes, on the same light model, with Trama's own brief (F05).
+      const lenses = beginLenses(audit, runner.model);
       this.changedIn(project);
       const input = { projectName: project.name, audit, candidate, assignment, spec, language: this.state.language };
-      await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      const cwd = assignment.workspace.worktreeRoot;
+      await Promise.all([
+        ...axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, cwd)),
+        ...lenses.map((lens) => this.runAuditAxis(project, audit, lens, lensTurn(input, lens), runner, cwd)),
+      ]);
       await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
       closeAudit(audit);
     } catch (error) {
@@ -5986,8 +5992,8 @@ export class TramaController {
     }
   }
 
-  /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
-  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
+  /** One axis of code-review or one of Trama's lenses: a read-only session of its own, in the candidate's worktree. */
+  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: ReviewName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
     const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
@@ -6172,6 +6178,13 @@ export class TramaController {
         this.changedIn(project);
         continue;
       }
+      // A destructive change waits for the person with its consequences and alternatives (issue #41).
+      if (readiness.kind === "destructive") {
+        stopDestructiveMerge(document, candidate, readiness.stop);
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "destructive", reasons: readiness.stop.reasons }, "coordinator"));
+        this.changedIn(project);
+        continue;
+      }
       if (readiness.kind !== "merge" || (readiness.by === "coordinator" && isPaused(document))) continue;
       this.integrating.add(candidate.id);
       try {
@@ -6210,10 +6223,19 @@ export class TramaController {
       if (checks?.state === "MERGED") {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
+        candidate.merge!.mergeSHA = checks.mergeSHA ?? null;
         this.changedIn(project);
         return;
       }
       if (checks?.checks === "failure") throw new DomainError(`Le verifiche della pull request #${pull.number} su GitHub sono rosse: il Coordinatore le sistema prima dell'unione.`);
+      // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
+      const drift = checks ? pullRequestDrift(pull.headSHA, checks) : null;
+      if (drift) {
+        recordMerge(document, candidate, by, "stopped", drift);
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason: drift }, by));
+        this.changedIn(project);
+        return;
+      }
       const message = await this.candidateMessage(project, candidate);
       const authority = by === "coordinator" ? "Via libera del Coordinatore" : "Ok della persona sulle schermate";
       const merged = await mergePullRequest(repository, pull.number, {
@@ -6228,6 +6250,18 @@ export class TramaController {
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
     } catch (error) {
       const reason = (error as Error).message;
+      // The request may have merged before its answer got lost (a timeout): GitHub says so, and nothing merges twice (issue #41).
+      const pull = candidate.pullRequest;
+      const after = pull && !(error instanceof PushRefusedError) ? await readPullRequestStatus(repository, pull.number).catch(() => null) : null;
+      if (pull && after?.state === "MERGED") {
+        pull.mergedAt = after.mergedAt ?? new Date().toISOString();
+        pull.mergedBy = by;
+        recordMerge(document, candidate, by, "merged");
+        candidate.merge!.mergeSHA = after.mergeSHA ?? null;
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
+        this.changedIn(project);
+        return;
+      }
       // The mandate or a fixed ban stopped the push: nothing to try again until the person changes something.
       recordMerge(document, candidate, by, error instanceof PushRefusedError ? "stopped" : "failed", reason);
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason }, by));
@@ -6287,6 +6321,15 @@ export class TramaController {
     approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
     this.changed();
     await this.integrateCandidates(project);
+  }
+
+  /** The person chose not to merge a destructive candidate the Coordinator stopped (issue #41): it leaves Aspetta te. */
+  declineMergeByPerson(candidateId: string): void {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    declineDestructiveMerge(candidate);
+    this.changed();
   }
 
   /**

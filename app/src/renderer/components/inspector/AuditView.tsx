@@ -1,7 +1,7 @@
 import { plainText } from "@shared/plainLanguage";
 import { RecordLabel, RecordName } from "@/components/chat/ReferenceText";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
-import { evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
+import { auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -15,7 +15,7 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 
 const STATUS_TEXT: Record<FocusAudit["status"], string> = {
   checking: "Verifiche reali nella sandbox",
-  reviewing: "Esame degli assi Standards e Spec, in sola lettura",
+  reviewing: "Esame degli assi Standards e Spec e delle lenti di Trama, in sola lettura",
   verifying: "Verifica delle prove dei rilievi",
   done: "Esame concluso",
   failed: "Esame non riuscito",
@@ -115,7 +115,7 @@ function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; a
   );
 }
 
-function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: "standards" | "spec"; audit: FocusAudit }) {
+function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit: FocusAudit }) {
   if (axis.status === "waiting") return <EmptyNote>Parte dopo le verifiche reali.</EmptyNote>;
   if (axis.status === "running") {
     return (
@@ -158,7 +158,8 @@ function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: "standards" | 
 
 /**
  * Focus mode on a candidate (F01): the real checks first, then the Standards and Spec reports of code-review kept
- * apart, as the skill presents them, each finding with its proof and its verification (F02). A simple view in the inspector; the full-screen view comes later.
+ * apart, as the skill presents them, each finding with its proof and its verification (F02). Trama's lenses follow,
+ * marked as Trama's additions (F05). A simple view in the inspector; the full-screen view comes later.
  */
 export function AuditView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
@@ -170,6 +171,8 @@ export function AuditView({ id }: { id: string }) {
   const candidate = project.document.candidates.find((c) => c.id === audit.target.candidateId);
   const running = audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
   const tally = findingTally(audit);
+  const lenses = auditLenses(audit);
+  const lensLine = lensSummary(audit, t);
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
     <div data-testid="focus-audit" data-status={audit.status}>
@@ -210,9 +213,24 @@ export function AuditView({ id }: { id: string }) {
           <AxisBody axis={audit.spec} name="spec" audit={audit} />
         </div>
       </InspectorSection>
+      {lenses.length ? (
+        <InspectorSection title={t("audit.lenses.title")} aside={<Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>}>
+          <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
+            {t("audit.lenses.note")}
+          </p>
+        </InspectorSection>
+      ) : null}
+      {lenses.map(({ name, lens }) => (
+        <InspectorSection key={name} title={t(LENS_TITLE_KEYS[name])} aside={<Badge tone="outline">{t("audit.lens.addedBy")}</Badge>}>
+          <div data-testid="audit-lens" data-lens={name} data-status={lens.status}>
+            <AxisBody axis={lens} name={name} audit={audit} />
+          </div>
+        </InspectorSection>
+      ))}
       {audit.summary ? (
         <InspectorSection title="Sintesi">
           <p className="text-ui-sm text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
+          {lensLine ? <p className="mt-1 text-ui-sm text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
           {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </InspectorSection>
       ) : null}
