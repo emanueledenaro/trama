@@ -244,4 +244,11 @@ export const en: Record<keyof typeof it, string> = {
   "settings.presence.openProject": "Open a project to choose whether to share your presence.",
   "settings.presence.demo": "The example project does not share presence.",
   "settings.presence.share": "Share your presence in {name}",
+
+  // Work a change of the mandate stops (C06)
+  "mandate.stoppedWork.revokeLead": "Without a mandate the Coordinator reads and proposes, but does not act.",
+  "mandate.stoppedWork.restrictLead": "The work outside the narrower mandate, and the work that depends on it, stops now; the rest goes on.",
+  "mandate.stoppedWork.some": "This work stops; its worktree stays as it is:",
+  "mandate.stoppedWork.none": "No work in progress stops.",
+  "mandate.stoppedWork.dependsOn": "(depends on «{objective}»)",
 };
