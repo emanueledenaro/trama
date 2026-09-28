@@ -24,6 +24,8 @@ import { AutomaticWorkSection } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { WaitingProposalPointer } from "@/components/WaitingPointer";
+import { ReferenceText } from "@/components/chat/ReferenceText";
+import { useT } from "@/lib/i18n";
 
 const STATUS_LABEL: Record<Specialist["status"], string> = {
   available: "libero",
@@ -77,7 +79,11 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
         </span>
         <span className="flex items-center gap-1.5 truncate text-ui-sm text-muted-foreground">
           <StatusDot status={specialist.status} />
-          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialistLine(project.document, specialist)}</span>
+          <span className="min-w-0 truncate">
+            {STATUS_LABEL[specialist.status]}
+            <Sep />
+            <ReferenceText text={specialistLine(project.document, specialist)} links={false} />
+          </span>
         </span>
         {current ? (
           <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
@@ -107,7 +113,9 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
         <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
         {specialist && specialist.status !== "available" ? (
           <span className="block truncate text-ui-sm text-muted-foreground">
-            {STATUS_LABEL[specialist.status]}<Sep />{specialistLine(document, specialist)}
+            {STATUS_LABEL[specialist.status]}
+            <Sep />
+            <ReferenceText text={specialistLine(document, specialist)} links={false} />
           </span>
         ) : null}
         <SkillList skills={figure.duty.skills} />
@@ -227,11 +235,11 @@ export function SpecialistView({ id }: { id: string }) {
           <AgentAvatar agent={specialist} size={48} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h3 className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground" title={specialist.name}>
+              {/* The id is Trama's, not the person's: it stays on hover (issue #392). */}
+              <h3 className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground" title={`${specialist.name}, ${specialist.id}`} data-record-id={specialist.id}>
                 {specialist.name}
               </h3>
               <AgentTag agent={specialist} className="text-ui-sm" />
-              <Badge>{specialist.id}</Badge>
               <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-muted-foreground" data-testid="specialist-status">
                 <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
               </span>
@@ -360,6 +368,7 @@ const nameKey = (name: string) => name.trim().toLocaleLowerCase("it").replace(/\
 /** The person renames a developer (W13): the id stays, so assignments, chat and history follow the new name. */
 function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDone: () => void }) {
   const specialists = useUi((s) => s.app?.project?.document.team.specialists ?? []);
+  const t = useT();
   const [name, setName] = useState(specialist.name);
   const next = name.trim();
   const taken = specialists.some((s) => s.id !== specialist.id && s.status !== "removed" && nameKey(s.name) === nameKey(next));
@@ -380,7 +389,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
       />
       {taken ? <p className="text-ui-sm text-muted-foreground">Nel team c'è già qualcuno con questo nome.</p> : null}
       {fixedName ? <p className="text-ui-sm text-muted-foreground">È il nome di un ruolo fisso del team: scegline un altro.</p> : null}
-      <p className="text-ui-xs text-muted-foreground">L'ID {specialist.id} resta lo stesso: incarichi, chat e cronologia mostrano il nuovo nome.</p>
+      <p className="text-ui-xs text-muted-foreground">{t("team.rename.followsName")}</p>
       <div className="cta-row">
         <Button size="sm" variant="ghost" onClick={onDone}>
           Annulla
@@ -493,7 +502,9 @@ function SpecialistThreads({ specialistId }: { specialistId: string }) {
             className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-ui hover:bg-[var(--sidebar-accent)]"
             onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
           >
-            <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.title}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground/90">
+              <ReferenceText text={thread.title} links={false} />
+            </span>
             <span className="shrink-0 text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
           </button>
         ))}

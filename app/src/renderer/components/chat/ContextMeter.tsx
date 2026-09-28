@@ -1,21 +1,33 @@
 import { Popover } from "@base-ui/react/popover";
-import { contextMeterLines, contextReading } from "@shared/contextReading";
+import { DEFAULT_CONTEXT_THRESHOLD } from "@shared/contextRollover";
+import { contextReading } from "@shared/contextReading";
+import { formatNumber } from "@shared/i18n";
 import { act, useUi } from "@/lib/store";
+import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker";
+import { useLanguage, useT } from "@/lib/i18n";
 
 /**
- * Ring that shows how much of the Coordinator's context window the thread uses, with its threshold. The reading is
- * the same for every provider and never goes past the window; an invalid one shows as not available (issue #305).
+ * Ring that shows how much of the Coordinator's context the session uses (ADR 0018): only the percent, the tokens on
+ * hover. The reading is the same for every provider and never goes past the window; an invalid one shows as not
+ * available (issue #305). Past the threshold Trama reorders the context; "Riordina ora" does it on request.
  */
 export function ContextMeter() {
+  const t = useT();
+  const language = useLanguage();
   const usage = useUi((s) => s.app?.project?.contextUsage ?? null);
-  const threshold = useUi((s) => s.app?.project?.document.coordinator.contextThreshold ?? 80);
+  const coordinator = useUi((s) => s.app?.project?.document.coordinator);
+  const running = useUi((s) => Boolean(s.app?.project?.runningRequestId));
+  const threshold = coordinator?.contextThreshold ?? DEFAULT_CONTEXT_THRESHOLD;
   if (!usage) return null;
   const reading = contextReading(usage, threshold);
-  const known = reading.percent !== null;
+  const known = reading.percent !== null && reading.usedTokens !== null && reading.contextWindow !== null;
   // A provider that never gave a window has nothing to measure against: the meter stays hidden.
   if (!known && usage.contextWindow === null && usage.usedTokens !== null) return null;
-  const lines = contextMeterLines(reading);
+  const tokens = known
+    ? t("context.meter.tokens", { used: formatNumber(language, reading.usedTokens!), window: formatNumber(language, reading.contextWindow!) })
+    : undefined;
+  const pending = Boolean(coordinator?.pendingRollover);
   const fraction = (reading.percent ?? 0) / 100;
   const radius = 6;
   const circumference = 2 * Math.PI * radius;
@@ -23,7 +35,8 @@ export function ContextMeter() {
     <Popover.Root>
       <Popover.Trigger
         className="inline-flex h-7 items-center gap-1 rounded-lg px-1.5 text-ui-xs text-muted-foreground transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground"
-        aria-label={known ? `Finestra di contesto: ${reading.percent}%, soglia di avviso ${threshold}%` : `Finestra di contesto: misura non disponibile, soglia di avviso ${threshold}%`}
+        aria-label={known ? t("context.meter.aria", { percent: reading.percent!, threshold }) : t("context.meter.ariaUnknown", { threshold })}
+        title={tokens}
         data-testid="context-meter"
       >
         <svg viewBox="0 0 16 16" className="size-3.5 -rotate-90">
@@ -44,24 +57,33 @@ export function ContextMeter() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
-          <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
-            <div className="font-medium text-foreground">Finestra di contesto</div>
-            <p className="mt-1 text-ui-sm text-muted-foreground">{lines.usage}</p>
-            <p className="text-ui-sm text-muted-foreground">{lines.behaviour}</p>
+          <Popover.Popup
+            data-testid="context-meter-popup"
+            className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          >
+            <div className="font-medium text-foreground" title={tokens}>
+              {known ? t("context.meter.title", { percent: reading.percent! }) : t("context.meter.unknown")}
+            </div>
+            <p className="mt-1 text-ui-sm text-muted-foreground">{t("context.meter.explanation")}</p>
             <div className="my-3 h-px bg-border" />
             <label className="flex items-center justify-between gap-2 text-ui-sm">
-              <span>Avviso sopra</span>
+              <span>{t("context.meter.thresholdLabel")}</span>
               <PickerSelect
-                label="Soglia di avviso"
+                label={t("context.meter.thresholdPicker")}
                 value={String(threshold)}
                 options={Array.from({ length: 19 }, (_, i) => String(5 + i * 5)).map((value) => ({ value, title: `${value}%` }))}
                 onChange={(value) => void act("coordinator:setContextThreshold", { percent: Number(value) })}
-                meta="Per questo progetto"
+                meta={t("context.meter.perProject")}
                 side="top"
                 className="w-24"
               />
             </label>
-            <p className="mt-2 text-ui-xs text-muted-foreground">{lines.threshold}</p>
+            <p className="mt-2 text-ui-xs text-muted-foreground">{pending && running ? t("context.meter.pendingNote") : t("context.meter.thresholdNote")}</p>
+            <div className="cta-row mt-3">
+              <Button variant="outline" size="xs" disabled={pending && running} onClick={() => void act("coordinator:reorderContext", undefined)}>
+                {t("context.meter.reorderNow")}
+              </Button>
+            </div>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

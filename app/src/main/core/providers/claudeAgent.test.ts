@@ -26,7 +26,7 @@ import {
   parseMcpToolName,
   usageLimitFromRateLimit,
 } from "./claudeAgent";
-import { isInside } from "./types";
+import { HOST_TOOL_TIMEOUT_MS, isInside } from "./types";
 
 const ok = (stdout: string, code = 0) => ({ stdout, stderr: "", code });
 const identity = (root: string, path: string) => isInside(root, resolve(path));
@@ -284,7 +284,9 @@ describe("query options", () => {
       policy: { cwd: "/work", writableRoot: "/work", hostServer: "trama" },
       outputSchema: { type: "object" },
     });
-    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: 120_000 });
+    // review_candidate waits for the whole gate: two minutes cut it off in the audit (issue #389).
+    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: HOST_TOOL_TIMEOUT_MS });
+    expect(HOST_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(30 * 60_000);
     expect(typeof (options.mcpServers?.trama as { instance?: { connect?: unknown } }).instance?.connect).toBe("function");
     expect(options.allowedTools).toEqual(["mcp__trama"]);
     expect(options.resume).toBe("22222222-2222-4222-8222-222222222222");
@@ -297,6 +299,8 @@ describe("query options", () => {
     expect(filesystem.denyRead.slice(0, 2)).toEqual([homedir(), process.env.CODEX_HOME || join(homedir(), ".codex")]);
     expect(filesystem.denyRead).not.toContain("/usr");
     expect(filesystem.allowRead).toContain("/work");
+    // The sandbox hides ~/.gitconfig: git in its commands reads no global file, so it does not fail (issue #391).
+    expect(options.env).toMatchObject({ GIT_CONFIG_GLOBAL: "/dev/null" });
     expect(options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
   });
 });

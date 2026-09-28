@@ -20,6 +20,13 @@ export interface HostToolServer {
   tools?: readonly string[];
 }
 
+/**
+ * How long a provider waits for one call to Trama's tools. review_candidate runs the required checks and every candidate
+ * reviewer before it answers, which takes minutes: two minutes cut it off while the gate was still at work (issue #389).
+ * A call cut off anyway leaves the gate running, and the next review_candidate waits for the same gate.
+ */
+export const HOST_TOOL_TIMEOUT_MS = 30 * 60_000;
+
 export interface OpenThreadOptions {
   model: string;
   cwd: string;
@@ -40,6 +47,11 @@ export interface OpenThreadOptions {
    * Every other read outside `cwd` is refused (issue #206).
    */
   readableRoots?: string[];
+  /**
+   * Where the provider's own automatic compaction may start, in tokens: above Trama's threshold, so the provider
+   * compacts only as a fallback within a very long turn (ADR 0018). Adapters that cannot set it ignore it.
+   */
+  autoCompactTokenLimit?: number | null;
 }
 
 export interface RunTurnOptions {
@@ -89,6 +101,11 @@ export interface AgentRuntime {
   /** Runs one turn and resolves with the final answer. Rejects with a message containing "interrott" when interrupted. */
   runTurn(options: RunTurnOptions): Promise<string>;
   interrupt(): Promise<void>;
+  /**
+   * Asks the provider to compact the session's context now (ADR 0018). Only a fallback: Trama reorders the context
+   * itself with a new session, and uses this when that session could not open. Absent where the provider has no way.
+   */
+  compact?(threadId: string): Promise<void>;
   stop(): void;
 }
 

@@ -392,6 +392,8 @@ export interface AssignmentOrder {
   seams?: ContractSeam[];
   /** The developer took the slice by itself (W08). */
   selfPicked?: boolean;
+  /** The earlier assignments this work corrects (issue #389); the caller finds them with openCorrections. */
+  replaces?: string[];
 }
 
 function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
@@ -472,6 +474,7 @@ export function assign(
       ...(order.commit ? { commit: order.commit } : {}),
       ...(order.seams ? { seams: order.seams } : {}),
       ...(order.selfPicked ? { selfPicked: true } : {}),
+      ...(order.replaces?.length ? { replaces: cleaned(order.replaces) } : {}),
     },
     now,
   );
@@ -501,6 +504,7 @@ type AssignmentFields = Pick<
   | "commit"
   | "seams"
   | "selfPicked"
+  | "replaces"
 >;
 
 /** New work of a specialist: the assignment starts in preparation and the specialist is at work. */
@@ -657,6 +661,14 @@ export function recordThread(document: ProjectDocument, id: string, threadId: st
   });
 }
 
+/** Keeps the highest share of the context window a specialist's turn used (ADR 0018). */
+export function recordTurnContext(document: ProjectDocument, id: string, turnId: string, percent: number): void {
+  const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === id);
+  const turn = assignment?.turns.findLast((t) => t.id === turnId);
+  if (!turn) return;
+  turn.contextPercent = Math.max(turn.contextPercent ?? 0, Math.min(100, Math.max(0, Math.round(percent))));
+}
+
 export function beginTurn(
   document: ProjectDocument,
   id: string,
@@ -668,6 +680,8 @@ export function beginTurn(
   updateAssignment(document, id, now, (assignment) => {
     if (!isActive(assignment)) throw new TeamError("not_running", `Specialist ${assignment.specialistId} has no work in progress.`);
     if (assignment.status === "preparing") assignment.status = "running";
+    // The turn may change the worktree: Trama reads it again when the turn ends (issue #388).
+    assignment.worktreeSnapshot = null;
     // The turn that starts carries the answer to the developer's question (W06): the work has resumed.
     const question = pendingQuestion(assignment);
     if (question && pendingState(assignment) === "answered") question.resumedAt = now.toISOString();

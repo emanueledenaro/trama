@@ -18,7 +18,9 @@ import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
-import { inspectCandidate, latestCandidate } from "./candidates";
+import { PERSON_BLOCKERS } from "@shared/waitingForYou";
+import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
+import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
@@ -70,6 +72,8 @@ export interface WorkState {
 export interface VerificationTargets {
   undeclared: string[];
   unverified: string[];
+  /** Of the undeclared, the assignments whose latest candidate no longer matches their worktree (issue #388); absent when none. */
+  outdated?: string[];
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -181,14 +185,15 @@ const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !W
 
 /**
  * Candidate blockers that are technical (A06, Q3): a red check, the reviewers' blocking finding, a conflict between
- * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the others (a Pact
- * decision that changed, a choice left open, an external effect) wait for the person.
+ * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the ones in
+ * PERSON_BLOCKERS (a Pact decision that changed, a choice left open, an external effect) wait for the person.
  */
 const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
   CHECK_FAILED: "checkFailed",
   GATE_BLOCKED: "checkFailed",
   WORKTREE_CONFLICT: "worktreeConflict",
   REMOTE_CONFLICT: "worktreeConflict",
+  SEMANTIC_CONFLICT: "worktreeConflict",
   CLOUD_CHECK_FAILED: "checkFailed",
 };
 
@@ -214,6 +219,8 @@ function candidateBlockerWhy(work: string, blocker: CandidateBlocker): string {
       return `Il ${work} è in conflitto con il branch principale su GitHub: vanno riallineati.`;
     case "WORKTREE_CONFLICT":
       return `Il ${work} tocca gli stessi file di un altro lavoro in corso.`;
+    case "SEMANTIC_CONFLICT":
+      return `Il ${work} non funziona insieme a un altro lavoro in corso: una verifica fallisce sulle due modifiche unite.`;
     case "CLOUD_CHECK_FAILED":
       return `Il ${work} viene dal cloud e non ha superato i controlli sul Mac.`;
     default:
@@ -237,6 +244,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `Il candidato ${candidate.id} è in conflitto con il lavoro su GitHub: ${blocker.detail}`;
     case "WORKTREE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
+    case "SEMANTIC_CONFLICT":
+      return `Il candidato ${candidate.id} non funziona insieme al lavoro di un altro incarico: ${blocker.detail}`;
     case "CLOUD_CHECK_FAILED":
       return `Il candidato ${candidate.id} viene da una sessione cloud e non ha superato i controlli sul Mac: ${blocker.detail}`;
     default:
@@ -416,10 +425,13 @@ function assignedWork(
     if (pendingState(assignment) === "asked") moves.add(coordinator("answerQuestion", pendingQuestion(assignment)!.id));
   }
   // A candidate replaced by later work (U02) is neither verified nor blocks the phase: the newer work does.
+  // A candidate whose findings went back to its developer, who has finished since (W10), describes a worktree that no
+  // longer exists: the work needs a new candidate, not a correction of the old one (issue #389).
   const items = assignments
     .filter((a) => a.status !== "paused")
     .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
-    .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate));
+    .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate))
+    .map(({ assignment, candidate }) => ({ assignment, candidate: candidate && correctedSince(assignment, candidate) ? null : candidate }));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       const provider = providerName(assignment.waitingForProvider.provider);
@@ -444,9 +456,25 @@ function assignedWork(
     if (!candidate) continue;
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
     if (isActive(assignment)) continue;
+    // A candidate that lags its worktree (issue #388) is not the work: its blockers wait for the new candidate.
+    if (worktreeChanged(document, candidate)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
+    // The review stopped this work too many times in a row (issue #389): it waits for the person in Aspetta te, with no
+    // move of the Coordinator, so neither Trama nor the Coordinator starts another round.
+    if (candidateHeld(document, candidate)) {
+      const rounds = blockedReviews(document, assignment).length;
+      return {
+        phase: "blocked",
+        blocker:
+          `La revisione ha fermato il lavoro dell'incarico ${assignment.id} ${rounds} volte di seguito, l'ultima sul candidato ${candidate.id}. ` +
+          "Trama non lo rimanda più allo sviluppatore e la persona lo trova in Aspetta te: non assegnare altre correzioni e non rilanciare i revisori finché la persona non ti scrive come andare avanti.",
+        why: candidateBlockerWhy(workOf(document, assignment), blocker ?? { code: "GATE_BLOCKED", detail: "" }),
+      };
+    }
     if (blocker) {
-      moves.assignWork();
+      // A blocker only the person settles waits for them (issue #390): new work would not settle it.
+      if (PERSON_BLOCKERS.includes(blocker.code)) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));
+      else moves.assignWork();
       return {
         phase: "blocked",
         blocker: candidateBlockerText(candidate, blocker),
@@ -488,12 +516,22 @@ function assignedWork(
   if (!edits.length) return null;
   const pending = edits.filter((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
   if (pending.length) {
+    // A candidate that lags its worktree (issue #388) counts as none: the work is declared again before any check.
+    const declared = (i: (typeof pending)[number]) => (i.candidate && !worktreeChanged(document, i.candidate) ? i.candidate : null);
+    // A candidate whose reviewers are at work is being verified already: there is nothing to start on it (issue #389).
+    const reviewing = (candidate: Candidate) => inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_RUNNING");
+    const actionable = pending.filter((i) => {
+      const candidate = declared(i);
+      return !candidate || !reviewing(candidate);
+    });
+    const outdated = actionable.filter((i) => i.candidate && !declared(i)).map((i) => i.assignment.id);
     const verification: VerificationTargets = {
-      undeclared: pending.filter((i) => !i.candidate).map((i) => i.assignment.id),
-      unverified: pending.flatMap((i) => (i.candidate ? [i.candidate.id] : [])),
+      undeclared: actionable.filter((i) => !declared(i)).map((i) => i.assignment.id),
+      unverified: actionable.flatMap((i) => (declared(i) ? [i.candidate!.id] : [])),
+      ...(outdated.length ? { outdated } : {}),
     };
-    if (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized") {
-      moves.add(coordinator("verifyCandidate", pending[0]!.candidate?.id ?? null));
+    if (actionable.length && (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized")) {
+      moves.add(coordinator("verifyCandidate", actionable.map(declared).find((c) => c !== null)?.id ?? null));
     }
     return { phase: "verification", blocker: null, verification };
   }
@@ -510,6 +548,12 @@ function assignedWork(
   }
   return { phase: "merged", blocker: null };
 }
+
+/**
+ * Whether the gate sent `candidate` back to the developer of `assignment` and the developer has finished since (W10):
+ * the worktree moved on, so the candidate no longer describes the work.
+ */
+const correctedSince = (assignment: SpecialistAssignment, candidate: Candidate) => assignment.gateReturn?.candidateId === candidate.id && !isActive(assignment);
 
 /** The one next step to show under the latest reply of each dialog: the declared move, while the work still allows it. */
 export function nextStepViews(document: ProjectDocument): Record<string, NextStepView> {
@@ -547,9 +591,15 @@ export function workStateText(state: WorkState): string {
  */
 export function verificationText(targets: VerificationTargets): string[] {
   const lines: string[] = [];
-  if (targets.undeclared.length) {
+  if (targets.outdated?.length) {
     lines.push(
-      `Incarichi conclusi senza candidato: ${targets.undeclared.join(", ")}. Per ognuno prima declare_candidate (assignment: l'id dell'incarico, decisionIDs: le decisioni del Patto che deve rispettare), poi verify_candidate con il candidateID che restituisce, per ogni verifica richiesta, poi review_candidate.`,
+      `Incarichi con la copia di lavoro cambiata dopo l'ultimo candidato: ${targets.outdated.join(", ")}. Quel candidato non è il lavoro: non dire che il lavoro è finito e non proporlo alla persona. Prima declare_candidate sulla copia di lavoro di ora, poi verify_candidate e review_candidate sul candidato nuovo.`,
+    );
+  }
+  const without = targets.undeclared.filter((id) => !targets.outdated?.includes(id));
+  if (without.length) {
+    lines.push(
+      `Incarichi conclusi senza candidato: ${without.join(", ")}. Per ognuno prima declare_candidate (assignment: l'id dell'incarico, decisionIDs: le decisioni del Patto che deve rispettare), poi verify_candidate con il candidateID che restituisce, per ogni verifica richiesta, poi review_candidate.`,
     );
   }
   if (targets.unverified.length) {

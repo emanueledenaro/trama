@@ -1,8 +1,21 @@
-import { mkdtemp, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ghEnvironment, ghSearchPath, linkedIssueNumbers, listIssuesAndPullLinks, parseGitHubRemote } from "./github";
+import {
+  commentOnIssue,
+  createIssue,
+  ghEnvironment,
+  ghSearchPath,
+  linkedIssueNumbers,
+  listIssuesAndPullLinks,
+  mergePullRequest,
+  parseGitHubRemote,
+  readGitHubRepository,
+  updateIssueBody,
+  updateIssueText,
+} from "./github";
+import { git } from "./process";
 
 describe("github", () => {
   it("reads the issues a merged pull request names from the issues list (issue #231)", async () => {
@@ -53,6 +66,72 @@ describe("github", () => {
       expect(ghEnvironment().PATH).toContain("/opt/homebrew/bin");
     } finally {
       process.env.PATH = path;
+    }
+  });
+});
+
+describe("what Trama publishes on GitHub (issue #391)", () => {
+  /** A gh that writes each call's arguments to a log and answers every write as GitHub would. */
+  const FAKE_GH = `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync(process.env.REDACTION_GH_LOG, JSON.stringify(args) + "\\n");
+const endpoint = args.find((a, i) => i > 0 && !a.startsWith("-") && !["--method", "--raw-field", "--field"].includes(args[i - 1])) || "";
+process.stdout.write(JSON.stringify(endpoint.endsWith("/merge") ? { merged: true, sha: "abc" } : { id: 1001, number: 1, html_url: "https://github.com/bottega/negozio/issues/1" }));
+`;
+
+  it("replaces personal and business data with a placeholder and the file and line where it lives, in every write", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-gh-"));
+    await writeFile(join(bin, "gh"), FAKE_GH, { mode: 0o755 });
+    const log = join(bin, "gh.log");
+    const repo = await mkdtemp(join(tmpdir(), "trama-negozio-"));
+    await mkdir(join(repo, "config"));
+    await writeFile(
+      join(repo, "config/negozio.json"),
+      ["{", '  "ragioneSociale": "Bottega Rossi srl",', '  "partitaIva": "01234567897",', '  "pec": "bottegarossi@pec.it",', '  "sdi": "M5UXCR1",', '  "shop": "bottega-rossi.myshopify.com"', "}", ""].join("\n"),
+    );
+    await git(["init", "-q", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["remote", "add", "origin", "https://github.com/bottega/negozio.git"], repo, false);
+    const saved = { path: process.env.PATH, log: process.env.REDACTION_GH_LOG };
+    process.env.PATH = `${bin}:${saved.path}`;
+    process.env.REDACTION_GH_LOG = log;
+    try {
+      expect(await readGitHubRepository(repo)).toBe("bottega/negozio");
+      // Made at run time, so the source holds no string a secret scanner takes for a real token.
+      const token = ["shpat", "0123456789abcdef".repeat(2)].join("_");
+      const text = [
+        "Il checkout mostra ancora P.IVA 01234567897, codice SDI: M5UXCR1 e la PEC bottegarossi@pec.it.",
+        "Il negozio è bottega-rossi.myshopify.com, la sede in Via Garibaldi 12, 20121 Milano.",
+        `Il token ${token} è nel log.`,
+      ].join("\n");
+      await createIssue("bottega/negozio", "Dati fiscali visibili per 01234567897", text, ["needs-triage"]);
+      await updateIssueText("bottega/negozio", 1, "Titolo", text);
+      await updateIssueBody("bottega/negozio", 1, text);
+      await commentOnIssue("bottega/negozio", 1, text);
+      await mergePullRequest("bottega/negozio", 2, { sha: "abc", title: "fix: hide the VAT number", message: text });
+      const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+      expect(calls).toHaveLength(5);
+      const published = calls.flat().join("\n");
+      for (const secret of ["01234567897", "M5UXCR1", "bottegarossi@pec.it", "bottega-rossi.myshopify.com", "Via Garibaldi 12", token]) {
+        expect(published).not.toContain(secret);
+      }
+      const body = calls[0]!.find((arg) => arg.startsWith("body="))!;
+      expect(body).toContain("P.IVA [partita IVA rimossa, vedi config/negozio.json:3]");
+      expect(body).toContain("codice SDI: [codice SDI rimosso, vedi config/negozio.json:5]");
+      expect(body).toContain("la PEC [PEC rimossa, vedi config/negozio.json:4].");
+      expect(body).toContain("Il negozio è [dominio del negozio rimosso, vedi config/negozio.json:6]");
+      expect(body).toContain("la sede in [indirizzo rimosso].");
+      expect(body).toContain("Il token [token rimosso] è nel log.");
+      expect(calls[0]).toContain("title=Dati fiscali visibili per [partita IVA rimossa, vedi config/negozio.json:3]");
+      expect(calls[0]).toContain("labels[]=needs-triage");
+      // Nothing else changes: the text around the data and the merge's own fields stay as written.
+      expect(calls[4]).toContain("commit_title=fix: hide the VAT number");
+      expect(calls[4]).toContain("sha=abc");
+    } finally {
+      process.env.PATH = saved.path;
+      if (saved.log === undefined) delete process.env.REDACTION_GH_LOG;
+      else process.env.REDACTION_GH_LOG = saved.log;
     }
   });
 });

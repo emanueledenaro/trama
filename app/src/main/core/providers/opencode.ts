@@ -30,6 +30,7 @@ import type { LoadedSkill } from "@shared/skills";
 import {
   type AgentRuntime,
   extractJsonAnswer,
+  HOST_TOOL_TIMEOUT_MS,
   type HostToolServer,
   isInside,
   type OpenThreadOptions,
@@ -329,7 +330,7 @@ export function buildToolServerMcp(toolServer: HostToolServer): McpRemoteConfig 
     enabled: true,
     headers: { Authorization: `Bearer ${toolServer.token}` },
     oauth: false,
-    timeout: 120_000,
+    timeout: HOST_TOOL_TIMEOUT_MS,
   };
 }
 
@@ -912,6 +913,21 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /** Never throws: when OpenCode does not confirm the abort, the server is stopped and the turn still ends. */
+  /** OpenCode's own summary of the session (`session.summarize`), Trama's fallback when a new session cannot open (ADR 0018). */
+  async compact(threadId: string): Promise<void> {
+    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    const directory = this.session?.id === threadId ? this.session.directory : this.discoveryDirectory();
+    const client = await this.clientFor(directory);
+    let failure: unknown = null;
+    try {
+      const result = await client.session.summarize({ sessionID: threadId, directory }, { signal: this.timeout(120_000) });
+      failure = result.error ?? null;
+    } catch (error) {
+      failure = error;
+    }
+    if (failure) throw new ProviderError("rpcError", `OpenCode non ha compattato la sessione: ${errorDetail(failure)}`);
+  }
+
   async interrupt(): Promise<void> {
     const turn = this.turn;
     if (!turn) {

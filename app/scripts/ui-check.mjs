@@ -36,13 +36,27 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Chromium under xvfb now and then fails a capture with this protocol error even on a shown, painted window. For that
+// exact error only the capture is retried up to 3 times, 250ms apart; any other error, or a fourth failure, throws.
+const UNCAPTURED = "Protocol error (Page.captureScreenshot): Unable to capture screenshot";
+const capture = async (options) => {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await page.screenshot(options);
+    } catch (error) {
+      if (retry >= 3 || !String(error?.message).includes(UNCAPTURED)) throw error;
+      console.log(`[capture] ${UNCAPTURED}, retry ${retry + 1} of 3`);
+      await page.waitForTimeout(250);
+    }
+  }
+};
 // Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
 const shotNames = new Set();
 const shot = async (name) => {
   if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
   shotNames.add(name);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(out, `${name}.png`) });
+  await capture({ path: join(out, `${name}.png`) });
   console.log("saved", name);
 };
 // Issue #330: the window is laid out as VS Code. The activity bar picks a view, the side bar shows it; until the slices
@@ -58,7 +72,25 @@ const openView = async (view, tab) => {
   }
   await activityBar().getByRole("button", { name: view, exact: true }).click();
   await page.locator(`[data-testid="side-bar"][data-view="${VIEWS[view]}"]`).waitFor();
-  if (tab) await sideBar.getByRole("tab", { name: tab, exact: true }).click();
+  // A tab may carry its count after the name, as Patto (issue #334).
+  if (tab) await sideBar.getByRole("tab", { name: new RegExp(`^${tab}(\\s|$)`) }).click();
+};
+// Issue #334: Regole opens on Mandato, whose modules, changes and earlier versions are closed sections.
+const openSection = async (name) => {
+  const button = page.getByTestId("side-bar").getByRole("button", { name: new RegExp(`^(${name})`) }).first();
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+};
+// The map of today is the Moduli section of Mandato.
+const openModules = async () => {
+  await openView("Regole", "Mandato");
+  await openSection("Moduli");
+  await page.getByRole("listbox", { name: "Moduli" }).waitFor();
+};
+// Restringi, Correggi, Revoca (or Scrivi without a mandate) sit in "Cambia il mandato", closed by default.
+const changeMandate = async (action) => {
+  await openView("Regole", "Mandato");
+  await openSection("Cambia il mandato|Concedi un mandato");
+  await page.getByTestId("mandate-change").getByRole("button", { name: action, exact: true }).click();
 };
 // The work in focus and the queue open from the status bar (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
@@ -118,6 +150,14 @@ const expectAsked = async (fragment, control) => {
       () => false,
     );
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
+};
+
+// Issue #392: Trama's ids stay on hover; the text the person reads names the records.
+const rawIds = async (locator) => (await locator.innerText()).match(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g) ?? [];
+const expectNoRawIds = async (locator, where) => {
+  const text = await locator.innerText();
+  const ids = [...text.matchAll(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g)];
+  if (ids.length) throw new Error(`${where} shows raw ids: ${ids.map((m) => `…${text.slice(Math.max(0, m.index - 50), m.index + 12)}`).join(" | ")}`);
 };
 
 // W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
@@ -187,7 +227,20 @@ const themeShots = async (name) => {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
+// The window opens hidden and shows on ready-to-show (main.ts); the DOM can be ready before that, and a screenshot of a
+// hidden or not yet painted window fails ("Unable to capture screenshot"). So each frame waits for a visible window and
+// for a painted frame after the animations are set, instead of assuming a fixed time is enough.
+const windowShown = async () => {
+  const end = Date.now() + 10_000;
+  while (!(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false))) {
+    if (Date.now() > end) throw new Error("The window did not show within 10s");
+    await page.waitForTimeout(20);
+  }
+  await page.waitForFunction(() => document.visibilityState === "visible");
+};
+const painted = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const introFrames = async (label, times) => {
+  await windowShown();
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
@@ -198,7 +251,8 @@ const introFrames = async (label, times) => {
         animation.currentTime = t;
       }
     }, time);
-    await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
+    await painted();
+    await capture({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
   await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
@@ -569,6 +623,9 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
+// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
+const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -657,8 +714,7 @@ await teamItem.getByRole("button", { name: "Conferma il team" }).waitFor({ timeo
 await shot("04b-team-proposal");
 await teamItem.getByRole("button", { name: "Conferma il team" }).click();
 await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Scrivi", exact: true }).click();
+await changeMandate("Scrivi");
 await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
 await page.getByRole("checkbox", { name: /Orders/ }).check();
 await page.getByRole("checkbox", { name: /worktree/ }).check();
@@ -693,7 +749,10 @@ await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ 
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
 // W13: the person renames the developer from the Team view; the id stays and a fixed role's name is refused.
 await teamPanel.getByTestId("team-developer").first().click();
-const developerId = (await teamPanel.getByText(/^S-[0-9A-F]{8}$/).first().textContent()).trim();
+// Issue #392: the id is Trama's, so the header keeps it on hover and in the DOM, not as a visible badge.
+const developerId = await teamPanel.getByTestId("specialist-header").locator("h3[data-record-id]").getAttribute("data-record-id");
+if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "")) throw new Error(`The specialist's header lost its id: ${developerId}`);
+await expectNoRawIds(teamPanel.getByTestId("specialist-header"), "The specialist's header");
 await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
 const rename = teamPanel.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
@@ -705,7 +764,8 @@ if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not 
 await shot("04e3-team-rename");
 await rename.getByRole("button", { name: "Rinomina" }).click();
 await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
-await teamPanel.getByText(developerId, { exact: true }).waitFor();
+// The id stays the same after the rename.
+await teamPanel.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // W15: the person picks another color; only the avatar and the tag take it.
 await teamPanel.getByRole("radio", { name: "Rame" }).click();
 await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
@@ -871,8 +931,7 @@ await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // Candidate: correct the mandate to allow integration, then declare, verify, review and clear.
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
@@ -919,8 +978,7 @@ const documentationWork = page.locator('.chat-card:not([data-testid="settled-car
 if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /^Root/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
@@ -930,37 +988,37 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
-// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
-// provider: no provider name and no number past the window, in light and dark.
+// #305 and #313: the context meter reads the request that fills the window, the same rule for every provider: no
+// provider name and no number past the window. Past the threshold Trama reorders the context at the end of the turn
+// (ADR 0018), so the reading is taken under a 95% threshold. Light and dark.
 {
   const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
   const noProviderName = (text, where) => {
     const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
     if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
   };
+  await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 95 }));
+  const reordersBefore = await page.getByTestId("context-rollover").count();
   await composer().fill("[pieno] Quanto contesto resta?");
   await page.keyboard.press("Enter");
-  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
-  await notice.waitFor({ timeout: 20_000 });
+  await page.getByText("[pieno] Quanto contesto resta?", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
-  noProviderName(noticeText, "The threshold card");
-  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
-  await notice.scrollIntoViewIfNeeded();
-  await themeShots("04l-context-threshold-card");
   const meter = page.getByTestId("context-meter");
-  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await page.waitForFunction(() => document.querySelector('[data-testid="context-meter"]')?.textContent?.trim() === "89%", null, { timeout: 20_000 });
+  if ((await meter.getAttribute("title")) !== "230.000 su 258.000 token") throw new Error(`The context meter's tokens: ${await meter.getAttribute("title")}`);
   await meter.click();
-  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  const meterPopup = page.getByTestId("context-meter-popup");
   await meterPopup.waitFor();
   const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
   noProviderName(meterText, "The context meter");
-  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  if (!meterText.includes("Contesto del Coordinatore: 89%")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
   await themeShots("04m-context-meter");
   await page.keyboard.press("Escape");
   await meterPopup.waitFor({ state: "hidden" });
+  if ((await page.getByTestId("context-rollover").count()) !== reordersBefore) throw new Error("Trama reordered the context under the threshold");
+  // The threshold stays at 95% in this project: the reorder itself is checked on its own project, in steps 29a to 29c.
 }
-await openView("Regole", "Mappa");
+await openModules();
 await shot("05-map");
 // #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
 // the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
@@ -996,6 +1054,26 @@ await shot("05-map");
       };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+  // The strip lights up after the 300ms hover delay plus a 0.1s transition, so a read at a fixed time can catch it
+  // halfway (rgba(0, 95, 184, 0.957)). These helpers read again every 20ms, up to 1.5s, until the strip is the opaque
+  // accent, and return the last reading either way: the assertions below decide.
+  const channels = (color) => {
+    const [r, g, b, a = 1] = (color.match(/[\d.]+/g) ?? []).map(Number);
+    return { r, g, b, a };
+  };
+  const opaqueAccent = ({ strip, accent }) => {
+    const [lit, wanted] = [channels(strip), channels(accent)];
+    return lit.a === 1 && lit.r === wanted.r && lit.g === wanted.g && lit.b === wanted.b;
+  };
+  const settledLook = async (sash) => {
+    const end = Date.now() + 1_500;
+    let reading = await look(sash);
+    while (!opaqueAccent(reading) && Date.now() < end) {
+      await page.waitForTimeout(20);
+      reading = await look(sash);
+    }
+    return reading;
+  };
   for (const sash of [sidebarSash]) {
     const rest = await look(sash);
     if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
@@ -1037,7 +1115,7 @@ await shot("05-map");
     const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 12, y)]);
     const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat });
     if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8) throw new Error(`A panel border does not show at rest: ${seen}`);
-    if (apart(sidebarPanel, chat) < 3) throw new Error(`The side bar does not stand apart from the chat: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
     await shot(`22-sash-rest-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -1054,15 +1132,12 @@ await shot("05-map");
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
-  // The hover class comes at 300ms and the color then fades in over 100ms: read it once the fade can have ended.
-  let hovered = await look(sidebarSash);
-  for (const end = Date.now() + 1_000; Date.now() < end && hovered.strip !== hovered.accent; hovered = await look(sidebarSash)) await page.waitForTimeout(50);
+  const hovered = await settledLook(sidebarSash);
   if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After the hover delay the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
   // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
   for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
-    await page.waitForTimeout(200);
-    const lit = (await look(sidebarSash)).strip;
+    const lit = (await settledLook(sidebarSash)).strip;
     if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
@@ -1072,8 +1147,7 @@ await shot("05-map");
   await page.mouse.move(dragBox.x + dragBox.width / 2, 300);
   await page.mouse.down();
   await page.mouse.move(dragBox.x + dragBox.width / 2 + 60, 300, { steps: 6 });
-  await page.waitForTimeout(200);
-  const dragged = await look(sidebarSash);
+  const dragged = await settledLook(sidebarSash);
   if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
@@ -1121,6 +1195,69 @@ await openView("Regole", "Patto");
 await shot("08-pact");
 await openView("Regole", "Mandato");
 await shot("09-mandate");
+// Issue #334: Regole has three tabs, Mandato, Patto with its count and Standard. Mandato says in rows where the
+// Coordinator acts, what it can do and what never; the proposal, the modules, the changes and the earlier versions are
+// one line each. Every tab in light and dark, at 1280x800 and 1680x1050, with the Codex and Claude themes.
+{
+  const rulesLook = await lookOf();
+  const rulesBar = page.getByTestId("side-bar");
+  for (const id of ["mandate-where", "mandate-can", "fixed-bans"]) await rulesBar.getByTestId(id).waitFor();
+  if (!/Orders/.test(await rulesBar.getByTestId("mandate-where").innerText())) throw new Error("Dove does not name the modules of the mandate");
+  for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
+    if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
+  }
+  const tabNames = (await rulesBar.getByRole("tab").allInnerTexts()).map((name) => name.replace(/\s+/g, " ").trim());
+  if (tabNames.length !== 3 || tabNames[0] !== "Mandato" || !/^Patto\s*\d+$/.test(tabNames[1]) || tabNames[2] !== "Standard") {
+    throw new Error(`Regole tabs: ${tabNames.join(", ")}`);
+  }
+  for (const [width, height] of [
+    [1280, 800],
+    [1680, 1050],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const tab of ["Mandato", "Patto", "Standard"]) {
+      await openView("Regole", tab);
+      if (tab === "Patto") {
+        // Nuova decisione is an icon with its name; each decision shows its version small on the right.
+        await rulesBar.getByRole("button", { name: "Nuova decisione" }).waitFor();
+        if (!/^v\d+$/.test((await rulesBar.getByTestId("pact-decisions").locator("button").first().locator("span").last().innerText()).trim())) {
+          throw new Error("A decision of the Pact does not show its version");
+        }
+      }
+      if (tab === "Standard") await rulesBar.getByTestId("standard-summary").getByText(/regole attive su \d+/).waitFor();
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll in Regole ${tab} at ${width}x${height}`);
+      for (const provider of ["codex", "claudeAgent"]) {
+        for (const dark of [false, true]) {
+          await setLookTo(provider, dark);
+          await shot(`34-rules-${tab.toLowerCase()}-${width}x${height}-${provider}-${dark ? "dark" : "light"}`);
+        }
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+  // Cambia il mandato open: each button opens its form, nothing changes until the form is confirmed.
+  await openView("Regole", "Mandato");
+  await openSection("Cambia il mandato");
+  const changeButtons = await rulesBar.getByTestId("mandate-change").locator(".cta-row button").allInnerTexts();
+  if (changeButtons.map((b) => b.trim()).join("|") !== "Revoca|Restringi|Correggi") throw new Error(`Cambia il mandato: ${changeButtons.join(", ")}`);
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await shot(`34-rules-mandate-change-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  // Moduli: the map of today, with the modules of the mandate marked.
+  await openSection("Moduli");
+  await rulesBar.getByTestId("module-in-mandate").first().waitFor();
+  await rulesBar.getByTestId("mandate-modules").scrollIntoViewIfNeeded();
+  await themeShots("34-rules-mandate-modules");
+  // A module shows its files first and keeps the dependencies closed.
+  await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+  await rulesBar.getByTestId("module-files").waitFor();
+  if ((await rulesBar.getByTestId("module-dependencies").getAttribute("data-open")) !== "false") throw new Error("The module's dependencies are not closed");
+  await themeShots("34-rules-module");
+  await setLookTo(rulesLook.provider, rulesLook.dark);
+}
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
@@ -1397,7 +1534,7 @@ await shot("16a-goal-proposal-edit");
 await editor.getByRole("button", { name: "Annulla" }).click();
 await editor.waitFor({ state: "detached" });
 // Mappa: asking about a module puts the question in the composer with the module as the message's context.
-await openView("Regole", "Mappa");
+await openModules();
 await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
 await page.getByTestId("side-bar").getByRole("button", { name: "Chiedi al Coordinatore su questo modulo" }).click();
 await expectAsked("Cosa fa il modulo Orders", "Mappa, Chiedi al Coordinatore su questo modulo");
@@ -1432,6 +1569,7 @@ await openView("Lavoro", "Candidati");
   const workPanel = page.getByTestId("side-bar");
   await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
   if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  await expectNoRawIds(workPanel, "Lavoro");
   const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
   for (const dark of [false, true]) {
     await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
@@ -1526,9 +1664,9 @@ await resumeButton.waitFor();
 const lastButton = pausedLine.getByRole("button").last();
 const lastBox = await lastButton.boundingBox();
 const pausedBox = await pausedLine.boundingBox();
-if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The last action of the paused line is not on the right");
+if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The primary of the paused line is not on the right");
 if ((await lastButton.getAttribute("aria-label")) !== "Riprendi il Coordinatore" && !(await pausedLine.locator("button:not([aria-label])").count())) {
-  throw new Error("The last action of the paused line is neither Riprendi nor the person's move");
+  throw new Error("The last button of the paused line is not the primary");
 }
 await themeShots("15c-status-line-paused");
 await page.waitForTimeout(300);
@@ -1704,18 +1842,22 @@ for (const theme of ["light", "dark"]) {
 }
 await openView("Regole", "Mandato");
 const mandateInspector = page.getByTestId("side-bar");
-// Issue #331: the proposal has one home, Aspetta te. Mandato keeps a line that opens it there, with no button to answer.
-const mandatePointer = mandateInspector.getByTestId("waiting-pointer").filter({ hasText: "La proposta aspetta te" });
-await mandatePointer.waitFor();
+// Issue #334: the proposal is not twice. Mandato shows one line that leads to its card in Aspetta te.
+const proposalReference = mandateInspector.getByTestId("mandate-proposal-reference");
+await proposalReference.waitFor();
+if (await mandateInspector.getByTestId("mandate-diff").count()) throw new Error("Mandato shows the proposal's card a second time");
+// Issue #331: no button answers it in Mandato.
 if (await mandateInspector.getByRole("button", { name: "Concedi", exact: true }).count()) throw new Error("Mandato still answers the proposal");
 const mandateState = async () => (await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().textContent()).trim();
 const stateBefore = await mandateState();
 for (const theme of ["light", "dark"]) {
   await setTheme(theme);
-  await mandatePointer.scrollIntoViewIfNeeded();
+  await proposalReference.scrollIntoViewIfNeeded();
   await shot(`15m2-mandate-proposal-view-${theme}`);
 }
-await mandateInspector.getByRole("button", { name: "Revoca il mandato" }).click();
+await proposalReference.click();
+await page.locator('[data-testid="side-bar"][data-view="waiting"]').getByTestId("mandate-diff").waitFor();
+await changeMandate("Revoca");
 const revokeConfirm = mandateInspector.getByTestId("mandate-revoke-confirm");
 await revokeConfirm.waitFor();
 if (!(await revokeConfirm.getByRole("button", { name: "Revoca il mandato" }).isDisabled())) throw new Error("The mandate can be revoked without a reason");
@@ -1847,7 +1989,7 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   const composer = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
   if (!composer || composer.width < 300) throw new Error(`Composer squeezed at ${width}x${height}: ${JSON.stringify(composer)}`);
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll at ${width}x${height}`);
-  await openView("Regole", "Mappa");
+  await openModules();
   await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
   const chatWidth = await page.getByRole("main").evaluate((main) => main.getBoundingClientRect().width);
   if (chatWidth < 419.5) throw new Error(`The chat is ${chatWidth}px wide next to the side bar at ${width}x${height}`);
@@ -1879,7 +2021,16 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
 // a short first wait keeps the automatic retry within the check.
 // FAKE_CODEX_LIGHT_MODEL gives the catalogue a light model, so focus mode has a stronger one to confirm serious findings (F02).
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
+// FAKE_CODEX_SECRET_FIX_HOLD keeps the developer's fix of the secret at work until the check has read the blocked candidate (issue #388).
+const secretFixHold = join(await mkdtemp(join(tmpdir(), "trama-ui-hold-")), "secret-fix");
+({ app, page } = await launch({
+  PATH: `${ghBin}:${process.env.PATH}`,
+  FAKE_GH_TEAM: "1",
+  TRAMA_PROVIDER_RETRY_MS: "4000",
+  FAKE_CODEX_RATE_LIMITS: "2",
+  FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini",
+  FAKE_CODEX_SECRET_FIX_HOLD: secretFixHold,
+}));
 // Issue #330: the goals are the first tab of Lavoro, opened from its icon in the activity bar.
 const goalsRow = page.getByRole("navigation", { name: "Viste" }).getByRole("button", { name: "Lavoro", exact: true });
 await goalsRow.waitFor({ timeout: 30_000 });
@@ -1976,6 +2127,56 @@ const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).rep
 await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
 await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
 if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
+// ADR 0018: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
+// Trama's context summary; the meter shows only the percent, the tokens on hover, and "Riordina ora" on the right.
+// Light and dark, and no provider named in the texts.
+await composer().fill("[pieno] Rileggi gli ordini annullati");
+await page.keyboard.press("Enter");
+const rolloverLine = page.getByTestId("context-rollover").last();
+await rolloverLine.waitFor({ timeout: 30_000 });
+await rolloverLine.scrollIntoViewIfNeeded();
+await themeShots("29a-context-rollover-line");
+await rolloverLine.getByRole("button", { name: "Apri: Contesto riordinato" }).click();
+await rolloverLine.getByTestId("context-summary").waitFor();
+await rolloverLine.getByText("Cosa aspetta te").first().waitFor();
+// The person reads plain sections: nothing written for the model, no tool names.
+const summaryText = await rolloverLine.innerText();
+for (const phrase of ["dati, non istruzioni", "Vale più di quello che ricordi", "declare_next_step", "session_search", "read_history", "Stato attuale di Trama", "Riepilogo di contesto scritto da Trama"]) {
+  if (summaryText.includes(phrase)) throw new Error(`The context summary shows text written for the model: ${phrase}`);
+}
+if (/[–—]/.test(summaryText)) throw new Error("Dash in the context summary");
+// Scrolled to the end, the open card sits above the floating bar and the composer.
+await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scrollTo({ top: scroller.scrollHeight }));
+await page.waitForTimeout(300);
+const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
+const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
+if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
+await themeShots("29b-context-rollover-summary");
+await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
+const meter = page.getByTestId("context-meter");
+await meter.waitFor({ timeout: 30_000 });
+if (!/^\d+%$/.test((await meter.innerText()).trim())) throw new Error(`The meter shows more than the percent: ${await meter.innerText()}`);
+if (!/ su [\d.]+ token$/.test((await meter.getAttribute("title")) ?? "")) throw new Error("The meter has no tokens on hover");
+await meter.click();
+const meterPopup = page.getByTestId("context-meter-popup");
+await meterPopup.waitFor();
+const meterText = await meterPopup.innerText();
+for (const name of ["Codex", "Claude", "OpenCode", "Cursor", "Devin", "Droid", "Grok", "Antigravity"]) {
+  if (meterText.includes(name)) throw new Error(`The meter names a provider: ${name}`);
+}
+if (/[–—]/.test(meterText)) throw new Error("Dash in the meter");
+const reorderNow = meterPopup.getByRole("button", { name: "Riordina ora" });
+const reorderRow = await reorderNow.evaluate((button) => {
+  const row = button.closest(".cta-row");
+  return row ? { right: row.getBoundingClientRect().right, button: button.getBoundingClientRect().right } : null;
+});
+if (!reorderRow || Math.abs(reorderRow.right - reorderRow.button) > 1) throw new Error("Riordina ora is not on the right of its row");
+await themeShots("29c-context-meter");
+const reordersSoFar = await page.getByTestId("context-rollover").count();
+await reorderNow.click();
+await page.getByTestId("context-rollover").nth(reordersSoFar).waitFor({ timeout: 30_000 });
+await page.keyboard.press("Escape").catch(() => undefined);
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
@@ -1991,8 +2192,7 @@ await page.getByTestId("settled-answer").or(page.getByText("Apri nel Patto")).fi
 const candidateDecision = await page.evaluate(
   async () => (await window.trama.getState()).project.document.decisionRequests.find((r) => r.outcome && r.question.includes("Cosa succede a un ordine pagato annullato?"))?.outcome.decisionId,
 );
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Scrivi", exact: true }).click();
+await changeMandate("Scrivi");
 await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
 await page.getByRole("checkbox", { name: /Orders/ }).check();
 await page.getByRole("checkbox", { name: /worktree/ }).check();
@@ -2062,6 +2262,13 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
 await toolErrors.locator("summary").click();
 await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
+// The activity's labels, details and steps name the records (issue #392); the tool's own error text stays as written.
+{
+  const activityLog = page.getByTestId("activity-log");
+  const toolErrorIds = await rawIds(activityLog.getByTestId("activity-tool-errors").first());
+  const shown = (await rawIds(activityLog)).filter((id) => !toolErrorIds.includes(id));
+  if (shown.length) throw new Error(`Attività shows raw ids: ${[...new Set(shown)].join(", ")}`);
+}
 for (const dark of [false, true]) {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
   await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
@@ -2116,6 +2323,15 @@ await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_0
 await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
 await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
+// Issue #389: the correction replaced the failed candidate, so its card settles as one "Superato" line; the line opens it.
+const supersededLines = page.getByTestId("settled-card").filter({ hasText: "Superato" });
+await supersededLines.first().waitFor({ timeout: 20_000 });
+for (const line of await supersededLines.all()) {
+  if (await failedCard.isVisible().catch(() => false)) break;
+  await openSettled(line);
+  if (!(await failedCard.isVisible().catch(() => false))) await line.getByRole("button", { name: /^Chiudi: / }).first().click();
+}
+await failedCard.getByTestId("candidate-superseded").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
@@ -2158,7 +2374,7 @@ await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000
 await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
 await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+// Ada is fixing the secret: the blocked candidate is still the work of now.
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
 await shot("24a-candidate-gate-blocked");
 await app.evaluate(({ nativeTheme }) => {
@@ -2170,9 +2386,30 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Issue #388: once Ada's fix ends, Trama declares the new candidate from her worktree. The blocked one is replaced and
+// keeps its gate; the new one has no key in its diff and waits for its own checks.
+const blockedId = await secretCandidate.locator("[data-record-id]").first().getAttribute("data-record-id");
+if (!blockedId) throw new Error("The blocked candidate's card does not name the candidate");
+await writeFile(secretFixHold, "");
+await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+const secretCards = candidateCards.filter({ has: page.locator(`[data-reference-id="${await cardAssignment(secretWork)}"]`) });
+const fixedCandidate = secretCards.filter({ hasNot: page.getByTestId("candidate-gate") }).last();
+await fixedCandidate.waitFor({ timeout: 20_000 });
+if ((await fixedCandidate.locator("[data-record-id]").first().getAttribute("data-record-id")) === blockedId) throw new Error("Trama did not declare the candidate of Ada's fix");
+const secretReplacedLine = page.getByTestId("settled-card").filter({ has: page.getByRole("button", { name: `Apri: Candidato ${blockedId}` }) });
+await secretReplacedLine.waitFor({ timeout: 20_000 });
+await openSettled(secretReplacedLine);
+const replacedCard = page.locator(".chat-card").filter({ has: page.locator(`[data-record-id="${blockedId}"]`) });
+await replacedCard.getByTestId("candidate-superseded").waitFor();
+await replacedCard.locator('[data-testid="candidate-gate"][data-status="blocked"]').waitFor();
+await page.getByRole("button", { name: `Chiudi: Candidato ${blockedId}` }).click();
+await fixedCandidate.scrollIntoViewIfNeeded();
+await shot("24a1-candidate-after-the-fix");
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
 await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
-const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
+await page.getByText("Candidato nuovo sulla copia di lavoro").last().waitFor({ timeout: 10_000 });
+// The step names the candidate, not its id (issue #392).
+const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
 await toDeveloper.waitFor({ timeout: 10_000 });
 await toDeveloper.click();
 await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
@@ -2189,6 +2426,10 @@ const review = correctedCard.getByTestId("technical-review");
 await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
 const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
 await suggestion.getByText("NOTE.md:1").waitFor();
+// Issue #392: Clean Code's finding is listed once on the card, in the technical review, not again in its gate row.
+if (await correctedCard.locator('[data-testid="gate-review"][data-role="cleanCode"] [data-testid="gate-finding"]').filter({ hasText: "NOTE.md:1" }).count()) {
+  throw new Error("A Clean Code finding shows twice on the candidate card");
+}
 await suggestion.getByText("Suggerimento").waitFor();
 await review.getByText(/non un'evidenza/).waitFor();
 await review.scrollIntoViewIfNeeded();
@@ -2213,8 +2454,7 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /Aprire pull request/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
@@ -2244,11 +2484,16 @@ await correctedQuality.scrollIntoViewIfNeeded();
 await shot("18i-publication-standard-dark");
 await review.scrollIntoViewIfNeeded();
 await shot("18d2-review-findings-dark");
-// The project's switches: Impostazioni, Standard del codice lists the rules; one turns off for this project.
+// The project's switches: Standard del codice lists the rules; one turns off for this project. Issue #334: the rules
+// live in Regole, in the Standard tab; Impostazioni keeps a way there.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const standardSettings = page.getByTestId("settings");
 await standardSettings.getByRole("button", { name: /^Standard del codice/ }).first().click();
-const rules = standardSettings.getByTestId("clean-code-settings");
+await standardSettings.getByText(/ora sta in Regole|stanno in Regole/).waitFor();
+await themeShots("18d5-standard-settings-link");
+await standardSettings.getByTestId("standard-open-rules").click();
+await page.locator('[data-testid="side-bar"][data-view="rules"]').getByRole("tab", { name: "Standard", selected: true }).waitFor();
+const rules = page.getByTestId("side-bar").getByTestId("clean-code-settings");
 await rules.getByText(/Robert C\. Martin/).waitFor();
 const solid = rules.getByRole("switch", { name: "SOLID" });
 await solid.click();
@@ -2263,8 +2508,9 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await shot("18d4-standard-settings");
 await solid.click();
 await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="true"]').waitFor({ timeout: 10_000 });
-await page.getByRole("button", { name: "Impostazioni" }).click();
+// "Apri in Regole" leaves Impostazioni for the conversation, with the Standard tab beside it.
 await standardSettings.waitFor({ state: "hidden" });
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await showWaiting();
 const correctedId = await recordId(correctedCard, "C");
 await send(`[riverifica:${correctedId}:git_status]`);
@@ -2317,8 +2563,7 @@ await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // M06: the developer of a slice runs implement and tdd with their original text and reports the seams it tested.
 // The candidate shows that report apart from Trama's evidence; the build and the tests wait for Trama's own run.
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
@@ -2425,7 +2670,22 @@ await auditFinding("spec", "confirmed").getByText(/Confermato da gpt-5\.5:/).wai
 await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
 if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
 if (await focusAudit.locator('[data-testid="audit-finding"][data-status="verified"]').filter({ hasText: "Prova: Nessuna prova" }).count()) throw new Error("Focus mode: a finding is verified without a proof");
-await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 1 verificato da Trama, 1 confermato da un secondo modello, 1 ipotesi.").waitFor();
+// F05: Trama's three lenses follow the axes, marked as Trama's additions, and their findings go through the same
+// verification: Trama reread the security line, the stronger model confirmed the test finding, the documents one has no proof.
+const auditLens = (lens) => focusAudit.locator(`[data-testid="audit-lens"][data-lens="${lens}"][data-status="done"]`);
+const lensNote = focusAudit.getByTestId("focus-audit-lenses-note");
+await lensNote.getByText(/controlli in più di Trama: non vengono dal metodo AI Hero/).waitFor();
+if ((await focusAudit.getByText("Aggiunta di Trama", { exact: true }).count()) !== 3) throw new Error("Focus mode: each lens is not marked as Trama's addition");
+await auditLens("security").locator('[data-testid="audit-finding"][data-status="verified"][data-severity="serious"]').getByText("Verificato da Trama").waitFor();
+await auditLens("tests").locator('[data-testid="audit-finding"][data-status="confirmed"]').getByText(/Confermato da gpt-5\.5:/).waitFor();
+if ((await auditLens("docs").locator('[data-testid="audit-finding"][data-status="hypothesis"] [data-testid="audit-finding-evidence"]').innerText()) !== "Prova: Nessuna prova") {
+  throw new Error("Focus mode: the documents lens finding without a proof is not a hypothesis");
+}
+const lensText = await focusAudit.innerText();
+const [specAt2, lensesAt, summaryAt] = ["Spec", "Lenti di Trama", "Sintesi"].map((heading) => lensText.indexOf(heading));
+if (!(specAt2 < lensesAt && lensesAt < summaryAt)) throw new Error("Focus mode: the lenses are not between the axes and the summary");
+await focusAudit.getByTestId("focus-audit-lens-summary").getByText(/^Lenti di Trama: Sicurezza: 1 rilievo.*Qualità dei test: 1 rilievo.*Documenti e codice: 1 rilievo/).waitFor();
+await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 2 verificati da Trama, 2 confermati da un secondo modello, 2 ipotesi.").waitFor();
 await shot("20a-focus-audit");
 await auditFinding("spec", "hypothesis").scrollIntoViewIfNeeded();
 await shot("20e-focus-audit-findings");
@@ -2436,10 +2696,41 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("20f-focus-audit-findings-dark");
 await focusAudit.getByTestId("focus-audit-status").scrollIntoViewIfNeeded();
 await shot("20b-focus-audit-dark");
+await lensNote.evaluate((node) => node.closest("section").scrollIntoView({ block: "start" }));
+await shot("20h-focus-audit-lenses-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("20g-focus-audit-lenses");
+// F04: from a finding to work, one click each. This candidate's project has no GitHub remote: the verified finding
+// goes to Trama's backlog, and its correction becomes an assignment for Ada, who wrote the candidate, within the
+// mandate. The hypothesis cannot become an assignment; as a trade-off it becomes a Pact card. Without GitHub the report
+// stays in Trama and there is nothing to publish.
+const verifiedFinding = auditFinding("standards", "verified");
+const hypothesisFinding = auditFinding("spec", "hypothesis");
+const findingActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
+if (findingActions.join("|") !== "Metti nel backlog|È un compromesso|Affida la correzione") throw new Error(`Finding actions out of order: ${findingActions}`);
+if (await hypothesisFinding.getByRole("button", { name: "Affida la correzione" }).count()) throw new Error("A hypothesis can become an assignment");
+await focusAudit.getByTestId("focus-audit-publication").getByText(/Con GitHub collegato puoi pubblicarlo/).waitFor();
+if (await page.getByRole("button", { name: "Pubblica su GitHub" }).count()) throw new Error("A report can be published without GitHub");
+await verifiedFinding.scrollIntoViewIfNeeded();
+await themeShots("20g-finding-actions");
+await verifiedFinding.getByRole("button", { name: "Metti nel backlog" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByText("backlog di Trama").waitFor({ timeout: 20_000 });
+await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).click();
+await hypothesisFinding.locator('[data-testid="audit-finding-followups"] [data-kind="pactCard"]').getByText(/^Scheda del Patto: /).waitFor({ timeout: 20_000 });
+await verifiedFinding.getByRole("button", { name: "Affida la correzione" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="assignment"]').getByText(/^Incarico: /).waitFor({ timeout: 20_000 });
+const leftActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
+if (leftActions.join("|") !== "È un compromesso") throw new Error(`A finding offers the same work twice: ${leftActions}`);
+if (await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).count()) throw new Error("A finding offers the same Pact card twice");
+await verifiedFinding.scrollIntoViewIfNeeded();
+await themeShots("20h-finding-work");
+// The correction is Ada's new assignment in the work's dialog; it ends before the next step gives her work.
+const correctionWork = assignmentCards.nth(6);
+await waitInCard(correctionWork, (card) => card.getByText(/Correggere il rilievo: Possibile Mysterious Name/), "finding correction");
+await waitInCard(correctionWork, (card) => card.getByText("Concluso", { exact: true }), "finding correction ended", 30_000);
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await showWaiting();
 await correctedCard.scrollIntoViewIfNeeded();
@@ -2468,7 +2759,7 @@ await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
-const questionWork = assignmentCards.nth(6);
+const questionWork = assignmentCards.nth(7);
 await questionWork.getByText("Aspetta una risposta", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
@@ -2524,7 +2815,8 @@ await setLookTo(questionLook.provider, questionLook.dark);
 // assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
 // with the Coordinator (Q32 of #239).
 if (await page.getByTestId("sidebar-agent-thread").count()) throw new Error("A conversation between agents is in the sidebar");
-const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+// The title names the slice as the other cards do (issue #392): "fetta S1" reads "fetta 1, <its title>".
+const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await threadLink.waitFor({ timeout: 10_000 });
 await threadLink.click();
 const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
@@ -2549,8 +2841,9 @@ for (const provider of ["codex", "claudeAgent"]) {
 await setLookTo(questionLook.provider, questionLook.dark);
 // The specialist's page lists every conversation the developer takes part in.
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
-const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await specialistThreads.waitFor();
+await expectNoRawIds(page.getByTestId("side-bar"), "The specialist's page");
 await specialistThreads.scrollIntoViewIfNeeded();
 await shot("19m-specialist-threads");
 await specialistThreads.click();
@@ -2581,7 +2874,7 @@ await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 // The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
 await send("[assegna:S1]");
-const verifiedSliceWork = assignmentCards.nth(7);
+const verifiedSliceWork = assignmentCards.nth(8);
 await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
 const teamSlices = sliceSpec.getByTestId("plan-slices");
@@ -2594,13 +2887,13 @@ await milestoneRecap.waitFor({ timeout: 20_000 });
 if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was told in more than one recap");
 await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("22c-recap-milestone");
-if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
+if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 // "Come procede il lavoro?" would ask for a recap, which opens no turn (issue #242): the check writes to the Coordinator.
 await send("Vai avanti con il lavoro");
-const pickedCard = assignmentCards.nth(8);
+const pickedCard = assignmentCards.nth(9);
 await waitInCard(pickedCard, (card) => card.getByTestId("assignment-self-picked"), "self-picked");
 await waitInCard(pickedCard, (card) => card.getByText(/^S2 Il supporto vede gli ordini in revisione$/), "slice S2");
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
@@ -2850,7 +3143,7 @@ for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok",
   }
 }
 await setLookTo(typeLook.provider, typeLook.dark);
-// In a narrow window the side bar leaves the chat 420px: closed, the messages are what the shot shows.
+// In a narrow window the side bar takes room from the chat: closed, the messages are what the shot shows (issue #330).
 if (await page.getByTestId("side-bar").count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await page.setViewportSize({ width: 720, height: 640 });
 await typeMessage.scrollIntoViewIfNeeded();
@@ -2975,7 +3268,7 @@ await shot("16f-overlap-focus-dark");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await colleagueMessage.getByRole("button", { name: "Copia il messaggio" }).click();
 await colleagueMessage.getByTestId("colleague-message-done").waitFor();
-await openView("Regole", "Mappa");
+await openModules();
 const markedModule = page.getByRole("listbox", { name: "Moduli" }).getByRole("option").filter({ has: page.locator('[data-overlap="conflict"]') });
 await markedModule.first().waitFor({ timeout: 10_000 });
 await page.getByTestId("map-overlap-legend").waitFor();
@@ -3811,7 +4104,7 @@ if (await page.locator('[data-waiting-kind="mandate"]').count()) throw new Error
 await openView("Regole", "Mandato");
 await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
 await page.getByTestId("side-bar").getByTestId("fixed-bans").waitFor();
-await page.getByRole("button", { name: "Restringi", exact: true }).click();
+await changeMandate("Restringi");
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
@@ -3826,7 +4119,8 @@ await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_00
 await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
 await lookShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await openSection("Cambia il mandato");
+await page.getByTestId("mandate-change").getByRole("button", { name: "Correggi", exact: true }).click();
 if (await page.getByTestId("side-bar").getByRole("checkbox", { name: "Integrare candidati verificati" }).isChecked()) {
   throw new Error("The correction form brings back an action the restriction removed");
 }
@@ -3899,11 +4193,15 @@ const placedProblem = problemLog.locator('[data-testid="activity-problem"]').fil
 await placedProblem.waitFor({ timeout: 90_000 });
 await placedProblem.getByText(/Triage: /).waitFor();
 await placedProblem.locator(".cta-row").getByRole("button", { name: "Apri la issue #21" }).waitFor();
-const problemCalls = (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const readProblemCalls = async () => (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const labelled = (calls) => calls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)));
+// The triage shows in Activity first; Trama writes its labels at the next look at the problems, a moment later.
+let problemCalls = await readProblemCalls();
+for (const end = Date.now() + 60_000; !labelled(problemCalls) && Date.now() < end; problemCalls = await readProblemCalls()) await page.waitForTimeout(500);
 const openedIssues = problemCalls.filter((call) => call.includes("POST") && call.some((arg) => /\/issues$/.test(arg)));
 if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red check, got ${openedIssues.length}`);
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
-if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
+if (!labelled(problemCalls)) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
 await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
@@ -4096,6 +4394,226 @@ await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
 await lookShots("28e-reopened-paused");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #40: the chat tells an overlap, a reproduced conflict and a semantic hypothesis apart. Each card names the
+// project, the assignments, the base and the copies compared, with the time of the GitHub reading apart from the time
+// of the AI analysis. A hypothesis stays an interpretation until the scenario on the combined candidate fails; only
+// then it blocks the green light. Both themes.
+const conflictsProject = await mkdtemp(join(tmpdir(), "trama-ui-conflitti-"));
+await cp(resolve("resources/DemoProject"), conflictsProject, { recursive: true });
+const conflictsGit = (...args) => execFileSync("git", ["-C", conflictsProject, ...args], { encoding: "utf8" });
+conflictsGit("init", "-q", "-b", "main");
+conflictsGit("add", ".");
+conflictsGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+const conflictsBase = conflictsGit("rev-parse", "HEAD").trim();
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), conflictsProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let conflictsPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-conflitti-")) conflictsPath = join(dataDir, "Projects", file);
+}
+if (!conflictsPath) throw new Error("Conflicts: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(conflictsPath, "utf8"));
+  const at = (hour, minute = 0) => `2026-09-28T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`;
+  const work = (id, specialistId, objective, hour, branch, issueNumber) => ({
+    id,
+    specialistId,
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["node_test"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(hour),
+    status: "completed",
+    workspace: { sourceRoot: conflictsProject, worktreeRoot: join(conflictsProject, "..", `wt-${id}`), branch, baseSHA: conflictsBase },
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Fatto.",
+    failure: null,
+    updatedAt: at(hour),
+    lastUpdate: "",
+    reportedStatus: "completed",
+  });
+  const cart = work("A-1C0A7E21", "S-ADA", "Sconto nel carrello", 9, "feature/sconto-carrello", 41);
+  const orders = work("A-6B3F90D4", "S-ADA", "Totale degli ordini", 10, "feature/totale-ordini", 43);
+  const rounding = work("A-94E2B7C8", "S-BEA", "Arrotondamento dei prezzi", 9, "feature/arrotondamento-prezzi", 44);
+  const specialist = (id, name, color, assignments) => ({
+    id,
+    name,
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color,
+    tag: "Next.js",
+    createdAt: at(8),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(12),
+    lastUpdate: "",
+    removal: null,
+    assignments,
+  });
+  document.team.specialists.push(specialist("S-ADA", "Ada", "blue", [cart, orders]), specialist("S-BEA", "Bea", "green", [rounding]));
+  const candidate = (id, assignment, snapshotId, hour, changedFiles) => ({
+    id,
+    assignmentId: assignment.id,
+    specialistId: assignment.specialistId,
+    snapshotId,
+    baseSHA: conflictsBase,
+    diff: "",
+    changedFiles,
+    touchedModules: [],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["node_test"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(hour),
+    updatedAt: at(hour),
+    evidence: { node_test: { check: "node_test", result: "pass", command: "npm test", output: "", snapshotId, decisionVersions: {}, recordedAt: at(hour) } },
+    technicalReview: null,
+    clearance: null,
+    humanApproval: null,
+    pullRequest: null,
+  });
+  const cartWork = candidate("C-3F1A9B20", cart, "5e2c8a17d09b4f6e", 10, ["src/lib/prezzi.ts", "src/app/carrello/page.tsx"]);
+  const roundingWork = candidate("C-7D42C1E5", rounding, "a81f3c90b27d4e55", 11, ["src/lib/prezzi.ts"]);
+  const ordersWork = candidate("C-51B0E7A3", orders, "c4d9e012f7a35b68", 12, ["src/lib/ordini.ts"]);
+  document.candidates.push(cartWork, roundingWork, ordersWork);
+  const pullSHA = "8e1d4c7b2a9f0e3d6c5b4a39281706f5e4d3c2b1";
+  document.conflicts = [
+    {
+      id: `${roundingWork.snapshotId}:worktree:${cartWork.snapshotId}`,
+      candidateId: roundingWork.id,
+      snapshotId: roundingWork.snapshotId,
+      remoteSHA: "0b7e5d3c1a2f4e6d8c9b0a1f2e3d4c5b6a7f8e9d",
+      references: [cartWork.id],
+      otherCandidateId: cartWork.id,
+      otherSnapshotId: cartWork.snapshotId,
+      classification: "overlap",
+      conflictingFiles: ["src/lib/prezzi.ts"],
+      detail: "Nessun conflitto testuale tra le due copie di lavoro, ma entrambe cambiano src/lib/prezzi.ts.",
+      checkedAt: at(11, 2),
+    },
+    {
+      id: `${cartWork.snapshotId}:${pullSHA}`,
+      candidateId: cartWork.id,
+      snapshotId: cartWork.snapshotId,
+      remoteSHA: pullSHA,
+      references: ["#42 feature/coupon-checkout"],
+      classification: "conflict",
+      conflictingFiles: ["src/app/carrello/page.tsx"],
+      conflictingLines: { "src/app/carrello/page.tsx": [{ start: 14, end: 18 }] },
+      detail: "La fusione temporanea produce conflitti testuali.",
+      checkedAt: at(10, 6),
+      remoteReadAt: at(10, 5),
+    },
+  ];
+  document.conflicts.push(
+    {
+      id: `${ordersWork.snapshotId}:semantic:${cartWork.snapshotId}`,
+      candidateId: ordersWork.id,
+      snapshotId: ordersWork.snapshotId,
+      remoteSHA: conflictsBase,
+      references: [cartWork.id],
+      otherCandidateId: cartWork.id,
+      otherSnapshotId: cartWork.snapshotId,
+      classification: "hypothesis",
+      conflictingFiles: [],
+      detail: "Lo scenario sul candidato combinato passa: l'incompatibilità resta un'ipotesi.",
+      checkedAt: at(12, 20),
+      semantic: {
+        explanation: "Il totale degli ordini somma i prezzi prima dello sconto del carrello: il totale potrebbe non coincidere con quello pagato.",
+        analyzedAt: at(12, 10),
+        check: "node_test",
+        scenario: { result: "pass", command: "npm test", output: "", ranAt: at(12, 20) },
+      },
+    },
+    {
+      id: `${ordersWork.snapshotId}:semantic:${roundingWork.snapshotId}`,
+      candidateId: ordersWork.id,
+      snapshotId: ordersWork.snapshotId,
+      remoteSHA: conflictsBase,
+      references: [roundingWork.id],
+      otherCandidateId: roundingWork.id,
+      otherSnapshotId: roundingWork.snapshotId,
+      classification: "semantic",
+      conflictingFiles: [],
+      detail: "Ognuno passa da solo, ma sul candidato combinato test Node fallisce: le due modifiche sono incompatibili.",
+      checkedAt: at(12, 25),
+      semantic: {
+        explanation: "Bea arrotonda i prezzi unitari, Ada arrotonda il totale: insieme il totale può perdere un centesimo.",
+        analyzedAt: at(12, 12),
+        check: "node_test",
+        scenario: { result: "fail", command: "npm test", output: "FAIL ordini.test.ts > totale con tre righe\nexpected 30.00, received 29.99", ranAt: at(12, 25) },
+      },
+    },
+  );
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (kind, referenceId, minute) => ({ id: `E-c08-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(12, minute), content: { type: "card", kind, title: kind, detail: null, referenceId } });
+  document.events.push(...document.conflicts.map((a, index) => card("conflict", a.id, 30 + index)), card("candidate", ordersWork.id, 40));
+  await writeFile(conflictsPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), conflictsProject);
+await page.locator(".chat-card").filter({ hasText: "Pull request aperta" }).first().waitFor({ timeout: 30_000 });
+const conflictShots = ["overlap", "conflict", "hypothesis", "semantic"];
+for (const kind of conflictShots) {
+  const one = page.locator(`[data-testid="conflict-card"][data-classification="${kind}"]`);
+  if ((await one.count()) !== 1) throw new Error(`Conflicts: ${await one.count()} cards for ${kind}`);
+  const text = await one.innerText();
+  if (/[–—]|[A-Z]-[0-9A-F]{8}/.test(text)) throw new Error(`Conflicts: a dash or an id in the ${kind} card: ${text}`);
+  for (const wanted of ["Progetto trama-ui-conflitti-", "Ada, ", "base ", "copi"]) {
+    if (!text.includes(wanted)) throw new Error(`Conflicts: the ${kind} card does not say ${wanted}: ${text}`);
+  }
+}
+{
+  const pullCard = await page.locator('[data-testid="conflict-card"][data-classification="conflict"]').innerText();
+  if (!pullCard.includes("GitHub letto alle") || !pullCard.includes("prova di fusione alle")) throw new Error(`Conflicts: the GitHub card mixes its times: ${pullCard}`);
+  const hypothesis = await page.locator('[data-testid="conflict-card"][data-classification="hypothesis"]').innerText();
+  if (!hypothesis.includes("analisi AI alle") || !hypothesis.includes("non ancora una prova")) throw new Error(`Conflicts: the hypothesis is not an interpretation: ${hypothesis}`);
+  const semantic = page.locator('[data-testid="conflict-card"][data-classification="semantic"]');
+  await semantic.locator('[data-testid="semantic-scenario"][data-result="fail"]').waitFor();
+  if (!(await semantic.innerText()).includes("Incompatibili") && !(await page.locator(".chat-card", { has: semantic }).innerText()).includes("Incompatibili")) {
+    throw new Error("Conflicts: the proved case is not marked incompatible");
+  }
+}
+for (const kind of conflictShots) {
+  const one = page.locator(`[data-testid="conflict-card"][data-classification="${kind}"]`);
+  await one.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`29-conflicts-${kind}-${dark ? "dark" : "light"}`);
+  }
+}
+// The proved case blocks the green light of the newer candidate; the hypothesis next to it does not.
+const blockedCandidate = page.locator('[data-testid="candidate-blockers"]').filter({ hasText: "Incompatibile con un altro lavoro" });
+await blockedCandidate.waitFor({ timeout: 10_000 });
+if ((await blockedCandidate.locator("li").filter({ hasText: "Incompatibile" }).count()) !== 1) throw new Error("Conflicts: the hypothesis blocks the green light too");
+await blockedCandidate.evaluate((element) => element.scrollIntoView({ block: "center" }));
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`29-conflicts-blocked-${dark ? "dark" : "light"}`);
+}
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
@@ -4408,6 +4926,39 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+
+// Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
+// green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"
+// merges it as the person's act. The merge on the green light names the mandate version it ran under.
+await send("[assegna] [cancella]");
+const deletingWork = await workDone(correctedWork);
+await send(`[candidato:${deletingWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.merge?.stop, "Destructive merge stopped");
+const stoppedItem = await openWaiting("candidate", undefined, 60_000);
+if ((await stoppedItem.getAttribute("data-waiting-key")) !== `merge:${await stateUntil((document) => candidateOfWork(document, deletingWork)?.id, "Stopped candidate")}`) {
+  throw new Error("The stopped merge is not its own item in Aspetta te");
+}
+const stopField = stoppedItem.getByTestId("candidate-merge-stop");
+await stopField.getByText("Il Coordinatore non unisce questo candidato da solo: la scelta è tua.", { exact: false }).waitFor();
+await stopField.getByText("Conseguenze", { exact: true }).waitFor();
+await stopField.getByText("Cosa puoi fare", { exact: true }).waitFor();
+await stopField.getByText(/README\.md/).waitFor();
+if (/[–—]/.test(await stoppedItem.innerText())) throw new Error("A dash in the stopped merge");
+await primaryLast(stoppedItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Unisci comunque" }) }), "Stopped merge");
+if ((await readFile(vetrinaGhLog, "utf8")).split("\n").filter((line) => line.includes('"PUT"')).length !== 2) throw new Error("The destructive candidate was merged without the person");
+await stopField.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30f-merge-stopped-destructive");
+await stoppedItem.getByRole("button", { name: "Unisci comunque" }).click();
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.pullRequest?.mergedBy === "person", "Destructive merge on the person's ok");
+await stoppedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi la barra laterale" }).count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+// The first candidate, merged on the green light, names the mandate it ran under: its reference opens it.
+const plainCandidate = await stateUntil((document) => candidateOfWork(document, plainWork)?.id, "Merged candidate");
+await page.locator(`[data-reference="candidate"][data-reference-id="${plainCandidate}"]`).first().click();
+const plainMerged = page.getByTestId("side-bar");
+await plainMerged.getByTestId("candidate-merge-mandate").filter({ hasText: "Mandato versione 1." }).waitFor({ timeout: 20_000 });
+await plainMerged.getByTestId("candidate-merge").evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30g-merge-mandate-version");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
