@@ -18,7 +18,7 @@ import type {
   TriageOutcome,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
-import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH, type MessageKey, translate } from "@shared/i18n";
 import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
 import { shortId } from "@shared/ids";
 import { openedForProblem } from "@shared/problems";
@@ -769,6 +769,7 @@ export const ARCHITECTURE_BINDING = [
   "When Trama uses it (a Trama addition): the team is free, it changed code since the last review, and the checkout is at a commit Clean Code has not reviewed yet.",
   "\"The user\" is the person, who is away and named no direction.",
   "\"Spawn a sub-agent\": in Trama this read-only session is that sub-agent, so walk the codebase yourself. The codebase-design vocabulary is expected even when that skill is not loaded here.",
+  "The person reads the title, problem, solution, benefits and top recommendation of each candidate: write them in plain words in the language of your answer, and say what the skill's terms (Locality, Leverage, Seam, Depth, Deep module) mean instead of naming them.",
   "\"Present candidates as an HTML report\" and opening it: this session writes no file and opens nothing. Your final answer is the report: one entry per candidate with the fields of its card and the recommendation strength, then the top recommendation. Trama shows it to the person.",
   "\"Ask the user\" which candidate to explore: Trama asks it for you, as a Pact decision card with your candidates. Stop there.",
   "The grilling loop and edits to CONTEXT.md or the ADRs are not in this session: the person's choice goes to the Coordinator, who grills it and turns it into slices.",
@@ -1059,7 +1060,7 @@ function diagnosisResult(outcome: DiagnosisOutcome): string {
     ...(outcome.hypotheses.length ? [`${t("main.duties.headingHypotheses")}\n${outcome.hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}`] : []),
     ...(outcome.cause ? [`${t("main.duties.headingCause")}\n${outcome.cause}`] : []),
     ...(outcome.regressionTest ? [`${t("main.duties.headingRegressionTest")}\n${outcome.regressionTest}`] : []),
-    ...(outcome.seamNote ? [`### Seam\n${outcome.seamNote}`] : []),
+    ...(outcome.seamNote ? [`${t("main.duties.headingSeams")}\n${outcome.seamNote}`] : []),
     ...(outcome.fix ? [`${t("main.duties.headingFix")}\n${outcome.fix}`] : []),
     ...(outcome.openQuestions ? [`${t("main.duties.headingOpenQuestions")}\n${outcome.openQuestions}`] : []),
   ].join("\n\n");
@@ -1068,17 +1069,24 @@ function diagnosisResult(outcome: DiagnosisOutcome): string {
 const strongestFirst = (proposals: ArchitectureProposal[]) =>
   proposals.map((p, index) => ({ p, index })).sort((a, b) => STRENGTH_ORDER.indexOf(a.p.strength) - STRENGTH_ORDER.indexOf(b.p.strength) || a.index - b.index).map(({ p }) => p);
 
-function architectureResult(outcome: ArchitectureOutcome): string {
-  if (!outcome.proposals.length) return t("main.duties.architectureNothing");
+/** The skill's recommendation strength in the person's words (issue #392): the record keeps the skill's value. */
+const STRENGTH_KEY: Record<ArchitectureProposal["strength"], MessageKey> = {
+  Strong: "architecture.strength.strong",
+  "Worth exploring": "architecture.strength.worthExploring",
+  Speculative: "architecture.strength.speculative",
+};
+
+function architectureResult(outcome: ArchitectureOutcome, language: Language): string {
+  if (!outcome.proposals.length) return translate(language, "main.duties.architectureNothing");
   return [
     `${t("main.duties.architectureProposals", { count: outcome.proposals.length })}${outcome.topRecommendation ? ` ${outcome.topRecommendation}` : ""}`,
     ...strongestFirst(outcome.proposals).map((p) =>
       [
-        `### ${p.title} (${p.strength})`,
-        t("main.duties.proposalFiles", { files: p.files.map((f) => `\`${f}\``).join(", ") || t("main.duties.proposalFilesNotGiven") }),
-        t("main.duties.proposalProblem", { text: p.problem }),
-        t("main.duties.proposalSolution", { text: p.solution }),
-        t("main.duties.proposalBenefits", { text: p.benefits }),
+        `### ${p.title} (${translate(language, STRENGTH_KEY[p.strength])})`,
+        translate(language, "main.duties.proposalFiles", { files: p.files.map((f) => `\`${f}\``).join(", ") || translate(language, "main.duties.proposalFilesNotGiven") }),
+        translate(language, "main.duties.proposalProblem", { text: p.problem }),
+        translate(language, "main.duties.proposalSolution", { text: p.solution }),
+        translate(language, "main.duties.proposalBenefits", { text: p.benefits }),
         ...(p.adrConflict ? [`> [!WARNING]\n> ${p.adrConflict}`] : []),
       ].join("\n\n"),
     ),
@@ -1144,7 +1152,13 @@ function outcomeLine(assignment: SpecialistAssignment): string {
  * Reads the answer of a finished duty: records its outcome and a readable result, and for an architecture review
  * opens the Pact decision card with the proposals. A fix keeps its prose report as it is.
  */
-export function concludeDuty(document: ProjectDocument, assignmentId: string, answer: string, now = new Date()): { decisionRequestId: string | null } {
+export function concludeDuty(
+  document: ProjectDocument,
+  assignmentId: string,
+  answer: string,
+  now = new Date(),
+  language: Language = DEFAULT_LANGUAGE,
+): { decisionRequestId: string | null } {
   const assignment = findAssignment(document, assignmentId);
   const duty = assignment?.duty;
   if (!assignment || !duty || duty.trigger.kind === "diagnosisFix" || duty.trigger.kind === "domainProposal") return { decisionRequestId: null };
@@ -1166,7 +1180,7 @@ export function concludeDuty(document: ProjectDocument, assignmentId: string, an
   if (outcome.kind === "triage") assignment.result = triageResult(assignment.issueNumber, outcome, openedForProblem(document, assignment.issueNumber));
   if (outcome.kind === "diagnosis") assignment.result = diagnosisResult(outcome);
   if (outcome.kind === "architecture") {
-    assignment.result = architectureResult(outcome);
+    assignment.result = architectureResult(outcome, language);
     if (outcome.proposals.length) decisionRequestId = outcome.decisionRequestId = architectureCard(document, assignment, outcome, now);
   }
   assignment.lastUpdate = outcomeLine(assignment);

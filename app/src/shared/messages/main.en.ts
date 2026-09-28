@@ -647,6 +647,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.duties.diagnosisNotReproducedTitle":
     "**Bug not reproduced: no feedback loop goes red.**",
   "main.duties.headingLoop": "### Feedback loop",
+  "main.duties.headingSeams": "### Test points",
   "main.duties.headingHypotheses": "### Hypotheses",
   "main.duties.headingCause": "### Cause",
   "main.duties.headingRegressionTest": "### Regression test",
@@ -2339,4 +2340,15 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Deep review report of {candidate}",
   "main.controller.auditReportNotPublished":
     "The report was not published: {error}",
+  // MARK: Redaction before publishing (issue #391)
+  "main.redaction.token": "token removed",
+  "main.redaction.iban": "IBAN removed",
+  "main.redaction.pec": "PEC removed",
+  "main.redaction.email": "email removed",
+  "main.redaction.fiscalCode": "fiscal code removed",
+  "main.redaction.vatNumber": "VAT number removed",
+  "main.redaction.sdiCode": "SDI code removed",
+  "main.redaction.shopDomain": "shop domain removed",
+  "main.redaction.address": "address removed",
+  "main.redaction.placeholderAt": "{what}, see {where}",
 };

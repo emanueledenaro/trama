@@ -1,4 +1,4 @@
-import type { CandidateGate, GateReview, GateRole, SuiteComparison } from "./domain";
+import type { Candidate, CandidateGate, GateFinding, GateReview, GateRole, SuiteComparison } from "./domain";
 import { momentRoles } from "./roster";
 
 /**
@@ -29,6 +29,18 @@ export const isGateRunning = (gate: CandidateGate) => gate.status === "checking"
 export const isRegression = (c: SuiteComparison) => c.base === "pass" && c.candidate === "fail";
 
 export const blockingFindings = (review: GateReview) => review.findings.filter((f) => f.severity === "blocking");
+
+/**
+ * The findings a figure's row lists on the candidate card (issue #392). Clean Code's findings are also the findings of
+ * the candidate's technical review of the same gate, which lists them with rule and line: the row leaves those out, so
+ * the card says each once. Its own request for changes stays.
+ */
+export function gateRowFindings(gate: CandidateGate, review: GateReview, candidate: Pick<Candidate, "technicalReview"> | undefined): GateFinding[] {
+  const technical = candidate?.technicalReview;
+  if (review.role !== "cleanCode" || technical?.gateId !== gate.id || !technical.findings) return review.findings;
+  const listed = new Set(technical.findings.map((f) => `${f.message}\u0000${f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""}`));
+  return review.findings.filter((f) => !listed.has(`${f.title}\u0000${f.file ?? ""}`));
+}
 
 /** The latest gate of a candidate, or null before its first review. */
 export function latestGate(gates: CandidateGate[] | undefined, candidateId: string): CandidateGate | null {

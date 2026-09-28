@@ -4738,7 +4738,7 @@ export class TramaController {
     }
     const final = findAssignment(document, assignmentId)!;
     if (final.status === "completed" && final.duty && outcome.kind === "completed") {
-      const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text);
+      const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text, new Date(), this.state.language);
       if (decisionRequestId) appendEvent(document, "trama", { type: "card", kind: "decision", title: t("main.controller.decisionCardTitle"), detail: null, referenceId: decisionRequestId });
     }
     const [title, detail] =

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { delimiter } from "node:path";
 import type { GitHubCapabilities, GitHubIssue, PullRequestLink } from "@shared/domain";
 import { t } from "./personLanguage";
+import { redactSensitiveData, repositoryLocator } from "./redaction";
 
 const REMOTE_PREFIXES = ["git@github.com:", "https://github.com/", "ssh://git@github.com/"];
 
@@ -53,13 +54,28 @@ function run(command: string, args: string[], options: { cwd?: string; env?: Nod
   });
 }
 
+/** The local folder of each repository Trama read, so a placeholder can name the file that holds a removed value. */
+const localRoots = new Map<string, string>();
+
 export async function readGitHubRepository(root: string): Promise<string | null> {
   try {
     const url = await run("git", ["-c", "core.hooksPath=/dev/null", "-C", root, "remote", "get-url", "origin"], { timeout: 3_000 });
-    return parseGitHubRemote(url);
+    const repository = parseGitHubRemote(url);
+    if (repository) localRoots.set(repository.toLowerCase(), root);
+    return repository;
   } catch {
     return null;
   }
+}
+
+/**
+ * The texts as Trama may publish them on `repository` (issue #391): personal and business data become placeholders
+ * with the file and line of the local copy that holds them. Every issue, comment and merge message passes here.
+ */
+async function publishable<T extends string[]>(repository: string, ...texts: T): Promise<T> {
+  const root = localRoots.get(repository.toLowerCase());
+  const locate = root ? repositoryLocator(root) : undefined;
+  return (await Promise.all(texts.map((text) => redactSensitiveData(text, locate)))) as T;
 }
 
 /** Issue references in a pull request: `#12` in its title or body (not `owner/repo#12`) and `issue-12` in its branch. */
@@ -122,7 +138,8 @@ export async function listIssuesAndPullLinks(repository: string): Promise<{ issu
 }
 
 /** Opens an issue; `labels` are applied when the person's gh session may set them. Returns the issue GitHub created. */
-export async function createIssue(repository: string, title: string, body: string, labels: string[] = []): Promise<{ number: number; url: string; id?: number }> {
+export async function createIssue(repository: string, rawTitle: string, rawBody: string, labels: string[] = []): Promise<{ number: number; url: string; id?: number }> {
+  const [title, body] = await publishable(repository, rawTitle, rawBody);
   const output = await run(
     "gh",
     [
@@ -152,7 +169,8 @@ export async function addBlockedBy(repository: string, number: number, blockingI
 }
 
 /** Rewrites the title and body of an issue. */
-export async function updateIssueText(repository: string, number: number, title: string, body: string): Promise<void> {
+export async function updateIssueText(repository: string, number: number, rawTitle: string, rawBody: string): Promise<void> {
+  const [title, body] = await publishable(repository, rawTitle, rawBody);
   await run("gh", ["api", "--method", "PATCH", `repos/${repository}/issues/${number}`, "--raw-field", `title=${title}`, "--raw-field", `body=${body}`], {
     env: ghEnvironment(),
     timeout: 20_000,
@@ -205,14 +223,16 @@ export async function readIssue(repository: string, number: number): Promise<Iss
   return { number: issue.number, title: issue.title, state: issue.state === "closed" ? "closed" : "open", body: issue.body ?? "", comments };
 }
 
-export async function commentOnIssue(repository: string, number: number, body: string): Promise<void> {
+export async function commentOnIssue(repository: string, number: number, rawBody: string): Promise<void> {
+  const [body] = await publishable(repository, rawBody);
   await run("gh", ["api", "--method", "POST", `repos/${repository}/issues/${number}/comments`, "--raw-field", `body=${body}`], {
     env: ghEnvironment(),
     timeout: 20_000,
   });
 }
 
-export async function updateIssueBody(repository: string, number: number, body: string): Promise<void> {
+export async function updateIssueBody(repository: string, number: number, rawBody: string): Promise<void> {
+  const [body] = await publishable(repository, rawBody);
   await run("gh", ["api", "--method", "PATCH", `repos/${repository}/issues/${number}`, "--raw-field", `body=${body}`], {
     env: ghEnvironment(),
     timeout: 20_000,
@@ -233,6 +253,7 @@ export async function closeIssue(repository: string, number: number): Promise<vo
  * Trama never asks for an administrator's bypass. A repository that allows only squash or rebase gets that method.
  */
 export async function mergePullRequest(repository: string, number: number, input: { sha: string; title: string; message: string }): Promise<{ sha: string | null; method: string }> {
+  const [title, message] = await publishable(repository, input.title, input.message);
   let refusal: Error | null = null;
   for (const method of ["merge", "squash", "rebase"]) {
     try {
@@ -248,9 +269,9 @@ export async function mergePullRequest(repository: string, number: number, input
           "--raw-field",
           `sha=${input.sha}`,
           "--raw-field",
-          `commit_title=${input.title}`,
+          `commit_title=${title}`,
           "--raw-field",
-          `commit_message=${input.message}`,
+          `commit_message=${message}`,
         ],
         { env: ghEnvironment(), timeout: 30_000 },
       );

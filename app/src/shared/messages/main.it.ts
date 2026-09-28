@@ -669,6 +669,7 @@ export const mainIt = {
   "main.duties.diagnosisNotReproducedTitle":
     "**Bug non riprodotto: manca un ciclo di verifica che vada in rosso.**",
   "main.duties.headingLoop": "### Ciclo di verifica",
+  "main.duties.headingSeams": "### Punti di prova",
   "main.duties.headingHypotheses": "### Ipotesi",
   "main.duties.headingCause": "### Causa",
   "main.duties.headingRegressionTest": "### Test di regressione",
@@ -2415,4 +2416,15 @@ export const mainIt = {
     "Rapporto dell'esame approfondito sul {candidate}",
   "main.controller.auditReportNotPublished":
     "Il rapporto non è stato pubblicato: {error}",
+  // MARK: Redaction before publishing (issue #391)
+  "main.redaction.token": "token rimosso",
+  "main.redaction.iban": "IBAN rimosso",
+  "main.redaction.pec": "PEC rimossa",
+  "main.redaction.email": "email rimossa",
+  "main.redaction.fiscalCode": "codice fiscale rimosso",
+  "main.redaction.vatNumber": "partita IVA rimossa",
+  "main.redaction.sdiCode": "codice SDI rimosso",
+  "main.redaction.shopDomain": "dominio del negozio rimosso",
+  "main.redaction.address": "indirizzo rimosso",
+  "main.redaction.placeholderAt": "{what}, vedi {where}",
 } satisfies Record<string, string>;

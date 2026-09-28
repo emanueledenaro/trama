@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CandidateEvidence, ProjectDocument } from "@shared/domain";
-import { GATE_ROLES, NO_SPEC, NOTHING_TO_REPORT, latestGate, reviewOutcome } from "@shared/gate";
+import { GATE_ROLES, NO_SPEC, NOTHING_TO_REPORT, gateRowFindings, latestGate, reviewOutcome } from "@shared/gate";
 import { declareCandidate, recordEvidence } from "./candidates";
 import { emptyDocument } from "./document";
 import {
@@ -154,6 +154,43 @@ describe("the candidate gate (W10)", () => {
     expect(gateReview(gate, "cleanCode")).toMatchObject({ status: "running", model: "gpt-5.5" });
     expect(gateReview(gate, "regressionGuardian")).toMatchObject({ status: "running", model: null });
     for (const role of ["security", "performance", "ux", "devops", "documentation"] as const) expect(gateReview(gate, role)).toMatchObject({ status: "running", model: "gpt-5.4-mini" });
+  });
+
+  it("says the skipped spec review in the person's words in the summary the Coordinator repeats (issue #392)", () => {
+    const document = project();
+    const { candidate } = candidateOf(document);
+    const gate = openGate(document, candidate, at(3));
+    beginReviews(gate, { spec: false, model: "gpt-5.4-mini", cleanCodeModel: "gpt-5.5" }, at(4));
+    // The record keeps code-review's own words; the summary is Trama's sentence.
+    expect(gateReview(gate, "specReviewer").report).toBe(NO_SPEC);
+    const summary = gateSummary(document, gate);
+    expect(summary).not.toContain(NO_SPEC);
+    expect(summary).toMatch(/: nessun piano da confrontare\./);
+  });
+
+  it("lists Clean Code's findings once when the technical review of the same gate lists them (issue #392)", () => {
+    const document = project();
+    const { candidate } = candidateOf(document);
+    const gate = openGate(document, candidate, at(3));
+    beginReviews(gate, { spec: true, model: "gpt-5.4-mini", cleanCodeModel: "gpt-5.5" }, at(4));
+    const answer = {
+      verdict: "changesRequested" as const,
+      summary: "Nomi poco chiari.",
+      findings: [
+        { severity: "suggestion" as const, file: "NOTE.md", line: 1, message: "Una riga sola.", rule: null },
+        { severity: "suggestion" as const, file: "src/names.ts", line: null, message: "Nomi generici.", rule: null },
+      ],
+    };
+    finishReview(gate, "cleanCode", cleanCodeOutcome(answer), at(5));
+    const cleanCode = gateReview(gate, "cleanCode");
+    // Before the technical review is recorded the row is the only place that lists them.
+    expect(gateRowFindings(gate, cleanCode, candidate)).toHaveLength(3);
+    candidate.technicalReview = { id: "R-1", reviewerThreadId: "t", authorThreadId: null, verdict: "changesRequested", summary: "", at: at(6).toISOString(), findings: answer.findings, gateId: gate.id };
+    // The request for changes is the gate's own line; the reviewer's findings are listed once, in the technical review.
+    expect(gateRowFindings(gate, cleanCode, candidate).map((f) => f.title)).toEqual(["Il revisore chiede modifiche"]);
+    // Another figure's findings and another gate's review are not touched.
+    expect(gateRowFindings(gate, gateReview(gate, "security"), candidate)).toEqual(gateReview(gate, "security").findings);
+    expect(gateRowFindings(gate, cleanCode, { ...candidate, technicalReview: { ...candidate.technicalReview, gateId: "G-other" } })).toHaveLength(3);
   });
 
   it("compares the suite on the base and on the candidate: only a test that passed and now fails blocks", () => {
