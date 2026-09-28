@@ -4,6 +4,7 @@ import {
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconHourglass,
   IconArrowNarrowLeft,
   IconArrowNarrowRight,
   IconFileDiff,
@@ -30,6 +31,7 @@ import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
+import { useWaiting } from "@/components/WaitingView";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { isOpenQuestion, pendingMandateRequest, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
@@ -162,6 +164,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const runningGoalId = project?.runningRequestId ? (document?.requests.find((r) => r.id === project.runningRequestId)?.goalId ?? null) : null;
   const proposedGoals = goals.filter((g) => g.status === "proposed").length;
+  const waiting = useWaiting().length;
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground">
@@ -203,6 +206,14 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
         </div>
         {project ? (
           <div className="flex flex-col gap-0.5 px-2 pt-0.5 pb-1.5">
+            {/* Everything that waits for the person, in one place always in view (issue #240). */}
+            <SidebarRow
+              icon={<IconHourglass className="size-3.5" stroke={1.8} />}
+              label="Aspetta te"
+              active={isActive("waiting")}
+              badge={waiting}
+              onClick={() => setInspector({ kind: "waiting" })}
+            />
             <SidebarRow
               icon={<IconTarget className="size-3.5" stroke={1.8} />}
               label="Obiettivi"
@@ -261,6 +272,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               icon={<IconBrain className="size-3.5" stroke={1.8} />}
               label="Memoria"
               active={isActive("memory")}
+              badge={app.learning?.proposals.length ?? 0}
               onClick={() => setInspector({ kind: "memory" })}
             />
           </div>

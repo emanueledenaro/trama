@@ -1,15 +1,17 @@
-import type { NextMove, ProjectDocument } from "@shared/domain";
+import type { NextMove, ProjectDocument, WorkEvent } from "@shared/domain";
+import { focusView } from "./focus";
+import { isActive } from "./team";
 import { COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
 
-/**
- * Continuous work (W04): when the next move of the work is the Coordinator's own and the mandate allows it
- * (prepare the plan, assign the slices, run the checks), Trama starts it by itself instead of showing a button.
- * The trigger is Trama's, computed from the records after an event; the person is asked only for product
- * decisions, the mandate, the team and merging.
- */
+export type { WorkEvent } from "@shared/domain";
 
-/** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended or paused on a question. */
-export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded";
+/**
+ * Continuous work (W04, A05): when the next move of the work is the Coordinator's own and the project mandate allows it
+ * (prepare the plan, assign the slices, run the checks), Trama starts it by itself instead of showing a button. The
+ * trigger is Trama's, computed from the records after an event of the work or in the periodic round; the person is
+ * asked only for product decisions, the mandate, the team and merging. There is no limit of moves in a row and no brake
+ * on consumption: the person's Pause stops it.
+ */
 
 /**
  * The person's moves that hold the work: a product decision, the shared understanding, the mandate, the team,
@@ -17,13 +19,24 @@ export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded";
  */
 const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"];
 
-/** Automatic moves in a row in one dialog, without a message of the person, after which Trama waits for the person. */
-export const AUTOMATIC_MOVES_IN_A_ROW = 5;
+/** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
+export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "round"];
+
+/** Events whose block the Coordinator resolves by itself (Q3): a red check, a conflict, and the round that unblocks. */
+const RESOLVES_BLOCKS: WorkEvent[] = ["checkFailed", "worktreeConflict", "round"];
+
+/** How often Trama runs the round on a project with open work (A05). */
+export const ROUND_INTERVAL_MS = 5 * 60_000;
+
+/** The rounds with an outcome Trama keeps for Activity. */
+export const KEPT_ROUNDS = 50;
 
 /** The state of Trama around the work, read by the controller when an event arrives. */
 export interface ContinuationGuards {
   /** The person's setting: continuous work is on unless they turned it off. */
   enabled: boolean;
+  /** The person paused the project's continuous work (A05): nothing automatic starts until Riprendi. */
+  paused: boolean;
   /** A Coordinator turn runs or a message of the person waits in the queue: the person's messages go first. */
   busy: boolean;
   /** Why the Coordinator cannot run a turn now, as when its provider is blocked; null when it can. */
@@ -40,13 +53,21 @@ export interface AutomaticMove {
   effort: string | null;
 }
 
+/** Whether the person paused the project's continuous work (A05). A document written before the Pause is not paused. */
+export const isPaused = (document: ProjectDocument): boolean => document.continuousWork?.paused === true;
+
+/** Whether a project mandate is granted: without one no automatic move starts (A05). */
+const mandateGranted = (document: ProjectDocument): boolean => document.mandate?.status === "granted";
+
 /**
  * The one Coordinator move Trama starts after `event` on the work of `requestId` (the request whose turn,
  * plan or assignment ended), or null. Pure: at most one move per event, none after an error or an
- * interruption, none from the end of an automatic turn, none while the work waits for the person.
+ * interruption, none from the end of an automatic turn, none while the work waits for the person, none in pause
+ * and none without a granted mandate.
  */
 export function automaticMove(document: ProjectDocument, requestId: string, event: WorkEvent, guards: ContinuationGuards): AutomaticMove | null {
-  if (!guards.enabled || guards.busy || guards.unavailable) return null;
+  if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+  if (!mandateGranted(document)) return null;
   const subject = document.requests.find((r) => r.id === requestId);
   if (!subject) return null;
   const goalId = subject.goalId ?? null;
@@ -56,12 +77,12 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   if (latest.state !== "completed") return null;
   // An automatic turn never starts the next move: a move the Coordinator did not make is not retried in a loop.
   if (event === "turnEnded" && latest.step?.by === "trama") return null;
-  const lastByPerson = dialog.findLastIndex((r) => r.step?.by !== "trama");
-  if (dialog.length - 1 - lastByPerson >= AUTOMATIC_MOVES_IN_A_ROW) return null;
   // Only the current work of the dialog goes on: an older plan or assignment that ends starts nothing.
   if (!workRequests(document, latest.id)?.has(subject.id)) return null;
   const state = workState(document, latest.id);
-  if (!state.phase || state.phase === "blocked") return null;
+  if (!state.phase) return null;
+  // A block waits for the person, except the ones the Coordinator resolves by itself within the mandate (Q3).
+  if (state.phase === "blocked" && !RESOLVES_BLOCKS.includes(event)) return null;
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
   const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
   const option = state.moves.find((m) => m.actor === "coordinator");
@@ -69,8 +90,66 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).
   if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
   const move = option.move as CoordinatorMove;
+  // The round does not repeat the move the latest automatic turn of the dialog already made or tried: a new event does.
+  if (event === "round" && latest.step?.by === "trama" && latest.step.move === move) return null;
   return { move, ...COORDINATOR_MOVES[move], goalId, model: latest.model, effort: latest.effort };
 }
+
+/**
+ * The latest request of each dialog with an open task, the task in focus first, then the queue; paused tasks stay out.
+ * Pure. Trama weighs these on an event of the whole project and in the round.
+ */
+function openDialogs(document: ProjectDocument): string[] {
+  const view = focusView(document);
+  const tasks = [view.focus, ...view.queue.filter((t) => t.status === "queued")].filter((t) => t !== null);
+  const latest: string[] = [];
+  for (const task of tasks) {
+    const request = document.requests.findLast((r) => (r.goalId ?? null) === (task.goalId ?? null));
+    if (request && !latest.includes(request.id)) latest.push(request.id);
+  }
+  return latest;
+}
+
+/**
+ * Whether the project has open work (A05): a developer or a fixed role at work, or an open task that started. Without
+ * it the round does not run.
+ */
+export function hasOpenWork(document: ProjectDocument): boolean {
+  if (document.team.specialists.some((s) => s.assignments.some(isActive))) return true;
+  if (document.plans.some((p) => p.status === "planning" || p.slicing?.status === "drafting")) return true;
+  const view = focusView(document);
+  return [view.focus, ...view.queue.filter((t) => t.status === "queued")].some((t) => t !== null && t.phase !== null && t.phase !== "merged");
+}
+
+/**
+ * The one Coordinator move Trama starts after an event of the whole project (a red check, a conflict between
+ * worktrees, a new issue, a commented pull request) or in the round, or null. Pure: the dialogs are weighed in
+ * the order of the focus, and the first move wins. A round with no move starts no provider turn.
+ */
+export function projectMove(document: ProjectDocument, event: WorkEvent, guards: ContinuationGuards): { requestId: string; move: AutomaticMove } | null {
+  if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+  for (const requestId of openDialogs(document)) {
+    const move = automaticMove(document, requestId, event, guards);
+    if (move) return { requestId, move };
+  }
+  return null;
+}
+
+/** Records a round that did something, for Activity (A05). Keeps the latest KEPT_ROUNDS. */
+export function recordRound(document: ProjectDocument, round: { id: string; at: string; detail: string; requestId: string | null }): void {
+  const record = (document.continuousWork ??= { paused: false, changedAt: null, rounds: [] });
+  record.rounds = [...(record.rounds ?? []), round].slice(-KEPT_ROUNDS);
+}
+
+/** The person pauses or resumes the project's continuous work (A05). Returns false when nothing changed. */
+export function setPaused(document: ProjectDocument, paused: boolean, at: string): boolean {
+  if (isPaused(document) === paused) return false;
+  const record = (document.continuousWork ??= { paused: false, changedAt: null, rounds: [] });
+  record.paused = paused;
+  record.changedAt = at;
+  return true;
+}
+
 
 /** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. */
 export function automaticMoveSection(move: CoordinatorMove): string {
@@ -236,3 +315,30 @@ export function confirmationFeedback(document: ProjectDocument, requestId: strin
 
 /** The line the chat shows for an automatic move, also read back in the history. */
 export const AUTOMATIC_MOVE_DETAIL = "Mossa del Coordinatore avviata da Trama dentro il mandato, senza chiederti conferma.";
+
+/** What Trama read on GitHub at one moment: the open issues and the open pull requests. */
+export interface GitHubReading {
+  issues: { number: number; state: "open" | "closed" }[];
+  pullRequests: { number: number; headSHA: string; updatedAt: string; checks?: string; reviewState?: string }[];
+}
+
+/**
+ * The events of the work between two readings of GitHub (A05): a new open issue, a pull request commented or reviewed
+ * without a new push, a pull request whose checks turned red. Pure. The first reading has nothing to compare: no event.
+ */
+export function gitHubWorkEvents(before: GitHubReading | null, after: GitHubReading): WorkEvent[] {
+  if (!before) return [];
+  const events = new Set<WorkEvent>();
+  const known = new Set(before.issues.map((i) => i.number));
+  if (after.issues.some((i) => i.state === "open" && !known.has(i.number))) events.add("issueOpened");
+  const previous = new Map(before.pullRequests.map((p) => [p.number, p]));
+  for (const pull of after.pullRequests) {
+    const earlier = previous.get(pull.number);
+    if (!earlier) continue;
+    if (pull.checks === "failure" && earlier.checks !== "failure") events.add("checkFailed");
+    const reviewed = pull.reviewState !== earlier.reviewState && (pull.reviewState === "commented" || pull.reviewState === "changesRequested");
+    const commented = pull.headSHA === earlier.headSHA && pull.updatedAt > earlier.updatedAt;
+    if (reviewed || commented) events.add("pullRequestCommented");
+  }
+  return [...events];
+}

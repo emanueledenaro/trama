@@ -4,7 +4,8 @@ import { placeGrillingQuestion } from "@shared/grilling";
 import { emptyDocument } from "./document";
 import { createGoal } from "./goals";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
-import { NOTHING_GOING_ON, statusLine } from "./statusLine";
+import { setPaused } from "./continuousWork";
+import { NOTHING_GOING_ON, PAUSED_SENTENCE, statusLine } from "./statusLine";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
@@ -128,7 +129,7 @@ function work(document: ProjectDocument, specialist: string, requestId: string, 
 describe("statusLine: what the Coordinator does now and next (issue #241)", () => {
   it("says nothing is going on, without invented text, in a project with no work", () => {
     const document = emptyDocument("p");
-    expect(statusLine(document, null)).toEqual({ state: "idle", text: NOTHING_GOING_ON, reason: null, action: null, runningMove: null });
+    expect(statusLine(document, null)).toEqual({ state: "idle", text: NOTHING_GOING_ON, reason: null, action: null, runningMove: null, paused: false });
     request(document, "r1");
     expect(statusLine(document, null).text).toBe(NOTHING_GOING_ON);
   });
@@ -235,5 +236,23 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     request(document, "g1", { goalId: goal.id });
     grill(document, "g1");
     expect(statusLine(document, null)).toMatchObject({ state: "waiting", action: { move: "answerQuestions", goalId: goal.id } });
+  });
+
+  it("says the work is paused, keeps what still ends, and keeps the person's button (A05)", () => {
+    const document = confirmed();
+    request(document, "r3");
+    slicedPlan(document, "r3");
+    team(document);
+    work(document, "Luca", "r3", "S1");
+    setPaused(document, true, at(5).toISOString());
+    const line = statusLine(document, null);
+    expect(line).toMatchObject({ paused: true, state: "working" });
+    expect(line.text).toBe(`Luca lavora su S1. ${PAUSED_SENTENCE}`);
+
+    const idle = emptyDocument("p");
+    setPaused(idle, true, at(5).toISOString());
+    expect(statusLine(idle, null)).toMatchObject({ paused: true, state: "waiting", text: PAUSED_SENTENCE });
+    setPaused(idle, false, at(6).toISOString());
+    expect(statusLine(idle, null)).toMatchObject({ paused: false, text: NOTHING_GOING_ON });
   });
 });

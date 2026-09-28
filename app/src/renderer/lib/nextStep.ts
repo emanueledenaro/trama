@@ -1,4 +1,5 @@
 import type { NextStepView } from "@shared/domain";
+import { waitingForYou } from "@shared/waitingForYou";
 import { act, useUi } from "./store";
 
 /** Scrolls the card of a record into view; false when this dialog does not show it. */
@@ -19,6 +20,14 @@ export function runNextStep(step: NextStepView, requestId: string | null): void 
   // A step that is a message: Trama sends it and records that the person took it (W04).
   if (step.message && requestId) return void act("coordinator:takeStep", { requestId });
   if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
+  // What waits for the person is answered in Aspetta te (issue #240): a person's step opens its item there.
+  const { app } = useUi.getState();
+  const project = app?.project;
+  if (project && step.actor === "person" && step.targetId) {
+    const items = waitingForYou(project.document, { sliceViews: project.sliceViews, memoryProposals: app.learning?.proposals });
+    const item = items.find((i) => i.targetId === step.targetId);
+    if (item) return setInspector({ kind: "waiting", key: item.key });
+  }
   if (step.targetId && revealCard(step.targetId)) return;
   // A card this dialog does not show still has a panel that lists it.
   if (step.move === "grantMandate") setInspector({ kind: "mandate" });
