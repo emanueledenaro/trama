@@ -36,6 +36,11 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
     });
     notification.show();
   },
+  // TRAMA_SYSTEM_LANGUAGE stands in for the system's language, so a check can start Trama in a known language.
+  systemLanguages: () => {
+    const override = process.env.TRAMA_SYSTEM_LANGUAGE;
+    return override ? [override] : [...app.getPreferredSystemLanguages(), app.getLocale()];
+  },
   setOpenAtLogin: (enabled) => {
     if (process.platform === "linux") return;
     app.setLoginItemSettings({ openAtLogin: enabled, args: ["--hidden"] });
@@ -166,6 +171,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "pactDemo:run": () => controller.runPactDemo(),
   "pactDemo:approve": () => controller.approvePactDemo(),
   "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
+  "candidate:reject": ({ candidateId, note }) => controller.rejectCandidateByPerson(candidateId, note),
+  "candidate:shot": ({ candidateId, index }) => controller.interfaceShot(candidateId, index),
   "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),

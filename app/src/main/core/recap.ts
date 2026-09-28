@@ -168,7 +168,7 @@ function stepLine(entry: { label: string; outcome: ActivityOutcome; detail: stri
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
-  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [])
+  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates)
     .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({

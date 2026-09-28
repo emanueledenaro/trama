@@ -153,7 +153,10 @@ describe("focus mode runs code-review with its original text (F01)", () => {
       expect(turn.skills).toEqual([]);
       expect(turn.outputSchema.required).toEqual(["report", "findings", "worst"]);
       expect(turn.instructions).toContain("read-only");
+      expect(turn.instructions).toContain("Write the report in Italian");
     }
+    const english = axisTurn({ projectName: "ordini", audit, candidate, assignment, spec: null, language: "en" }, "spec", skill, false);
+    expect(english.instructions).toContain("Write the report in English");
     // Codex receives SKILL.md as a skill input: the text keeps only the binding.
     const native = axisTurn({ projectName: "ordini", audit, candidate, assignment, spec: null }, "standards", skill, true);
     expect(native.skills).toEqual([{ name: "code-review", path: join(skillsDirectory, "code-review/SKILL.md"), enabled: true, description: null }]);

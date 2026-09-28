@@ -116,6 +116,14 @@ describe("settledCard (issue #271)", () => {
     expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "verified" }))).toBeNull();
     expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "decided" }))).toBeNull();
     expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "superseded" }))).toMatchObject({ subject: "1 file", outcome: { label: "superseded" } });
+    // A merged candidate is settled too, with its pull request (issue #247).
+    document.candidates[0]!.pullRequest = { url: "u", number: 21, branch: "b", at: at, mergedAt: at };
+    expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "decided" }))).toMatchObject({ outcome: { label: "Unito, #21", tone: "success" } });
+    document.candidates[0]!.pullRequest = null;
+    // A refused one too, with the person's reason.
+    document.candidates[0]!.humanRejection = { actor: "Persona", note: "Troppo acceso in scuro", fingerprint: "f", at };
+    expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "decided" }))).toMatchObject({ subject: "1 file, motivo: Troppo acceso in scuro", answer: null, outcome: { label: "Rifiutato da te", tone: "warning" } });
+    document.candidates[0]!.humanRejection = null;
 
     const conflict = { id: "K-1", candidateId: "C-1", snapshotId: "s", remoteSHA: "abc", references: ["main"], classification: "conflict", detail: "", conflictingFiles: ["package.json"], checkedAt: at } as ConflictAssessment;
     document.conflicts = [conflict];
