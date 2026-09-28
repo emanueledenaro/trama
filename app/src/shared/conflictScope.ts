@@ -58,6 +58,14 @@ export function branchName(t: Translate, branch: string | null): string {
   return branch ? t("shared.conflict.branch", { branch }) : t("shared.conflict.projectBranch");
 }
 
+/**
+ * Whether the divergence still describes the project's checkout (issue #390): it compared one head of the branch, and a
+ * head that moved since, as after a realignment, makes it stale until Trama compares the branches again.
+ */
+export function divergenceHolds(divergence: NonNullable<ProjectDocument["branchDivergence"]>, headSHA: string | null): boolean {
+  return headSHA !== null && divergence.headSHA.toLowerCase() === headSHA.toLowerCase();
+}
+
 /** The one project notice of a divergence (U02), in plain Italian, without ids. */
 export function divergenceSummary(t: Translate, divergence: NonNullable<ProjectDocument["branchDivergence"]>): string {
   const commits = (count: number) => t("shared.conflict.commits", { count });

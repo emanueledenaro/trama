@@ -1820,6 +1820,40 @@ describe("TramaController", () => {
   });
 });
 
+describe("the branch divergence notice (issue #390)", () => {
+  it("drops the notice once the project's branch moved past the heads it compared", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { project: projectPath } = await setup();
+    const run = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: projectPath, encoding: "utf8" }).trim();
+    run("init", "-q", "-b", "main");
+    run("add", ".");
+    run("commit", "-q", "-m", "init");
+    run("checkout", "-q", "-b", "chore/pre-apertura");
+    await controller!.refreshProject(false);
+    const diverged = run("rev-parse", "HEAD");
+    const document = controller!.snapshot.project!.document;
+    document.branchDivergence = {
+      branch: "chore/pre-apertura",
+      defaultBranch: "main",
+      headSHA: diverged,
+      remoteSHA: "4df3c14a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+      ahead: 1,
+      behind: 1,
+      conflictingFiles: ["README.md"],
+      checkedAt: new Date().toISOString(),
+    };
+    // Nothing moved: the notice holds.
+    await controller!.refreshProject(false);
+    expect(controller!.snapshot.project!.document.branchDivergence?.headSHA).toBe(diverged);
+
+    // The branch is realigned: the merge moves the head, and the notice compared heads that no longer exist.
+    await writeFile(join(projectPath, "README.md"), "Riallineato con main\n");
+    run("commit", "-q", "-am", "chore: merge main");
+    await controller!.refreshProject(false);
+    expect(controller!.snapshot.project!.document.branchDivergence ?? null).toBeNull();
+  });
+});
+
 describe("the learning loop (ADR 0014)", () => {
   type LearningInternals = {
     learningFor(p: unknown): {
