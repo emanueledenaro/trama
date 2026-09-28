@@ -1,15 +1,15 @@
 # A06: il Coordinatore fa da solo il ciclo dentro il mandato e risolve i blocchi tecnici
 
-Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` 45b05d1.
+Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` 9eb7613.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 126 file, 1224 test superati, 3 saltati. Su una base precedente `problems.integration.test.ts` di A08 è fallito una volta sotto carico; da solo passa tre volte su tre.
+- `npx vitest run`: 129 file, 1236 test superati, 3 saltati. Su una base precedente `problems.integration.test.ts` di A08 è fallito una volta sotto carico; da solo passa tre volte su tre.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 337 schermate. Una corsa precedente si era fermata su due righe di stato insieme (vedi Limiti). Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 341 schermate. Una corsa precedente si era fermata su due righe di stato insieme (vedi Limiti). Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
 
 ## Comportamento
 
