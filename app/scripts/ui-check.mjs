@@ -1448,6 +1448,13 @@ gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+// Issue #244: the project mandate waits at the opening. Here the person writes a narrower mandate of their own.
+const declinedMandate = await openWaiting("mandate");
+await declinedMandate.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await declinedMandate.getByLabel("Motivo del rifiuto").fill("Scrivo io un mandato più stretto");
+await declinedMandate.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await declinedMandate.waitFor({ state: "detached", timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
