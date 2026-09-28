@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -43,7 +43,8 @@ describe("specialist runtime (V04)", () => {
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line) as Request);
-    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    // The real path, as git reports it: on macOS the temporary folder /var is a link to /private/var.
+    const repo = await realpath(await mkdtemp(join(tmpdir(), "trama-repo-")));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
     await git(["init", "-b", "main"], repo, false);
     await git(["add", "."], repo, false);

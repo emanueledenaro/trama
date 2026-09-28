@@ -25,12 +25,14 @@ import {
   type Candidate,
   type CandidateEvidence,
   type CandidateState,
+  type ConflictAssessment,
   type DeveloperQuestion,
   type DeveloperReport,
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
   type MandateAction,
+  type ProjectDocument,
   type MergeRoute,
   type TestedSeam,
   developerQuestionState,
@@ -53,6 +55,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
+import { useT, withNodes } from "@/lib/i18n";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RecordName, ReferenceText } from "./ReferenceText";
@@ -60,10 +63,16 @@ import { BLOCKER_TEXT, plainConflictReference, plainText } from "@shared/plainLa
 import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
+import { PlaceActions, PlaceField } from "./PlaceField";
+import { cloudWorking } from "@shared/workPlace";
 import { GateField } from "./GateField";
+import { RuleLabel } from "./RuleLabel";
 import { InterfaceShotsField } from "./InterfaceShots";
 import { latestGate } from "@shared/gate";
+import { assignmentLine } from "@shared/duties";
+import { ASSIGNMENT_STATUS, CANDIDATE_STATE, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
 import { Sep } from "@/components/ui/sep";
+import { formatTime } from "@/lib/format";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
@@ -225,6 +234,7 @@ function ChangeRow({ label, change, testId }: { label: string; change: ListChang
 
 /** What granting the proposal would change in the mandate in force, and which running work would stop. */
 function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; moduleName: (id: string) => string }) {
+  const t = useT();
   const named = (c: ListChange<string>, name: (v: string) => string) => ({ added: c.added.map(name), removed: c.removed.map(name) });
   return (
     <Field label={`Cosa cambia rispetto al mandato in vigore, versione ${diff.version}`}>
@@ -244,11 +254,12 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
           <div className="text-ui-xs text-muted-foreground/70">Lavori che si fermerebbero</div>
           {diff.stoppedWork.length ? (
             <ul className="list-disc space-y-0.5 pl-4 text-ui-sm">
-              {diff.stoppedWork.map(({ specialist, assignment }) => (
+              {diff.stoppedWork.map(({ specialist, assignment, dependsOn }) => (
                 <li key={assignment.id} className="break-words">
                   <AgentName agent={specialist} />
                   <Sep />
                   {assignment.objective}
+                  {dependsOn ? <span className="text-muted-foreground"> {t("mandate.stoppedWork.dependsOn", { objective: dependsOn.objective })}</span> : null}
                 </li>
               ))}
             </ul>
@@ -631,15 +642,8 @@ export function GrillingRoundCard({
   );
 }
 
-export const ASSIGNMENT_STATUS: Record<AssignmentStatus, { label: string; tone: "info" | "success" | "warning" | "destructive" | "secondary" }> = {
-  preparing: { label: "In preparazione", tone: "info" },
-  running: { label: "Al lavoro", tone: "info" },
-  stopRequested: { label: "Arresto richiesto", tone: "warning" },
-  stopped: { label: "Fermato", tone: "secondary" },
-  completed: { label: "Concluso", tone: "success" },
-  failed: { label: "Non riuscito", tone: "destructive" },
-  paused: { label: "In pausa", tone: "warning" },
-};
+// The one vocabulary of states (issue #272): the other views import these from here or from @shared/states.
+export { ASSIGNMENT_STATUS, CANDIDATE_STATE };
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   const project = useUi((s) => s.app?.project)!;
@@ -799,16 +803,18 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
         ) : null}
       </Field>
+      <PlaceField assignment={assignment} />
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>
-        {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
+        {/* Work in a cloud session has no copy on the Mac until its branch comes back (A19). */}
+        {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>}
+        {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.map(checkName).join(", ")}</span> : null}
       </div>
       {assignment.workspace ? (
         <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
+      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
@@ -827,6 +833,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       ) : null}
       {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
         <div className="cta-row mt-3">
+          <PlaceActions specialist={specialist} assignment={assignment} />
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
               Ferma
@@ -908,13 +915,6 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
   );
 }
 
-export const CANDIDATE_STATE: Record<CandidateState, { label: string; tone: "info" | "success" | "secondary" }> = {
-  building: { label: "In costruzione", tone: "secondary" },
-  verified: { label: "Verificato", tone: "info" },
-  decided: { label: "Deciso", tone: "success" },
-  superseded: { label: "Superato", tone: "secondary" },
-};
-
 const QUALITY_LABEL: Record<QualityItem["code"], string> = {
   VERIFIED: "Candidato verificato",
   COMMIT_MESSAGE: "Messaggio di commit",
@@ -951,6 +951,9 @@ function QualityField({ items }: { items: QualityItem[] }) {
   );
 }
 
+/** Blockers whose detail is the name of a check. */
+const CHECK_BLOCKERS = new Set(["EVIDENCE_MISSING", "EVIDENCE_STALE", "CHECK_FAILED"]);
+
 /** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
 export function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
   const [open, setOpen] = useState(false);
@@ -965,8 +968,8 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
         ) : (
           <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
         )}
-        <span className="font-mono text-[11.5px]">{check}</span>
-        <span className="text-muted-foreground">{evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}</span>
+        <span title={check}>{checkName(check)}</span>
+        <span className="text-muted-foreground">{checkResult(check, evidence?.result ?? null)}</span>
         {failed ? (
           <button
             type="button"
@@ -1208,7 +1211,10 @@ const REVIEW_NOTE = "I rilievi sono il giudizio del revisore, non un'evidenza. C
 function TechnicalReviewField({ review }: { review: TechnicalReview }) {
   const findings = [...(review.findings ?? [])].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
   const standard = review.standard;
-  const ruleLabel = (id: string | null) => CLEAN_CODE_RULES.find((rule) => rule.id === id)?.label ?? "Altro";
+  const ruleLabel = (id: string | null) => {
+    const rule = CLEAN_CODE_RULES.find((r) => r.id === id);
+    return rule ? <RuleLabel rule={rule} /> : "Altro";
+  };
   return (
     <Field label={`Revisione tecnica, ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
       <div data-testid="technical-review" data-verdict={review.verdict}>
@@ -1337,7 +1343,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
   if (!candidate || !report) return null;
-  const state = CANDIDATE_STATE[report.state];
+  const state = candidateStatus(report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
   const approved = candidate.humanApproval && !report.approvalInvalidated;
   const quality = report.quality ?? [];
@@ -1379,14 +1385,14 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length && report.state !== "superseded" ? (
         <Field label="Cosa manca">
-          <ul className="space-y-0.5 text-ui-sm">
+          <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
                 {b.code === "BASE_CHANGED" ? null : (
                   <span className="text-muted-foreground">
                     <Sep />
-                    <ReferenceText text={b.detail} />
+                    <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(b.detail) : b.detail} />
                   </span>
                 )}
               </li>
@@ -1536,10 +1542,11 @@ export function PlanCard({ planId }: { planId: string }) {
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
+  const status = planStatus(plan);
   if (plan.status === "superseded") {
     // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
     return (
-      <CardFrame icon={<IconListCheck stroke={1.8} />} title={planTitle} hint={plan.id} aside={<Badge tone="secondary">Superato</Badge>}>
+      <CardFrame icon={<IconListCheck stroke={1.8} />} title={planTitle} hint={plan.id} aside={<Badge tone={status.tone}>{status.label}</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="plan-superseded">
           {plan.summary}<Sep />
           {plan.supersededBy ? <ReferenceText text={`Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.`} /> : "Sostituito da un piano più recente dell'obiettivo."}
@@ -1553,29 +1560,17 @@ export function PlanCard({ planId }: { planId: string }) {
       title={planTitle}
       hint={plan.id}
       aside={
-        plan.status === "planning" ? (
+        status.busy ? (
           <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-            <Spinner /> {plan.spec?.seamsAnswer ? "Scrittura della spec" : "In preparazione"}
-            <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
-              Annulla
-            </button>
+            <Spinner /> {status.label}
+            {plan.status === "planning" ? (
+              <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
+                Annulla
+              </button>
+            ) : null}
           </span>
-        ) : plan.status === "seams" ? (
-          <Badge tone="warning">Punti di prova da rivedere</Badge>
-        ) : plan.status === "ready" && plan.slicing?.status === "drafting" ? (
-          <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-            <Spinner /> Divisione in fette
-          </span>
-        ) : plan.status === "ready" && plan.slicing?.status === "proposed" ? (
-          <Badge tone="warning">Fette da rivedere</Badge>
-        ) : plan.status === "ready" && plan.slicing?.status === "approved" ? (
-          <Badge tone="success">{plan.slicing.approvedBy === "coordinator" ? "Fette confermate dal Coordinatore" : "Fette confermate"}</Badge>
-        ) : plan.status === "stale" ? (
-          <Badge tone="warning">Da rivalutare</Badge>
-        ) : plan.status === "failed" ? (
-          <Badge tone="destructive">Non riuscito</Badge>
         ) : (
-          <Badge tone="info">Da rivedere</Badge>
+          <Badge tone={status.tone}>{status.label}</Badge>
         )
       }
     >
@@ -1689,7 +1684,101 @@ const CONFLICT_LABEL = {
   overlap: { label: "Stessi file", tone: "warning" as const },
   clean: { label: "Nessun conflitto", tone: "success" as const },
   unknown: { label: "Non verificato", tone: "secondary" as const },
+  hypothesis: { label: "Ipotesi", tone: "info" as const },
+  semantic: { label: "Incompatibili", tone: "destructive" as const },
 };
+
+/** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
+function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
+  const candidate = document.candidates.find((c) => c.id === candidateId);
+  if (!candidate) return null;
+  const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const assignment = specialist?.assignments.find((a) => a.id === candidate.assignmentId);
+  return [specialist?.name, assignment?.objective].filter(Boolean).join(", ") || null;
+}
+
+/**
+ * Where a comparison comes from (issue #40): the project, the assignments, the base and the copies compared, and each
+ * source with its own time, so the reading on GitHub, the merge probe and the AI's analysis are never one moment.
+ */
+function ConflictProvenance({ assessment, projectName, document }: { assessment: ConflictAssessment; projectName: string; document: ProjectDocument }) {
+  const t = useT();
+  const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
+  const works = [candidateWork(document, assessment.candidateId), assessment.otherCandidateId ? candidateWork(document, assessment.otherCandidateId) : null].filter(
+    (w): w is string => Boolean(w),
+  );
+  const copies = [assessment.snapshotId, assessment.otherSnapshotId].filter((id): id is string => Boolean(id)).map((id) => id.slice(0, 7));
+  const semantic = assessment.semantic;
+  const times = [
+    assessment.remoteReadAt ? t("conflict.githubReadAt", { time: formatTime(assessment.remoteReadAt) }) : null,
+    semantic
+      ? t(semantic.carriedFrom ? "conflict.analyzedAtEarlier" : "conflict.analyzedAt", { time: formatTime(semantic.analyzedAt) })
+      : t("conflict.probedAt", { time: formatTime(assessment.checkedAt) }),
+    semantic?.scenario ? t("conflict.scenarioAt", { time: formatTime(semantic.scenario.ranAt) }) : null,
+  ].filter((time): time is string => Boolean(time));
+  const mono = (text: string) => <span className="font-mono text-[11px]">{text}</span>;
+  return (
+    <Field label={t("conflict.origin")}>
+      <div className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="conflict-provenance">
+        <p>
+          {t("conflict.project", { name: projectName })}
+          {works.length ? (
+            <>
+              <Sep />
+              {t("conflict.assignments", { count: works.length, works: works.join("; ") })}
+            </>
+          ) : null}
+        </p>
+        <p>
+          {t("conflict.base")} {mono((candidate?.baseSHA ?? assessment.remoteSHA).slice(0, 7))}
+          <Sep />
+          {t("conflict.copies", { count: copies.length })} {mono(copies.join(` ${t("conflict.and")} `))}
+          {assessment.otherCandidateId ? null : (
+            <>
+              <Sep />
+              {t("conflict.remote")} {mono(assessment.remoteSHA.slice(0, 7))}
+            </>
+          )}
+        </p>
+        <p>
+          {times.map((time, index) => (
+            <span key={time}>
+              {index ? <Sep /> : null}
+              {time}
+            </span>
+          ))}
+        </p>
+      </div>
+    </Field>
+  );
+}
+
+/** The AI's reading of a semantic risk and the scenario that tests it on the combined candidate (issue #40). */
+function SemanticFields({ assessment }: { assessment: ConflictAssessment }) {
+  const t = useT();
+  const semantic = assessment.semantic!;
+  const scenario = semantic.scenario;
+  const reading = t(assessment.classification === "semantic" ? "conflict.reading.semantic" : "conflict.reading.hypothesis");
+  return (
+    <>
+      <Field label={t("conflict.reading")}>
+        <p data-testid="semantic-reading">
+          <span className="text-muted-foreground">{withNodes(reading, { explanation: <span className="text-foreground/90">{semantic.explanation}</span> })}</span>
+        </p>
+      </Field>
+      <Field label={t("conflict.scenario")}>
+        <p className="text-ui-sm" data-testid="semantic-scenario" data-result={scenario?.result ?? "pending"}>
+          <span className="font-mono text-[11.5px]">{semantic.check}</span> {t(scenario ? `conflict.scenario.${scenario.result}` : "conflict.scenario.pending")}
+        </p>
+        {scenario?.result === "fail" && scenario.output ? (
+          <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-background-button-secondary)] p-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+            {scenario.output.slice(-800)}
+          </pre>
+        ) : null}
+      </Field>
+    </>
+  );
+}
 
 /** How many files a conflict lists before "Mostra tutti" (issue #271). */
 const CONFLICT_FILES_SHOWN = 5;
@@ -1779,23 +1868,27 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
             : "Il candidato o il lavoro su GitHub sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
         </p>
       ) : null}
-      {exercise ? (
-        <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
-      ) : null}
-      <p className="text-ui text-foreground/90">
-        Candidato{" "}
-        <RecordName id={assessment.candidateId} short />
-        {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
-        {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
-      </p>
-      <p className="mt-1 text-ui-sm text-muted-foreground">
-        <ReferenceText text={assessment.detail} />
-      </p>
-      {assessment.conflictingFiles.length ? (
-        <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
-          <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
-        </Field>
-      ) : null}
+      <div data-testid="conflict-card" data-classification={assessment.classification}>
+        {exercise ? (
+          <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
+        ) : null}
+        <p className="text-ui text-foreground/90">
+          Candidato{" "}
+          <RecordName id={assessment.candidateId} short />
+          {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
+          {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
+        </p>
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={assessment.detail} />
+        </p>
+        {assessment.semantic ? <SemanticFields assessment={assessment} /> : null}
+        {assessment.conflictingFiles.length ? (
+          <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
+            <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
+          </Field>
+        ) : null}
+        {exercise ? null : <ConflictProvenance assessment={assessment} projectName={project.name} document={project.document} />}
+      </div>
     </CardFrame>
   );
 }
