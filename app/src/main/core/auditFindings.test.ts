@@ -194,6 +194,9 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
     expect(turn.prompt).toContain("Rilievo grave dell'asse Spec");
     expect(turn.prompt).toContain("riproduzione:\nAnnullare l'ordine 42");
     expect(turn.outputSchema.required).toEqual(["confirmed", "reason"]);
+    expect(turn.instructions).toContain("one or two sentences in Italian");
+    const english = confirmationTurn({ projectName: "ordini", audit: value, candidateId: "C-1", language: "en" }, "spec", finding({ title: "x", severity: "serious", evidence: { kind: "command", command: "npm test" } }, "y"));
+    expect(english.instructions).toContain("one or two sentences in English");
   });
 
   it("turns a finding still pending when the examination stops into a hypothesis", () => {

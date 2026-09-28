@@ -15,6 +15,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
+import type { GitHubCliState } from "@shared/onboarding";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
@@ -28,17 +29,20 @@ import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
+import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
+import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
+import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
 
-const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
-  { id: "general", label: "Generale", icon: <IconSettings stroke={1.7} /> },
-  { id: "connections", label: "Collegamenti", icon: <IconPlugConnected stroke={1.7} /> },
-  { id: "method", label: "Metodo di lavoro", icon: <IconTools stroke={1.7} /> },
-  { id: "standard", label: "Standard del codice", icon: <IconChecklist stroke={1.7} /> },
-  { id: "learning", label: "Apprendimento", icon: <IconBrain stroke={1.7} /> },
-  { id: "monitor", label: "Monitor", icon: <IconEye stroke={1.7} /> },
-  { id: "presence", label: "Presenza", icon: <IconUsers stroke={1.7} /> },
+const SECTIONS: { id: SettingsSection; label: MessageKey; icon: React.ReactNode }[] = [
+  { id: "general", label: "settings.section.general", icon: <IconSettings stroke={1.7} /> },
+  { id: "connections", label: "settings.section.connections", icon: <IconPlugConnected stroke={1.7} /> },
+  { id: "method", label: "settings.section.method", icon: <IconTools stroke={1.7} /> },
+  { id: "standard", label: "settings.section.standard", icon: <IconChecklist stroke={1.7} /> },
+  { id: "learning", label: "settings.section.learning", icon: <IconBrain stroke={1.7} /> },
+  { id: "monitor", label: "settings.section.monitor", icon: <IconEye stroke={1.7} /> },
+  { id: "presence", label: "settings.section.presence", icon: <IconUsers stroke={1.7} /> },
 ];
 
 /** The settings page: a section list on the left, one section at a time on the right. */
@@ -46,6 +50,7 @@ export function SettingsView() {
   const section = useUi((s) => s.settingsSection);
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
+  const t = useT();
   return (
     <div
       className="chat-pane-enter flex min-h-0 flex-1 flex-col @2xl/chat:flex-row"
@@ -55,7 +60,7 @@ export function SettingsView() {
       }}
     >
       <nav
-        aria-label="Sezioni delle impostazioni"
+        aria-label={t("settings.sections")}
         className="flex shrink-0 gap-0.5 overflow-x-auto [scrollbar-width:none] border-b border-[color:var(--app-surface-divider)] px-3 py-2 @2xl/chat:w-52 @2xl/chat:flex-col @2xl/chat:overflow-visible @2xl/chat:border-r @2xl/chat:border-b-0 @2xl/chat:px-2 @2xl/chat:py-4"
       >
         {SECTIONS.map((entry) => (
@@ -72,7 +77,7 @@ export function SettingsView() {
             )}
           >
             {entry.icon}
-            <span className="truncate">{entry.label}</span>
+            <span className="truncate">{t(entry.label)}</span>
           </button>
         ))}
       </nav>
@@ -159,20 +164,22 @@ function GeneralSection() {
   const theme = useUi((s) => s.app?.settings.theme ?? "system");
   const sounds = useUi((s) => s.app?.settings.sounds === true);
   const setDialog = useUi((s) => s.setDialog);
+  const t = useT();
   const options: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [
-    { value: "system", label: "Sistema", icon: <IconDeviceDesktop className="size-3.5" stroke={1.7} /> },
-    { value: "light", label: "Chiaro", icon: <IconSun className="size-3.5" stroke={1.7} /> },
-    { value: "dark", label: "Scuro", icon: <IconMoon className="size-3.5" stroke={1.7} /> },
+    { value: "system", label: t("settings.theme.system"), icon: <IconDeviceDesktop className="size-3.5" stroke={1.7} /> },
+    { value: "light", label: t("settings.theme.light"), icon: <IconSun className="size-3.5" stroke={1.7} /> },
+    { value: "dark", label: t("settings.theme.dark"), icon: <IconMoon className="size-3.5" stroke={1.7} /> },
   ];
   return (
     <>
-      <PageHeader title="Generale" />
+      <PageHeader title={t("settings.section.general")} />
       <Group>
+        <Row label={t("language.label")} description={t("language.description")} control={<LanguageChoice />} />
         <Row
-          label="Tema"
-          description="Sistema segue l'aspetto di macOS."
+          label={t("settings.theme")}
+          description={t("settings.theme.description")}
           control={
-            <div role="radiogroup" aria-label="Tema" className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
+            <div role="radiogroup" aria-label={t("settings.theme")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
               {options.map((option) => (
                 <button
                   key={option.value}
@@ -193,29 +200,27 @@ function GeneralSection() {
           }
         />
         <ToggleRow
-          label="Suono con gli avvisi utili"
-          description="Solo per conflitti, provider bloccati e lavoro in attesa; mai per sincronizzazioni o consumo di token."
+          label={t("settings.sounds")}
+          description={t("settings.sounds.description")}
           checked={sounds}
           onChange={(value) => void act("settings:update", { sounds: value })}
         />
         <Row
-          label="Guida introduttiva"
-          description="Collegamenti, progetto, metodo AI Hero ed esercizi sulla copia di esempio. Riprende dal punto in cui ti eri fermato."
+          label={t("settings.guide")}
+          description={t("settings.guide.description")}
           control={
             <Button variant="outline" size="sm" onClick={() => setDialog("guide")}>
-              Apri la guida
+              {t("settings.guide.open")}
             </Button>
           }
         />
       </Group>
-      <Group title="Informazioni">
+      <Group title={t("settings.about")}>
         <div className="flex items-center gap-3 px-4 py-3" data-testid="about-trama">
           <TramaMark size={40} variant="tile" />
           <div className="min-w-0 flex-1">
             <div className="text-ui text-foreground">Trama</div>
-            <div className="mt-0.5 text-ui-sm text-muted-foreground">
-              Versione {__TRAMA_VERSION__}. Coordina decisioni, lavoro e verifiche su un repository locale.
-            </div>
+            <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("settings.about.version", { version: __TRAMA_VERSION__ })}</div>
           </div>
         </div>
       </Group>
@@ -223,40 +228,50 @@ function GeneralSection() {
   );
 }
 
-export function providerStatus(account: ProviderAccount | null, checking: boolean): { label: string; detail: string | null; tone: "success" | "warning" | "secondary" } {
-  if (checking && !account) return { label: "Verifica in corso", detail: null, tone: "secondary" };
+export function providerStatus(
+  t: Translate,
+  language: Language,
+  account: ProviderAccount | null,
+  checking: boolean,
+): { label: string; detail: string | null; tone: "success" | "warning" | "secondary" } {
+  if (checking && !account) return { label: t("provider.status.checking"), detail: null, tone: "secondary" };
   switch (account?.kind) {
-    case "chatgpt":
-      return { label: "Collegato", detail: [account.email, account.plan ? `piano ${account.plan}` : null].filter(Boolean).join(", ") || null, tone: "success" };
+    case "chatgpt": {
+      const detail = [account.email, account.plan ? t("provider.status.plan", { plan: account.plan }) : null].filter(Boolean).join(", ") || null;
+      return { label: t("provider.status.connected"), detail, tone: "success" };
+    }
     case "authenticated":
-      return { label: "Collegato", detail: account.label, tone: "success" };
+      return { label: t("provider.status.connected"), detail: account.label, tone: "success" };
     case "signedOut":
-      return { label: "Accesso richiesto", detail: null, tone: "secondary" };
+      return { label: t("provider.status.signInRequired"), detail: null, tone: "secondary" };
     case "unsupported":
-      return { label: "Account non supportato", detail: account.type, tone: "warning" };
+      return { label: t("provider.status.unsupported"), detail: account.type, tone: "warning" };
     case "blocked": {
       // The provider's text stays out of the row: its class in plain words (P10).
       const failure = classifyProviderFailure(account.message);
-      const until = !failure.until && account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : "";
-      return { label: failure.kind === "temporaryLimit" ? "Limite temporaneo" : "Quota esaurita", detail: `${failure.explanation}${until}`, tone: "warning" };
+      const until = !failure.until && account.until ? ` ${t("provider.status.unlocksAt", { date: formatDateTime(language, account.until) })}` : "";
+      const label = failure.kind === "temporaryLimit" ? t("provider.status.temporaryLimit") : t("provider.status.quotaExhausted");
+      return { label, detail: `${failure.explanation}${until}`, tone: "warning" };
     }
     case "unavailable":
-      return { label: "Non disponibile", detail: account.message, tone: "warning" };
+      return { label: t("provider.status.unavailable"), detail: account.message, tone: "warning" };
     default:
-      return { label: "Stato sconosciuto", detail: null, tone: "secondary" };
+      return { label: t("provider.status.unknown"), detail: null, tone: "secondary" };
   }
 }
 
-const GITHUB_STATUS = {
-  unknown: "Non ancora controllato",
-  checking: "Verifica in corso",
-  missing: "Non installata",
-  signedOut: "Accesso richiesto",
-  ready: "Collegato",
-  error: "Errore",
-} as const;
+const GITHUB_STATUS: Record<GitHubCliState["status"], MessageKey> = {
+  unknown: "github.status.unknown",
+  checking: "github.status.checking",
+  missing: "github.status.missing",
+  signedOut: "github.status.signedOut",
+  ready: "github.status.ready",
+  error: "github.status.error",
+};
 
 function ConnectionsSection() {
+  const t = useT();
+  const language = useLanguage();
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
   // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
@@ -264,16 +279,13 @@ function ConnectionsSection() {
     if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
   }, []);
   const account = codex.account;
-  const status = providerStatus(account, codex.checking);
-  const codexDetail =
-    account?.kind === "unsupported"
-      ? `Codex usa un account di tipo ${account.type}. Trama accetta solo un account ChatGPT per evitare la fatturazione API.`
-      : status.detail;
+  const status = providerStatus(t, language, account, codex.checking);
+  const codexDetail = account?.kind === "unsupported" ? t("settings.connections.codexUnsupported", { type: account.type }) : status.detail;
   return (
     <>
       <PageHeader
-        title="Collegamenti"
-        description="L'accesso avviene nel browser ufficiale o nel terminale. Trama non copia le credenziali."
+        title={t("settings.section.connections")}
+        description={t("settings.connections.description")}
         actions={
           <Button
             variant="outline"
@@ -284,11 +296,11 @@ function ConnectionsSection() {
               void act("onboarding:checkGitHub", undefined);
             }}
           >
-            <IconRefresh /> Verifica tutti
+            <IconRefresh /> {t("settings.connections.checkAll")}
           </Button>
         }
       />
-      <Group title="Account principale">
+      <Group title={t("settings.connections.mainAccount")}>
         <Row
           label={
             <span className="flex items-center gap-2">
@@ -297,8 +309,10 @@ function ConnectionsSection() {
           }
           description={
             <>
-              {codexDetail ?? (account === null ? "Verifica in corso" : null)}
-              {account?.kind === "chatgpt" ? <span className="text-muted-foreground/70"> · {codex.models.length} modelli</span> : null}
+              {codexDetail ?? (account === null ? t("provider.status.checking") : null)}
+              {account?.kind === "chatgpt" ? (
+                <span className="text-muted-foreground/70"> · {t("settings.connections.models", { count: codex.models.length })}</span>
+              ) : null}
             </>
           }
           control={
@@ -306,7 +320,7 @@ function ConnectionsSection() {
               <Badge tone={status.tone}>{status.label}</Badge>
               {account?.kind === "signedOut" ? (
                 <Button size="sm" onClick={() => void act("codex:login", undefined)}>
-                  Accedi con ChatGPT
+                  {t("settings.connections.signInChatGpt")}
                 </Button>
               ) : null}
             </>
@@ -322,7 +336,7 @@ function ConnectionsSection() {
           control={
             <>
               <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
-                {GITHUB_STATUS[gitHubCli.status]}
+                {t(GITHUB_STATUS[gitHubCli.status])}
               </Badge>
               <Button
                 variant="outline"
@@ -330,13 +344,13 @@ function ConnectionsSection() {
                 disabled={gitHubCli.status === "checking"}
                 onClick={() => void act("onboarding:checkGitHub", undefined)}
               >
-                Controlla di nuovo
+                {t("settings.connections.checkAgain")}
               </Button>
             </>
           }
         />
       </Group>
-      <Group title="Provider" note="Ogni provider usa la propria CLI ufficiale. Verifica rilegge lo stato di accesso e i modelli.">
+      <Group title={t("settings.connections.providers")} note={t("settings.connections.providersNote")}>
         {PROVIDERS.filter((provider) => provider.id !== "codex").map((provider) => (
           <ProviderRow key={provider.id} provider={provider} />
         ))}
@@ -348,9 +362,11 @@ function ConnectionsSection() {
 function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  const t = useT();
+  const language = useLanguage();
   const id = provider.id as ProviderId;
   const state = useUi((s) => s.app!.providers[id]);
-  const status = providerStatus(state?.account ?? null, state?.checking ?? false);
+  const status = providerStatus(t, language, state?.account ?? null, state?.checking ?? false);
   const connected = status.tone === "success";
   return (
     <Row
@@ -362,10 +378,15 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
       description={
         <>
           {status.detail ? <span>{status.detail}</span> : null}
-          {connected && state ? <span className="text-muted-foreground/70">{status.detail ? " · " : ""}{state.models.length} modelli</span> : null}
+          {connected && state ? (
+            <span className="text-muted-foreground/70">
+              {status.detail ? " · " : ""}
+              {t("settings.connections.models", { count: state.models.length })}
+            </span>
+          ) : null}
           {!connected ? (
             <span className="block">
-              Accesso: <code className="font-mono text-foreground/90">{provider.signInCommand}</code>
+              {t("settings.provider.signInCommand")} <code className="font-mono text-foreground/90">{provider.signInCommand}</code>
             </span>
           ) : null}
           {coordinatorUnavailableReason(id) ? <span className="block text-warning">{coordinatorUnavailableReason(id)}</span> : null}
@@ -376,10 +397,10 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
         <>
           <Badge tone={status.tone}>{status.label}</Badge>
           <Button variant="ghost" size="xs" aria-expanded={open} onClick={() => setOpen(!open)}>
-            Capacità <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
+            {t("settings.provider.capabilities")} <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
           </Button>
           <Button variant="ghost" size="xs" onClick={() => void act("providers:refresh", { provider: id })}>
-            Verifica
+            {t("settings.provider.check")}
           </Button>
           {state?.account?.kind === "signedOut" ? (
             <Button
@@ -387,11 +408,11 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
               size="xs"
               onClick={() =>
                 void act("provider:login", { provider: id }).then((result) =>
-                  setHint(result?.command ? `Esegui ${result.command} nel terminale, poi premi Verifica.` : null),
+                  setHint(result?.command ? t("settings.provider.signInHint", { command: result.command }) : null),
                 )
               }
             >
-              Accedi
+              {t("settings.provider.signIn")}
             </Button>
           ) : null}
         </>
@@ -417,38 +438,31 @@ function MethodSection() {
   const continuousWork = useUi((s) => s.app?.settings.continuousWork !== false);
   const [report, setReport] = useState<{ pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string } | null>(null);
   const [running, setRunning] = useState(false);
+  const t = useT();
   const noProject = !project || project.isDemo;
   return (
     <>
-      <PageHeader
-        title="Metodo di lavoro"
-        description={
-          <>
-            Le skill AI Hero della release v1.2.3 con i nomi di Trama (ask-trama, setup-trama), copiate nel progetto senza installer e senza cambiare le impostazioni
-            globali di Codex. I file esistenti restano invariati.
-          </>
-        }
-      />
-      <Group note={`${AIHERO_ATTRIBUTION}. Le skill varie, come git-guardrails-claude-code, si usano solo con "/".`}>
+      <PageHeader title={t("settings.section.method")} description={t("settings.method.description")} />
+      <Group note={t("settings.method.note", { attribution: AIHERO_ATTRIBUTION })}>
         <ToggleRow
-          label="Prepara il metodo all'apertura di un progetto"
+          label={t("settings.method.autoPrepare")}
           checked={autoPrepare}
           onChange={(value) => void act("settings:update", { autoPrepareMethod: value })}
         />
         <Row
-          label="Prepara ora nel progetto aperto"
+          label={t("settings.method.prepareNow")}
           description={
             noProject ? (
-              "Apri un progetto per preparare il metodo."
+              t("settings.method.openProject")
             ) : report ? (
               <>
-                AI Hero {report.version}: {report.pathsCreated.length} percorsi creati, {report.existingPreserved.length} preservati.
+                {t("method.report", { version: report.version, created: report.pathsCreated.length, preserved: report.existingPreserved.length })}
                 {report.warnings.length ? ` ${report.warnings.join(" ")}` : ""}
               </>
             ) : project?.missingMethodSkills?.length ? (
-              <span className="text-warning">Codex non ha caricato queste skill: {project.missingMethodSkills.join(", ")}.</span>
+              <span className="text-warning">{t("settings.method.missingSkills", { skills: project.missingMethodSkills.join(", ") })}</span>
             ) : project?.missingMethodSkills ? (
-              "Codex ha caricato tutte le skill del metodo."
+              t("settings.method.allLoaded")
             ) : null
           }
           control={
@@ -462,14 +476,11 @@ function MethodSection() {
                   void act("skills:rollback", undefined).then((restored) => {
                     if (!restored) return;
                     setReport(null);
-                    useUi.getState().setToast(
-                      `Ultimo aggiornamento del metodo annullato: ${restored.length === 1 ? "1 file ripristinato" : `${restored.length} file ripristinati`}.`,
-                      "info",
-                    );
+                    useUi.getState().setToast(t("settings.method.rolledBack", { count: restored.length }), "info");
                   })
                 }
               >
-                Annulla l'ultimo aggiornamento
+                {t("settings.method.rollback")}
               </Button>
               <Button
                 size="sm"
@@ -481,16 +492,16 @@ function MethodSection() {
                   setRunning(false);
                 }}
               >
-                {running ? <Spinner /> : null} Prepara
+                {running ? <Spinner /> : null} {t("settings.method.prepare")}
               </Button>
             </>
           }
         />
       </Group>
-      <Group title="Lavoro continuo">
+      <Group title={t("settings.continuous.title")}>
         <ToggleRow
-          label="Il Coordinatore va avanti da solo dentro il mandato"
-          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con Pausa."
+          label={t("settings.continuous.label")}
+          description={t("settings.continuous.description")}
           checked={continuousWork}
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
@@ -507,17 +518,15 @@ function ParallelDevelopersGroup() {
   const project = useUi((s) => s.app?.project ?? null);
   const usable = project && !project.isDemo && project.stateWritable;
   const limit = project ? parallelDevelopers(project.document) : null;
+  const t = useT();
   return (
-    <Group
-      title="Sviluppatori in parallelo"
-      note="Ogni sviluppatore libero prende in autonomia la prossima fetta pronta nei suoi moduli, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nel limite."
-    >
+    <Group title={t("settings.parallel.title")} note={t("settings.parallel.note")}>
       <Row
-        label={project ? `Al massimo in ${project.name}` : "Al massimo nel progetto aperto"}
-        description={!project ? "Apri un progetto per scegliere il limite." : project.isDemo ? "Il progetto di esempio non ha un limite da scegliere." : "Tre, se non lo cambi."}
+        label={project ? t("settings.parallel.inProject", { name: project.name }) : t("settings.parallel.inOpenProject")}
+        description={!project ? t("settings.parallel.openProject") : project.isDemo ? t("settings.parallel.demo") : t("settings.parallel.default")}
         control={
           usable ? (
-            <div role="radiogroup" aria-label="Sviluppatori in parallelo" className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="parallel-developers">
+            <div role="radiogroup" aria-label={t("settings.parallel.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="parallel-developers">
               {PARALLEL_OPTIONS.map((value) => (
                 <button
                   key={value}
@@ -549,32 +558,19 @@ function StandardSection() {
   const saved = settings?.note ?? "";
   const draft = note ?? saved;
   const on = new Set(activeRules(settings).map((rule) => rule.id));
+  const t = useT();
   return (
     <>
-      <PageHeader
-        title="Standard del codice"
-        description={
-          <>
-            Lo standard Clean Code di Trama, versione {CLEAN_CODE_VERSION}. Gli sviluppatori lo ricevono come testo di Trama accanto alle skill, che restano col testo
-            originale, e la revisione tecnica controlla il diff anche rispetto a questo standard.
-          </>
-        }
-      />
+      <PageHeader title={t("settings.section.standard")} description={t("settings.standard.description", { version: CLEAN_CODE_VERSION })} />
       {!project ? (
         <Group>
-          <Row label={<span className="text-muted-foreground">Apri un progetto per adattare lo standard.</span>} />
+          <Row label={<span className="text-muted-foreground">{t("settings.standard.openProject")}</span>} />
         </Group>
       ) : (
         <div data-testid="clean-code-settings">
           <Group
-            title={`Regole per ${project.name}`}
-            note={
-              <>
-                Fonte: {CLEAN_CODE_SOURCE}. Prima vengono le regole del progetto (AGENTS.md, CONTRIBUTING.md, linter e formatter), poi il metodo delle skill, poi
-                questo standard. Le regole segnate come bloccanti fanno chiedere modifiche in revisione. Numero di argomenti, lunghezza delle funzioni e duplicazioni
-                li misura Trama: sono evidenze, mentre i rilievi del revisore restano un giudizio.
-              </>
-            }
+            title={t("settings.standard.rulesFor", { name: project.name })}
+            note={t("settings.standard.note", { source: CLEAN_CODE_SOURCE })}
           >
             {CLEAN_CODE_RULES.map((rule) => (
               <Row
@@ -582,7 +578,7 @@ function StandardSection() {
                 label={
                   <span className="flex items-center gap-2">
                     {rule.label}
-                    {rule.severity === "blocking" ? <Badge tone="warning">Bloccante</Badge> : null}
+                    {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
                   </span>
                 }
                 description={rule.summary}
@@ -592,25 +588,25 @@ function StandardSection() {
               />
             ))}
           </Group>
-          <Group title="Adattamento al progetto" note="Il testo arriva a sviluppatori e revisore come indicazione della persona, per esempio: SOLID solo nei moduli a oggetti.">
+          <Group title={t("settings.standard.adaptation")} note={t("settings.standard.adaptationNote")}>
             <div className="px-4 py-3">
               <TextArea
-                aria-label="Come si applica lo standard a questo progetto"
+                aria-label={t("settings.standard.noteLabel")}
                 rows={3}
                 value={draft}
-                placeholder="Lingua, paradigma o eccezioni di questo progetto"
+                placeholder={t("settings.standard.notePlaceholder")}
                 onChange={(event) => setNote(event.target.value)}
               />
               <div className="cta-row mt-2">
                 <Button size="sm" variant="ghost" disabled={draft === saved} onClick={() => setNote(null)}>
-                  Annulla
+                  {t("settings.cancel")}
                 </Button>
                 <Button
                   size="sm"
                   disabled={draft === saved}
                   onClick={() => void act("project:cleanCode", { note: draft }).then(() => setNote(null))}
                 >
-                  Salva
+                  {t("settings.save")}
                 </Button>
               </div>
             </div>
@@ -626,15 +622,21 @@ function LearningSection() {
   const saved = useUi((s) => s.app?.settings.learning);
   const learning = { ...DEFAULT_LEARNING_SETTINGS, ...(saved ?? {}) };
   const set = (change: Partial<LearningSettings>) => void act("settings:update", { learning: change });
+  const t = useT();
   return (
     <>
-      <PageHeader title="Apprendimento del Coordinatore" description="Cosa il Coordinatore può ricordare e migliorare da solo." />
-      <Group note="Tutto resta nella cartella di Trama, mai nel repository. La revisione usa il provider e il modello del Coordinatore e consuma token: la trovi in Memoria con il suo costo.">
-        <ToggleRow label="Note sul progetto" checked={learning.memory} onChange={(value) => set({ memory: value })} />
-        <ToggleRow label="Profilo della persona" description="Comune a tutti i tuoi progetti." checked={learning.userProfile} onChange={(value) => set({ userProfile: value })} />
-        <ToggleRow label="Revisione dell'esperienza dopo il lavoro" checked={learning.backgroundReview} onChange={(value) => set({ backgroundReview: value })} />
-        <ToggleRow label="Manutenzione settimanale delle skill apprese" checked={learning.curator} onChange={(value) => set({ curator: value })} />
-        <ToggleRow label="Unire con un modello le skill troppo simili" checked={learning.consolidate} onChange={(value) => set({ consolidate: value })} />
+      <PageHeader title={t("settings.learning.title")} description={t("settings.learning.description")} />
+      <Group note={t("settings.learning.note")}>
+        <ToggleRow label={t("settings.learning.memory")} checked={learning.memory} onChange={(value) => set({ memory: value })} />
+        <ToggleRow
+          label={t("settings.learning.userProfile")}
+          description={t("settings.learning.userProfileDescription")}
+          checked={learning.userProfile}
+          onChange={(value) => set({ userProfile: value })}
+        />
+        <ToggleRow label={t("settings.learning.backgroundReview")} checked={learning.backgroundReview} onChange={(value) => set({ backgroundReview: value })} />
+        <ToggleRow label={t("settings.learning.curator")} checked={learning.curator} onChange={(value) => set({ curator: value })} />
+        <ToggleRow label={t("settings.learning.consolidate")} checked={learning.consolidate} onChange={(value) => set({ consolidate: value })} />
       </Group>
     </>
   );
@@ -645,34 +647,32 @@ function MonitorSection() {
   const repository = useUi((s) => s.app?.project?.github.repository ?? null);
   const platform = useUi((s) => s.app!.platform);
   const monitored = repository ? monitor.repositories.includes(repository) : false;
+  const t = useT();
   return (
     <>
-      <PageHeader
-        title="Monitor in background"
-        description="Legge branch e pull request dei colleghi con GitHub CLI e ti avvisa delle novità mentre Trama è aperto o in background."
-      />
+      <PageHeader title={t("settings.monitor.title")} description={t("settings.monitor.description")} />
       <Group>
-        <ToggleRow label="Monitor attivo" checked={monitor.enabled} onChange={(enabled) => void act("monitor:update", { enabled })} />
+        <ToggleRow label={t("settings.monitor.enabled")} checked={monitor.enabled} onChange={(enabled) => void act("monitor:update", { enabled })} />
         {platform !== "linux" ? (
           <ToggleRow
-            label="Avvia Trama all'accesso, in background"
+            label={t("settings.monitor.openAtLogin")}
             checked={monitor.openAtLogin}
             onChange={(openAtLogin) => void act("monitor:update", { openAtLogin })}
           />
         ) : null}
       </Group>
-      <Group title="Repository osservati">
-        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">Nessun repository.</span>} /> : null}
+      <Group title={t("settings.monitor.repositories")}>
+        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} /> : null}
         {monitor.repositories.map((repo) => {
           const status = monitor.status[repo];
           return (
             <Row
               key={repo}
               label={<span className="font-mono text-[12px]">{repo}</span>}
-              description={status?.lastError ? <span className="text-destructive">{status.lastError}</span> : status?.lastSuccessAt ? "Aggiornato" : null}
+              description={status?.lastError ? <span className="text-destructive">{status.lastError}</span> : status?.lastSuccessAt ? t("settings.monitor.updated") : null}
               control={
                 <Button variant="ghost" size="xs" onClick={() => void act("monitor:update", { removeRepository: repo })}>
-                  Togli
+                  {t("settings.monitor.remove")}
                 </Button>
               }
             />
@@ -681,10 +681,10 @@ function MonitorSection() {
         {repository && !monitored ? (
           <Row
             label={<span className="font-mono text-[12px]">{repository}</span>}
-            description="Repository del progetto aperto."
+            description={t("settings.monitor.openRepository")}
             control={
               <Button size="sm" variant="outline" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
-                Osserva
+                {t("settings.monitor.watch")}
               </Button>
             }
           />
@@ -697,20 +697,18 @@ function MonitorSection() {
 /** Decision 6: the presence switch, always here, with the pause; the consent belongs to the open project. */
 function PresenceSection() {
   const project = useUi((s) => s.app?.project ?? null);
+  const t = useT();
   return (
     <>
-      <PageHeader
-        title="Presenza"
-        description="Chi usa Trama condivide con il team su quale branch lavora, i percorsi dei file che tocca e la richiesta in corso, sul remoto del progetto. Mai il contenuto dei file. Il consenso vale per progetto."
-      />
-      <Group note="La presenza si aggiorna ogni 45 secondi e subito al cambio di branch. Dopo 7 giorni senza aggiornamenti sparisce.">
+      <PageHeader title={t("settings.presence.title")} description={t("settings.presence.description")} />
+      <Group note={t("settings.presence.note")}>
         {!project ? (
-          <Row label={<span className="text-muted-foreground">Apri un progetto per scegliere se condividere la presenza.</span>} />
+          <Row label={<span className="text-muted-foreground">{t("settings.presence.openProject")}</span>} />
         ) : project.isDemo ? (
-          <Row label={<span className="text-muted-foreground">Il progetto di esempio non condivide la presenza.</span>} />
+          <Row label={<span className="text-muted-foreground">{t("settings.presence.demo")}</span>} />
         ) : (
           <Row
-            label={`Condividi la presenza in ${project.name}`}
+            label={t("settings.presence.share", { name: project.name })}
             description={
               <>
                 {presenceStatusLine(project.presence)}

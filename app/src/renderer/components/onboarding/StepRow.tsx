@@ -1,15 +1,19 @@
 import { IconCircleCheck, IconLock, IconPlayerSkipForward } from "@tabler/icons-react";
 import type { StepState, StepStatus } from "@shared/onboarding";
 import { Spinner } from "@/components/Spinner";
+import type { MessageKey, Translate } from "@shared/i18n";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 
-export const STATUS_LABEL: Record<StepStatus, string> = {
-  done: "Fatto",
-  pending: "Da fare",
-  checking: "Verifica in corso",
-  skipped: "Saltato",
-  blocked: "Non disponibile",
+const STATUS_LABEL: Record<StepStatus, MessageKey> = {
+  done: "step.status.done",
+  pending: "step.status.pending",
+  checking: "step.status.checking",
+  skipped: "step.status.skipped",
+  blocked: "step.status.blocked",
 };
+
+export const stepStatusLabel = (t: Translate, status: StepStatus): string => t(STATUS_LABEL[status]);
 
 export function StepIcon({ status, index, current }: { status: StepStatus; index: number; current: boolean }) {
   if (status === "done") return <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />;
@@ -44,6 +48,7 @@ export function StepRow({
   onToggle?: () => void;
   children?: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <li
       data-step={step.id}
@@ -61,8 +66,8 @@ export function StepRow({
           <StepIcon status={step.status} index={index} current={current} />
         </span>
         <span className={cn("min-w-0 flex-1 truncate", step.status === "done" ? "text-foreground/75" : "text-foreground")}>{step.title}</span>
-        {step.optional ? <span className="shrink-0 text-ui-xs text-muted-foreground/70">facoltativo</span> : null}
-        <span className={cn("shrink-0 text-ui-xs", step.status === "done" ? "text-success" : "text-muted-foreground")}>{STATUS_LABEL[step.status]}</span>
+        {step.optional ? <span className="shrink-0 text-ui-xs text-muted-foreground/70">{t("welcome.optional")}</span> : null}
+        <span className={cn("shrink-0 text-ui-xs", step.status === "done" ? "text-success" : "text-muted-foreground")}>{stepStatusLabel(t, step.status)}</span>
       </button>
       {expanded ? (
         <div className="px-2.5 pb-2.5 pl-9">
