@@ -1,3 +1,4 @@
+import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { AuditAxis, AuditFinding, FindingStatus, FocusAudit } from "@shared/domain";
 import { evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
@@ -109,7 +110,7 @@ export function AuditView({ id }: { id: string }) {
       <InspectorSection title="Bersaglio">
         <p className="text-ui-sm text-foreground">
           <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: audit.target.candidateId })}>
-            Candidato {audit.target.candidateId}
+            <RecordLabel id={audit.target.candidateId} />
           </button>
           <Sep />
           punto fisso <span className="font-mono text-[11.5px]" title={audit.fixedPoint}>{audit.fixedPoint.slice(0, 10)}</span>, la base del candidato
@@ -123,7 +124,7 @@ export function AuditView({ id }: { id: string }) {
         </p>
         {audit.status === "failed" && audit.failure ? <p className="mt-1 text-ui-sm text-destructive">{audit.failure}</p> : null}
         <p className="mt-1.5 text-ui-sm text-muted-foreground">
-          Sola lettura: la focus mode non cambia il codice. Le verifiche sono fatti. Un rilievo è verificato solo quando Trama ha ricontrollato la sua prova; un rilievo grave che Trama non può ricontrollare passa a un modello più forte; gli altri restano ipotesi.
+          Sola lettura: l'esame approfondito non cambia il codice. Le verifiche sono fatti. Un rilievo è verificato solo quando Trama ha ricontrollato la sua prova; un rilievo grave che Trama non può ricontrollare passa a un modello più forte; gli altri restano ipotesi.
         </p>
       </InspectorSection>
       <InspectorSection title="Verifiche reali">

@@ -648,14 +648,20 @@ await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-const body = await page.locator("body").innerText();
-const assignmentId = body.match(/Incarico (A-[0-9A-F]{8})/)[1];
-const decisionId = body.match(/Decisione (D-[0-9A-F]{8})/)[1];
+// Issue #270: cards name their records; the id stays on the title's hover and in data attributes.
+const recordId = (scope, prefix) => scope.locator(`[data-record-id^="${prefix}-"]`).first().getAttribute("data-record-id");
+const assignmentId = await recordId(page, "A");
+const decisionId = await page.locator("[data-decision-id]").first().getAttribute("data-decision-id");
 await page.getByLabel("Messaggio al Coordinatore").fill(`[candidato:${assignmentId}:${decisionId}]`);
 await page.keyboard.press("Enter");
 // Issue #292: the verified candidate waits for the person in Aspetta te; the chat keeps its reference.
 const demoCandidate = await openWaiting("candidate", undefined, 30_000);
 await demoCandidate.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_000 });
+// Issue #270: Aspetta te opened on the candidate names it in its title, with the id on hover; the card names its work.
+const waitingTitle = page.getByTestId("inspector-title");
+if (!/^Aspetta te\s*Candidato di /.test(await waitingTitle.innerText())) throw new Error(`Aspetta te does not name the candidate: ${await waitingTitle.innerText()}`);
+if (!/^C-[0-9A-F]{8}$/.test((await waitingTitle.getAttribute("title")) ?? "")) throw new Error("The candidate's id is not on the title's hover");
+if (/(Candidato|incarico) [AC]-[0-9A-F]{8}/.test(await demoCandidate.innerText())) throw new Error(`The candidate card shows raw ids: ${await demoCandidate.innerText()}`);
 await page.waitForTimeout(500);
 await shot("04f-candidate");
 await themeShots("04f2-waiting-candidate");
@@ -671,12 +677,12 @@ await composer().fill("[dominio]");
 await page.keyboard.press("Enter");
 const domainCard = page.locator(".chat-card", { has: page.getByTestId("domain-proposal") }).last();
 await domainCard.getByText("In attesa", { exact: true }).waitFor({ timeout: 20_000 });
-await domainCard.getByText(/Il mandato non permette di lavorare in un worktree su root/).waitFor();
+await domainCard.getByText(/Il mandato non permette di lavorare in una copia di lavoro su root/).waitFor();
 for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
 // The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
-const documentationWork = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
+const documentationWork = page.locator(".chat-card").filter({ hasText: /^Incarico / }).filter({ hasText: "Documentazione e dominio" });
 if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
@@ -893,24 +899,24 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
 const seamsItem = await openWaiting("seams");
 const seamCheck = seamsItem.locator('[data-testid="plan-spec"][data-status="seams"]');
-const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i seam" });
+const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i punti di prova" });
 await confirmSeams.waitFor({ timeout: 20_000 });
 await seamCheck.scrollIntoViewIfNeeded();
 const confirmBox = await confirmSeams.boundingBox();
 const seamBox = await seamCheck.boundingBox();
-if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i seam is not on the right");
+if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i punti di prova is not on the right");
 await shot("04c1-plan-seams");
-// The next step "Conferma i seam" targets the plan, which waits in Aspetta te: the button opens it there.
+// The next step "Conferma i punti di prova" targets the plan, which waits in Aspetta te: the button opens it there.
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmSeams] A che punto è il piano?");
 await page.keyboard.press("Enter");
-const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i seam" }).last();
+const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i punti di prova" }).last();
 await seamsStep.waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await seamsStep.click();
 await page.waitForTimeout(800);
 if (!(await seamCheck.evaluate((card) => { const box = card.getBoundingClientRect(); return box.bottom > 0 && box.top < window.innerHeight; }))) {
-  throw new Error("The next step Conferma i seam did not open the plan in Aspetta te");
+  throw new Error("The next step Conferma i punti di prova did not open the plan in Aspetta te");
 }
 await shot("04c1b-next-step-seams");
 await confirmSeams.click();
@@ -1298,7 +1304,7 @@ await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden"
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 
 // W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
-// lists the others. Pausing the task in focus passes the focus to the next one; "Metti in focus" takes it back.
+// lists the others. Pausing the task in focus passes the focus to the next one; "Metti in primo piano" takes it back.
 const focusBar = page.getByTestId("focus-bar");
 await focusBar.waitFor({ timeout: 20_000 });
 const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
@@ -1330,7 +1336,7 @@ await focusIs(firstFocus, false);
 const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
 await pausedItem.waitFor({ timeout: 10_000 });
 await shot("17a-focus-paused-next");
-await pausedItem.getByRole("button", { name: "Metti in focus" }).click();
+await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
 await shot("17b-focus-back");
@@ -1522,7 +1528,7 @@ const candidateQuestion = await openWaiting("question", "Cosa succede a un ordin
 await candidateQuestion.getByRole("button", { name: /Va in revisione/ }).click({ timeout: 20_000 });
 await candidateQuestion.getByRole("button", { name: "Registra la decisione" }).click();
 await page.getByText("Apri nel Patto").first().waitFor({ timeout: 20_000 });
-const candidateDecision = (await page.locator("body").innerText()).match(/Decisione (D-[0-9A-F]{8})/)[1];
+const candidateDecision = await page.locator("[data-decision-id]").first().getAttribute("data-decision-id");
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Scrivi", exact: true }).click();
 await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
@@ -1532,8 +1538,8 @@ await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
 await page.getByRole("button", { name: "Concedi mandato" }).click();
 await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-const assignmentCards = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
-const cardAssignment = async (card) => (await card.innerText()).match(/Incarico (A-[0-9A-F]{8})/)[1];
+const assignmentCards = page.locator(".chat-card").filter({ hasText: /^Incarico / }).filter({ hasText: "Ada" });
+const cardAssignment = (card) => recordId(card, "A");
 
 // V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
 await send("[assegna] [lento]");
@@ -1611,7 +1617,7 @@ await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_00
 await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
 const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
 // The card of an assignment's candidate, in the chat or, while it waits for the person, in Aspetta te (issue #292).
-const candidateOf = async (card) => candidateCards.filter({ hasText: `incarico ${await cardAssignment(card)}` }).first();
+const candidateOf = async (card) => candidateCards.filter({ has: page.locator(`[data-reference-id="${await cardAssignment(card)}"]`) }).first();
 const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
@@ -1656,7 +1662,7 @@ await passedGate.waitFor({ timeout: 20_000 });
 const passedRoles = await passedGate.getByTestId("gate-review").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-role")));
 if (passedRoles.join() !== "specReviewer,cleanCode,regressionGuardian,security,performance,ux,devops,documentation") throw new Error(`Unexpected gate figures: ${passedRoles}`);
 await passedGate.locator('[data-testid="gate-review"][data-role="security"]').getByText("Niente da segnalare").waitFor();
-await passedGate.locator('[data-testid="gate-review"][data-role="specReviewer"][data-status="skipped"]').getByText("no spec available").waitFor();
+await passedGate.locator('[data-testid="gate-review"][data-role="specReviewer"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
 await passedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
 await shot("18e1-candidate-gate-passed");
 await app.evaluate(({ nativeTheme }) => {
@@ -1796,7 +1802,7 @@ await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="true"]').
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await standardSettings.waitFor({ state: "hidden" });
 await showWaiting();
-const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
+const correctedId = await recordId(correctedCard, "C");
 await send(`[riverifica:${correctedId}:git_status]`);
 await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
 await correctedCard.getByText("Verificato", { exact: true }).waitFor();
@@ -1852,7 +1858,7 @@ await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await send("[piano]");
-await (await openWaiting("seams")).getByRole("button", { name: "Conferma i seam" }).click({ timeout: 20_000 });
+await (await openWaiting("seams")).getByRole("button", { name: "Conferma i punti di prova" }).click({ timeout: 20_000 });
 await (await openWaiting("slices")).getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
@@ -1927,8 +1933,8 @@ const auditDone = async () => {
   if ((await focusAudit.getAttribute("data-status")) !== "done") throw new Error(`Focus mode failed: ${await focusAudit.innerText()}`);
 };
 const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
-if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
-await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
+if (!focusActions.some((label) => label.includes("Esame approfondito"))) throw new Error(`No Esame approfondito on the candidate: ${focusActions}`);
+await sliceCandidate.getByRole("button", { name: "Esame approfondito" }).click();
 await focusAudit.waitFor({ timeout: 20_000 });
 await auditDone();
 for (const check of ["swift_build", "swift_test"]) {
@@ -1969,9 +1975,9 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await showWaiting();
 await correctedCard.scrollIntoViewIfNeeded();
-await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await correctedCard.getByRole("button", { name: "Esame approfondito" }).click();
 await auditDone();
-await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare", { exact: true }).waitFor();
 await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await shot("20c-focus-audit-no-spec");
 await app.evaluate(({ nativeTheme }) => {
@@ -1986,7 +1992,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // Opened again, the card shows the same examination instead of starting a new one.
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await showWaiting();
-await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await correctedCard.getByRole("button", { name: "Esame approfondito" }).click();
 await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
@@ -2112,7 +2118,7 @@ await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first(
 const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
 // Issue #242: the slice done is a milestone, told in one recap of the Coordinator in the chat, in light and dark.
-const milestoneRecap = page.locator('[data-testid="recap-card"][data-reason="milestone"]').filter({ hasText: "Fetta S1 fatta" });
+const milestoneRecap = page.locator('[data-testid="recap-card"][data-reason="milestone"]').filter({ hasText: "Fetta 1 fatta" });
 await milestoneRecap.waitFor({ timeout: 20_000 });
 if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was told in more than one recap");
 await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
@@ -2574,6 +2580,18 @@ await page.keyboard.press("Enter");
 // The card waits for the person in Aspetta te; the chat keeps its reference (issue #240).
 const reviewCard = await waitingItem(page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first(), 90_000);
 await reviewCard.getByText(/Approfondire l'annullamento/).first().waitFor();
+// Issue #270: Clean Code's card reads plain. The skill it received shows by name, not as "skill:<name>:<path>", the
+// proposal says "Approfondire" once, and its work is named, not cited by id. Both themes.
+await reviewCard.getByText(/Skill ricevute: .*improve-codebase-architecture/).first().waitFor();
+const reviewText = await reviewCard.innerText();
+if (/skill:|SKILL\.md|Approfondire: Approfondire|incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
+await reviewCard.evaluate((item) => item.scrollIntoView({ block: "start" }));
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`26a-plain-clean-code-card-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
 for (const group of await page.getByRole("button", { name: /ha lavorato per/ }).all()) {

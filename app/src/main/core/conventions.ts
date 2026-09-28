@@ -182,11 +182,12 @@ export async function readProjectConventions(root: string): Promise<CommitConven
 
 /**
  * Words a complete description does not end with, in Italian and English: articles, prepositions and conjunctions.
- * "in", "on" and "out" stay out of the list: "log in" and "opt out" end a description well.
+ * "in", "on" and "out" stay out of the list: "log in" and "opt out" end a description well. Single letters stay out
+ * too: "change a" may name a file or a variable.
  */
 const DANGLING_WORDS = new Set(
   (
-    "il lo la l i gli le un uno una un' di d a ad da con su per tra fra e ed o od ma che del dello della dei degli delle al allo alla ai agli alle " +
+    "il lo la gli le un uno una di ad da con su per tra fra ed od ma che del dello della dei degli delle al allo alla ai agli alle " +
     "dal dallo dalla dai dagli dalle nel nello nella nei negli nelle sul sullo sulla sui sugli sulle col coi the an of to for with and or but by from into as that"
   ).split(" "),
 );

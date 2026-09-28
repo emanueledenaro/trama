@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { parseReferenceHref } from "@shared/references";
 import { cn } from "@/lib/cn";
 import { remarkCallouts } from "@/lib/remarkCallouts";
-import { remarkReferences } from "@/lib/remarkReferences";
+import { remarkPlainText, remarkReferences } from "@/lib/remarkReferences";
 import { projectFileLink } from "@/lib/chatLinks";
 import { openReference, useReferenceIndex } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
@@ -63,7 +63,11 @@ const COMPONENTS: Components = {
 
 export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, className }: { text: string; user?: boolean; className?: string }) {
   const index = useReferenceIndex();
-  const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(() => [remarkGfm, remarkCallouts, [remarkReferences, { index }]], [index]);
+  // The person's own words stay as they wrote them; Trama's and the agents' are made plain (issue #270).
+  const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
+    () => [remarkGfm, remarkCallouts, ...(user ? [] : [remarkPlainText]), [remarkReferences, { index }]],
+    [index, user],
+  );
   return (
     <div className={cn("chat-markdown w-full min-w-0 text-foreground", user && "chat-markdown--user", className)}>
       <ReactMarkdown remarkPlugins={plugins} components={COMPONENTS} urlTransform={urlTransform}>

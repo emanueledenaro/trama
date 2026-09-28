@@ -1,5 +1,5 @@
 import type { ActiveProjectState } from "@shared/domain";
-import { buildReferenceIndex, type ReferenceIndex, type ReferenceTarget } from "@shared/references";
+import { buildReferenceIndex, lookupReference, type Reference, type ReferenceIndex, type ReferenceTarget } from "@shared/references";
 import { revealCard } from "./nextStep";
 import { useUi } from "./store";
 
@@ -35,6 +35,15 @@ export function referenceIndexOf(project: ActiveProjectState | null | undefined)
 }
 
 export const useReferenceIndex = () => useUi((s) => referenceIndexOf(s.app?.project));
+
+/** The record an id names, to show its name instead of the id (issue #270); null while nothing names it. */
+export function useRecord(id: string | null | undefined): Reference | null {
+  const index = useReferenceIndex();
+  return id && index ? lookupReference(id, index) : null;
+}
+
+/** A name as the start of a title: "candidato di Ada" becomes "Candidato di Ada". */
+export const asTitle = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** Opens what a reference names inside Trama: its panel in the inspector, or its card in the dialog (issue #277). */
 export function openReference(target: ReferenceTarget): void {

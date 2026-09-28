@@ -10,6 +10,7 @@ import type {
 import { ACTIVITY_OUTCOME_LABELS, type ActivityOutcome, activityLog } from "@shared/activity";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
+import { COORDINATOR_MOVES, PERSON_MOVE_LABELS } from "./workPhase";
 
 export { asksForRecap, RECAP_COMMAND, recapTitle } from "@shared/recap";
 
@@ -41,6 +42,9 @@ const issueSuffix = (issue: { number: number } | null | undefined) => (issue ? `
  * Every milestone the project reached so far, in the order of the records. Pure: `sliceViews` are the views of each
  * approved breakdown, by plan id, as the main process computes them.
  */
+/** "S2" is the slice's id; the person reads its number. */
+const sliceNumber = (id: string) => id.replace(/^S(?=\d+$)/, "");
+
 export function milestones(document: ProjectDocument, sliceViews: Record<string, SliceView[]>): Milestone[] {
   const reached: Milestone[] = [];
   for (const plan of document.plans) {
@@ -51,7 +55,8 @@ export function milestones(document: ProjectDocument, sliceViews: Record<string,
       reached.push({
         key: `slice:${plan.id}:${view.id}`,
         kind: "sliceDone",
-        text: `Fetta ${view.id} fatta${ticket ? `: ${ticket.title}` : ""}${issueSuffix(ticket?.issue)}`,
+        // The slice by its number, not its id "S1" (issue #270).
+        text: `Fetta ${sliceNumber(view.id)} fatta${ticket ? `: ${ticket.title}` : ""}${issueSuffix(ticket?.issue)}`,
       });
     }
   }
@@ -100,7 +105,7 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
     }
     for (const ticket of plan.slicing?.tickets ?? []) {
       if (ticket.issue && after(ticket.issue.at)) {
-        facts.push({ text: `Aperta la issue #${ticket.issue.number} della fetta ${ticket.id}: ${ticket.title}`, number: ticket.issue.number, url: ticket.issue.url, at: ticket.issue.at });
+        facts.push({ text: `Aperta la issue #${ticket.issue.number} della fetta ${sliceNumber(ticket.id)}: ${ticket.title}`, number: ticket.issue.number, url: ticket.issue.url, at: ticket.issue.at });
       }
     }
   }
@@ -114,12 +119,41 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
   return facts.sort((a, b) => a.at.localeCompare(b.at));
 }
 
-/** A move in "Cosa ho fatto": "Esegui le verifiche: non riuscita. L'incarico A-1 è concluso ma ...". */
+/**
+ * What a move did, as a fact and not as the button that asks for it (issue #270): "Esegui le verifiche" is the
+ * button, "Verifica del lavoro" what the recap tells. Each name is feminine and singular, like the outcomes below.
+ */
+const MOVE_FACTS: Record<string, string> = {
+  [COORDINATOR_MOVES.preparePlan.label]: "Preparazione del piano",
+  [COORDINATOR_MOVES.assignWork.label]: "Assegnazione del lavoro",
+  [COORDINATOR_MOVES.verifyCandidate.label]: "Verifica del lavoro",
+  [COORDINATOR_MOVES.answerQuestion.label]: "Risposta allo sviluppatore",
+  [PERSON_MOVE_LABELS.answerQuestions]: "Risposta alla domanda",
+  [PERSON_MOVE_LABELS.confirmUnderstanding]: "Conferma della comprensione",
+  [PERSON_MOVE_LABELS.grantMandate]: "Concessione del mandato",
+  [PERSON_MOVE_LABELS.confirmTeam]: "Conferma del team",
+  [PERSON_MOVE_LABELS.confirmSeams]: "Conferma dei punti di prova",
+  [PERSON_MOVE_LABELS.confirmSlices]: "Conferma delle fette",
+  [PERSON_MOVE_LABELS.reviewPlan]: "Revisione del piano",
+  [PERSON_MOVE_LABELS.reviewCandidate]: "Verifica del candidato",
+  [PERSON_MOVE_LABELS.mergePullRequest]: "Unione della pull request",
+};
+
+const FACT_OUTCOMES: Record<ActivityOutcome, string> = {
+  running: "in corso",
+  done: "fatta",
+  stalled: "non riuscita",
+  stopped: "fermata",
+  failed: "finita con un errore",
+};
+
+/** A move in "Cosa ho fatto": "Verifica del lavoro non riuscita. L'incarico A-1 è concluso ma ...". */
 function moveLine(label: string, outcome: ActivityOutcome, detail: string | null): string {
   // The outcome already says the move was not made: the reason follows without repeating it.
   const reason = detail?.replace(/^La mossa automatica non è riuscita:\s*/, "").trim();
   const sentence = reason ? `. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}` : "";
-  return `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
+  const fact = MOVE_FACTS[label];
+  return fact ? `${fact} ${FACT_OUTCOMES[outcome]}${sentence}` : `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
 }
 
 /**

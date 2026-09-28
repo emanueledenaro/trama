@@ -1,3 +1,4 @@
+import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { CandidateState, WorkPlan } from "@shared/domain";
 import { CANDIDATE_STATE } from "@/components/chat/Cards";
 import { Badge } from "@/components/ui/field";
@@ -7,7 +8,7 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 const ORDER: CandidateState[] = ["decided", "building", "verified", "superseded"];
 const PLAN_STATUS: Record<WorkPlan["status"], { label: string; tone: "info" | "warning" | "destructive" | "secondary" }> = {
   planning: { label: "In preparazione", tone: "secondary" },
-  seams: { label: "Seam da rivedere", tone: "warning" },
+  seams: { label: "Punti di prova da rivedere", tone: "warning" },
   ready: { label: "Da rivedere", tone: "info" },
   stale: { label: "Da rivalutare", tone: "warning" },
   failed: { label: "Non riuscito", tone: "destructive" },
@@ -44,8 +45,9 @@ export function WorkView() {
                     onClick={() => setInspector({ kind: "candidate", id: candidate.id })}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)]"
                   >
-                    <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span>
-                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/90">{assignment?.objective ?? candidate.assignmentId}</span>
+                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/90" title={candidate.id}>
+                      {assignment?.objective ?? <RecordLabel id={candidate.assignmentId} />}
+                    </span>
                     {candidate.pullRequest ? <Badge tone="success">PR #{candidate.pullRequest.number}</Badge> : <Badge tone={CANDIDATE_STATE[state].tone}>{CANDIDATE_STATE[state].label}</Badge>}
                   </button>
                 );
@@ -57,8 +59,7 @@ export function WorkView() {
       {plans.length ? (
         <InspectorSection title={`Piani (${plans.length})`}>
           {[...plans].reverse().map((plan) => (
-            <div key={plan.id} className="flex items-center gap-2 py-1 text-ui-sm">
-              <span className="font-mono text-[11px] text-muted-foreground">{plan.id}</span>
+            <div key={plan.id} className="flex items-center gap-2 py-1 text-ui-sm" title={plan.id}>
               <span className="min-w-0 flex-1 truncate text-foreground/90">{plan.spec?.sections?.title ?? plan.proposal?.summary ?? plan.summary}</span>
               {plan.spec?.issue ? (
                 <button type="button" className="shrink-0" onClick={() => void act("shell:openExternal", { url: plan.spec!.issue!.url })}>
