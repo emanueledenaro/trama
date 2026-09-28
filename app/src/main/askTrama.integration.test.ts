@@ -106,7 +106,9 @@ describe("Ask Trama in the conversation (M07)", () => {
     const document = project.document;
     await controller!.send("/ask-trama [inventata] Voglio pubblicare.", null, null, null);
     expect(document.routes ?? []).toEqual([]);
-    expect((document.events.at(-1)!.content as { text: string }).text).toContain("ask-trama does not name deploy");
+    // The refusal stays in the turn's activity; the reply does not paste it (issue #241).
+    const refusal = document.events.findLast((e) => e.content.type === "activity" && e.content.tone === "error")!.content;
+    expect((refusal as { detail: string }).detail).toContain("ask-trama does not name deploy");
     await controller!.send("/ask-trama Gli ordini pagati annullati.", null, null, null);
     const route = document.routes!.at(-1)!;
     await controller!.answerRoute(route.id, false);

@@ -46,11 +46,9 @@ function PhaseChip({ task }: { task: FocusTask }) {
   );
 }
 
-/** What holds the task: the blocker, or the person's move the work waits for. */
+/** What holds the task: the person's move first, since it is often what unblocks the work, then the blocker. */
 function holdText(task: FocusTask): string | null {
-  if (task.blocker) return task.blocker;
-  if (task.waitingFor) return `Aspetta te: ${task.waitingFor}`;
-  return null;
+  return [task.waitingFor ? `Aspetta te: ${task.waitingFor}` : null, task.blocker].filter(Boolean).join(". ") || null;
 }
 
 const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
