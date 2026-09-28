@@ -190,12 +190,23 @@ Barra laterale: il pannello attaccato alla barra delle attività che mostra la v
 
 Vista: ciò che la barra laterale mostra per una voce della barra delle attività. Il nome della vista è uguale alla voce. Le viste del progetto sono cinque: Aspetta te, Lavoro (obiettivi, fette, candidati, branch, pull request e issue), Squadre (squadre, persone della squadra, ruoli condivisi, lavoro automatico), Regole (Mandato con i Moduli, Patto, Standard del codice) e Memoria.
 
-Area dell'editor: la parte centrale della finestra. La prima scheda è sempre la Conversazione con il Coordinatore, che non si chiude.
+Area dell'editor: la parte centrale della finestra. Con un progetto aperto la prima scheda è sempre la Conversazione con il Coordinatore, che non si chiude; senza un progetto aperto mostra solo il Benvenuto.
 
-Scheda dell'editor: un dettaglio aperto accanto alla Conversazione: una persona della squadra, un candidato con l'Esame approfondito, Progetti, Impostazioni. Le schede compaiono solo quando ce n'è più di una. Con la finestra larga il dettaglio si affianca alla Conversazione in un editor diviso. Sostituisce l'ispettore.
+Scheda dell'editor: un dettaglio aperto accanto alla Conversazione: una persona della squadra, un candidato con l'Esame approfondito, Progetti, Impostazioni, il Benvenuto. Le schede compaiono solo quando ce n'è più di una. Con la finestra larga il dettaglio si affianca alla Conversazione in un editor diviso. Sostituisce l'ispettore.
 
 Pannello in basso: il pannello sotto l'area dell'editor, attaccato con un separatore orizzontale, che mostra Attività. Si apre dall'icona di Attività nella barra di stato e si chiude.
 
 Barra di stato: la riga in fondo alla finestra con branch, conflitto con il branch principale, riga di stato, obiettivo in primo piano, Attività e Pausa. Dice cosa succede adesso, non chiede decisioni: le decisioni stanno in Aspetta te. Sostituisce la riga del primo piano, la riga di stato sopra la chat e l'avviso di divergenza sopra la chat.
 
 Separatore: la fascia invisibile tra due pannelli attaccati che li ridimensiona, come il sash di VS Code (PR #234): a riposo resta solo il bordo di 1 px del pannello, al passaggio del mouse e durante il trascinamento prende il colore d'accento.
+
+## Primo avvio
+
+Benvenuto: la scheda da cui la persona inizia a usare Trama. Ha quattro blocchi: Inizia (aprire, creare o clonare un progetto, provare il progetto di esempio), Recenti, Configura e Impara. Si apre da sola finché nessun provider è collegato, poi solo quando la persona la chiede. Senza un progetto aperto è l'unica cosa nella finestra.
+_Da evitare_: guida introduttiva, configurazione iniziale, schermata di benvenuto.
+
+Passo di configurazione: una delle cose che rendono Trama pronta, nel blocco Configura del Benvenuto: lingua, provider, GitHub e metodo. Solo il provider è necessario, gli altri sono facoltativi. Un passo fatto può tornare da fare, per esempio quando scade un accesso: lo segnala la barra di stato, e il Benvenuto non si riapre da solo.
+
+Esercizio: un percorso guidato sul progetto di esempio che mostra un pezzo del ciclo di lavoro: conoscere il progetto, una modifica verificata, rivedere una decisione, un confronto controllato. Si avvia dal blocco Impara del Benvenuto e resta accanto alla chat del progetto di esempio finché non è finito.
+
+Progetto di esempio: il progetto che Trama include per provare il ciclo di lavoro senza toccare un progetto della persona. I suoi risultati verificano solo i suoi casi locali.
