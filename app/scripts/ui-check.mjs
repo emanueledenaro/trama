@@ -1516,8 +1516,33 @@ await review.scrollIntoViewIfNeeded();
 await shot("18d1-review-findings");
 // Q01: before publishing, the card shows the quality standard. The corrected candidate meets it, with its Conventional
 // Commits message; the failed one says what is missing and how to fix it. Both themes.
+// Issue #273: the mandate grants no pull requests, so the standard stops the publication and says how to allow it.
+const stoppedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="no"]');
+const mandateItem = stoppedQuality.locator('[data-testid="quality-item"][data-code="MANDATE"][data-passed="no"]');
+await mandateItem.getByText(/Il mandato non permette di aprire pull request/).waitFor({ timeout: 20_000 });
+await mandateItem.getByText(/^Come sistemarlo: Concedi o correggi il mandato/).waitFor();
+if ((await stoppedQuality.locator('[data-testid="quality-item"][data-passed="no"]').count()) !== 1) throw new Error("Only the mandate should stop the corrected candidate");
+if (await correctedCard.getByRole("button", { name: /Prepara la pull request/ }).count()) throw new Error("A pull request can be prepared outside the mandate");
+await mandateItem.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("18e1-publication-outside-mandate");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18e2-publication-outside-mandate-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await page.getByRole("checkbox", { name: /Aprire pull request/ }).check();
+await page.getByRole("button", { name: "Salva correzione" }).click();
+await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const correctedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="yes"]');
 await correctedQuality.waitFor({ timeout: 20_000 });
+await correctedQuality.locator('[data-testid="quality-item"][data-code="MANDATE"][data-passed="yes"]').getByText("Il mandato permette di aprire pull request.").waitFor();
 const commitItem = correctedQuality.locator('[data-testid="quality-item"][data-code="COMMIT_MESSAGE"][data-passed="yes"]');
 if (!/(feat|docs|chore)(\([a-z0-9-]+\))?: \S/.test(await commitItem.innerText())) throw new Error(`The commit message is not in Conventional Commits: ${await commitItem.innerText()}`);
 const failedQuality = failedCard.locator('[data-testid="candidate-quality"][data-ready="no"]');
@@ -1573,7 +1598,7 @@ await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
 await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
-await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await send("[piano]");
 const sliceSeams = page.locator('[data-testid="plan-spec"][data-status="seams"]').last();
