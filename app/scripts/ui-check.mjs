@@ -660,7 +660,7 @@ await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Memoria/ }).first().click();
 await page.getByRole("button", { name: "Rivedi ora" }).click();
-await page.getByText("Skill 'release-flow' created").first().waitFor({ timeout: 30_000 });
+await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 

@@ -50,13 +50,6 @@ describe("ProjectLearning", () => {
     expect(project.proposals()).toEqual([]);
   });
 
-  it("names a review's proposal in Italian for Aspetta te (issue #305)", () => {
-    const project = learning();
-    project.memory.add("memory", "Uses pnpm");
-    memoryTool({ target: "memory", action: "remove", old_text: "pnpm" }, { store: project.memory, origin: "backgroundReview", stage: (p) => project.stageProposal(p) });
-    expect(project.proposals()[0]!.summary).toBe("Una revisione propone di cambiare la memoria.");
-  });
-
   it("turns a migrated memory over its limit into one consolidation proposal (issue #305)", () => {
     const project = learning();
     const paragraphs = Array.from({ length: 6 }, (_, i) => `Fatto ${i}: ${"dettaglio ".repeat(50)}`.trim());
@@ -66,6 +59,9 @@ describe("ProjectLearning", () => {
     expect(project.proposeConsolidation("memory")).toBeNull();
     const [proposal] = project.proposals();
     expect(proposal).toMatchObject({ kind: "consolidation", target: "memory" });
+    const [shown] = project.view({ turnsSinceMemory: 0, itersSinceSkill: 0 }).proposals;
+    expect(shown!.summary).toBe(proposal!.summary);
+    expect(shown!.operations[0]).toBe(`Togliere la nota «${paragraphs[0]}»`);
     expect(proposal!.summary).toMatch(/^La memoria del progetto supera il limite \(\d{4} su 2200 caratteri\)\./);
     // Nothing changes before the person applies it; then the rest fits under the limit.
     expect(project.memory.charCount("memory")).toBe(0);

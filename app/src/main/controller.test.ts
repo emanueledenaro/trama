@@ -1652,7 +1652,7 @@ describe("the learning loop (ADR 0014)", () => {
     const proposals = controller!.snapshot.learning!.proposals;
     expect(proposals).toHaveLength(1);
     expect(proposals[0]!.summary).toMatch(/^La memoria del progetto supera il limite \(\d{4} su 2200 caratteri\)/);
-    expect(proposals[0]!.operations.slice(1)).toEqual([`- Togli: ${entries[0]}`]);
+    expect(proposals[0]!.operations).toEqual([`Togliere la nota «${entries[0]}»`]);
     // A second full turn adds no second proposal; the person applies it and the memory fits.
     await controller!.send("[memoria-piena] ancora", null, null, null);
     expect(controller!.snapshot.learning!.proposals).toHaveLength(1);

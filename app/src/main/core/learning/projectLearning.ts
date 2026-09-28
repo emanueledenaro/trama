@@ -49,9 +49,6 @@ export interface MemoryProposal {
   kind?: "consolidation";
 }
 
-/** What the person reads in Aspetta te for a review's proposal: the review's own summary is written for the model. */
-const REVIEW_PROPOSAL_SUMMARY = "Una revisione propone di cambiare la memoria.";
-
 const payloadOperations = (payload: JsonRecord): JsonRecord[] =>
   Array.isArray(payload.operations) ? (payload.operations as JsonRecord[]).map((op) => (op && typeof op === "object" ? op : {})) : [payload];
 
@@ -186,13 +183,9 @@ export class ProjectLearning {
       });
   }
 
-  stageProposal(proposal: { target: MemoryTarget; summary: string; payload: JsonRecord }): string {
-    const operations = payloadOperations(proposal.payload).map(batchOpLine);
-    return this.saveProposal({ ...proposal, summary: REVIEW_PROPOSAL_SUMMARY }, operations);
-  }
-
-  private saveProposal(proposal: Pick<MemoryProposal, "target" | "summary" | "payload" | "kind">, operations: string[]): string {
+  stageProposal(proposal: Pick<MemoryProposal, "target" | "summary" | "payload" | "kind">): string {
     const id = randomUUID().slice(0, 8);
+    const operations = payloadOperations(proposal.payload).map(batchOpLine);
     const expected = this.matches(proposal.target, proposal.payload);
     writeJson(join(this.projectDir, "proposals.json"), [...this.proposals(), { id, createdAt: new Date().toISOString(), ...proposal, operations, expected }]);
     return id;
@@ -219,10 +212,7 @@ export class ProjectLearning {
     const summary =
       `${target === "user" ? "Il profilo" : "La memoria del progetto"} supera il limite (${format(chars)} su ${format(limit)} caratteri). ` +
       "Trama propone di togliere le note più vecchie; puoi anche accorciarle a mano.";
-    return this.saveProposal(
-      { target, summary, kind: "consolidation", payload: { target, operations: removed.map((entry) => ({ action: "remove", old_text: entry })) } },
-      [summary, ...removed.map((entry) => `- Togli: ${entry}`)],
-    );
+    return this.stageProposal({ target, summary, kind: "consolidation", payload: { target, operations: removed.map((entry) => ({ action: "remove", old_text: entry })) } });
   }
 
   /** The person approves or discards a proposal; an approved one is applied as they wrote it. */
@@ -281,10 +271,11 @@ export class ProjectLearning {
       skills: this.skillViews(),
       archivedSkills: this.skills.archivedNames(),
       // The review's own words stay in proposals.json; the person reads the changes in Italian (issue #270).
-      proposals: this.proposals().map(({ id, target, createdAt, payload }) => ({
+      // Trama's own consolidation proposal is already written for the person (issue #305).
+      proposals: this.proposals().map(({ id, target, createdAt, payload, kind, summary }) => ({
         id,
         target,
-        summary: memoryProposalSummary(payload),
+        summary: kind === "consolidation" ? summary : memoryProposalSummary(payload),
         createdAt,
         operations: payloadOperations(payload).map(memoryChangeLine),
       })),
