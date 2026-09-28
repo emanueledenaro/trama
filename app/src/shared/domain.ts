@@ -234,10 +234,12 @@ export interface MandateRequest {
   askedAt: string;
   /**
    * Null while the request waits for the person. "superseded" means a newer request replaced it before the
-   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`.
+   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`. "rejected" means
+   * the person turned the proposal down and the mandate in force stayed as it was; "revoked" is kept for requests
+   * answered before that, when declining a proposal also revoked the mandate.
    */
   resolution: {
-    kind: "granted" | "corrected" | "revoked" | "superseded";
+    kind: "granted" | "corrected" | "rejected" | "revoked" | "superseded";
     version: number | null;
     resolvedAt: string;
     supersededBy?: string | null;

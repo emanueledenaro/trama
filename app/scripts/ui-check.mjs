@@ -1051,9 +1051,74 @@ const supersededCard = page.locator(".chat-card", { has: supersededNote });
 if (!(await supersededCard.getByText("Prima proposta di mandato").count())) throw new Error("The superseded card is not the first request");
 if (await supersededCard.getByRole("button").count()) throw new Error("The superseded mandate card still has buttons");
 const pendingCard = page.locator(".chat-card", { hasText: "Seconda proposta di mandato" }).last();
-await pendingCard.getByRole("button", { name: "Accetta la proposta" }).waitFor();
+await pendingCard.getByRole("button", { name: "Concedi", exact: true }).waitFor();
 await supersededCard.scrollIntoViewIfNeeded();
 await shot("15-mandate-superseded");
+
+// U03: a proposal shows what it changes in the mandate in force and which work would stop. Its buttons are
+// Rifiuta la proposta, Correggi and Concedi, primary last; revoking the mandate in force lives only in the
+// Mandate view, behind a confirmation. Rejecting leaves the mandate in force as it was.
+await pendingCard.getByTestId("mandate-diff").waitFor();
+if (!(await pendingCard.getByTestId("mandate-diff-actions").getByTestId("mandate-diff-removed").count())) {
+  throw new Error("The proposal does not say which authorized actions it takes away");
+}
+await pendingCard.getByTestId("mandate-diff-stopped").waitFor();
+if (await pendingCard.getByRole("button", { name: /Revoca/ }).count()) throw new Error("A mandate proposal still offers to revoke the mandate");
+const proposalButtons = await pendingCard.locator(".cta-row").last().getByRole("button").evaluateAll((buttons) =>
+  buttons.map((b) => ({ name: b.textContent.trim(), x: b.getBoundingClientRect().x })).sort((a, b) => a.x - b.x).map((b) => b.name),
+);
+if (proposalButtons.join("|") !== "Rifiuta la proposta|Correggi|Concedi") throw new Error(`Proposal buttons out of order: ${proposalButtons.join(", ")}`);
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await pendingCard.locator(".cta-row").last().evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await shot(`15m1-mandate-proposal-card-${theme}`);
+}
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+const mandateInspector = page.getByTestId("inspector");
+await mandateInspector.getByTestId("mandate-diff").waitFor();
+const mandateState = async () => (await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().textContent()).trim();
+const stateBefore = await mandateState();
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await mandateInspector.getByTestId("mandate-diff").scrollIntoViewIfNeeded();
+  await shot(`15m2-mandate-proposal-view-${theme}`);
+}
+await mandateInspector.getByRole("button", { name: "Revoca il mandato" }).click();
+const revokeConfirm = mandateInspector.getByTestId("mandate-revoke-confirm");
+await revokeConfirm.waitFor();
+if (!(await revokeConfirm.getByRole("button", { name: "Revoca il mandato" }).isDisabled())) throw new Error("The mandate can be revoked without a reason");
+await revokeConfirm.getByLabel("Motivo della revoca").fill("Pausa sul progetto");
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await revokeConfirm.scrollIntoViewIfNeeded();
+  await shot(`15m3-mandate-revoke-confirm-${theme}`);
+}
+await revokeConfirm.getByRole("button", { name: "Annulla" }).click();
+await revokeConfirm.waitFor({ state: "detached" });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// With no proposal left the next move would be the Coordinator's: keep it from starting by itself here.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+await pendingCard.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await pendingCard.getByLabel("Motivo del rifiuto").fill("Serve ancora il worktree");
+await pendingCard.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await pendingCard.getByText("Rifiutata", { exact: true }).waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().waitFor();
+if ((await mandateState()) !== stateBefore) throw new Error(`Rejecting a proposal changed the mandate in force: ${await mandateState()}`);
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await pendingCard.getByText("Hai rifiutato la proposta", { exact: false }).evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await shot(`15m4-mandate-proposal-rejected-${theme}`);
+}
+await setTheme("system");
+// The checks below expect a proposal waiting for the person.
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Nuova proposta di mandato]");
+await page.keyboard.press("Enter");
+await page.locator(".chat-card", { hasText: "Nuova proposta di mandato" }).last().getByRole("button", { name: "Concedi", exact: true }).waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 
 // W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
 // lists the others. Pausing the task in focus passes the focus to the next one; "Metti in focus" takes it back.

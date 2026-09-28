@@ -581,7 +581,7 @@ const supersededCard = page.locator(".chat-card", { has: supersededNote });
 if (!(await supersededCard.getByText("Prima proposta di mandato").count())) throw new Error("The superseded card is not the first request");
 if (await supersededCard.getByRole("button").count()) throw new Error("The superseded mandate card still has buttons");
 const pendingCard = page.locator(".chat-card", { hasText: "Seconda proposta di mandato" }).last();
-await pendingCard.getByRole("button", { name: "Accetta la proposta" }).waitFor();
+await pendingCard.getByRole("button", { name: "Concedi", exact: true }).waitFor();
 await supersededCard.scrollIntoViewIfNeeded();
 await shot("15-mandate-superseded");
 
