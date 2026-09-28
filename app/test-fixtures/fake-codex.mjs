@@ -76,6 +76,8 @@ async function callTool(threadId, name, args) {
   return (await response.json()).result;
 }
 let turns = 0;
+// Tokens the fake thread has processed so far: Codex reports them as `total`.
+let processedTokens = 0;
 
 createInterface({ input: process.stdin }).on("line", async (line) => {
   const { id, method, params } = JSON.parse(line);
@@ -675,6 +677,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(done.join(" ") || "Non ho fatto la mossa.");
         return;
       }
+      if (text.includes("[memoria-piena]")) {
+        // A model that keeps retrying a note too long for the memory, then pastes the first error (issue #305).
+        (async () => {
+          const results = [];
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const result = await callTool(threadId, "memory", { target: "memory", action: "add", content: `Nota ${attempt}: ${"dettaglio ".repeat(240)}` });
+            toolDone("memory", result);
+            results.push(result);
+          }
+          finish(`Non ho salvato la nota: ${JSON.parse(results[0].content[0].text).error}`);
+        })();
+        return;
+      }
       if (text.includes("[memoria]")) {
         callTool(threadId, "memory", { target: "memory", action: "add", content: "Il progetto usa pnpm 9" }).then(async (result) => {
           toolDone("memory", result);
@@ -923,7 +938,24 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         // Issue #228: the study itself tries `gh`, which the read-only sandbox stops.
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh-study", type: "commandExecution", command: "gh issue list", exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
       }
-      send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
+      // Like Codex: `total` adds up every request of the thread and keeps growing, `last` is the request that fills the window (issue #305).
+      processedTokens += text.includes("[pieno]") ? 2_300_000 : 120_000;
+      const lastRequest = text.includes("[pieno]") ? 230_000 : text.includes("[compattato]") ? 20_000 : 12_000;
+      if (text.includes("[compattato]")) {
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: "compaction", type: "contextCompaction" } } });
+      }
+      send({
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId,
+          turnId,
+          tokenUsage: {
+            total: { totalTokens: processedTokens, inputTokens: processedTokens - 1_000, cachedInputTokens: processedTokens / 2, outputTokens: 1_000, reasoningOutputTokens: 200 },
+            last: { totalTokens: lastRequest, inputTokens: lastRequest - 500, cachedInputTokens: lastRequest / 2, outputTokens: 500, reasoningOutputTokens: 100 },
+            modelContextWindow: 258_000,
+          },
+        },
+      });
       const reply =
         (text.startsWith("Studio del progetto scritto da Trama")
           ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
