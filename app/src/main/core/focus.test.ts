@@ -255,14 +255,14 @@ describe("focus for the Coordinator", () => {
     request(document, "r2", null, 6, "Che ore sono?");
     const onFocus = focusText(document, "g1")!;
     expect(onFocus).toContain(`In focus: l'obiettivo "Revisione degli ordini" (goal:${orders.id}), fase spec.`);
-    expect(onFocus).toContain(`In coda: il lavoro del dialogo del progetto, l'obiettivo "Esportazione CSV".`);
+    expect(onFocus).toContain(`In coda: il lavoro del progetto fuori dagli obiettivi, l'obiettivo "Esportazione CSV".`);
     expect(onFocus).toContain("resta su questo task");
     pauseTask(document, `goal:${exports.id}`);
     expect(focusText(document, "g2")).toContain(
       'Il messaggio riguarda l\'obiettivo "Esportazione CSV", che è in pausa. Rispondi, poi riporta la conversazione sul task in focus',
     );
     // A message in the project dialog belongs to the dialog's work, which is queued.
-    expect(focusText(document, "r2")).toContain("Il messaggio riguarda il lavoro del dialogo del progetto, che è in coda.");
+    expect(focusText(document, "r2")).toContain("Il messaggio riguarda il lavoro del progetto fuori dagli obiettivi, che è in coda.");
   });
 
   it("brings a message outside any task back to the focus", () => {

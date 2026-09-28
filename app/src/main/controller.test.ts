@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, ProjectDocument } from "@shared/domain";
-import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
+import { chatEvents, decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
@@ -168,7 +168,7 @@ describe("TramaController", () => {
     expect(developers(document)).toHaveLength(0);
   });
 
-  it("keeps two goal dialogs apart from the project dialog and gives the Coordinator the goal", async () => {
+  it("keeps one chat with one composer and tags each message with the goal it was sent under (U01)", async () => {
     const { data } = await setup();
     const first = await controller!.createGoal({
       title: "Revisione degli ordini",
@@ -179,30 +179,30 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     const document = project.document;
 
-    controller!.saveDraft("bozza del primo", first);
-    controller!.saveDraft("bozza del progetto", null);
-    await controller!.selectModel("gpt-5.5", "high", "codex", second);
-    expect(findGoal(document, first)!.dialog.composerDraft).toBe("bozza del primo");
-    expect(document.composerDraft).toBe("bozza del progetto");
-    expect(findGoal(document, second)!.dialog).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
-    expect(document.selectedEffort).toBeNull();
+    // One draft and one selection, whatever goal the chat is filtered on.
+    expect(findGoal(document, first)!.dialog).toBeUndefined();
+    controller!.saveDraft("bozza della chat");
+    await controller!.selectModel("gpt-5.5", "high", "codex");
+    expect(document.composerDraft).toBe("bozza della chat");
+    expect(document).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
     // An Antigravity name with its level, as agy lists it, is stored as catalogue model plus level (issue #209).
-    await controller!.selectModel("Gemini 3.8 Flash (High)", null, "antigravity", first);
-    expect(findGoal(document, first)!.dialog).toMatchObject({ selectedProvider: "antigravity", selectedModel: "Gemini 3.8 Flash", selectedEffort: "high" });
+    await controller!.selectModel("Gemini 3.8 Flash (High)", null, "antigravity");
+    expect(document).toMatchObject({ selectedProvider: "antigravity", selectedModel: "Gemini 3.8 Flash", selectedEffort: "high" });
+    await controller!.selectModel("gpt-5.5", "high", "codex");
 
     await controller!.send("Da dove partiamo?", null, null, null, [], null, first);
     const request = document.requests.at(-1)!;
     expect(request.goalId).toBe(first);
-    expect(findGoal(document, first)!.dialog.composerDraft).toBe("");
-    expect(document.composerDraft).toBe("bozza del progetto");
-    const goalEvents = dialogEvents(document.events, first);
+    expect(document.composerDraft).toBe("");
+    const goalEvents = chatEvents(document.events, first);
     expect(goalEvents.map((e) => e.content.type)).toEqual(["card", "personMessage", "activity", "activity", "coordinatorText"]);
     const reply = goalEvents.at(-1)!.content;
-    expect(reply).toMatchObject({ text: expect.stringContaining(`Dialogo dell'obiettivo ${first}`) });
-    expect(dialogEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
-    expect(dialogEvents(document.events, null).some((e) => e.content.type === "personMessage")).toBe(false);
+    expect(reply).toMatchObject({ text: expect.stringContaining(`Messaggio sull'obiettivo ${first}`) });
+    expect(chatEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
+    // The whole chat shows every goal's messages, in the order they were recorded.
+    expect(chatEvents(document.events, null)).toEqual(document.events);
 
-    // A message queued in one dialog stays there even if the person moves on before it leaves. "[attesa]" keeps the
+    // A message queued under one goal keeps that goal even if the person changes the filter. "[attesa]" keeps the
     // first turn running until it is interrupted: a reply that ends by itself could finish between two checks.
     const running = controller!.send("[attesa] Primo messaggio", null, null, null, [], null, null);
     await until(() => project.runningRequestId !== null);
@@ -216,7 +216,7 @@ describe("TramaController", () => {
     expect(queued.goalId).toBe(second);
     expect(document.requests.find((r) => r.id === firstId)!.goalId ?? null).toBeNull();
 
-    // Goals, dialogs and drafts survive a restart.
+    // Goals, their messages and the selection survive a restart.
     await controller!.stop();
     let state: AppState | null = null;
     controller = new TramaController(data, {
@@ -235,8 +235,8 @@ describe("TramaController", () => {
     await until(() => state?.project?.document !== undefined);
     const reopened = controller.snapshot.project!.document;
     expect(projectGoals(reopened).map((g) => g.id)).toEqual(projectGoals(document).map((g) => g.id));
-    expect(dialogEvents(reopened.events, first)).toHaveLength(goalEvents.length);
-    expect(findGoal(reopened, second)!.dialog.selectedModel).toBe("gpt-5.5");
+    expect(chatEvents(reopened.events, first)).toHaveLength(goalEvents.length);
+    expect(reopened.selectedModel).toBe("gpt-5.5");
   });
 
   it("links a decision asked in a goal dialog to that goal and answers there", async () => {
@@ -412,6 +412,23 @@ describe("TramaController", () => {
     expect(second.status).toBe("failed");
     expect(second.proposal).toBeNull();
     expect(second.spec ?? null).toBeNull();
+  });
+
+  it("keeps one active plan per goal: a new plan stops and supersedes the one still being prepared (U01)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const goal = await controller!.createGoal({ title: "Revisione", outcome: "Gli ordini pagati annullati vanno in revisione", examples: [] });
+    await controller!.send("Come si annulla un ordine pagato?", null, null, null, [], null, goal);
+    const requestId = project.document.requests.at(-1)!.id;
+    const first = controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Primo", issueNumber: null });
+    const second = controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Secondo", issueNumber: null });
+    expect(first).toMatchObject({ status: "superseded", supersededBy: second.id });
+    await until(() => second.status !== "planning");
+    // The replaced planner's late answer does not bring the old plan back.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(first.status).toBe("superseded");
+    expect(first.spec ?? null).toBeNull();
+    expect(second.status).toBe("seams");
   });
 
   it("gives the Coordinator thread the original grill-with-docs, grilling, domain-modeling and ask-trama skills once, also when it is already open (M02, M03, M07)", async () => {
@@ -727,9 +744,9 @@ describe("TramaController", () => {
     await controller!.send("Per l'obiettivo: rileggi gli esempi", null, null, null, [], null, goalId);
     await controller!.stop();
     expect(document.requests.find((r) => r.id === turnId)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
-    // A message still in the queue goes back to the draft of its own dialog instead of vanishing.
-    expect(document.composerDraft).toBe("Poi controlla i test");
-    expect(findGoal(document, goalId)!.dialog.composerDraft).toBe("Per l'obiettivo: rileggi gli esempi");
+    // The messages still in the queue go back to the chat's one draft, in order, instead of vanishing (U01).
+    expect(document.composerDraft).toBe("Poi controlla i test\n\nPer l'obiettivo: rileggi gli esempi");
+    expect(findGoal(document, goalId)!.dialog).toBeUndefined();
 
     // After the restart the provider answers: the resumed turn can end.
     process.env.FAKE_CODEX_NO_WAIT = "1";
@@ -1093,10 +1110,10 @@ describe("TramaController", () => {
     const empty = await controller!.createGoal({ title: "Doppione", outcome: "Creato per sbaglio", examples: [] });
     const used = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
     await controller!.send("Da dove partiamo?", null, null, null, [], null, used);
-    await expect(controller!.deleteGoal(used)).rejects.toThrow(/non è vuoto/);
+    await expect(controller!.deleteGoal(used)).rejects.toThrow(/ha già una cronologia/);
     // The Coordinator's first proposal has its card in the project dialog: it is history too.
     const proposed = document.goals!.find((g) => g.origin === "coordinator")!;
-    await expect(controller!.deleteGoal(proposed.id)).rejects.toThrow(/non è vuoto/);
+    await expect(controller!.deleteGoal(proposed.id)).rejects.toThrow(/ha già una cronologia/);
 
     await controller!.deleteGoal(empty);
     expect(findGoal(document, empty)).toBeNull();
@@ -1115,7 +1132,7 @@ describe("TramaController", () => {
     await until(() => project.runningRequestId !== null);
     const runningId = project.runningRequestId!;
     await controller!.send("Messaggio da togliere", null, null, null);
-    controller!.saveDraft("Bozza che resta", null);
+    controller!.saveDraft("Bozza che resta");
     await controller!.answerDecision(question.id, 0, null);
     const queued = controller!.snapshot.project!.queuedMessages;
     expect(queued.map((q) => [q.text, q.goalId, q.removable])).toEqual([

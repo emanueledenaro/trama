@@ -101,7 +101,7 @@ import {
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, QUIT_NOTE, recordReply, referencedPaths } from "./core/document";
-import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
@@ -164,7 +164,7 @@ import {
   withdrawDecisionRequest,
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
-import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown } from "./core/plan";
+import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
@@ -785,7 +785,7 @@ export class TramaController {
   /**
    * Esci during a Coordinator turn (C11): the Coordinator's runtime and its tools stop first, so nothing the turn does
    * lands after it is closed; then the turn ends as interrupted, with its reason, and the messages still queued go back
-   * to the draft of their own dialog. The person resumes it explicitly after reopening.
+   * to the chat's draft. The person resumes it explicitly after reopening.
    */
   private closeTurnForQuit(): void {
     this.stopCoordinatorRuntime();
@@ -800,9 +800,9 @@ export class TramaController {
       project.runningRequestId = null;
       project.streaming = null;
     }
+    // The chat has one composer (U01): every queued message goes back to its draft, in order.
     for (const item of this.queue.filter((q) => q.projectId === project.id)) {
-      const composer = dialogComposer(project.document, item.goalId);
-      composer.composerDraft = [composer.composerDraft, item.text].filter(Boolean).join("\n\n");
+      project.document.composerDraft = [project.document.composerDraft, item.text].filter(Boolean).join("\n\n");
     }
     this.queue = this.queue.filter((q) => q.projectId !== project.id);
   }
@@ -2200,7 +2200,7 @@ export class TramaController {
         removable,
         step,
       });
-      if (typed) dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
+      if (typed) project.document.composerDraft = "";
       this.changed();
       return;
     }
@@ -2231,7 +2231,7 @@ export class TramaController {
       ...(retry ? { retry: { of: retry.of.id, attempt: retry.attempt } } : {}),
     };
     document.requests.push(request);
-    if (typed) dialogComposer(document, goal?.id ?? null).composerDraft = "";
+    if (typed) document.composerDraft = "";
     const automatic = step?.by === "trama" ? (step.move as CoordinatorMove) : null;
     if (retry) {
       // The message is already in the chat, above the failure: the retry is a line of Trama's (P10).
@@ -2373,7 +2373,7 @@ export class TramaController {
         cwd: project.rootPath,
         model: selectedModel,
         effort,
-        fastMode: this.fastModeFor(dialogComposer(document, goal?.id ?? null), activeProvider, selectedModel),
+        fastMode: this.fastModeFor(document, activeProvider, selectedModel),
         images: attachments,
         // The skills of the late rules go once, next to the skills the person invoked.
         skills: [...(rules?.skills ?? []).filter((r) => !skills.some((s) => s.name === r.name)), ...skills, ...(routed?.skills ?? [])],
@@ -2676,13 +2676,13 @@ export class TramaController {
     this.changed();
   }
 
-  /** Whether the dialog of a goal has a Coordinator turn running or a message waiting to leave. */
+  /** Whether a goal has a Coordinator turn running or a message waiting to leave. */
   private dialogBusy(project: ActiveProjectState, goalId: string): string | null {
     if (project.runningRequestId && requestGoalId(project.document, project.runningRequestId) === goalId) {
-      return "Il Coordinatore sta rispondendo in questo dialogo: aspetta la fine del turno.";
+      return "Il Coordinatore sta rispondendo su questo obiettivo: aspetta la fine del turno.";
     }
     if (this.queue.some((q) => q.projectId === project.id && q.goalId === goalId)) {
-      return "Il dialogo ha un messaggio in coda: aspetta che parta o eliminalo.";
+      return "L'obiettivo ha un messaggio in coda: aspetta che parta o eliminalo.";
     }
     return null;
   }
@@ -2781,10 +2781,9 @@ export class TramaController {
   }
 
   /** The composer's selection (ADR 0010): remembered per provider; the provider changes on the next message. */
-  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null, goalId: string | null = null): Promise<void> {
+  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null): Promise<void> {
     const project = this.requireProject();
-    if (goalId) requireGoal(project.document, goalId);
-    const selection = dialogComposer(project.document, goalId);
+    const selection = project.document;
     const id = provider ?? selection.selectedProvider ?? "codex";
     // A name with its level, as Antigravity lists it, becomes the catalogue model and that level.
     const named = catalogModel(id, model);
@@ -2796,7 +2795,7 @@ export class TramaController {
     selection.providerPreferences = { ...selection.providerPreferences, [id]: { model, effort } };
     // The person's choice is Trama's default for the Coordinator of the next new project (issue #205).
     this.state.settings = { ...this.state.settings, coordinatorModels: { ...this.state.settings.coordinatorModels, [id]: { model, effort } } };
-    if (!goalId) this.restartOpeningOnModelChange(project, id);
+    this.restartOpeningOnModelChange(project, id);
     this.changed();
     await this.saveSettings();
   }
@@ -2830,19 +2829,17 @@ export class TramaController {
     return offered ? selection.selectedFastMode : null;
   }
 
-  /** Turns fast mode on or off for the dialog; it applies to models that offer a fast tier. */
-  async setFastMode(enabled: boolean, goalId: string | null = null): Promise<void> {
+  /** Turns fast mode on or off for the chat; it applies to models that offer a fast tier. */
+  async setFastMode(enabled: boolean): Promise<void> {
     const project = this.requireProject();
-    if (goalId) requireGoal(project.document, goalId);
-    dialogComposer(project.document, goalId).selectedFastMode = enabled;
+    project.document.selectedFastMode = enabled;
     this.changed();
   }
 
   /** Chooses the provider in the composer; the model is the one last used with it, if any. */
-  async selectProvider(provider: ProviderId, goalId: string | null = null): Promise<void> {
+  async selectProvider(provider: ProviderId): Promise<void> {
     const project = this.requireProject();
-    if (goalId) requireGoal(project.document, goalId);
-    const selection = dialogComposer(project.document, goalId);
+    const selection = project.document;
     if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
       throw new DomainError("Aspetta la fine del turno e della coda prima di cambiare provider.");
     }
@@ -2958,11 +2955,11 @@ export class TramaController {
     this.changed();
   }
 
-  saveDraft(text: string, goalId: string | null = null): void {
+  /** The chat has one composer (U01): its draft lives on the document whatever goal the chat is filtered on. */
+  saveDraft(text: string): void {
     const project = this.state.project;
     if (!project) return;
-    if (goalId && !findGoal(project.document, goalId)) return;
-    dialogComposer(project.document, goalId).composerDraft = text;
+    project.document.composerDraft = text;
     this.scheduleSave();
   }
 
@@ -4654,6 +4651,11 @@ export class TramaController {
       updatedAt: now,
     };
     project.document.plans.push(plan);
+    // One goal, one active plan (U01): the new plan replaces the earlier ones of its goal.
+    for (const old of supersedeGoalPlans(project.document, plan)) {
+      this.planners.get(old.id)?.stop();
+      this.planners.delete(old.id);
+    }
     appendEvent(project.document, "trama", { type: "card", kind: "plan", title: "Piano", detail: null, referenceId: plan.id }, input.requestId);
     this.changed();
     void this.runPlanner(project, plan);
