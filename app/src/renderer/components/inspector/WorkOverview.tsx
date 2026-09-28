@@ -472,7 +472,9 @@ function ProblemBacklog() {
       {items.map((problem) => (
         <li key={problem.id} className="py-2" data-testid="problem-backlog-item">
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-ui text-foreground">{problem.title}</span>
+            <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+              <ReferenceText text={problem.title} links={false} />
+            </span>
             <Badge tone="secondary">{problem.issue ? `#${problem.issue.number}` : t("work.issues.onlyTrama")}</Badge>
             {problem.issue ? (
               <IconAction label={t("work.issues.openIssue")} onClick={() => void act("shell:openExternal", { url: problem.issue!.url })}>

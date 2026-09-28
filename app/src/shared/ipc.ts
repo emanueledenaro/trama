@@ -76,6 +76,7 @@ export interface ActionMap {
   "overview:read": [void, ProjectOverview[]];
   "overview:prioritize": [{ projectId: string; direction: "up" | "down" }, void];
   "coordinator:setContextThreshold": [{ percent: number }, void];
+  "coordinator:reorderContext": [void, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
   /** Withdraws an open question with a reason; the Coordinator reads it as the person's message (W03). */
@@ -133,6 +134,7 @@ export interface ActionMap {
   "candidate:approve": [{ candidateId: string }, void];
   /** The person refuses an interface candidate with a reason, which goes back to the developer (issue #247). */
   "candidate:reject": [{ candidateId: string; note: string }, void];
+  "candidate:declineMerge": [{ candidateId: string }, void];
   /** One screenshot of an interface candidate, as a data URL (issue #247). */
   "candidate:shot": [{ candidateId: string; index: number }, string];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */

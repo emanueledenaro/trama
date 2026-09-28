@@ -47,7 +47,9 @@ function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
   return (
     <li className="py-2" data-testid="activity-step" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
+        <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+          <ReferenceText text={entry.label} links={false} />
+        </span>
         <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
@@ -57,7 +59,11 @@ function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
         <Sep />
         Dentro il mandato
       </p>
-      {entry.detail ? <p className="mt-1 text-ui-sm text-muted-foreground">{entry.detail}</p> : null}
+      {entry.detail ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={entry.detail} />
+        </p>
+      ) : null}
       {correcting ? (
         <div className="mt-2 space-y-2">
           <TextArea
@@ -98,7 +104,9 @@ function MergeRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
   return (
     <li className="py-2" data-testid="activity-merge" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
+        <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+          <ReferenceText text={entry.label} links={false} />
+        </span>
         <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
@@ -126,7 +134,9 @@ function RoundRow({ entry }: { entry: ActivityEntry }) {
   return (
     <li className="py-2" data-testid="activity-round">
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
+        <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+          <ReferenceText text={entry.label} links={false} />
+        </span>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">{formatDate(entry.startedAt)}</p>
       {entry.detail ? (
@@ -143,7 +153,9 @@ function ProblemRow({ entry }: { entry: ActivityEntry }) {
   return (
     <li className="py-2" data-testid="activity-problem" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
+        <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+          <ReferenceText text={entry.label} links={false} />
+        </span>
         <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">
@@ -177,7 +189,9 @@ function ActivityRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }
   return (
     <li className="py-2" data-testid="activity-entry" data-outcome={entry.outcome}>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
+        <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+          <ReferenceText text={entry.label} links={false} />
+        </span>
         <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">

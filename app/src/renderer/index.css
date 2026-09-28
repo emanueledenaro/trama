@@ -867,8 +867,11 @@ button {
     backdrop-filter: blur(40px) saturate(150%);
   }
 
+  /* Its own stacking context keeps the blur behind the surface: without it the layer falls behind the chat, and the
+     text of the timeline reads through a strip that floats over it (issue #392). */
   .translucent-popup {
     @apply relative overflow-hidden border border-border bg-popover/70 text-popover-foreground shadow-xl;
+    isolation: isolate;
   }
   .translucent-popup::before {
     content: "";

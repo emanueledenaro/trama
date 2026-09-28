@@ -132,6 +132,17 @@ describe("Aspetta te (issue #240)", () => {
     ]);
   });
 
+  it("counts no held work for a question outside any work, such as Clean Code's review of the project (issue #390)", () => {
+    const document = withRequests(["R1", null]);
+    document.decisionRequests.push(question("D1", null, "2026-09-01T10:00:00Z"), question("D2", "R1", "2026-09-01T11:00:00Z"));
+    const items = waitingForYou(document);
+    expect(items.map((i) => [i.key, i.blocks])).toEqual([
+      ["question:D2", 1],
+      ["question:D1", 0],
+    ]);
+    expect(blocksText(items[1]!.blocks)).toBe("Non ferma il lavoro");
+  });
+
   it("orders by the work each item holds, then from the oldest", () => {
     // Three dialogs, so each question belongs to its own work.
     const document = withRequests(["R1", null], ["R2", "G2"], ["R3", "G3"]);
@@ -268,6 +279,49 @@ describe("Aspetta te (issue #240)", () => {
         ["candidate:C2", "Interfaccia da guardare"],
         ["candidate:C3", "Candidato da guardare"],
       ]);
+    });
+
+    it("lists a stopped candidate that needs the person, whatever its merge route (issue #390)", () => {
+      const document = withRequests(["R1", null]);
+      document.team.specialists.push({ id: "SP1", assignments: [{ id: "A1", objective: "Pagina del carrello" }, { id: "A2", objective: "Prezzi scontati" }, { id: "A3", objective: "Filtro" }] } as unknown as Specialist);
+      document.candidates.push(
+        // A decision changed after the candidate: only the person says what to do with it.
+        candidate("C1"),
+        // The merge stopped on the mandate or a fixed ban: Trama does not try again by itself.
+        candidate("C2", { assignmentId: "A2", merge: { by: "coordinator", fingerprint: "x", status: "stopped", detail: "Il mandato non permette di pubblicare branch.", at: "", mergeSHA: null } }),
+        // A red check is the Coordinator's to fix: it does not wait for the person.
+        candidate("C3", { assignmentId: "A3" }),
+      );
+      const blocked = (code: string): CandidateReport => ({ ...report("building"), blockers: [{ code, detail: "PD1" }] });
+      const items = waitingForYou(document, {
+        candidateReports: { C1: blocked("DECISION_CHANGED"), C2: { ...report("decided"), mergeRoute: "coordinator" }, C3: blocked("CHECK_FAILED") },
+      });
+      expect(items.map((i) => [i.key, i.title, i.blocks])).toEqual([
+        ["candidate:C1", "Pagina del carrello", 1],
+        ["candidate:C2", "Prezzi scontati", 1],
+      ]);
+    });
+
+    it("lists a merge the Coordinator stopped on a destructive change until the person chose (issue #41)", () => {
+      const document = withRequests();
+      const merge = (acknowledgedAt: string | null) => ({
+        by: "coordinator" as const,
+        fingerprint: "f",
+        status: "stopped" as const,
+        detail: "Il Coordinatore non unisce questo candidato da solo: Cancella un file.",
+        at: "2026-09-01T08:00:00Z",
+        mandateVersion: 1,
+        stop: { reasons: ["Cancella un file."], consequences: [], alternatives: [], acknowledgedAt },
+      });
+      document.candidates.push(
+        candidate("C1", { merge: merge(null) }),
+        candidate("C2", { merge: merge("2026-09-01T09:00:00Z") }),
+        candidate("C3", { merge: merge(null), pullRequest: { url: "", number: 7, branch: "b", at: "", mergedAt: "2026-09-01T09:00:00Z" } }),
+        candidate("C4", { merge: { ...merge(null), stop: null } }),
+        candidate("C5", { merge: merge(null) }),
+      );
+      const items = waitingForYou(document, { candidateReports: { C1: report("decided"), C5: report("superseded") } });
+      expect(items).toEqual([{ key: "merge:C1", kind: "candidate", targetId: "C1", label: "Unione fermata", title: "Cancella un file.", goalId: null, askedAt: "2026-09-01T08:00:00Z", blocks: 1 }]);
     });
 
     it("keeps one order for every kind: the work held first, then the oldest", () => {

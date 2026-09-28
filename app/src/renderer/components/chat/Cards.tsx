@@ -34,6 +34,7 @@ import {
   type MandateAction,
   type ProjectDocument,
   type MergeRoute,
+  type MergeStop,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
@@ -779,7 +780,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.seams ? (
         <ContractFields assignment={assignment} decisions={project.document.decisions} />
       ) : assignment.dependencies.length ? (
-        <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field>
+        <Field label="Dipendenze">
+          <ReferenceText text={assignment.dependencies.join(", ")} />
+        </Field>
       ) : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
@@ -814,7 +817,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
+      <p className="mt-2 text-ui-sm text-muted-foreground">
+        <ReferenceText text={assignmentLine(project.document, assignment)} />
+      </p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
@@ -939,7 +944,7 @@ function QualityField({ items }: { items: QualityItem[] }) {
                 <span className="text-foreground">{QUALITY_LABEL[item.code]}</span>
                 <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
                   <Sep />
-                  {item.detail}
+                  {item.code === "COMMIT_MESSAGE" ? item.detail : <ReferenceText text={item.detail} />}
                 </span>
                 {item.fix ? <span className="block text-ui-xs text-muted-foreground">Come sistemarlo: {item.fix}</span> : null}
               </span>
@@ -1132,12 +1137,12 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
               {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
               {answer?.kind === "facts" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  Risposta del Coordinatore: {answer.text}
+                  Risposta del Coordinatore: <ReferenceText text={answer.text} />
                   <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
                 </div>
               ) : answer?.kind === "person" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  {answer.text ? `Risposta della persona: ${answer.text}` : <ReferenceText text={`Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />}
+                  <ReferenceText text={answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />
                 </div>
               ) : null}
             </li>
@@ -1158,7 +1163,7 @@ function ThreadLinks({ assignmentId }: { assignmentId: string }) {
       <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
         {threads.map((thread) => (
           <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
-            {thread.title} ({thread.messages.length})
+            <ReferenceText text={thread.title} links={false} /> ({thread.messages.length})
           </button>
         ))}
       </div>
@@ -1287,7 +1292,8 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   if (pull?.mergedAt) {
     text = pull.mergedBy === "coordinator" ? "Unito da Trama con il via libera del Coordinatore." : pull.mergedBy === "person" ? "Unito da Trama con il tuo ok sulle schermate." : "Unito su GitHub.";
   } else if (merge && open && merge.status !== "merged") {
-    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.detail;
+    // A destructive stop says it in its own field, with consequences and alternatives (issue #41).
+    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.stop ? null : merge.detail;
     if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
   } else if (open && candidate.humanRejection) {
     text = `Hai rifiutato il candidato: ${candidate.humanRejection.note}`;
@@ -1306,8 +1312,60 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   return (
     <p className={cn("mt-2 text-ui-sm", tone)} data-testid="candidate-merge" data-route={route} data-status={pull?.mergedAt ? "merged" : (merge?.status ?? "none")}>
       {text}
+      {pull?.mergedAt && pull.mergedBy === "coordinator" && merge?.mandateVersion ? <MergeMandate version={merge.mandateVersion} /> : null}
     </p>
   );
+}
+
+/**
+ * A merge the Coordinator stopped because it destroys something (issue #41): the reasons, what happens and what the
+ * person can do. The texts of the stop are Trama's records, in Italian.
+ */
+function MergeStopField({ stop }: { stop: MergeStop }) {
+  const t = useT();
+  return (
+    <div className="mt-2 space-y-1 text-ui-sm" data-testid="candidate-merge-stop">
+      <p className="text-foreground/90">
+        {t("mergeStop.title")} {stop.reasons.join(" ")}
+      </p>
+      <p className="font-medium text-foreground">{t("mergeStop.consequences")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.consequences.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+      <p className="font-medium text-foreground">{t("mergeStop.alternatives")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.alternatives.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ul>
+      {stop.acknowledgedAt ? <p className="text-muted-foreground">{t("mergeStop.declined")}</p> : null}
+    </div>
+  );
+}
+
+/** The person's choice on a stopped merge: leave it, or merge it with their ok (issue #41). Primary last. */
+function MergeStopActions({ candidateId, declined }: { candidateId: string; declined: boolean }) {
+  const t = useT();
+  return (
+    <>
+      {declined ? null : (
+        <Button size="sm" variant="outline" onClick={() => void act("candidate:declineMerge", { candidateId })}>
+          {t("mergeStop.decline")}
+        </Button>
+      )}
+      <Button size="sm" onClick={() => void act("candidate:approve", { candidateId })}>
+        <IconGitMerge /> {t("mergeStop.merge")}
+      </Button>
+    </>
+  );
+}
+
+/** The mandate a merge on the Coordinator's green light ran under (issue #41). */
+function MergeMandate({ version }: { version: number }) {
+  const t = useT();
+  return <span data-testid="candidate-merge-mandate"> {t("merge.mandateVersion", { version })}</span>;
 }
 
 /**
@@ -1353,6 +1411,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const merged = Boolean(candidate.pullRequest?.mergedAt);
   const open = report.blockers.length === 0 && report.state !== "superseded" && !merged;
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
+  // Issue #41: a destructive change the Coordinator stopped waits for the person's choice.
+  const stop = candidate.merge?.status === "stopped" ? (candidate.merge.stop ?? null) : null;
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
@@ -1439,6 +1499,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
+      {stop && open ? <MergeStopField stop={stop} /> : null}
       {candidate.pullRequest ? (
         <button
           type="button"
@@ -1481,6 +1542,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             </Button>
           </>
         ) : null}
+        {stop && open && !approved ? <MergeStopActions candidateId={candidateId} declined={Boolean(stop.acknowledgedAt)} /> : null}
         {route === "person" && approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request

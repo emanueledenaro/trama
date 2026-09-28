@@ -3,7 +3,7 @@ import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } fro
 import { placeGrillingQuestion } from "@shared/grilling";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
-import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
+import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 import { nextStepViews, workState, workStateText } from "./workPhase";
 
@@ -303,6 +303,19 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     const waiting = withAssignment();
     waiting.assignment.waitingForProvider = { provider: "codex", until: null, since: at(3).toISOString() };
     expect(workState(waiting.document, "r3")).toMatchObject({ phase: "blocked", blocker: expect.stringContaining("aspetta che ChatGPT torni disponibile"), moves: [] });
+  });
+
+  it("waits for the person, not for new work, on a candidate stopped by a changed decision or a choice left open (issue #390)", () => {
+    const changed = withAssignment();
+    const stale = candidate(changed.document, changed.assignment.id, "pass", "approved");
+    const decision = changed.document.decisions[0]!;
+    decide(changed.document, { id: decision.id, value: "Anche il cliente, senza lo stato interno", acceptedExample: "e", rationale: "r" });
+    expect(workState(changed.document, "r3")).toMatchObject({
+      phase: "blocked",
+      moves: [{ move: "reviewCandidate", actor: "person", label: "Verifica il candidato", targetId: stale.id }],
+    });
+    // The Coordinator has no move of its own: it does not assign new work on a candidate only the person can settle.
+    expect(moves(changed.document, "r3")).not.toContain("assignWork");
   });
 
   it("is not held by a candidate replaced by later work on the same issue, even on other modules (U02)", () => {
