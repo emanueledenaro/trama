@@ -67,14 +67,16 @@ export function milestones(document: ProjectDocument, sliceViews: Record<string,
 }
 
 /**
- * The milestones reached and not told yet, or null when Trama reads the milestones of the project for the first time:
- * what was reached before is not news. Pure.
+ * The milestones reached and not told yet. The first reading of a project takes note of what it already reached, which
+ * is not news, and returns none: a project opened with slices done starts no recap. Changes the document only then.
  */
-export function untoldMilestones(document: ProjectDocument, sliceViews: Record<string, SliceView[]>): Milestone[] | null {
-  const ledger = document.recap;
+export function newMilestones(document: ProjectDocument, sliceViews: Record<string, SliceView[]>): Milestone[] {
   const reached = milestones(document, sliceViews);
-  if (!ledger) return null;
-  const told = new Set(ledger.told);
+  if (!document.recap) {
+    markTold(document, reached.map((m) => m.key));
+    return [];
+  }
+  const told = new Set(document.recap.told);
   return reached.filter((m) => !told.has(m.key));
 }
 

@@ -177,7 +177,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
-import { asksForRecap, markTold, type Milestone, milestones, recapTitle, untoldMilestones, writeRecap } from "./core/recap";
+import { asksForRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
@@ -879,14 +879,10 @@ export class TramaController {
   private recapMilestones(project: ActiveProjectState): boolean {
     if (!project.stateWritable) return false;
     const sources = this.waitingSources(project);
-    const untold = untoldMilestones(project.document, sources.sliceViews ?? {});
-    if (untold === null) {
-      markTold(project.document, milestones(project.document, sources.sliceViews ?? {}).map((m) => m.key));
-      return true;
-    }
-    if (!untold.length) return false;
-    this.appendRecap(project, "milestone", untold, sources);
-    return true;
+    const first = !project.document.recap;
+    const untold = newMilestones(project.document, sources.sliceViews ?? {});
+    if (untold.length) this.appendRecap(project, "milestone", untold, sources);
+    return first || untold.length > 0;
   }
 
   /** Writes a recap and its card in the chat (A03): under the goal the person asked it in, else on the whole project. */
@@ -918,7 +914,7 @@ export class TramaController {
     }
     // Milestones reached and not told yet are part of this recap, so they are not told again right after it.
     const sources = this.waitingSources(project);
-    const untold = untoldMilestones(project.document, sources.sliceViews ?? {}) ?? [];
+    const untold = newMilestones(project.document, sources.sliceViews ?? {});
     this.appendRecap(project, untold.length ? "milestone" : "request", untold, sources, goal);
     this.changed();
   }

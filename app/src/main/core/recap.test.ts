@@ -3,7 +3,7 @@ import type { Candidate, CoordinatorRequest, ProjectDocument, RequestStep, Slice
 import { asksForRecap, recapTitle } from "@shared/recap";
 import { emptyDocument } from "./document";
 import { createMandateRequest } from "./pact";
-import { doneSince, markTold, MAX_DONE, milestones, untoldMilestones, writeRecap } from "./recap";
+import { markTold, MAX_DONE, milestones, newMilestones, writeRecap } from "./recap";
 import { NOTHING_GOING_ON } from "./statusLine";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute)).toISOString();
@@ -80,7 +80,7 @@ function merge(document: ProjectDocument, id: string, number: number) {
 }
 
 function recap(document: ProjectDocument, minute: number, reason: "milestone" | "request", sliceViews: Record<string, SliceView[]> = {}) {
-  const untold = untoldMilestones(document, sliceViews) ?? [];
+  const untold = newMilestones(document, sliceViews);
   return writeRecap(document, { id: `R-${minute}`, at: at(minute), reason, milestones: untold, runningRequestId: null, sources: { sliceViews } });
 }
 
@@ -120,9 +120,18 @@ describe("choosing the milestones", () => {
   it("takes note of what a project already reached the first time, without telling it", () => {
     const document = emptyDocument("p");
     slicedPlan(document);
-    expect(untoldMilestones(document, views({ S1: "done" }))).toBeNull();
-    markTold(document, milestones(document, views({ S1: "done" })).map((m) => m.key));
-    expect(untoldMilestones(document, views({ S1: "done", S2: "ready" }))).toEqual([]);
+    expect(newMilestones(document, views({ S1: "done" }))).toEqual([]);
+    expect(document.recap).toEqual({ told: ["slice:P-1:S1"], recaps: [] });
+    expect(newMilestones(document, views({ S1: "done", S2: "ready" }))).toEqual([]);
+    expect(newMilestones(document, views({ S1: "done", S2: "done" })).map((m) => m.key)).toEqual(["slice:P-1:S2"]);
+  });
+
+  it("does not make earlier milestones news when the first recap is one the person asked for", () => {
+    const document = emptyDocument("p");
+    slicedPlan(document);
+    const reached = views({ S1: "done", S2: "ready" });
+    expect(recap(document, 5, "request", reached).milestones).toEqual([]);
+    expect(newMilestones(document, reached)).toEqual([]);
   });
 
   it("tells a milestone once, in one recap, also when it arrives with other events", () => {
@@ -132,13 +141,13 @@ describe("choosing the milestones", () => {
     // The slice is done and its candidate merged in the same change: one recap with both.
     merge(document, "C-1", 52);
     const reached = views({ S1: "done", S2: "ready" });
-    expect(untoldMilestones(document, reached)?.map((m) => m.key)).toEqual(["slice:P-1:S1", "merged:C-1"]);
+    expect(newMilestones(document, reached).map((m) => m.key)).toEqual(["slice:P-1:S1", "merged:C-1"]);
     const written = recap(document, 10, "milestone", reached);
     expect(written.milestones).toEqual(["Fetta S1 fatta: Stato della revisione (#41)", "Candidato unito con la pull request #52"]);
     expect(document.recap?.recaps).toHaveLength(1);
     // Later events find nothing new: no second recap for the same milestone.
-    expect(untoldMilestones(document, reached)).toEqual([]);
-    expect(untoldMilestones(document, views({ S1: "done", S2: "done" }))?.map((m) => m.key)).toEqual(["slice:P-1:S2"]);
+    expect(newMilestones(document, reached)).toEqual([]);
+    expect(newMilestones(document, views({ S1: "done", S2: "done" })).map((m) => m.key)).toEqual(["slice:P-1:S2"]);
   });
 
   it("does not take a slice in verification or a pull request still open as a milestone", () => {
