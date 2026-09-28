@@ -1,3 +1,4 @@
+import { specialistLine } from "@shared/duties";
 import { IconArrowLeft, IconMessageCircle } from "@tabler/icons-react";
 import { useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
@@ -76,7 +77,7 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
         </span>
         <span className="flex items-center gap-1.5 truncate text-ui-sm text-muted-foreground">
           <StatusDot status={specialist.status} />
-          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}</span>
+          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialistLine(project.document, specialist)}</span>
         </span>
         {current ? (
           <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
@@ -99,6 +100,7 @@ function roleSummary(specialist: Specialist): { task: string; skills: string[] }
 /** A squad lead, a squad's QA or a shared role: what it does and with which skills; it opens the specialist. */
 function MemberRow({ specialist }: { specialist: Specialist }) {
   const setInspector = useUi((s) => s.setInspector);
+  const document = useUi((s) => s.app?.project?.document ?? null);
   const { task, skills } = roleSummary(specialist);
   return (
     <button
@@ -119,7 +121,7 @@ function MemberRow({ specialist }: { specialist: Specialist }) {
         <span className="block text-ui-sm text-muted-foreground">{task}</span>
         {specialist.status !== "available" ? (
           <span className="block truncate text-ui-sm text-muted-foreground">
-            {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
+            {STATUS_LABEL[specialist.status]}<Sep />{specialistLine(document, specialist)}
           </span>
         ) : null}
         <SkillList skills={skills} />

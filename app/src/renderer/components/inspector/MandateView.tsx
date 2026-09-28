@@ -9,7 +9,8 @@ import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
-import { workStoppedBy } from "@shared/mandate";
+import { useT } from "@/lib/i18n";
+import { type StoppedWork, workStoppedBy } from "@shared/mandate";
 
 /** What a restriction took away, in one line. */
 function restrictionText(restriction: NonNullable<MandateSnapshot["restriction"]>, moduleName: (id: string) => string): string {
@@ -20,9 +21,34 @@ function restrictionText(restriction: NonNullable<MandateSnapshot["restriction"]
   return `Ristretto: ${parts.join("; ")}.`;
 }
 
+/** The work a change of the mandate stops before it takes effect; a dependent says which work it builds on (C06). */
+export function StoppedWorkList({ stopping, lead }: { stopping: StoppedWork[]; lead: string }) {
+  const t = useT();
+  return (
+    <>
+      <p className="text-ui-sm text-muted-foreground">
+        {lead} {stopping.length ? t("mandate.stoppedWork.some") : t("mandate.stoppedWork.none")}
+      </p>
+      {stopping.length ? (
+        <ul className="list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/90" data-testid="mandate-stopped-work">
+          {stopping.map(({ specialist, assignment, dependsOn }) => (
+            <li key={assignment.id} className="break-words">
+              <AgentName agent={specialist} />
+              <Sep />
+              {assignment.objective}
+              {dependsOn ? <span className="text-muted-foreground"> {t("mandate.stoppedWork.dependsOn", { objective: dependsOn.objective })}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
 export function MandateView() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const { mandate, mandateRequests } = project.document;
   const pending = pendingMandateRequest({ mandateRequests });
@@ -155,6 +181,12 @@ export function MandateView() {
                   ))}
                 </div>
               </div>
+              {narrower ? (
+                <StoppedWorkList
+                  stopping={workStoppedBy(project.document, { scopeModuleIds: keptModules, authorizedActions: keptActions })}
+                  lead={t("mandate.stoppedWork.restrictLead")}
+                />
+              ) : null}
               <div className="cta-row">
                 <Button size="sm" variant="ghost" onClick={() => setRestricting(false)}>
                   Annulla
@@ -255,21 +287,7 @@ export function MandateView() {
                 className="min-h-12"
                 autoFocus
               />
-              <p className="text-ui-sm text-muted-foreground">
-                Senza mandato il Coordinatore legge e propone, ma non agisce.
-                {stopping.length ? " Si fermano questi lavori:" : " Nessun lavoro in corso si ferma."}
-              </p>
-              {stopping.length ? (
-                <ul className="list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/90">
-                  {stopping.map(({ specialist, assignment }) => (
-                    <li key={assignment.id} className="break-words">
-                      <AgentName agent={specialist} />
-                      <Sep />
-                      {assignment.objective}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+              <StoppedWorkList stopping={stopping} lead={t("mandate.stoppedWork.revokeLead")} />
               <div className="cta-row">
                 <Button size="sm" variant="ghost" onClick={() => setRevoking(false)}>
                   Annulla

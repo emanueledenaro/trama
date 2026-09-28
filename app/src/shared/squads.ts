@@ -1,10 +1,17 @@
 import type { AssignmentStatus, ProjectDocument, Specialist, SpecialistAssignment, Squad } from "./domain";
+import { clampParallelDevelopers, parallelDevelopers } from "./parallel";
 import { SHARED_ROLES } from "./roster";
+import { cloudWorking } from "./workPlace";
 
 /**
  * Squads by product area (A10, Q14, Q15, Q22): who belongs to which squad, the limits of developers at work per squad and
  * of squads at work per project, and the squad's status line. Pure: the main process forms the squads, the renderer
  * shows them, and both read the limits from here.
+ *
+ * A developer's work starts only when three limits allow it: the developers at work across all open projects (#346,
+ * `sharedDevelopers`, held by the main process's queue), the project's developers in parallel (W08,
+ * `parallelDevelopers`), and the squads' own (developers at work per squad, squads at work together). Developers outside
+ * squads, as in a project whose squads are not formed yet, count only in the first two.
  */
 
 /** Developers of one squad and squads of a project at work at the same time unless the person changes it (Q22). */
@@ -12,33 +19,42 @@ export const DEFAULT_DEVELOPERS_PER_SQUAD = 3;
 export const DEFAULT_ACTIVE_SQUADS = 3;
 /** How many developers a squad has at most (Q15): the limit of developers at work is a setting, the squad's size is not. */
 export const SQUAD_SIZE = 3;
-/** The range the project settings accept for both limits. */
+/** The range the project settings accept: up to the squad's size for its developers at work, up to six squads. */
 export const MIN_SQUAD_LIMIT = 1;
-export const MAX_SQUAD_LIMIT_SETTING = 6;
+export const MAX_DEVELOPERS_PER_SQUAD = SQUAD_SIZE;
+export const MAX_ACTIVE_SQUADS = 6;
 
-/** A requested limit brought into the accepted range, or null when it is not a whole number. */
-export function clampSquadLimit(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isInteger(value)) return null;
-  return Math.min(MAX_SQUAD_LIMIT_SETTING, Math.max(MIN_SQUAD_LIMIT, value));
-}
+const clampTo = (value: unknown, max: number): number | null =>
+  typeof value === "number" && Number.isInteger(value) ? Math.min(max, Math.max(MIN_SQUAD_LIMIT, value)) : null;
+
+/** A requested limit of developers at work per squad brought into its range, or null when it is not a whole number. */
+export const clampDevelopersPerSquad = (value: unknown): number | null => clampTo(value, MAX_DEVELOPERS_PER_SQUAD);
+/** A requested limit of squads at work together brought into its range, or null when it is not a whole number. */
+export const clampActiveSquads = (value: unknown): number | null => clampTo(value, MAX_ACTIVE_SQUADS);
 
 export interface SquadLimits {
   developersPerSquad: number;
   activeSquads: number;
+  /** The project's developers in parallel (W08): the person's setting, else its squads at work at their limit. */
+  project: number;
 }
 
-/** The project's limits: the person's settings, the developers in parallel chosen before squads (W08), or three. */
-export function squadLimits(document: Pick<ProjectDocument, "settings">): SquadLimits {
+/** The project's limits: the person's settings, or three developers per squad, three squads, and three per squad formed in the project. */
+export function squadLimits(document: Pick<ProjectDocument, "settings" | "team">): SquadLimits {
   const settings = document.settings;
-  return {
-    developersPerSquad: clampSquadLimit(settings?.developersPerSquad) ?? clampSquadLimit(settings?.parallelDevelopers) ?? DEFAULT_DEVELOPERS_PER_SQUAD,
-    activeSquads: clampSquadLimit(settings?.activeSquads) ?? DEFAULT_ACTIVE_SQUADS,
-  };
+  const developersPerSquad = clampDevelopersPerSquad(settings?.developersPerSquad) ?? DEFAULT_DEVELOPERS_PER_SQUAD;
+  const activeSquads = clampActiveSquads(settings?.activeSquads) ?? DEFAULT_ACTIVE_SQUADS;
+  // Without the person's choice the project lets its squads work at their limit: three before squads (W08), up to nine.
+  // Developers outside squads work as one more group, as the project's capacity counts them.
+  const groups = teamSquads(document).length + (developersOutsideSquads(document).length ? 1 : 0);
+  const squads = Math.max(1, Math.min(activeSquads, groups));
+  const project = settings?.parallelDevelopers !== undefined ? parallelDevelopers(document) : clampParallelDevelopers(developersPerSquad * squads)!;
+  return { developersPerSquad, activeSquads, project };
 }
 
 const ACTIVE_STATUSES: AssignmentStatus[] = ["preparing", "running", "stopRequested"];
-/** Work that runs now, on the Mac or in a cloud session alike (Q29). */
-const running = (assignment: SpecialistAssignment) => ACTIVE_STATUSES.includes(assignment.status);
+/** Work that runs now, on the Mac or in a cloud session alike (Q29, A19). */
+const running = (assignment: SpecialistAssignment) => ACTIVE_STATUSES.includes(assignment.status) || cloudWorking(assignment);
 
 export const teamSquads = (document: Pick<ProjectDocument, "team">): Squad[] => document.team.squads ?? [];
 
@@ -47,12 +63,6 @@ export function squadOf(document: Pick<ProjectDocument, "team">, specialistId: s
   return teamSquads(document).find((s) => s.leadId === specialistId || s.qaId === specialistId || s.developerIds.includes(specialistId)) ?? null;
 }
 
-/**
- * The group whose limits a developer's work counts in: its squad, or "" for developers outside any squad, who work as
- * one squad of their own (the whole team, before the squads exist).
- */
-const groupOf = (document: Pick<ProjectDocument, "team">, specialistId: string) => squadOf(document, specialistId)?.id ?? "";
-
 const members = (document: Pick<ProjectDocument, "team">) => document.team.specialists.filter((s) => s.status !== "removed");
 
 /** Developers with work running now, wherever it runs. */
@@ -60,66 +70,83 @@ export function developersAtWork(document: Pick<ProjectDocument, "team">): Speci
   return members(document).filter((s) => s.role === "developer" && s.assignments.some(running));
 }
 
-/** The squads with a developer at work, as groups ("" for developers outside squads). */
-function activeGroups(document: Pick<ProjectDocument, "team">, except: string | null = null): Set<string> {
-  return new Set(developersAtWork(document).filter((s) => s.id !== except).map((s) => groupOf(document, s.id)));
+/** The squads with a developer at work. */
+function activeSquadIds(document: Pick<ProjectDocument, "team">, except: string | null = null): Set<string> {
+  return new Set(developersAtWork(document).flatMap((s) => (s.id === except ? [] : [squadOf(document, s.id)?.id ?? []].flat())));
 }
 
-/** Why one more piece of a developer's work cannot start now within the limits (Q22), or null when it can. */
-export type SquadLimitProblem = { kind: "developers"; squad: Squad | null; limit: number } | { kind: "squads"; limit: number };
+/** Why one more piece of a developer's work cannot start now within the project's and the squads' limits, or null. */
+export type SquadLimitProblem =
+  | { kind: "project"; limit: number }
+  | { kind: "developers"; squad: Squad; limit: number }
+  | { kind: "squads"; limit: number };
 
 export function squadLimitProblem(document: Pick<ProjectDocument, "team" | "settings">, specialist: Specialist): SquadLimitProblem | null {
   if (specialist.role !== "developer") return null;
   const limits = squadLimits(document);
-  const group = groupOf(document, specialist.id);
-  const colleagues = developersAtWork(document).filter((s) => s.id !== specialist.id && groupOf(document, s.id) === group).length;
-  if (colleagues >= limits.developersPerSquad) return { kind: "developers", squad: squadOf(document, specialist.id), limit: limits.developersPerSquad };
-  const active = activeGroups(document, specialist.id);
-  if (!active.has(group) && active.size >= limits.activeSquads) return { kind: "squads", limit: limits.activeSquads };
+  const others = developersAtWork(document).filter((s) => s.id !== specialist.id);
+  if (others.length >= limits.project) return { kind: "project", limit: limits.project };
+  const squad = squadOf(document, specialist.id);
+  if (!squad) return null;
+  const colleagues = others.filter((s) => squad.developerIds.includes(s.id)).length;
+  if (colleagues >= limits.developersPerSquad) return { kind: "developers", squad, limit: limits.developersPerSquad };
+  const active = activeSquadIds(document, specialist.id);
+  if (!active.has(squad.id) && active.size >= limits.activeSquads) return { kind: "squads", limit: limits.activeSquads };
   return null;
 }
 
 /** The problem as a technical error, for the tools and the logs. */
 export function squadLimitError(problem: SquadLimitProblem): string {
-  if (problem.kind === "squads") {
-    return `${problem.limit} ${problem.limit === 1 ? "squad is" : "squads are"} already at work, the project's limit: assign in a squad at work, or wait until one ends.`;
+  const are = (n: number, one: string, many: string) => `${n} ${n === 1 ? `${one} is` : `${many} are`}`;
+  switch (problem.kind) {
+    case "project":
+      return `${are(problem.limit, "developer", "developers")} already at work, the project's limit: assign more when one of them ends (spec #137).`;
+    case "squads":
+      return `${are(problem.limit, "squad", "squads")} already at work, the project's limit: assign in a squad at work, or wait until one ends.`;
+    case "developers":
+      return `${are(problem.limit, "developer", "developers")} already at work in the squad ${problem.squad.name}, the limit per squad: assign more when one of them ends.`;
   }
-  const where = problem.squad ? `squad ${problem.squad.name}` : "team";
-  return `${problem.limit} ${problem.limit === 1 ? "developer is" : "developers are"} already at work in the ${where}, the limit per squad: assign more when one of them ends.`;
 }
 
 /** The problem in the person's words. */
 export function squadLimitText(problem: SquadLimitProblem): string {
-  if (problem.kind === "squads") {
-    return problem.limit === 1 ? "Una squadra è già al lavoro, il limite del progetto." : `${problem.limit} squadre sono già al lavoro, il limite del progetto.`;
+  switch (problem.kind) {
+    case "project":
+      return problem.limit === 1 ? "Uno sviluppatore è già al lavoro, il limite del progetto." : `${problem.limit} sviluppatori sono già al lavoro, il limite del progetto.`;
+    case "squads":
+      return problem.limit === 1 ? "Una squadra è già al lavoro, il limite del progetto." : `${problem.limit} squadre sono già al lavoro, il limite del progetto.`;
+    case "developers":
+      return problem.limit === 1
+        ? `Uno sviluppatore è già al lavoro nella squadra ${problem.squad.name}, il limite per squadra.`
+        : `${problem.limit} sviluppatori sono già al lavoro nella squadra ${problem.squad.name}, il limite per squadra.`;
   }
-  const where = problem.squad ? `nella squadra ${problem.squad.name}` : "nel team";
-  return problem.limit === 1
-    ? `Uno sviluppatore è già al lavoro ${where}, il limite per squadra.`
-    : `${problem.limit} sviluppatori sono già al lavoro ${where}, il limite per squadra.`;
 }
 
 /**
- * Whether some squad could start one more piece of work now: it has room for a developer, and it is already at work or
- * the project has room for one more squad at work. It does not look at who is free.
+ * Whether one more piece of work could start now in the project: under the project's limit, and a developer outside
+ * squads, or a squad with room that is at work already or fits among the squads at work. It does not look at who is free.
  */
 export function roomForWork(document: Pick<ProjectDocument, "team" | "settings">): boolean {
   const limits = squadLimits(document);
   const working = developersAtWork(document);
-  const groups = new Set(teamSquads(document).map((s) => s.id));
-  if (!groups.size || members(document).some((s) => s.role === "developer" && !squadOf(document, s.id))) groups.add("");
-  const active = activeGroups(document);
-  return [...groups].some(
-    (group) => working.filter((s) => groupOf(document, s.id) === group).length < limits.developersPerSquad && (active.has(group) || active.size < limits.activeSquads),
+  if (working.length >= limits.project) return false;
+  if (!teamSquads(document).length || developersOutsideSquads(document).length) return true;
+  const active = activeSquadIds(document);
+  return teamSquads(document).some(
+    (squad) => working.filter((s) => squad.developerIds.includes(s.id)).length < limits.developersPerSquad && (active.has(squad.id) || active.size < limits.activeSquads),
   );
 }
 
-/** How many developers may work at once in the whole project: the limit per squad, times the squads that may work together. */
+/**
+ * How many developers may work at once in the project: its own limit, and within it the squads that may work together
+ * at their limit, plus the developers outside squads.
+ */
 export function projectCapacity(document: Pick<ProjectDocument, "team" | "settings">): number {
   const limits = squadLimits(document);
-  // Developers outside squads work as one more squad, as the limits count them.
-  const groups = teamSquads(document).length + (developersOutsideSquads(document).length || !teamSquads(document).length ? 1 : 0);
-  return limits.developersPerSquad * Math.min(limits.activeSquads, groups);
+  const squads = teamSquads(document).length;
+  if (!squads) return limits.project;
+  const bySquads = limits.developersPerSquad * Math.min(limits.activeSquads, squads) + developersOutsideSquads(document).length;
+  return Math.min(limits.project, bySquads);
 }
 
 /**
@@ -172,7 +199,7 @@ export function squadStatusLine(document: Pick<ProjectDocument, "team">, squad: 
   const developers = members(document).filter((s) => squad.developerIds.includes(s.id));
   const atWork = developers.flatMap((s) => {
     const current = s.assignments.findLast(running);
-    return current ? [`${s.name} lavora a ${current.objective}${current.workplace === "cloud" ? " in una sessione cloud" : ""}`] : [];
+    return current ? [`${s.name} lavora a ${current.objective}${cloudWorking(current) ? " in una sessione cloud" : ""}`] : [];
   });
   const waiting = developers.filter((s) => s.assignments.some((a) => a.status === "paused")).map((s) => s.name);
   const parts = [...atWork];

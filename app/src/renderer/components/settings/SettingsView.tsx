@@ -20,13 +20,16 @@ import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference 
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_SQUAD_LIMIT_SETTING, MIN_SQUAD_LIMIT, squadLimits, type SquadLimits } from "@shared/squads";
+import { MAX_ACTIVE_SQUADS, MAX_DEVELOPERS_PER_SQUAD, MIN_SQUAD_LIMIT, squadLimits } from "@shared/squads";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, sharedDevelopers } from "@shared/parallel";
+import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
+import { RuleLabel } from "@/components/chat/RuleLabel";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -220,7 +223,10 @@ function GeneralSection() {
           <TramaMark size={40} variant="tile" />
           <div className="min-w-0 flex-1">
             <div className="text-ui text-foreground">Trama</div>
-            <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("settings.about.version", { version: __TRAMA_VERSION__ })}</div>
+            <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="about-version">
+              {t("settings.about.version", { version: __TRAMA_VERSION__ })}
+            </div>
+            {__TRAMA_COMMIT__ && <div className="mt-0.5 font-mono text-ui-sm text-muted-foreground">{t("settings.about.commit", { commit: __TRAMA_COMMIT__ })}</div>}
           </div>
         </div>
       </Group>
@@ -524,24 +530,31 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
-      <SquadLimitsGroup />
+      <DevelopersAtWorkGroup />
+      <WorkPlaceGroup />
     </>
   );
 }
 
-const LIMIT_OPTIONS = Array.from({ length: MAX_SQUAD_LIMIT_SETTING - MIN_SQUAD_LIMIT + 1 }, (_, index) => MIN_SQUAD_LIMIT + index);
+/** The shared limit's choices (issue #39): the small numbers one by one, then the larger steps. */
+const SHARED_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
 
-/** One limit of the squads, as a row of numbers to pick from. */
-function LimitPicker({ label, value, setting }: { label: string; value: number; setting: keyof SquadLimits }) {
+const range = (min: number, max: number) => Array.from({ length: max - min + 1 }, (_, index) => min + index);
+const PARALLEL_OPTIONS = range(MIN_PARALLEL_DEVELOPERS, MAX_PARALLEL_DEVELOPERS_SETTING);
+const PER_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_DEVELOPERS_PER_SQUAD);
+const ACTIVE_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_ACTIVE_SQUADS);
+
+/** One limit as a row of numbers to pick from. */
+function LimitPicker({ label, testId, options, value, onPick }: { label: string; testId: string; options: number[]; value: number | null; onPick: (value: number) => void }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={`squad-limit-${setting}`}>
-      {LIMIT_OPTIONS.map((option) => (
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={testId}>
+      {options.map((option) => (
         <button
           key={option}
           type="button"
           role="radio"
           aria-checked={value === option}
-          onClick={() => void act("project:settings", { [setting]: option })}
+          onClick={() => onPick(option)}
           className={cn(
             "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
             value === option ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
@@ -554,24 +567,112 @@ function LimitPicker({ label, value, setting }: { label: string; value: number; 
   );
 }
 
-/** A10, Q22: how many developers of a squad and how many squads work at the same time in the open project; three and three. */
-function SquadLimitsGroup() {
+/**
+ * The limits of developers at work, from the widest (W08, #346, A10 Q22): in all projects, in the open project, per
+ * squad and squads together. A developer starts only when every one of them allows it; each has one control.
+ */
+function DevelopersAtWorkGroup() {
   const project = useUi((s) => s.app?.project ?? null);
-  const usable = project && !project.isDemo && project.stateWritable;
+  const usable = Boolean(project && !project.isDemo && project.stateWritable);
   const limits = project ? squadLimits(project.document) : null;
+  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
   const t = useT();
   const unavailable = !project ? t("settings.squads.openProject") : project.isDemo ? t("settings.squads.demo") : null;
+  const setProject = (setting: "parallelDevelopers" | "developersPerSquad" | "activeSquads") => (value: number) => void act("project:settings", { [setting]: value });
   return (
-    <Group title={project ? t("settings.squads.titleInProject", { name: project.name }) : t("settings.squads.title")} note={t("settings.squads.note")}>
+    <Group title={t("settings.parallel.title")} note={t("settings.squads.note")}>
+      <Row
+        label={t("settings.parallel.shared")}
+        description={t("settings.parallel.sharedDescription")}
+        control={
+          <LimitPicker
+            label={t("settings.parallel.sharedLabel")}
+            testId="shared-developers"
+            options={SHARED_OPTIONS}
+            value={shared}
+            onPick={(value) => void act("settings:update", { sharedDevelopers: value })}
+          />
+        }
+      />
+      <Row
+        label={project ? t("settings.parallel.inProject", { name: project.name }) : t("settings.parallel.inOpenProject")}
+        description={unavailable ?? t("settings.parallel.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.parallel.projectLabel")} testId="parallel-developers" options={PARALLEL_OPTIONS} value={limits.project} onPick={setProject("parallelDevelopers")} />
+          ) : null
+        }
+      />
       <Row
         label={t("settings.squads.developers")}
         description={unavailable ?? t("settings.squads.default")}
-        control={usable && limits ? <LimitPicker label={t("settings.squads.developers")} value={limits.developersPerSquad} setting="developersPerSquad" /> : null}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.squads.developers")} testId="squad-limit-developersPerSquad" options={PER_SQUAD_OPTIONS} value={limits.developersPerSquad} onPick={setProject("developersPerSquad")} />
+          ) : null
+        }
       />
       <Row
         label={t("settings.squads.active")}
         description={unavailable ?? t("settings.squads.default")}
-        control={usable && limits ? <LimitPicker label={t("settings.squads.active")} value={limits.activeSquads} setting="activeSquads" /> : null}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.squads.active")} testId="squad-limit-activeSquads" options={ACTIVE_SQUAD_OPTIONS} value={limits.activeSquads} onPick={setProject("activeSquads")} />
+          ) : null
+        }
+      />
+    </Group>
+  );
+}
+
+/**
+ * A19 (issue #260): where the developers' work runs in the open project. Automatic unless the person changes it; the
+ * cloud is offered only when the project's provider has one (Claude or Codex).
+ */
+function WorkPlaceGroup() {
+  const t = useT();
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = project && !project.isDemo && project.stateWritable;
+  const provider = project ? (project.document.coordinator.threadProvider ?? project.document.selectedProvider ?? "codex") : null;
+  const cloud = offersCloud(provider);
+  const setting = project ? workPlaceSetting(project.document) : null;
+  const options = cloud ? WORK_PLACE_SETTINGS : WORK_PLACE_SETTINGS.filter((value) => value === "local");
+  const selected = cloud ? setting : "local";
+  return (
+    <Group title={t("settings.workPlace.title")} note={t("settings.workPlace.note")}>
+      <Row
+        label={project ? t("settings.workPlace.inProject", { name: project.name }) : t("settings.workPlace.inOpenProject")}
+        description={
+          !project
+            ? t("settings.workPlace.openProject")
+            : project.isDemo
+              ? t("settings.workPlace.demo")
+              : !cloud
+                ? t("settings.workPlace.localOnly", { provider: PROVIDERS.find((p) => p.id === provider)?.name ?? String(provider) })
+                : t(`workPlace.setting.${setting!}.description`)
+        }
+        control={
+          usable ? (
+            <div role="radiogroup" aria-label={t("settings.workPlace.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="work-place">
+              {options.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected === value}
+                  disabled={!cloud}
+                  onClick={() => void act("project:settings", { workPlace: value })}
+                  className={cn(
+                    "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
+                    selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t(`workPlace.setting.${value}`)}
+                </button>
+              ))}
+            </div>
+          ) : null
+        }
       />
     </Group>
   );
@@ -604,7 +705,7 @@ function StandardSection() {
                 key={rule.id}
                 label={
                   <span className="flex items-center gap-2">
-                    {rule.label}
+                    <RuleLabel rule={rule} />
                     {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
                   </span>
                 }
@@ -689,7 +790,10 @@ function MonitorSection() {
         ) : null}
       </Group>
       <Group title={t("settings.monitor.repositories")}>
-        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} /> : null}
+        {/* The empty note never sits above the open project's repository: that row says it is not observed yet (issue #272). */}
+        {monitor.repositories.length === 0 && !(repository && !monitored) ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} />
+        ) : null}
         {monitor.repositories.map((repo) => {
           const status = monitor.status[repo];
           return (

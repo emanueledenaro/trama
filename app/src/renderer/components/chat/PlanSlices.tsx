@@ -1,4 +1,5 @@
 import type { ProjectDocument, SliceState, SliceTicket, SliceView, WorkPlan } from "@shared/domain";
+import { sliceStatus } from "@shared/states";
 import { projectCapacity } from "@shared/squads";
 import { readableFailure } from "@shared/providerFailure";
 import { useState } from "react";
@@ -11,15 +12,6 @@ import { act, useUi } from "@/lib/store";
  * The slices of a spec, split with AI Hero's to-tickets (M05): the breakdown the person approves or corrects, as the
  * skill quizzes the user, then where each slice stands. The states are computed by the main process.
  */
-
-const STATE: Record<SliceState, { label: string; tone: "secondary" | "info" | "success" | "warning" }> = {
-  blocked: { label: "Bloccata", tone: "secondary" },
-  paused: { label: "In pausa", tone: "warning" },
-  ready: { label: "Pronta", tone: "info" },
-  working: { label: "In lavoro", tone: "warning" },
-  verifying: { label: "In verifica", tone: "warning" },
-  done: { label: "Fatta", tone: "success" },
-};
 
 const number = (id: string) => id.replace(/^S/, "");
 
@@ -64,7 +56,7 @@ function Ticket({
             <Badge tone="outline">#{ticket.issue.number}</Badge>
           </button>
         ) : null}
-        {state ? <Badge tone={STATE[state].tone}>{STATE[state].label}</Badge> : null}
+        {state ? <Badge tone={sliceStatus(state, ticket).tone}>{sliceStatus(state, ticket).label}</Badge> : null}
       </div>
       <div className="mt-0.5 text-ui-sm text-muted-foreground">
         {ticket.blockedBy.length ? `Bloccata da: ${ticket.blockedBy.map(number).join(", ")}` : "Può iniziare subito"}
@@ -75,7 +67,7 @@ function Ticket({
           {who.selfPicked ? ", presa in autonomia" : ""}
         </div>
       ) : null}
-      {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">In pausa: {ticket.pause.reason}</div> : null}
+      {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">Sospesa: {ticket.pause.reason}</div> : null}
       {state === "ready" && ticket.waiting ? (
         <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="plan-slice-waiting">
           In attesa: {ticket.waiting}

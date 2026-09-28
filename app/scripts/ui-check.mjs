@@ -1090,7 +1090,7 @@ await shot("14b-grilling-withdrawn");
 // The seams come first and wait for the person, with the confirmation on the right; then the spec with the
 // template's sections, which stays in Trama without GitHub. The mandate allows planning, so the Coordinator would
 // confirm the seams and the slices by itself (A06): the check pauses continuous work, and in pause they stay the person's.
-await page.getByTestId("status-line").getByRole("button", { name: "Pausa", exact: true }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
 await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
@@ -1147,7 +1147,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 // The slices held the work for the person while in pause. After Riprendi, the end of the next turn lets the
 // Coordinator confirm them by itself within the mandate (A06): they stay in Trama without GitHub, the first is ready
 // and the others wait for it, and the work goes on by itself (W04). The example project runs no periodic round.
-await page.getByTestId("status-line").getByRole("button", { name: "Riprendi" }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Riprendi il Coordinatore" }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ state: "detached", timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("A che punto sono le fette?");
@@ -1260,6 +1260,18 @@ await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
 await page.getByRole("button", { name: /^Lavoro/ }).first().click();
+// Issue #272: Lavoro names the plan as its chat card does, and a finished candidate never reads "In costruzione".
+{
+  const workPanel = page.getByTestId("inspector");
+  await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
+  if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await shot(`10h-work-states-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+}
 await page.getByTestId("inspector").locator('button[data-record-id^="C-"]').first().click();
 await page.getByTestId("inspector").getByText(/^Diff catturato da Trama/).waitFor();
 if (await page.getByTestId("inspector").getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
@@ -1336,11 +1348,11 @@ await understandingStep.getByRole("button", { name: "Annulla" }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
 // of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).click();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 const pausedLine = page.locator('[data-testid="status-line"][data-paused="true"]');
 await pausedLine.waitFor({ timeout: 20_000 });
-await pausedLine.getByTestId("status-line-text").getByText(/In pausa: i turni in corso finiscono/).waitFor();
-const resumeButton = pausedLine.getByRole("button", { name: "Riprendi" });
+await pausedLine.getByTestId("status-line-text").getByText(/Coordinatore in pausa: i turni in corso finiscono/).waitFor();
+const resumeButton = pausedLine.getByRole("button", { name: "Riprendi il Coordinatore" });
 await resumeButton.waitFor();
 // The primary sits last on the right: Riprendi, unless the person has a move of their own, which stays the primary.
 const lastButton = pausedLine.getByRole("button").last();
@@ -1353,7 +1365,7 @@ await page.waitForTimeout(300);
 if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started a move in pause");
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
@@ -1406,8 +1418,13 @@ await settings.getByTestId("language-choice").getByRole("radio", { name: "Englis
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();
 await shot("12-settings-en");
+// Issue #348: Informazioni shows the version of app/package.json, in each language.
+const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
+const aboutVersion = settings.getByTestId("about-version");
+if (!(await aboutVersion.textContent())?.startsWith(`Version ${appVersion}.`)) throw new Error(`About does not show Version ${appVersion}`);
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano" }).click();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().waitFor();
+await settings.getByTestId("about-version").getByText(`Versione ${appVersion}.`, { exact: false }).waitFor();
 // B01: Informazioni shows the mark on its tile with the version, in every provider theme.
 await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
@@ -1542,7 +1559,9 @@ await queueToggle.click();
 const queue = focusBar.getByTestId("focus-queue");
 await queue.waitFor();
 if (!(await queue.getByTestId("focus-queue-item").count())) throw new Error("The task queue is empty");
-const pause = focusBar.getByRole("button", { name: "Metti in pausa" });
+// Issue #272: suspending the task in focus and the Coordinator's Pause never share a name.
+const pause = focusBar.getByRole("button", { name: "Sospendi questo lavoro" });
+if (await focusBar.getByRole("button", { name: /^(Metti in pausa|Pausa)$/ }).count()) throw new Error("A pause in the focus bar has an ambiguous name");
 const actionsOnRight = async (size) => {
   const bar = await focusBar.boundingBox();
   const button = await pause.boundingBox();
@@ -1560,6 +1579,7 @@ const focusIs = (title, equal) =>
 await focusIs(firstFocus, false);
 const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
 await pausedItem.waitFor({ timeout: 10_000 });
+await pausedItem.getByText(/^Sospeso/).waitFor();
 await shot("17a-focus-paused-next");
 await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
@@ -1851,7 +1871,7 @@ const candidateOf = async (card) => candidateCards.filter({ has: page.locator(`[
 const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
-await failedCard.getByText("In costruzione", { exact: true }).waitFor();
+await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
 await failedCard.getByText("Verifica non superata").waitFor();
 await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
@@ -1922,7 +1942,7 @@ await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i 
 // The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
 await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
-await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
+await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
@@ -2235,11 +2255,11 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
 const questionWork = assignmentCards.nth(6);
-await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+await questionWork.getByText("Aspetta una risposta", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
 await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
-await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("Aspetta una risposta").waitFor({ timeout: 20_000 });
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19e-developer-question");
 await send("[blocca-dubbio]");
@@ -2328,8 +2348,15 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const parallelSettings = page.getByTestId("settings");
 await parallelSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+// A10 with #346: one group holds the four limits, each with one control: all projects, this project (three per
+// squad formed, here one squad), developers per squad and squads together.
 const parallelPicker = parallelSettings.getByTestId("squad-limit-developersPerSquad");
 await parallelPicker.getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelSettings.getByTestId("parallel-developers").getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelSettings.getByTestId("shared-developers").getByRole("radio", { name: "6", checked: true }).waitFor();
+for (const id of ["shared-developers", "parallel-developers", "squad-limit-developersPerSquad", "squad-limit-activeSquads"]) {
+  if ((await parallelSettings.getByTestId(id).count()) !== 1) throw new Error(`The limit ${id} has not exactly one control`);
+}
 await parallelSettings.getByTestId("squad-limit-activeSquads").getByRole("radio", { name: "3", checked: true }).waitFor();
 await parallelPicker.getByRole("radio", { name: "2" }).click();
 await parallelPicker.getByRole("radio", { name: "2", checked: true }).waitFor();
@@ -2685,6 +2712,14 @@ await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" 
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+// Issue #272: the Monitor never says "no repository" above the repository it then offers.
+await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
+await page.getByTestId("settings").getByText("Repository osservati").waitFor();
+{
+  const text = await page.getByTestId("settings").innerText();
+  if (/Nessun repository/.test(text) && /Repository del progetto aperto/.test(text)) throw new Error("The Monitor says no repository above the project's one");
+}
+await shot("16f-monitor-settings");
 
 // P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
 await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();
@@ -2902,11 +2937,11 @@ await page.keyboard.press("Enter");
 // The card waits for the person in Aspetta te; the chat keeps its reference (issue #240).
 const reviewCard = await waitingItem(page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first(), 90_000);
 await reviewCard.getByText(/Approfondire l'annullamento/).first().waitFor();
-// Issue #270: Clean Code's card reads plain. The skill it received shows by name, not as "skill:<name>:<path>", the
-// proposal says "Approfondire" once, and its work is named, not cited by id. Both themes.
-await reviewCard.getByText(/Skill ricevute: .*improve-codebase-architecture/).first().waitFor();
+// Issues #270 and #272: Clean Code's card reads plain. The fake recommends only when the review received its skill,
+// no path or delivery proof shows, the options are the proposals' titles, and its work is named, not cited by id.
+await reviewCard.getByText(/Partire dall'annullamento/).first().waitFor();
 const reviewText = await reviewCard.innerText();
-if (/skill:|SKILL\.md|Approfondire: Approfondire|incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
+if (/skill:|SKILL\.md|Skill ricevute|Approfondire: |incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
 await reviewCard.evaluate((item) => item.scrollIntoView({ block: "start" }));
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
@@ -2998,6 +3033,25 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
+}
+// Issue #272: the Clean Code card offers the proposals by their own titles and no text of the fake's own checks; once
+// the person answers, the review's work says what was chosen, never "proposte da decidere" again.
+{
+  const reference = page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first();
+  const requestId = (await reference.getAttribute("data-waiting-key")).replace(/^question:/, "");
+  const body = await page.locator("body").innerText();
+  if (/Approfondire: /.test(body)) throw new Error("A Clean Code option repeats the verb of the question");
+  if (/Skill ricevute/.test(body)) throw new Error("The Clean Code card shows the fake's delivery proof");
+  await page.evaluate((id) => window.trama.invoke("decision:answer", { requestId: id, alternativeIndex: 1, freeText: null }), requestId);
+  await dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first().waitFor({ timeout: 20_000 });
+  if (/proposte da decidere/.test(await page.locator("body").innerText())) throw new Error("The review still asks to decide after the answer");
+  const answeredWork = dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first();
+  await answeredWork.scrollIntoViewIfNeeded();
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`22c-clean-code-answered-${dark ? "dark" : "light"}`);
+  }
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
@@ -3551,12 +3605,15 @@ await page.getByRole("button", { name: "Restringi", exact: true }).click();
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
+// Before it takes effect the form says which work stops (C06): here nothing runs, so nothing stops.
+await restrict.getByText(/si ferma subito; il resto continua\. Nessun lavoro in corso si ferma\./).waitFor();
 await mandateShots("26b-mandate-restrict");
 await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
 await mandateShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
@@ -3671,6 +3728,63 @@ await problemShots("27c-found-problem-local-backlog");
 await app.close();
 
 
+// Issue #42 (C10): the Coordinator reports on a ticket. A partial increment leaves the issue open, and Activity says what
+// is missing in Italian, with the criteria by name; a GitHub write that fails is a step "non riuscito", never an update.
+const ticketFile = join(await mkdtemp(join(tmpdir(), "trama-ui-ticket-gh-")), "ticket.json");
+const ticketIssue = { number: 42, title: "Annullo degli ordini dal riepilogo", state: "open", body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano", comments: [], pulls: {} };
+await writeFile(ticketFile, JSON.stringify(ticketIssue));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TICKET: ticketFile }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), await problemProject("ticket", "https://github.com/trama-ui/ticket.git"));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ticket" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Chiudere i ticket con le prove"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["openPullRequest", "integrateCandidate"],
+    limits: [],
+  }),
+);
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+const askTicket = async (text, reply) => {
+  await composer().click({ timeout: 60_000 });
+  await composer().pressSequentially(text);
+  await page.keyboard.press("Enter");
+  await page.getByText(reply).first().waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
+};
+// Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
+const ticketSteps = async (reply) => {
+  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+  const steps = page.getByTestId("inspector").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
+  const step = steps.filter({ hasText: reply }).first();
+  await step.waitFor({ timeout: 10_000 });
+  if ((await step.locator("button + *").count()) === 0) await step.getByRole("button").click();
+  return step;
+};
+await askTicket("[ticket] Aggiorna la issue 42", /Ho registrato l'avanzamento sulla issue #42/);
+const partialStep = await ticketSteps("avanzamento registrato");
+await partialStep.getByText("Resta aperta: manca «Il riepilogo mostra l'annullo»; manca «Le verifiche passano»; nessuna pull request di questo lavoro è stata unita.").waitFor();
+if (/Criterion|pull request of this work|[–—]/.test(await partialStep.innerText())) throw new Error("The ticket step is not plain Italian");
+let ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1 || ticketState.body !== ticketIssue.body) throw new Error("The partial report closed the issue or ticked a criterion");
+await partialStep.scrollIntoViewIfNeeded();
+await problemShots("30a-ticket-partial");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await writeFile(ticketFile, JSON.stringify({ ...ticketState, failComment: true }));
+await askTicket("[ticket:errore] Aggiorna ancora la issue 42", /Non sono riuscito ad aggiornare la issue #42/);
+const failedStep = await ticketSteps("aggiornamento non riuscito");
+await failedStep.getByText("GitHub non ha risposto come atteso: il resoconto non è stato pubblicato, la issue resta aperta.").waitFor();
+ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1) throw new Error("The failed report changed the issue");
+await failedStep.scrollIntoViewIfNeeded();
+await problemShots("30b-ticket-failed");
+await app.close();
+
 // Issue #249: the always active Coordinator of a project with a mandate. A provider limit holds moves, rounds and new
 // turns, and the status line says what it waits for; on reopening Trama the turn that waited for the limit waits again
 // and resumes by itself at its end, the turn Esci ended resumes by itself, reconciled first, and a project in Pause
@@ -3707,7 +3821,7 @@ const checkWaitingLine = async (where) => {
   await waitingLine.getByTestId("status-line-text").getByText(/^Aspetto che la quota di ChatGPT si sblocchi/).waitFor();
   await waitingLine.getByTestId("status-line-reason").getByText("Fino ad allora non parte nessun turno. Poi riprendo da solo.").waitFor();
   // The Pause stays reachable while the Coordinator waits.
-  await waitingLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+  await waitingLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
   if (/[–—]/.test(await waitingLine.innerText())) throw new Error(`${where}: dash in the status line`);
 };
 const alwaysReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
@@ -3770,7 +3884,7 @@ await reopenedRow.scrollIntoViewIfNeeded();
 await waitShots("28d-reopened-turn-resumed");
 
 // A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
-await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa", exact: true }).click();
+await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor();
 await app.close();
 ({ app, page } = await launch(alwaysEnv));
@@ -3790,6 +3904,178 @@ await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
 await waitShots("28e-reopened-paused");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #260 (A19): a developer's slice in a Claude Code cloud session, with the place of work the person chooses. The
+// project's setting sits in the settings; the assignment card says where the work runs, who chose it and why, the step
+// that enables the cloud when it cannot be used, and the session's link and state. The sessions are a declared fixture:
+// their state is written in the project's document and no real session opens. Light and dark.
+const cloudProject = await mkdtemp(join(tmpdir(), "trama-ui-cloud-"));
+await cp(resolve("resources/DemoProject"), cloudProject, { recursive: true });
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), cloudProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let cloudPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-cloud-")) cloudPath = join(dataDir, "Projects", file);
+}
+if (!cloudPath) throw new Error("Cloud sessions: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(cloudPath, "utf8"));
+  const start = Date.now();
+  const at = (minute) => new Date(start + minute * 60_000).toISOString();
+  const session = (overrides) => ({
+    provider: "claudeAgent",
+    url: "https://claude.ai/code/session_01ui",
+    branch: "feature/issue-21-carrello-trama-0c1a2b3c",
+    baseBranch: "main",
+    status: "working",
+    pullRequest: null,
+    startedAt: at(2),
+    checkedAt: at(3),
+    failure: null,
+    instructions: [{ text: "Lavora sul branch, esegui i controlli di pubblicazione prima del push e apri la pull request in bozza verso main.", at: at(2) }],
+    macChecks: null,
+    ...overrides,
+  });
+  const work = (id, specialistId, objective, extra) => ({
+    id,
+    specialistId,
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber: null,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "claude-sonnet-5",
+    provider: "claudeAgent",
+    modelReason: "Fetta di codice di media difficoltà.",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(1),
+    workspace: null,
+    threadId: null,
+    stops: [],
+    failure: null,
+    updatedAt: at(3),
+    reportedStatus: null,
+    ...extra,
+  });
+  const cloudReason = "È una fetta di codice senza prove dal vivo: in cloud libera il Mac e continua anche con Trama chiusa.";
+  const working = work("A-C10D0001", "S-ADA", "Il carrello ricorda i prodotti tra due visite", {
+    status: "running",
+    turns: [{ id: "cloud-1", number: 1, model: "claude-sonnet-5", provider: "claudeAgent", startedAt: at(2), endedAt: null, outcome: null }],
+    result: null,
+    lastUpdate: "Al lavoro in una sessione cloud sul branch feature/issue-21-carrello-trama-0c1a2b3c",
+    place: { where: "cloud", chosenBy: "coordinator", reason: cloudReason, cloudBlocked: null, at: at(2) },
+    cloud: session({}),
+  });
+  const returned = work("A-C10D0002", "S-BRUNO", "Il prezzo scontato si vede nella scheda", {
+    status: "completed",
+    turns: [{ id: "cloud-2", number: 1, model: "claude-sonnet-5", provider: "claudeAgent", startedAt: at(1), endedAt: at(3), outcome: "completed" }],
+    result: "La sessione cloud ha aperto la pull request in bozza #34.",
+    lastUpdate: "Incarico concluso",
+    workspace: { sourceRoot: cloudProject, worktreeRoot: join(cloudProject, "..", "wt-cloud-2"), branch: "feature/issue-22-prezzo-scontato-trama-5d6e7f80", baseSHA: "0".repeat(40) },
+    place: { where: "cloud", chosenBy: "setting", reason: "Il progetto usa il cloud quando possibile.", cloudBlocked: null, at: at(1) },
+    cloud: session({
+      url: "https://claude.ai/code/session_02ui",
+      branch: "feature/issue-22-prezzo-scontato-trama-5d6e7f80",
+      status: "returned",
+      pullRequest: { number: 34, url: "https://github.com/acme/negozio/pull/34", draft: true },
+      macChecks: { snapshotId: "snap-cloud-2", problems: [], at: at(3) },
+    }),
+  });
+  const local = work("A-C10D0003", "S-CARLA", "La pagina dell'ordine mostra lo stato della spedizione", {
+    status: "stopped",
+    turns: [],
+    result: null,
+    lastUpdate: "Fermato: la persona ha fermato il lavoro",
+    place: {
+      where: "local",
+      chosenBy: "coordinator",
+      reason: "Il cloud non si può usare ora, quindi lavora in locale. Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.",
+      cloudBlocked: {
+        reason: "Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.",
+        enable: "Pubblica il progetto su GitHub con il remoto origin, poi riprendi l'incarico.",
+      },
+      at: at(1),
+    },
+  });
+  const developer = (id, name, color, assignment) => ({
+    id,
+    name,
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color,
+    tag: "Next.js",
+    createdAt: at(0),
+    status: assignment.status === "running" ? "working" : "available",
+    model: "claude-sonnet-5",
+    tools: ["commands", "edits"],
+    updatedAt: at(3),
+    lastUpdate: "",
+    removal: null,
+    assignments: [assignment],
+  });
+  document.team.specialists.push(developer("S-ADA", "Ada", "blue", working), developer("S-BRUNO", "Bruno", "green", returned), developer("S-CARLA", "Carla", "orange", local));
+  document.settings = { ...(document.settings ?? {}), workPlace: "cloud" };
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (minute, referenceId) => ({ id: `E-cloud-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(minute), content: { type: "card", kind: "assignment", title: "assignment", detail: null, referenceId } });
+  document.events.push(card(1, local.id), card(2, working.id), card(3, returned.id));
+  await writeFile(cloudPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), cloudProject);
+const cloudCard = (name) => page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico / }).filter({ hasText: name }).last();
+// Trama closing and reopening does not stop a running cloud session (Q28): Ada's work is still at work.
+for (const [name, testid, file] of [
+  ["Ada", '[data-testid="cloud-session"][data-status="working"]', "31b-cloud-session-working"],
+  ["Bruno", '[data-testid="cloud-mac-checks"][data-passed="yes"]', "31c-cloud-session-returned"],
+  ["Carla", '[data-testid="assignment-place-enable"]', "31d-cloud-blocked-local"],
+]) {
+  const found = cloudCard(name);
+  await waitInCard(found, (card) => card.locator(testid), `${name}: ${testid}`, 30_000);
+  // The card from its top, so its buttons stay above the composer.
+  await found.evaluate((card) => card.scrollIntoView({ block: "start" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`${file}-${dark ? "dark" : "light"}`);
+  }
+}
+if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");
+const cloudState = await page.evaluate(async () => (await window.trama.getState()).project.document.team.specialists.find((s) => s.name === "Ada").assignments[0]);
+if (cloudState.status !== "running" || cloudState.cloud.status !== "working") throw new Error(`Cloud sessions: reopening stopped the cloud work: ${cloudState.status}`);
+// The person moves Carla's work to the cloud for its next resume: the card says so.
+await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).click();
+await cloudCard("Carla").getByText("Alla prossima ripresa lavora in cloud, come hai scelto.").waitFor();
+await cloudCard("Carla").getByRole("button", { name: "Sposta in locale" }).waitFor();
+// The project's setting: three values, the person's choice kept.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const cloudSettings = page.getByTestId("settings");
+await cloudSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const workPlace = cloudSettings.getByTestId("work-place");
+await workPlace.getByRole("radio", { name: "Cloud quando possibile", checked: true }).waitFor();
+await workPlace.getByRole("radio", { name: "Automatico" }).click();
+await workPlace.getByRole("radio", { name: "Automatico", checked: true }).waitFor();
+await workPlace.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`31a-work-place-setting-${dark ? "dark" : "light"}`);
+}
+const savedSetting = await page.evaluate(async () => (await window.trama.getState()).project.document.settings.workPlace);
+if (savedSetting !== "automatic") throw new Error(`Cloud sessions: the setting was not saved: ${savedSetting}`);
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
@@ -3931,4 +4217,48 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]')
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #39: the projects share the developers. The overview says how many work in all projects and keeps the
+// Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
+({ app, page } = await launch());
+await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+const priority = page.getByTestId("overview-priority");
+await priority.waitFor({ timeout: 10_000 });
+await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
+const priorityNames = () => priority.getByTestId("overview-priority-row").locator("span.truncate").allInnerTexts();
+const before39 = await priorityNames();
+if (before39.length < 2) throw new Error("The overview ranks fewer than two projects");
+await priority.getByRole("button", { name: `Sposta ${before39[1]} più in alto` }).click();
+await page.waitForFunction(
+  ([first]) => document.querySelector('[data-testid="overview-priority-row"] span.truncate')?.textContent === first,
+  [before39[1]],
+  { timeout: 10_000 },
+);
+const moved39 = await priorityNames();
+if (moved39[0] !== before39[1] || moved39[1] !== before39[0]) throw new Error(`The project did not move up: ${moved39.join(", ")}`);
+await priority.scrollIntoViewIfNeeded();
+await themeShots("39a-overview-priority");
+// Opening a project from the overview does not rank it.
+await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
+await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
+await page.waitForTimeout(1_500);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await priority.waitFor();
+let reopened39 = await priorityNames();
+for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
+if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+// The shared limit sits next to the project's own limit in the settings.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const sharedSettings = page.getByTestId("settings");
+await sharedSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const sharedPicker = sharedSettings.getByTestId("shared-developers");
+await sharedPicker.getByRole("radio", { name: "6", checked: true }).waitFor();
+await sharedPicker.getByRole("radio", { name: "4" }).click();
+await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
+await sharedPicker.scrollIntoViewIfNeeded();
+await noHorizontalScroll("shared developers");
+await themeShots("39b-shared-developers");
 await app.close();

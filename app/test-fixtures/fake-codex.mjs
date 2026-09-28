@@ -382,7 +382,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           strength,
           adrConflict: "",
         });
-        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}${memory}` };
+        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `${seen.some((item) => item.startsWith("skill:improve-codebase-architecture:") && item.endsWith("/improve-codebase-architecture/SKILL.md")) ? "Partire dall'annullamento: tocca un solo modulo." : `Skill mancante: ${seen.join(", ") || "nessuna"}.`}${memory}` };
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
@@ -677,6 +677,25 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(done.join(" ") || "Non ho fatto la mossa.");
         return;
       }
+      if (text.includes("[ticket")) {
+        // [ticket] reports a partial increment on issue 42 and asks to close it (C10); [ticket:errore] reports another
+        // one, for a GitHub that fails the write. Trama keeps the issue open and says what is missing or what failed.
+        const failing = text.includes("[ticket:errore]");
+        callTool(threadId, "update_ticket", {
+          issueNumber: 42,
+          summary: failing ? "La prova nell'app è fatta; manca la CI." : "Il riepilogo mostra l'annullo; mancano la prova nell'app e la CI.",
+          criteria: [
+            { index: 0, outcome: "partial", evidence: [], limits: failing ? "Manca la CI" : "Manca la prova nell'app" },
+            { index: 1, outcome: "notMet", evidence: [] },
+          ],
+          openParts: ["Le verifiche passano"],
+          close: true,
+        }).then((result) => {
+          toolDone("update_ticket", result);
+          finish(result.isError ? "Non sono riuscito ad aggiornare la issue #42: il resoconto non è su GitHub." : "Ho registrato l'avanzamento sulla issue #42, che resta aperta.");
+        });
+        return;
+      }
       if (text.includes("[memoria-piena]")) {
         // A model that keeps retrying a note too long for the memory, then pastes the first error (issue #305).
         (async () => {
@@ -940,7 +959,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       }
       // Like Codex: `total` adds up every request of the thread and keeps growing, `last` is the request that fills the window (issue #305).
       processedTokens += text.includes("[pieno]") ? 2_300_000 : 120_000;
-      const lastRequest = text.includes("[pieno]") ? 230_000 : text.includes("[compattato]") ? 20_000 : 12_000;
+      // 13.000 of 258.000 is 5,04%: just past the lowest threshold with the exact share (issue #272).
+      const lastRequest = text.includes("[pieno]") ? 230_000 : text.includes("[compattato]") ? 20_000 : 13_000;
       if (text.includes("[compattato]")) {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "compaction", type: "contextCompaction" } } });
       }

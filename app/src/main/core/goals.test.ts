@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Candidate, ProjectDocument, RecentProject } from "@shared/domain";
+import type { Candidate, GitHubSnapshot, ProjectDocument, RecentProject } from "@shared/domain";
 import {
   candidateGoalId,
   chatComposer,
@@ -21,7 +21,7 @@ import type { RepositorySnapshot } from "@shared/repository";
 import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { appendEvent, emptyDocument, normalizeDocument } from "./document";
 import { archiveGoal, createGoal, deleteEmptyGoal, goalContext, linkDecision, observeExample, proposeGoal, restoreGoal, updateGoal } from "./goals";
-import { orderByAttention, summarizeProject, unreadableProject } from "./overview";
+import { ciSummary, orderByAttention, summarizeProject, unreadableProject } from "./overview";
 import { createDecisionRequest, decide, DomainError, grantMandate } from "./pact";
 import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
@@ -464,6 +464,26 @@ describe("example observations (UX06)", () => {
 
 describe("projects overview (UX03)", () => {
   const recent = (id: string, name: string): RecentProject => ({ id, name, path: `/tmp/${name}`, isDemo: false, lastOpenedAt: "2026-09-23T10:00:00.000Z" });
+
+  it("shows the CI of the open pull requests and the work waiting for a shared developer (issue #39)", () => {
+    const pull = (number: number, checks: "success" | "failure" | "pending" | "none") =>
+      ({ number, title: "t", author: null, headRef: "b", headSHA: "s", baseRef: "main", url: "", isDraft: false, updatedAt: "", checks }) as unknown as GitHubSnapshot["pullRequests"][number];
+    const snapshot = { pullRequests: [pull(1, "success"), pull(2, "failure"), pull(3, "pending"), pull(4, "none"), pull(5, "success")] } as unknown as GitHubSnapshot;
+    expect(ciSummary(snapshot)).toEqual({ passing: 2, failing: 1, pending: 1 });
+    expect(ciSummary(null)).toBeNull();
+    const entry = summarizeProject(recent("a", "Alfa"), emptyDocument("a"), {
+      source: "live",
+      selected: false,
+      runningAssignments: 0,
+      candidateReports: [],
+      priority: 2,
+      waitingForCapacity: 1,
+      ci: ciSummary(snapshot),
+    });
+    expect(entry).toMatchObject({ priority: 2, waitingForCapacity: 1, attention: "running", ci: { failing: 1 } });
+    expect(entry.reasons).toEqual(["1 incarico aspetta uno sviluppatore libero", "CI rossa su 1 pull request"]);
+    expect(unreadableProject(recent("b", "Bravo"), null, 3)).toMatchObject({ priority: 3, waitingForCapacity: 0, ci: null });
+  });
 
   it("orders projects by attention with a stable order on ties", () => {
     const quiet = emptyDocument("a");

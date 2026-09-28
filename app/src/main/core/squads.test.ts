@@ -8,7 +8,7 @@ import { grantMandate } from "./pact";
 import { doneSince } from "./recap";
 import { type PickOutcome, pickSlices } from "./slicePicking";
 import { formSquads, plannedAreas, recordSquadFormation, WHOLE_PRODUCT_SQUAD } from "./squads";
-import { assign, completeTeam, confirmTeam, developers, findSpecialist, proposeTeam, TeamError } from "./team";
+import { assign, beginCloudWork, completeTeam, confirmTeam, developers, findSpecialist, proposeTeam, TeamError } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute));
 
@@ -37,7 +37,7 @@ function project(members: [string, string | null][], actions: ("plan" | "execute
   return document;
 }
 
-const work = (document: ProjectDocument, developer: string, moduleId: string, workplace: "local" | "cloud" = "local") => {
+const work = (document: ProjectDocument, developer: string, moduleId: string, place: "local" | "cloud" = "local") => {
   const assignment = assign(
     document,
     {
@@ -57,7 +57,15 @@ const work = (document: ProjectDocument, developer: string, moduleId: string, wo
     "r1",
     at(5),
   );
-  assignment.workplace = workplace;
+  // A cloud session of A19 runs the work: the assignment runs while the session works on GitHub.
+  if (place === "cloud") {
+    beginCloudWork(
+      document,
+      assignment.id,
+      { provider: "claudeAgent", url: null, branch: `feature/${developer}`, baseBranch: "main", status: "working", pullRequest: null, startedAt: at(5).toISOString(), checkedAt: null, failure: null, instructions: [], macChecks: null },
+      at(5),
+    );
+  }
   return assignment;
 };
 
@@ -175,7 +183,7 @@ describe("squad size and ownership (A10, review of #306)", () => {
       ["Bruno", "Sources/Catalog"],
       ["Carla", "Sources/Catalog"],
     ]);
-    document.settings = { parallelDevelopers: 1 };
+    document.settings = { developersPerSquad: 1, parallelDevelopers: 9 };
     formSquads(document, MODULES, at(1));
     expect(SQUAD_SIZE).toBe(3);
     expect(teamSquads(document).map((s) => [s.name, names(document, s.developerIds)])).toEqual([["Catalogo", ["Ada", "Bruno", "Carla"]]]);
@@ -250,7 +258,8 @@ describe("the squads' limits (A10, Q22, Q29)", () => {
     expect(() => work(document, "Dario", "Sources/Mail")).toThrow("3 squads are already at work, the project's limit: assign in a squad at work, or wait until one ends.");
     document.settings = { activeSquads: 4 };
     expect(() => work(document, "Dario", "Sources/Mail")).not.toThrow();
-    expect(projectCapacity(document)).toBe(12);
+    // Four squads of three would be twelve: the project's own limit stops at nine.
+    expect(projectCapacity(document)).toBe(9);
   });
 
   it("counts work in a cloud session like work on the Mac", () => {
@@ -261,15 +270,48 @@ describe("the squads' limits (A10, Q22, Q29)", () => {
     formSquads(document, MODULES, at(1));
     document.settings = { activeSquads: 1 };
     const cloud = work(document, "Ada", "Sources/Catalog", "cloud");
-    expect(cloud.workplace).toBe("cloud");
+    expect(cloud.cloud?.status).toBe("working");
     expect(() => work(document, "Bruno", "Sources/Checkout")).toThrow(/1 squad is already at work/);
     expect(squadStatusLine(document, teamSquads(document)[0]!)).toBe("Ada lavora a Lavoro di Ada in una sessione cloud.");
   });
 
-  it("reads the limit chosen before squads as the limit per squad", () => {
-    expect(squadLimits({ settings: {} })).toEqual({ developersPerSquad: 3, activeSquads: 3 });
-    expect(squadLimits({ settings: { parallelDevelopers: 2 } })).toEqual({ developersPerSquad: 2, activeSquads: 3 });
-    expect(squadLimits({ settings: { parallelDevelopers: 2, developersPerSquad: 1, activeSquads: 9 } })).toEqual({ developersPerSquad: 1, activeSquads: 6 });
+  it("keeps the project's limit apart from the squads' own, growing with the squads up to nine", () => {
+    const squads = (count: number) => ({ proposals: [], specialists: [], confirmedAt: null, squads: Array.from({ length: count }, (_, i) => ({ id: `SQ-${i}`, name: `Area ${i}`, moduleIds: [], leadId: "", qaId: "", developerIds: [], createdAt: "" })) });
+    // Before squads the project works as before them (W08): three.
+    expect(squadLimits({ settings: {}, team: squads(0) })).toEqual({ developersPerSquad: 3, activeSquads: 3, project: 3 });
+    // With three squads formed, three squads of three.
+    expect(squadLimits({ settings: {}, team: squads(3) })).toEqual({ developersPerSquad: 3, activeSquads: 3, project: 9 });
+    // The limit the person chose stays the project's limit (W08); the squads work within it.
+    expect(squadLimits({ settings: { parallelDevelopers: 2 }, team: squads(3) })).toEqual({ developersPerSquad: 3, activeSquads: 3, project: 2 });
+    expect(squadLimits({ settings: { developersPerSquad: 2, activeSquads: 2 }, team: squads(3) })).toEqual({ developersPerSquad: 2, activeSquads: 2, project: 4 });
+    expect(squadLimits({ settings: { parallelDevelopers: 20, developersPerSquad: 5, activeSquads: 9 }, team: squads(8) })).toEqual({ developersPerSquad: 3, activeSquads: 6, project: 9 });
+  });
+
+  it("starts a developer only when the project's limit allows it too", () => {
+    const document = project([
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Checkout"],
+    ]);
+    formSquads(document, MODULES, at(1));
+    document.settings = { parallelDevelopers: 1 };
+    work(document, "Ada", "Sources/Catalog");
+    expect(roomForWork(document)).toBe(false);
+    expect(() => work(document, "Bruno", "Sources/Checkout")).toThrow("1 developer is already at work, the project's limit: assign more when one of them ends (spec #137).");
+    expect(projectCapacity(document)).toBe(1);
+  });
+
+  it("lets developers outside squads work within the project's limit only, as before squads (W08)", () => {
+    const document = project([
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Catalog"],
+      ["Carla", "Sources/Catalog"],
+      ["Dario", "Sources/Catalog"],
+    ]);
+    expect(squadLimits(document).project).toBe(3);
+    document.settings = { parallelDevelopers: 4 };
+    for (const [name, moduleId] of [["Ada", "Sources/Catalog"], ["Bruno", "Sources/Checkout"], ["Carla", "Sources/Admin"], ["Dario", "Sources/Mail"]] as const) work(document, name, moduleId);
+    expect(projectCapacity(document)).toBe(4);
+    expect(roomForWork(document)).toBe(false);
   });
 });
 

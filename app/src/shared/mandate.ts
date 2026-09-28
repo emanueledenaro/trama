@@ -26,15 +26,50 @@ export function coversAssignment(document: Pick<ProjectDocument, "domainProposal
 /** The terms of the mandate in force, or null when none is granted. */
 export const activeTerms = (mandate: ProjectMandate | null): MandateTerms | null => (mandate?.status === "granted" ? mandate : null);
 
-/** Running work that new terms would stop: the current, still active work of each specialist that they no longer cover. */
-export function workStoppedBy(
-  document: Pick<ProjectDocument, "domainProposals" | "team">,
+/** Running work that new terms would stop, with the work outside them it builds on when it is only a dependent. */
+export interface StoppedWork {
+  specialist: Specialist;
+  assignment: SpecialistAssignment;
+  /** The assignment outside the new terms this work depends on; null when the terms leave the work itself out. */
+  dependsOn: SpecialistAssignment | null;
+}
+
+/**
+ * The work new terms leave out (C06), active or not: each assignment they no longer cover, mapped to null, and each
+ * assignment that depends on one of those, directly or through other work, mapped to the first one left out. Work whose
+ * candidate is already merged is part of the project and leaves nothing out.
+ */
+export function workLeftOut(
+  document: Pick<ProjectDocument, "domainProposals" | "team"> & Partial<Pick<ProjectDocument, "candidates">>,
   terms: MandateTerms | null,
-): { specialist: Specialist; assignment: SpecialistAssignment }[] {
+): Map<string, SpecialistAssignment | null> {
+  const all = document.team.specialists.flatMap((specialist) => specialist.assignments);
+  const merged = new Set((document.candidates ?? []).filter((c) => c.pullRequest?.mergedAt).map((c) => c.assignmentId));
+  const outside = new Map(all.filter((a) => !merged.has(a.id) && !coversAssignment(document, terms, a)).map((a) => [a.id, a]));
+  const left = new Map<string, SpecialistAssignment | null>([...outside.keys()].map((id) => [id, null]));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const assignment of all) {
+      if (left.has(assignment.id)) continue;
+      const through = (assignment.dependencies ?? []).find((id) => left.has(id));
+      if (!through) continue;
+      left.set(assignment.id, left.get(through) ?? outside.get(through)!);
+      grew = true;
+    }
+  }
+  return left;
+}
+
+/** Running work that new terms would stop: the current, still active work of each specialist that they leave out. */
+export function workStoppedBy(
+  document: Pick<ProjectDocument, "domainProposals" | "team"> & Partial<Pick<ProjectDocument, "candidates">>,
+  terms: MandateTerms | null,
+): StoppedWork[] {
+  const left = workLeftOut(document, terms);
   return document.team.specialists.flatMap((specialist) => {
     const assignment = specialist.assignments.at(-1);
     if (!assignment || !ACTIVE.includes(assignment.status) || assignment.status === "stopRequested") return [];
-    return coversAssignment(document, terms, assignment) ? [] : [{ specialist, assignment }];
+    return left.has(assignment.id) ? [{ specialist, assignment, dependsOn: left.get(assignment.id)! }] : [];
   });
 }
 
@@ -51,7 +86,7 @@ export interface MandateProposalDiff {
   modules: ListChange<string>;
   actions: ListChange<MandateAction>;
   limits: ListChange<string>;
-  stoppedWork: { specialist: Specialist; assignment: SpecialistAssignment }[];
+  stoppedWork: StoppedWork[];
 }
 
 const change = <T>(before: T[], after: T[]): ListChange<T> => ({
@@ -61,7 +96,7 @@ const change = <T>(before: T[], after: T[]): ListChange<T> => ({
 
 /** The difference between a mandate proposal and the active mandate; null when no mandate is in force. */
 export function mandateProposalDiff(
-  document: Pick<ProjectDocument, "mandate" | "domainProposals" | "team">,
+  document: Pick<ProjectDocument, "mandate" | "domainProposals" | "team"> & Partial<Pick<ProjectDocument, "candidates">>,
   request: MandateRequest,
 ): MandateProposalDiff | null {
   const mandate = document.mandate;
