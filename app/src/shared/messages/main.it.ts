@@ -175,7 +175,6 @@ export const mainIt = {
   "main.controller.tramaToolTitle": "Strumento di Trama: {tool}",
   "main.controller.reasoningTitle": "Ragionamento",
   "main.controller.coordinatorNoteTitle": "Nota del Coordinatore",
-  "main.controller.contextOverThresholdTitle": "Contesto oltre la soglia",
 
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
@@ -313,6 +312,7 @@ export const mainIt = {
   "main.controller.parallelDevelopersNotInteger":
     "Il numero di sviluppatori in parallelo deve essere un numero intero.",
   "main.controller.noTurnRunning": "Nessun turno in corso.",
+  "main.controller.noSessionToReorder": "Il Coordinatore non ha ancora una sessione da riordinare.",
   "main.controller.cloudStopUntracked":
     "Trama non segue più la sessione cloud. La sessione si ferma dalla sua pagina di Claude Code.",
   "main.controller.personActor": "Persona",
@@ -826,6 +826,7 @@ export const mainIt = {
   // Shared by every provider runtime.
   "main.provider.emptyMessage": "Il messaggio è vuoto.",
   "main.provider.turnRunning": "Un turno è già in corso.",
+  "main.opencode.compactFailed": "OpenCode non ha compattato la sessione: {error}",
   "main.provider.turnInterrupted": "Turno interrotto.",
   "main.provider.invalidModel": "Modello non valido: {model}",
   "main.provider.closed": "{provider} è stato chiuso.",

@@ -164,6 +164,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "overview:read": () => controller.projectsOverview(),
   "overview:prioritize": ({ projectId, direction }) => controller.prioritizeProject(projectId, direction),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
+  "coordinator:reorderContext": () => controller.reorderContext(),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "decision:withdraw": ({ requestId, reason }) => controller.withdrawDecision(requestId, reason),

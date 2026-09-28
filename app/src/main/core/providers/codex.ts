@@ -86,6 +86,8 @@ export class CodexRuntime implements AgentRuntime {
       resumeThreadId: options.resumeThreadId,
       config: {
         web_search: "disabled",
+        // Codex compacts by itself only above Trama's threshold, as a fallback within a very long turn (ADR 0018).
+        ...(options.autoCompactTokenLimit ? { model_auto_compact_token_limit: options.autoCompactTokenLimit } : {}),
         features: {
           apps: false,
           plugins: false,
@@ -137,6 +139,10 @@ export class CodexRuntime implements AgentRuntime {
 
   interrupt() {
     return this.client.interrupt();
+  }
+
+  compact(threadId: string) {
+    return this.client.compactThread(threadId);
   }
 
   stop() {

@@ -911,6 +911,21 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /** Never throws: when OpenCode does not confirm the abort, the server is stopped and the turn still ends. */
+  /** OpenCode's own summary of the session (`session.summarize`), Trama's fallback when a new session cannot open (ADR 0018). */
+  async compact(threadId: string): Promise<void> {
+    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
+    const directory = this.session?.id === threadId ? this.session.directory : this.discoveryDirectory();
+    const client = await this.clientFor(directory);
+    let failure: unknown = null;
+    try {
+      const result = await client.session.summarize({ sessionID: threadId, directory }, { signal: this.timeout(120_000) });
+      failure = result.error ?? null;
+    } catch (error) {
+      failure = error;
+    }
+    if (failure) throw new ProviderError("rpcError", t("main.opencode.compactFailed", { error: errorDetail(failure) }));
+  }
+
   async interrupt(): Promise<void> {
     const turn = this.turn;
     if (!turn) {

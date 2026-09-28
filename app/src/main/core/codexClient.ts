@@ -575,6 +575,11 @@ export class CodexClient {
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
+  /** Asks Codex to compact a thread loaded in this process now (`thread/compact/start`). */
+  async compactThread(threadId: string): Promise<void> {
+    await this.request("thread/compact/start", { threadId }, 120_000);
+  }
+
   private request(method: string, params: JsonObject, timeoutMs?: number): Promise<Json> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {

@@ -144,7 +144,11 @@ Revisione dell'esperienza: la sessione separata e non presidiata che, dopo abbas
 
 Manutenzione delle skill: il controllo settimanale che rende inattive e poi archivia le skill create dalla revisione e non usate. Non tocca le skill fissate né quelle della persona; un'archiviazione si annulla con un ripristino.
 
-Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto. Le mosse automatiche stanno in Attività, non in chat. Una scheda non è un log di strumenti né un messaggio libero.
+Contesto riordinato: il passaggio del Coordinatore a una sessione nuova quando il suo contesto supera la soglia del progetto (predefinita 80%) o quando la persona sceglie "Riordina ora". Lo fa Trama, uguale per ogni provider, sempre a fine turno e mai a metà. La sessione nuova riceve studio, memoria e riepilogo di contesto; la conversazione resta nella chat e nella storia. In chat compare una riga "Contesto riordinato" che apre il riepilogo. La compattazione del provider resta solo come ripiego (ADR 0018). Da evitare: compattazione, per il gesto di Trama.
+
+Riepilogo di contesto: il testo che Trama scrive dai suoi dati per la sessione nuova del Coordinatore a un contesto riordinato: obiettivi e fuoco, decisioni del Patto, mandato, piano e candidati, incarichi in corso, richieste che aspettano la persona con i loro riferimenti, fase del lavoro, percorso e grilling in corso, ultimi scambi alla lettera. Non lo scrive il modello. Si legge in Attività come "Riepilogo del contesto". Da evitare: trascrizione, che è la conversazione grezza del cambio di provider.
+
+Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto, contesto riordinato. Le mosse automatiche stanno in Attività, non in chat. Una scheda non è un log di strumenti né un messaggio libero.
 
 Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca nella conversazione o nella sidebar: decisione, candidato, specialista, modulo, issue, gruppo. Non è una sezione da visitare a sé. Con l'ADR 0018 l'ispettore esce dalla finestra: le viste vanno nella barra laterale e il dettaglio in una scheda dell'editor.
 

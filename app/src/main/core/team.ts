@@ -658,6 +658,14 @@ export function recordThread(document: ProjectDocument, id: string, threadId: st
   });
 }
 
+/** Keeps the highest share of the context window a specialist's turn used (ADR 0018). */
+export function recordTurnContext(document: ProjectDocument, id: string, turnId: string, percent: number): void {
+  const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === id);
+  const turn = assignment?.turns.findLast((t) => t.id === turnId);
+  if (!turn) return;
+  turn.contextPercent = Math.max(turn.contextPercent ?? 0, Math.min(100, Math.max(0, Math.round(percent))));
+}
+
 export function beginTurn(
   document: ProjectDocument,
   id: string,

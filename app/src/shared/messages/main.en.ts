@@ -173,7 +173,6 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.tramaToolTitle": "Trama tool: {tool}",
   "main.controller.reasoningTitle": "Reasoning",
   "main.controller.coordinatorNoteTitle": "Coordinator note",
-  "main.controller.contextOverThresholdTitle": "Context over the threshold",
 
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
@@ -305,6 +304,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.parallelDevelopersNotInteger":
     "The number of developers in parallel must be a whole number.",
   "main.controller.noTurnRunning": "No turn in progress.",
+  "main.controller.noSessionToReorder": "The Coordinator does not have a session to reorder yet.",
   "main.controller.cloudStopUntracked":
     "Trama no longer follows the cloud session. Stop the session from its Claude Code page.",
   "main.controller.personActor": "Person",
@@ -795,6 +795,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   // Shared by every provider runtime.
   "main.provider.emptyMessage": "The message is empty.",
   "main.provider.turnRunning": "A turn is already running.",
+  "main.opencode.compactFailed": "OpenCode did not compact the session: {error}",
   "main.provider.turnInterrupted": "Turn interrupted.",
   "main.provider.invalidModel": "Invalid model: {model}",
   "main.provider.closed": "{provider} was closed.",
