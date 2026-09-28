@@ -3,6 +3,7 @@ import { DEFAULT_CONVENTIONS, deriveCommitScope, deriveCommitType, formatCommitM
 import { assignmentSlice } from "./implementation";
 import { containsExcludedComponent } from "./repositoryScanner";
 import { findAssignment } from "./team";
+import { pushAuthorization, pushRefusal } from "./push";
 import { workRequests } from "./workPhase";
 
 /**
@@ -212,6 +213,13 @@ export function qualityGate(document: ProjectDocument, candidate: Candidate, rep
     open.length
       ? { code: "PACT_SETTLED", passed: false, detail: `Domande del Patto ancora aperte: ${open.join(", ")}.`, fix: "Rispondi alle domande aperte o ritirale con un motivo." }
       : { code: "PACT_SETTLED", passed: true, detail: "Nessuna decisione del Patto è rimasta aperta.", fix: null },
+  );
+  // Publishing pushes a branch: only a mandate that grants pull requests allows it, whoever asks (issue #273).
+  const refusal = pushRefusal(pushAuthorization(document.mandate));
+  items.push(
+    refusal
+      ? { code: "MANDATE", passed: false, detail: refusal, fix: "Concedi o correggi il mandato con l'azione Aprire pull request, poi prepara la pull request." }
+      : { code: "MANDATE", passed: true, detail: "Il mandato permette di aprire pull request.", fix: null },
   );
   return items;
 }
