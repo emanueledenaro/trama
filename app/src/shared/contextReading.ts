@@ -45,8 +45,10 @@ export function contextReading(usage: ContextUsage | null, threshold: number): C
   if (!validNumber(usage.contextWindow) || usage.contextWindow <= 0) return UNKNOWN;
   const window = Math.floor(usage.contextWindow);
   const used = Math.min(Math.round(usage.usedTokens), window);
-  const percent = Math.min(100, Math.round((used / window) * 100));
-  const state: ContextState = percent >= threshold ? "over" : percent >= threshold - NEAR_POINTS ? "near" : "ok";
+  const exact = (used / window) * 100;
+  const percent = Math.min(100, Math.round(exact));
+  // The exact share decides the state (issue #272): 79.6% shows as 80% but does not pass an 80% threshold.
+  const state: ContextState = exact >= threshold ? "over" : exact >= threshold - NEAR_POINTS ? "near" : "ok";
   return { state, percent, usedTokens: used, contextWindow: window };
 }
 

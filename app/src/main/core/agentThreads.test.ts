@@ -198,6 +198,15 @@ describe("the reviewers and the guardian talk to the developer (W07)", () => {
     expect(recordGate(document, clean, at(8))).toEqual([]);
     expect(document.agentThreads ?? []).toEqual([]);
   });
+
+  it("opens no regression conversation for a check that fails on the base too", () => {
+    const { document, assignment } = project();
+    const candidate = candidateOf(document, assignment.id);
+    const broken = gate(document, assignment.id, candidate.id);
+    broken.suite = broken.suite.map((c) => ({ ...c, base: "fail", candidate: "fail" }));
+    expect(recordGate(document, broken, at(8)).map((t) => t.kind)).toEqual(["review"]);
+    expect(document.agentThreads!.some((t) => t.kind === "regression")).toBe(false);
+  });
 });
 
 describe("the conversations of a specialist (W07)", () => {

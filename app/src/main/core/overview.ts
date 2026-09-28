@@ -1,4 +1,4 @@
-import { type AttentionReason, type CandidateReport, isOpenQuestion, type ProjectDocument, type ProjectOverview, type RecentProject } from "@shared/domain";
+import { type AttentionReason, type CandidateReport, type GitHubSnapshot, isOpenQuestion, type ProjectDocument, type ProjectOverview, type RecentProject } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
 import { presenceFreshness, type PresenceView } from "@shared/presence";
 import { currentAssignment } from "./team";
@@ -14,12 +14,22 @@ const ACTIVE = ["preparing", "running", "stopRequested"];
 export function summarizeProject(
   recent: RecentProject,
   document: ProjectDocument,
-  input: { source: "live" | "saved"; selected: boolean; runningAssignments: number; candidateReports: CandidateReport[]; colleagues?: number | null },
+  input: {
+    source: "live" | "saved";
+    selected: boolean;
+    runningAssignments: number;
+    candidateReports: CandidateReport[];
+    colleagues?: number | null;
+    priority?: number;
+    waitingForCapacity?: number;
+    ci?: ProjectOverview["ci"];
+  },
 ): ProjectOverview {
-  const pendingDecisions =
-    document.decisionRequests.filter(isOpenQuestion).length +
-    document.mandateRequests.filter((r) => !r.resolution).length +
-    document.team.proposals.filter((p) => !p.resolution).length;
+  // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision.
+  const openDecisions = document.decisionRequests.filter(isOpenQuestion).length;
+  const openMandates = document.mandateRequests.filter((r) => !r.resolution).length;
+  const openTeams = document.team.proposals.filter((p) => !p.resolution).length;
+  const pendingDecisions = openDecisions + openMandates + openTeams;
   let blockedWork = 0;
   for (const specialist of document.team.specialists) {
     if (specialist.status === "removed") continue;
@@ -33,18 +43,24 @@ export function summarizeProject(
     return report && (report.state === "verified" || report.state === "decided") && !candidate.pullRequest && (!candidate.humanApproval || report.approvalInvalidated);
   }).length;
   const runningWork = input.runningAssignments;
+  const waitingForCapacity = input.waitingForCapacity ?? 0;
+  const ci = input.ci ?? null;
   const reasons: string[] = [];
-  if (pendingDecisions) reasons.push(`${pendingDecisions} ${pendingDecisions === 1 ? "decisione richiesta" : "decisioni richieste"}`);
+  if (openDecisions) reasons.push(`${openDecisions} ${openDecisions === 1 ? "decisione richiesta" : "decisioni richieste"}`);
+  if (openMandates) reasons.push(`${openMandates} ${openMandates === 1 ? "richiesta di mandato" : "richieste di mandato"}`);
+  if (openTeams) reasons.push(`${openTeams} ${openTeams === 1 ? "proposta di team" : "proposte di team"}`);
   if (blockedWork) reasons.push(`${blockedWork} ${blockedWork === 1 ? "lavoro fermo o fallito" : "lavori fermi o falliti"}`);
   if (toApprove) reasons.push(`${toApprove} ${toApprove === 1 ? "risultato da approvare" : "risultati da approvare"}`);
   if (runningWork) reasons.push(`${runningWork} ${runningWork === 1 ? "incarico in corso" : "incarichi in corso"}`);
+  if (waitingForCapacity) reasons.push(`${waitingForCapacity} ${waitingForCapacity === 1 ? "incarico aspetta" : "incarichi aspettano"} uno sviluppatore libero`);
+  if (ci?.failing) reasons.push(`CI rossa su ${ci.failing} pull request`);
   const attention: AttentionReason | null = pendingDecisions
     ? "decision"
     : blockedWork
       ? "blocked"
       : toApprove
         ? "approval"
-        : runningWork
+        : runningWork || waitingForCapacity
           ? "running"
           : null;
   return {
@@ -64,11 +80,14 @@ export function summarizeProject(
     attention,
     reasons,
     problem: null,
+    priority: input.priority ?? 0,
+    waitingForCapacity,
+    ci,
   };
 }
 
 /** A recent project whose state could not be read, or that was never saved. */
-export function unreadableProject(recent: RecentProject, error: string | null): ProjectOverview {
+export function unreadableProject(recent: RecentProject, error: string | null, priority = 0): ProjectOverview {
   return {
     id: recent.id,
     name: recent.isDemo ? "Progetto di esempio" : recent.name,
@@ -86,7 +105,25 @@ export function unreadableProject(recent: RecentProject, error: string | null): 
     attention: null,
     reasons: [],
     problem: error,
+    priority,
+    waitingForCapacity: 0,
+    ci: null,
   };
+}
+
+/**
+ * The checks of the repository's open pull requests at the last GitHub reading (issue #39). The overview reads it
+ * from the saved reading, so it opens no connection; null when the repository was never read.
+ */
+export function ciSummary(snapshot: GitHubSnapshot | null | undefined): ProjectOverview["ci"] {
+  if (!snapshot) return null;
+  const summary = { passing: 0, failing: 0, pending: 0 };
+  for (const pull of snapshot.pullRequests) {
+    if (pull.checks === "success") summary.passing += 1;
+    else if (pull.checks === "failure") summary.failing += 1;
+    else if (pull.checks === "pending") summary.pending += 1;
+  }
+  return summary;
 }
 
 /**
