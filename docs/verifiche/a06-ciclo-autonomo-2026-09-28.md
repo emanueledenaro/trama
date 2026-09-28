@@ -1,15 +1,15 @@
 # A06: il Coordinatore fa da solo il ciclo dentro il mandato e risolve i blocchi tecnici
 
-Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` 7763d2d.
+Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` 9534073.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 123 file, 1199 test superati, 3 saltati.
+- `npx vitest run`: 124 file, 1215 test superati, 3 saltati (due corse complete verdi; in una terza corsa `problems.integration.test.ts` di A08 è fallito una volta sotto carico e passa da solo tre volte su tre).
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 312 schermate. Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 329 schermate. Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
 
 ## Comportamento
 
