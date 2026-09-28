@@ -11,7 +11,8 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, parse, resolve
 import type { LoadedSkill } from "@shared/skills";
 import type { ProviderId } from "@shared/codex";
 import { classifyProviderFailure, parseResetTime } from "@shared/providerFailure";
-import { type HostToolServer, isInside, ProviderError, type TurnEvent } from "./types";
+import { t } from "../personLanguage";
+import { type HostToolServer, interruptedTurnError, isInside, ProviderError, type TurnEvent } from "./types";
 
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
 
@@ -300,7 +301,7 @@ export class PendingTurn {
     if (this.stopped) throw new ProviderError("processExited", this.stoppedMessage);
     if (this.interrupted) {
       this.onEvent({ type: "interrupted" });
-      throw new Error("Turno interrotto.");
+      throw interruptedTurnError();
     }
   }
 }
@@ -358,8 +359,8 @@ export function currentUsageLimit(
  * The error a turn rejects with when `raw` is a usage-limit failure; null for any other failure (P10).
  * A quota, or a limit that says when it resets, blocks the provider for every runtime until then. A temporary
  * or shared limit without a reset time (an upstream 429) blocks nothing: the next turn may already pass, and
- * the controller retries it with a growing wait. Both messages say "limite", which the controller recognizes;
- * the provider's text follows for the technical detail.
+ * the controller retries it with a growing wait. Both messages say "limite" in Italian and "limit" in English, which the
+ * controller recognizes; the provider's text follows for the technical detail.
  */
 export function usageLimitError(
   providerId: ProviderId,
@@ -371,9 +372,8 @@ export function usageLimitError(
   const detail = raw.trim();
   const failure = classifyProviderFailure(detail, { provider: label });
   const temporary = failure.kind === "temporaryLimit" && !parsed.until;
-  const message = temporary
-    ? `${label} ha un limite temporaneo.${detail ? ` ${detail}` : ""}`
-    : `${label} ha raggiunto il limite di utilizzo.${detail ? ` ${detail}` : ""}`;
+  const sentence = t(temporary ? "main.provider.temporaryLimit" : "main.provider.usageLimit", { provider: label });
+  const message = `${sentence}${detail ? ` ${detail}` : ""}`;
   if (temporary) return new ProviderError("rateLimited", message);
   recordUsageLimit(providerId, message, parsed.until);
   return new ProviderError("blocked", message);

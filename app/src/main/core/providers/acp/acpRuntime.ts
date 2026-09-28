@@ -27,6 +27,7 @@ import {
   type RuntimeOptions,
   type TurnEvent,
   extractJsonAnswer,
+  interruptedTurnError,
   schemaInstruction,
 } from "../types";
 import { expandHome, readableRoots } from "../../readScope";
@@ -34,6 +35,7 @@ import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, PendingT
 import { checkedOutBranch } from "../../push";
 import { prepareStdioHostToolServer, type StdioHostToolServer } from "../hostToolProxy";
 import { ToolRefusals } from "../toolRefusal";
+import { t } from "../../personLanguage";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -215,14 +217,14 @@ export function runCli(
 export async function probeCliVersion(executable: string, env: NodeJS.ProcessEnv, label: string): Promise<ProviderAccount | null> {
   try {
     const result = await runCli(executable, ["--version"], env);
-    if (result.timedOut) return { kind: "unavailable", message: `${label} è installato ma non risponde.` };
+    if (result.timedOut) return { kind: "unavailable", message: t("main.acpRuntime.notResponding", { provider: label }) };
     if (result.code !== 0) {
       const detail = (result.stderr || result.stdout).trim().split("\n").at(-1) ?? "";
-      return { kind: "unavailable", message: `${label} è installato ma non si avvia.${detail ? ` ${detail}` : ""}` };
+      return { kind: "unavailable", message: `${t("main.acpRuntime.doesNotStart", { provider: label })}${detail ? ` ${detail}` : ""}` };
     }
     return null;
   } catch {
-    return { kind: "unavailable", message: `${label} non è installato o non è nel PATH.` };
+    return { kind: "unavailable", message: t("main.acpRuntime.notInstalled", { provider: label }) };
   }
 }
 
@@ -471,7 +473,7 @@ export function decidePermission(input: {
 /** The fixed ban a permission request runs into (issue #244): a secret file it names, or a banned command. */
 export function permissionBan(kind: string | null, paths: string[], command: string | null, cwd: string | null = null): { ban: FixedBan; action: string } | null {
   const secret = paths.find((path) => pathBan(path));
-  if (secret) return { ban: pathBan(secret)!, action: `${kind ?? "accesso"} ${secret}` };
+  if (secret) return { ban: pathBan(secret)!, action: `${kind ?? t("main.acpRuntime.accessAction")} ${secret}` };
   const ban = kind === "execute" && command ? commandBan(command, undefined, () => (cwd ? checkedOutBranch(cwd) : null)) : null;
   return ban && command ? { ban, action: command } : null;
 }
@@ -618,17 +620,18 @@ class AcpConnection {
     });
     // An agent that closes its stdin makes the next write fail with EPIPE; without these listeners
     // the stream error would crash the main process.
-    const streamFailed = (stream: string) => (error: Error) => {
-      this.close(new ProviderError("processExited", `${label} ha chiuso ${stream}: ${error.message}`));
+    const streamFailed = (key: "main.acpRuntime.closedInput" | "main.acpRuntime.closedOutput") => (error: Error) => {
+      this.close(new ProviderError("processExited", t(key, { provider: label, error: error.message })));
       this.terminate();
     };
-    child.stdin.on("error", streamFailed("l'input"));
-    child.stdout.on("error", streamFailed("l'output"));
+    child.stdin.on("error", streamFailed("main.acpRuntime.closedInput"));
+    child.stdout.on("error", streamFailed("main.acpRuntime.closedOutput"));
     child.stderr.on("error", () => undefined);
-    child.on("error", (error) => this.close(new ProviderError("processExited", `${label} non si è avviato: ${error.message}`)));
+    child.on("error", (error) => this.close(new ProviderError("processExited", t("main.acpRuntime.didNotStart", { provider: label, error: error.message }))));
     child.on("exit", (code, signal) => {
       const detail = this.stderrTail.trim().split("\n").slice(-3).join(" ").slice(0, 500);
-      this.close(new ProviderError("processExited", `${label} è terminato (codice ${code ?? signal ?? "?"}).${detail ? ` ${detail}` : ""}`));
+      const exited = t("main.acpRuntime.exited", { provider: label, code: String(code ?? signal ?? "?") });
+      this.close(new ProviderError("processExited", `${exited}${detail ? ` ${detail}` : ""}`));
     });
   }
 
@@ -637,7 +640,7 @@ class AcpConnection {
   }
 
   request(method: string, params: JsonObject, timeoutMs: number | null): Promise<Json> {
-    if (this.closed) return Promise.reject(this.exitError ?? new ProviderError("processExited", `${this.label} non è attivo.`));
+    if (this.closed) return Promise.reject(this.exitError ?? new ProviderError("processExited", t("main.acpRuntime.notRunning", { provider: this.label })));
     const id = this.nextId++;
     return new Promise((resolvePromise, reject) => {
       const timer =
@@ -645,13 +648,14 @@ class AcpConnection {
           ? null
           : setTimeout(() => {
               this.pending.delete(id);
-              reject(new ProviderError("timedOut", `${this.label} non ha risposto a ${method} entro ${Math.round(timeoutMs / 1000)} s.`));
+              const seconds = String(Math.round(timeoutMs / 1000));
+              reject(new ProviderError("timedOut", t("main.acpRuntime.requestTimeout", { provider: this.label, method, seconds })));
             }, timeoutMs);
       this.pending.set(id, { resolve: resolvePromise, reject, timer });
       if (!this.send({ id, method, params })) {
         this.pending.delete(id);
         if (timer) clearTimeout(timer);
-        reject(this.exitError ?? new ProviderError("processExited", `${this.label} non accetta più messaggi.`));
+        reject(this.exitError ?? new ProviderError("processExited", t("main.acpRuntime.notAccepting", { provider: this.label })));
       }
     });
   }
@@ -678,7 +682,7 @@ class AcpConnection {
     }
     if (Buffer.byteLength(this.buffer) > MAX_FRAME_BYTES) {
       this.buffer = "";
-      this.close(new ProviderError("malformedMessage", `${this.label} ha inviato un messaggio oltre il limite di 8 MB.`));
+      this.close(new ProviderError("malformedMessage", t("main.acpRuntime.frameTooLarge", { provider: this.label })));
       this.child.kill();
     }
   }
@@ -735,7 +739,7 @@ class AcpConnection {
 
   /** Kills the process group (POSIX) or tree (Windows). */
   kill(): void {
-    this.close(new ProviderError("processExited", `${this.label} è stato chiuso.`));
+    this.close(new ProviderError("processExited", t("main.provider.closed", { provider: this.label })));
     this.terminate();
   }
 
@@ -771,7 +775,7 @@ function requestErrorDetail(error: JsonObject): string {
   const detail = typeof error.data === "string" ? error.data.trim() : (trimmed(data?.detail) ?? trimmed(data?.details) ?? "");
   if (detail && /^(?:internal error(?:: agent error)?|agent error)$/i.test(message)) return detail;
   if (detail && typeof data?.code === "string" && data.code.startsWith("FS_")) return message ? `${message} ${detail}` : detail;
-  return message || detail || "Richiesta ACP non riuscita.";
+  return message || detail || t("main.acpRuntime.requestFailed");
 }
 
 /** An auth-required error is -32000 with a recognizable auth-failure phrase. */
@@ -872,7 +876,8 @@ export class AcpAgentRuntime implements AgentRuntime {
       }
     }
     if (lastError instanceof ProviderError) throw lastError;
-    throw new ProviderError("malformedMessage", `${this.profile.label} non ha restituito modelli.${lastError ? ` ${lastError.message}` : ""}`);
+    const noModels = t("main.acpRuntime.noModels", { provider: this.profile.label });
+    throw new ProviderError("malformedMessage", `${noModels}${lastError ? ` ${lastError.message}` : ""}`);
   }
 
   /** The providers' sign-in flows run in their own CLI (`cursor-agent login`, `grok login`, `droid`, `devin auth login`). */
@@ -881,7 +886,7 @@ export class AcpAgentRuntime implements AgentRuntime {
   }
 
   async openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
-    if (this.activeTurn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.activeTurn) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     this.closeConnection();
     this.sessionReadableRoots = readableRoots(options.cwd, options.readableRoots ?? []);
     const executable = this.profile.resolveExecutable(this.options.executable);
@@ -925,7 +930,7 @@ export class AcpAgentRuntime implements AgentRuntime {
           });
         }
         const sessionId = trimmed(asObject(result)?.sessionId);
-        if (!sessionId) throw new ProviderError("malformedMessage", `${this.profile.label}: risposta session/new senza sessionId.`);
+        if (!sessionId) throw new ProviderError("malformedMessage", t("main.acpRuntime.sessionNewWithoutId", { provider: this.profile.label }));
         this.adoptSession(sessionId, options.cwd, asObject(result) ?? {});
       }
       const instructions = options.developerInstructions.trim();
@@ -940,16 +945,16 @@ export class AcpAgentRuntime implements AgentRuntime {
 
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
-    if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
-    if (this.activeTurn || this.pendingTurn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (!prompt) throw new ProviderError("emptyPrompt", t("main.provider.emptyMessage"));
+    if (this.activeTurn || this.pendingTurn) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const connection = this.connection;
     if (!connection || !this.sessionId || options.threadId !== this.sessionId) {
-      throw new ProviderError("processExited", `${this.profile.label}: la sessione ${options.threadId} non è aperta.`);
+      throw new ProviderError("processExited", t("main.acpRuntime.sessionNotOpen", { provider: this.profile.label, session: options.threadId }));
     }
     const sessionId = this.sessionId;
     const block = currentUsageLimit(this.profile.id);
     if (block) throw new ProviderError("blocked", block.message);
-    const pending = new PendingTurn(options.onEvent, `${this.profile.label} è stato chiuso.`);
+    const pending = new PendingTurn(options.onEvent, t("main.provider.closed", { provider: this.profile.label }));
     this.pendingTurn = pending;
     let blocks: Json[];
     try {
@@ -962,7 +967,7 @@ export class AcpAgentRuntime implements AgentRuntime {
       if (this.pendingTurn === pending) this.pendingTurn = null;
     }
     if (this.connection !== connection || this.sessionId !== sessionId) {
-      throw new ProviderError("processExited", `${this.profile.label}: la sessione ${sessionId} non è più aperta.`);
+      throw new ProviderError("processExited", t("main.acpRuntime.sessionNoLongerOpen", { provider: this.profile.label, session: sessionId }));
     }
 
     return new Promise<string>((resolvePromise, reject) => {
@@ -1003,7 +1008,7 @@ export class AcpAgentRuntime implements AgentRuntime {
             resolvePromise(text);
           } else if (outcome.kind === "interrupted") {
             turn.onEvent({ type: "interrupted" });
-            reject(new Error("Turno interrotto."));
+            reject(interruptedTurnError());
           } else {
             const blocked = usageLimitError(this.profile.id, this.profile.label, outcome.message, parseUsageLimit(outcome.message));
             turn.onEvent({ type: "failed", message: blocked?.message ?? outcome.message });
@@ -1025,7 +1030,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         connection.notify("session/cancel", { sessionId });
         turn.settle({
           kind: "failed",
-          message: `Turno fermato: ${this.profile.label} non ha dato segni di attività per ${Math.round(idleMs / 60_000) || 1} min.`,
+          message: t("main.acpRuntime.idleStopped", { provider: this.profile.label, minutes: String(Math.round(idleMs / 60_000) || 1) }),
         });
       }, this.testHooks.watchdogIntervalMs ?? 15_000);
       watchdog.unref?.();
@@ -1060,7 +1065,7 @@ export class AcpAgentRuntime implements AgentRuntime {
   stop(): void {
     if (this.pendingTurn) this.pendingTurn.stopped = true;
     this.pendingTurn = null;
-    this.activeTurn?.settle({ kind: "failed", message: `${this.profile.label} è stato chiuso.` });
+    this.activeTurn?.settle({ kind: "failed", message: t("main.provider.closed", { provider: this.profile.label }) });
     this.closeConnection();
   }
 
@@ -1148,9 +1153,9 @@ export class AcpAgentRuntime implements AgentRuntime {
     if (error instanceof ProviderError && error.code !== "rpcError") return error;
     const message = error instanceof Error ? error.message : String(error);
     if (isAuthRequiredError(error) || /auth|login|credential|api[- ]?key/i.test(message)) {
-      return new ProviderError("authenticationRequired", `${this.profile.label} richiede l'accesso: ${message}`);
+      return new ProviderError("authenticationRequired", t("main.acpRuntime.signInRequired", { provider: this.profile.label, message }));
     }
-    return new ProviderError("rpcError", `${this.profile.label} non ha avviato la sessione: ${message}`);
+    return new ProviderError("rpcError", t("main.acpRuntime.sessionDidNotStart", { provider: this.profile.label, message }));
   }
 
   /**
@@ -1284,6 +1289,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         const inside = path !== null && isAbsolute(path) && (policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path));
         if (policy.active && path && isAbsolute(path) && !inside) this.reportOutsideRead(path, "fs/read_text_file", "fs/read_text_file");
         if (!policy.active || !path || !inside || lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
+          // @model-text: the agent reads the refusal.
           throw new AcpRequestError(-32000, "Trama consente solo letture dentro la cartella di lavoro.", undefined);
         }
         const content = await readFile(path, "utf8");
@@ -1300,6 +1306,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         const content = asString(params.content);
         const target = policy.active && policy.writableRoot && path && isAbsolute(path) ? containedWriteTarget(policy.writableRoot, path) : null;
         if (target === null || content === null) {
+          // @model-text: the agent reads the refusal.
           throw new AcpRequestError(-32000, "Trama consente scritture solo dentro la cartella del turno.", undefined);
         }
         await writeFileNoFollow(target, content);
@@ -1311,7 +1318,7 @@ export class AcpAgentRuntime implements AgentRuntime {
       default: {
         const handled = this.profile.handleExtension?.(method.replace(/^_/, ""), params, policy);
         if (handled) return handled.result;
-        throw new AcpRequestError(-32601, `Trama non supporta ${method}`, undefined);
+        throw new AcpRequestError(-32601, `Trama does not support ${method}`, undefined);
       }
     }
   }
@@ -1470,7 +1477,7 @@ export class AcpAgentRuntime implements AgentRuntime {
     state.settled = true;
     const succeeded = state.status === "completed";
     const output = textContent(state.content) ?? rawOutputText(state.rawOutput);
-    if (!succeeded) turn.failedToolDetail = output ?? state.title ?? "Chiamata allo strumento non riuscita.";
+    if (!succeeded) turn.failedToolDetail = output ?? state.title ?? t("main.acpRuntime.toolCallFailed");
     if (category === "command") {
       const raw = asObject(state.rawOutput);
       const exitValue = raw?.exitCode ?? raw?.exit_code ?? asObject(raw?.metadata)?.exit;
@@ -1486,7 +1493,7 @@ export class AcpAgentRuntime implements AgentRuntime {
     } else if (category === "file") {
       turn.onEvent({ type: "fileChangeCompleted", itemId: id, paths: toolCallPaths(state, turn.policy.cwd), succeeded });
     } else if (category === "tool") {
-      turn.onEvent({ type: "toolCallCompleted", itemId: id, server, tool, succeeded, error: succeeded ? null : (output ?? "Chiamata non riuscita.") });
+      turn.onEvent({ type: "toolCallCompleted", itemId: id, server, tool, succeeded, error: succeeded ? null : (output ?? t("main.acpRuntime.callFailed")) });
     }
   }
 
@@ -1494,7 +1501,7 @@ export class AcpAgentRuntime implements AgentRuntime {
 
   /** Opens a disposable ACP session in an empty folder and reads the model config option. */
   private async discoverAcpModels(executable: string): Promise<ProviderModel[]> {
-    if (this.activeTurn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.activeTurn) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const probe = new AcpAgentRuntime(this.profile, { ...this.options, toolServer: null }, this.testHooks);
     const cwd = await mkdtemp(join(tmpdir(), `trama-${this.profile.id}-models-`));
     try {

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { clearUsageLimitsForTests, currentUsageLimit, usageLimitError } from "./providerSupport";
+import { classifyProviderFailure } from "@shared/providerFailure";
+import { setPersonLanguage } from "../personLanguage";
+import { clearUsageLimitsForTests, currentUsageLimit, PendingTurn, usageLimitError } from "./providerSupport";
+import { isInterruptedTurn } from "./types";
 
 /** Pi's text for OpenRouter's upstream 429 of the report (#185): pi-ai writes "<status>: <body>". */
 const OPENROUTER_429 =
@@ -23,5 +26,34 @@ describe("usageLimitError", () => {
 
   it("returns null for any other failure", () => {
     expect(usageLimitError("pi", "Pi", "socket hang up")).toBeNull();
+  });
+});
+
+describe("texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the limits in the person's language, still classified the same way", () => {
+    setPersonLanguage("en");
+    const temporary = usageLimitError("pi", "Pi", OPENROUTER_429);
+    expect(temporary?.message).toMatch(/^Pi hit a temporary rate limit\. 429: /);
+    const blocked = usageLimitError("opencode", "OpenCode", "You've hit your usage limit.");
+    expect(blocked?.message).toBe("OpenCode has reached its usage limit. You've hit your usage limit.");
+    expect(classifyProviderFailure(blocked!.message).kind).toBe("quotaExhausted");
+  });
+
+  it("marks an interrupted turn in any language", () => {
+    setPersonLanguage("en");
+    const pending = new PendingTurn(() => undefined, "closed");
+    pending.interrupted = true;
+    let caught: unknown;
+    try {
+      pending.checkpoint();
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).toBe("Turn interrupted.");
+    expect(isInterruptedTurn(caught)).toBe(true);
+    expect(isInterruptedTurn(new Error("Turno interrotto."))).toBe(true);
+    expect(isInterruptedTurn(new Error("Turn failed."))).toBe(false);
   });
 });
