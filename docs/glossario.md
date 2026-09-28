@@ -22,7 +22,7 @@ La stessa tabella sta in `app/src/shared/plainLanguage.ts`. Un test controlla ch
 | Copia di lavoro | Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua. | worktree |
 | Sessione cloud | Il lavoro di uno sviluppatore che gira sui server del provider invece che sul Mac. Torna come pull request in bozza e Trama lo verifica sul Mac. | remoto, sandbox |
 | Luogo di lavoro | Dove lavora un incarico: in locale sul Mac o in una sessione cloud. Lo sceglie l'impostazione del progetto, e puoi spostare un incarico. | |
-| Patto Vivo | Le decisioni che hai preso sul comportamento del prodotto, con la loro versione. | pact |
+| Patto | Le decisioni che hai preso sul comportamento del prodotto, con la loro versione. | pact |
 | Mandato | Il permesso che dai al Coordinatore per fare da solo alcune cose. | mandate |
 | Aspetta te | L'elenco delle domande, proposte e permessi che aspettano una tua risposta. | pending, waiting |
 | Attività | Il registro delle mosse che il Coordinatore ha fatto da solo, con l'esito. | activity log |

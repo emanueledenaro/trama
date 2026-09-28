@@ -13,7 +13,10 @@ export type InspectorTarget =
   | { kind: "file"; path: string }
   | { kind: "pact" }
   | { kind: "decision"; id: string }
-  | { kind: "mandate" }
+  /** `change` opens "Cambia il mandato" on the correction form, as the proposal's Correggi does (issue #334). */
+  | { kind: "mandate"; change?: "correct" }
+  /** The code standard of the open project, in Regole (issue #334). */
+  | { kind: "standard" }
   | { kind: "memory" }
   | { kind: "team" }
   | { kind: "specialist"; id: string }

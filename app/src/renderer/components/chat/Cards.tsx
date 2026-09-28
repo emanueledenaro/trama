@@ -379,7 +379,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
             <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
               Rifiuta la proposta
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
+            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
               Correggi
             </Button>
             <Button
@@ -1401,6 +1401,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const [rejecting, setRejecting] = useState(false);
   const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
+  const t = useT();
   if (!candidate || !report) return null;
   const state = candidateStatus(report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
@@ -1449,8 +1450,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
-                {BLOCKER_TEXT[b.code] ?? b.code}
-                {b.code === "BASE_CHANGED" ? null : (
+                {b.code === "WORKTREE_CHANGED" ? t("candidate.blocker.worktreeChanged") : (BLOCKER_TEXT[b.code] ?? b.code)}
+                {b.code === "BASE_CHANGED" || b.code === "WORKTREE_CHANGED" ? null : (
                   <span className="text-muted-foreground">
                     <Sep />
                     <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(b.detail) : b.detail} />
