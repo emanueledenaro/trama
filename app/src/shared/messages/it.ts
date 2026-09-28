@@ -646,6 +646,10 @@ export const it = {
   "divergence.showFiles": "Mostra i {count} file",
   "divergence.showFiles.one": "Mostra il file",
   "divergence.ask": "Chiedi al Coordinatore come riallineare",
+  "team.rename.followsName": "Il nome cambia ovunque: incarichi, chat e cronologia mostrano il nuovo nome.",
+  "architecture.strength.strong": "consigliata",
+  "architecture.strength.worthExploring": "da valutare",
+  "architecture.strength.speculative": "ipotesi",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

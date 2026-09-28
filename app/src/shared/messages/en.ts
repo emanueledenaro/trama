@@ -645,4 +645,8 @@ export const en: Record<keyof typeof it, string> = {
   "divergence.showFiles": "Show the {count} files",
   "divergence.showFiles.one": "Show the file",
   "divergence.ask": "Ask the Coordinator how to realign",
+  "team.rename.followsName": "The name changes everywhere: assignments, chat and history show the new name.",
+  "architecture.strength.strong": "recommended",
+  "architecture.strength.worthExploring": "worth exploring",
+  "architecture.strength.speculative": "speculative",
 };
