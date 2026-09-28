@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@shared/codex";
 import type {
+  AuditAxis,
   AuditFinding,
   DecisionRequest,
   FindingFollowUp,
@@ -10,7 +11,7 @@ import type {
   Specialist,
   SpecialistAssignment,
 } from "@shared/domain";
-import { evidenceLabel, FINDING_STATUS_TEXT } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, LENS_NAMES, lensTitle } from "@shared/findings";
 import { shortId } from "@shared/ids";
 import type { PresenceView } from "@shared/presence";
 import type { RepositoryModule } from "@shared/repository";
@@ -39,7 +40,7 @@ const FOLLOW_UP_NAMES: Record<FindingFollowUp["kind"], string> = {
 /** The finding of a finished examination, or why the person cannot act on it. */
 export function actionableFinding(audit: FocusAudit, findingId: string): AuditFinding {
   if (audit.status !== "done") throw new FindingWorkError("L'esame non è concluso: aspetta il rapporto prima di agire sui rilievi.");
-  const finding = [...(audit.standards.items ?? []), ...(audit.spec.items ?? [])].find((f) => f.id === findingId);
+  const finding = auditFindings(audit).find((f) => f.id === findingId);
   if (!finding) throw new FindingWorkError("Rilievo non trovato in questo esame.");
   return finding;
 }
@@ -62,7 +63,13 @@ export function findingProof(finding: AuditFinding): string {
   return `riproduzione:\n${evidence.steps}`;
 }
 
-const axisOf = (finding: AuditFinding) => (finding.id.startsWith("spec") ? "Spec" : "Standards");
+/** Where a finding comes from, by its id: an axis of code-review, or one of Trama's lenses (F05). */
+function sourceOf(finding: AuditFinding): { of: string; name: string } {
+  const lens = LENS_NAMES.find((name) => finding.id.startsWith(`${name}-`));
+  if (lens) return { of: `della lente di Trama ${lensTitle(lens)}`, name: `lente di Trama ${lensTitle(lens)}` };
+  const axis = finding.id.startsWith("spec") ? "Spec" : "Standards";
+  return { of: `dell'asse ${axis}`, name: `asse ${axis}` };
+}
 
 /** The candidate as the person reads it: "candidato di Luca", by the developer who wrote it (issue #270). */
 export function candidateName(document: ProjectDocument, audit: FocusAudit): string {
@@ -74,7 +81,7 @@ export function candidateName(document: ProjectDocument, audit: FocusAudit): str
 /** Everything the finding says, in Markdown: status, proof, what Trama read and where it comes from. */
 export function findingMarkdown(document: ProjectDocument, audit: FocusAudit, finding: AuditFinding): string {
   return [
-    `**Rilievo dell'asse ${axisOf(finding)}${finding.severity === "serious" ? ", grave" : ""}:** ${finding.title}`,
+    `**Rilievo ${sourceOf(finding).of}${finding.severity === "serious" ? ", grave" : ""}:** ${finding.title}`,
     `**Stato:** ${FINDING_STATUS_TEXT[finding.status]}.${finding.basis ? ` ${finding.basis}` : ""}`,
     `**Prova:** ${findingProof(finding)}`,
     ...(finding.observed ? [`Cosa ha letto Trama:\n\n\`\`\`\n${finding.observed}\n\`\`\``] : []),
@@ -252,7 +259,7 @@ export function findingPactCard(document: ProjectDocument, audit: FocusAudit, fi
       requestId: work?.requestId ?? null,
       category: "product",
       question: `Il rilievo «${finding.title}» è un compromesso da accettare o va corretto?`,
-      concreteCase: [`Esame approfondito sul ${candidateName(document, audit)}, asse ${axisOf(finding)}.`, `Prova: ${findingProof(finding)}.`, finding.basis ?? ""]
+      concreteCase: [`Esame approfondito sul ${candidateName(document, audit)}, ${sourceOf(finding).name}.`, `Prova: ${findingProof(finding)}.`, finding.basis ?? ""]
         .filter(Boolean)
         .join(" "),
       alternatives: [
@@ -282,11 +289,13 @@ export function findingPactCard(document: ProjectDocument, audit: FocusAudit, fi
 /** The report as it goes to GitHub: the real checks first, then the two axes apart, each finding with its proof. */
 export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit): string {
   const checks = audit.checks.map((c) => `- \`${c.check}\`: ${c.result === "pass" ? "superata" : "non superata"}`);
-  const axis = (name: "standards" | "spec", title: string) => {
-    const value = audit[name];
-    const items = (value.items ?? []).map(
+  const findingLines = (value: AuditAxis) =>
+    (value.items ?? []).map(
       (f) => `- ${f.severity === "serious" ? "**Grave.** " : ""}${f.title} (${FINDING_STATUS_TEXT[f.status].toLowerCase()}; prova: ${evidenceLabel(f.evidence)})`,
     );
+  const axis = (name: "standards" | "spec", title: string) => {
+    const value = audit[name];
+    const items = findingLines(value);
     return [`### ${title}`, value.status === "skipped" ? "Nessuna spec disponibile: l'asse non è partito." : items.length ? items.join("\n") : "Nessun rilievo."].join("\n\n");
   };
   return [
@@ -296,6 +305,11 @@ export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit
     checks.length ? checks.join("\n") : "Nessuna verifica eseguita.",
     axis("standards", "Standards"),
     axis("spec", "Spec"),
+    // Trama's lenses (F05) follow the axes, marked as Trama's additions.
+    ...auditLenses(audit).map(({ name, lens }) => {
+      const items = findingLines(lens);
+      return [`### ${lensTitle(name)} (lente di Trama)`, lens.status === "failed" ? "La lente non ha prodotto un rapporto." : items.length ? items.join("\n") : "Nessun rilievo."].join("\n\n");
+    }),
     ...(audit.summary ? [`**Sintesi:** ${audit.summary}`] : []),
     "Un rilievo è verificato solo quando Trama ha ricontrollato la sua prova; gli altri restano ipotesi.",
   ].join("\n\n");
