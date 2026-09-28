@@ -427,11 +427,20 @@ for (const [label, theme] of themes) {
 await setTheme("system");
 await firstDecision.getByRole("button", { name: /Va in revisione/ }).click();
 await firstDecision.getByRole("button", { name: "Registra la decisione" }).click();
-await page.getByText("Apri nel Patto").first().waitFor({ timeout: 20_000 });
+// Issue #271: an answered card is one line with the choice; the line opens the whole card.
+const answeredLine = page.getByTestId("settled-card").filter({ has: page.getByTestId("settled-answer") }).first();
+await answeredLine.waitFor({ timeout: 20_000 });
+if (!(await answeredLine.innerText()).includes("Hai scelto: ")) throw new Error(`Answered decision line: ${await answeredLine.innerText()}`);
 await page.waitForTimeout(800);
 await shot("03c-decision-answered");
-await page.getByText("Ha lavorato per").first().click();
+await answeredLine.getByRole("button", { name: /^Apri: / }).click();
+await answeredLine.getByText("Apri nel Patto").waitFor();
+await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
+// The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there.
+await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
+await page.getByTestId("inspector").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
 await shot("04-work-expanded");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("[proponi-team]");
 await page.keyboard.press("Enter");
 const teamItem = await openWaiting("team");
@@ -650,7 +659,11 @@ await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const body = await page.locator("body").innerText();
 const assignmentId = body.match(/Incarico (A-[0-9A-F]{8})/)[1];
-const decisionId = body.match(/Decisione (D-[0-9A-F]{8})/)[1];
+// An answered card is one line (issue #271): the decision's id comes from the state, not from the card's text.
+const decisionOf = (question) =>
+  page.evaluate(async (text) => (await window.trama.getState()).project.document.decisionRequests.find((r) => r.outcome && r.question.includes(text))?.outcome.decisionId, question);
+const decisionId = await decisionOf("Cosa succede a un ordine pagato annullato?");
+if (!/^D-[0-9A-F]{8}$/.test(decisionId ?? "")) throw new Error(`No decision recorded: ${decisionId}`);
 await page.getByLabel("Messaggio al Coordinatore").fill(`[candidato:${assignmentId}:${decisionId}]`);
 await page.keyboard.press("Enter");
 // Issue #292: the verified candidate waits for the person in Aspetta te; the chat keeps its reference.
@@ -676,7 +689,7 @@ for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in atte
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
 // The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
-const documentationWork = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
+const documentationWork = page.locator('.chat-card, [data-testid="settled-card"]').filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
 if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
@@ -1521,8 +1534,10 @@ await send("[chiedi-decisione]");
 const candidateQuestion = await openWaiting("question", "Cosa succede a un ordine pagato annullato?");
 await candidateQuestion.getByRole("button", { name: /Va in revisione/ }).click({ timeout: 20_000 });
 await candidateQuestion.getByRole("button", { name: "Registra la decisione" }).click();
-await page.getByText("Apri nel Patto").first().waitFor({ timeout: 20_000 });
-const candidateDecision = (await page.locator("body").innerText()).match(/Decisione (D-[0-9A-F]{8})/)[1];
+await page.getByTestId("settled-answer").or(page.getByText("Apri nel Patto")).first().waitFor({ timeout: 20_000 });
+const candidateDecision = await page.evaluate(
+  async () => (await window.trama.getState()).project.document.decisionRequests.find((r) => r.outcome && r.question.includes("Cosa succede a un ordine pagato annullato?"))?.outcome.decisionId,
+);
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Scrivi", exact: true }).click();
 await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
@@ -1532,7 +1547,8 @@ await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
 await page.getByRole("button", { name: "Concedi mandato" }).click();
 await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-const assignmentCards = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
+// Issue #271: finished work is one settled line, with the same title, developer and outcome as its card.
+const assignmentCards = page.locator('.chat-card, [data-testid="settled-card"]').filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
 const cardAssignment = async (card) => (await card.innerText()).match(/Incarico (A-[0-9A-F]{8})/)[1];
 
 // V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
@@ -1545,7 +1561,7 @@ const slowActions = await slowCard.locator(".cta-row button").allTextContents();
 if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the last call to action: ${slowActions}`);
 await slowCard.getByRole("button", { name: "Ferma" }).click();
 await slowCard.getByText("Fermato", { exact: true }).waitFor({ timeout: 20_000 });
-// The turn's activities are one row, opened on request.
+// The turn's activities are one line in the chat; its steps open in Activity (issue #271).
 const stoppedTurn = page.getByRole("button", { name: /ha lavorato per/ }).first();
 await stoppedTurn.click();
 await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
@@ -2802,12 +2818,19 @@ if (!divergenceText.includes("chore/pre-apertura") || !divergenceText.includes("
   throw new Error(`Divergence notice: ${divergenceText}`);
 }
 await primaryLast(divergenceNotice.locator(".cta-row"), "Divergence notice");
-const divergenceCards = page.getByTestId("conflict-in-divergence");
+// Issue #271: the conflicts in the notice and the replaced work are settled, one line each; a line opens its card.
+const settledLines = page.getByTestId("settled-card");
+const divergenceCards = settledLines.filter({ hasText: "Nell'avviso del progetto" });
 if ((await divergenceCards.count()) !== 2) throw new Error(`Divergence: ${await divergenceCards.count()} conflicts with main still shown on their own`);
-if ((await page.getByTestId("conflict-superseded").count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
-if ((await page.getByTestId("candidate-superseded").count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
-const replacedCard = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-superseded") });
-if (await replacedCard.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("Divergence: the replaced candidate can still be approved");
+const supersededConflict = settledLines.filter({ hasText: "Due incarichi del team" }).filter({ hasText: "Superato" });
+if ((await supersededConflict.count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
+const replacedLine = settledLines.filter({ hasText: "Candidato" }).filter({ hasText: "Superato" });
+if ((await replacedLine.count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
+await replacedLine.getByRole("button", { name: /^Apri: / }).click();
+await replacedLine.getByTestId("candidate-superseded").waitFor();
+if (await replacedLine.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("Divergence: the replaced candidate can still be approved");
+await replacedLine.getByRole("button", { name: /^Chiudi: / }).click();
+await supersededConflict.getByRole("button", { name: /^Apri: / }).click();
 if (await page.getByRole("main").getByText(/colleg[ah]i?\b/).count()) throw new Error("Divergence: a colleague is named with nobody sharing a presence");
 if (await page.getByText("Conflitto con C-AC540E8F").count()) throw new Error("Divergence: the newer candidate still conflicts with the replaced one");
 await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();
@@ -2825,6 +2848,243 @@ for (const dark of [false, true]) {
 }
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #271: a noisy history stays compact. The technical steps of each turn (seven read_issues in a row, empty
+// notes, the same command three times) are in Activity, grouped; the chat keeps one line per turn. A card that asks
+// nothing more is one line with its outcome, and a conflict lists its first files with the rest on request.
+const timelineProject = await mkdtemp(join(tmpdir(), "trama-ui-cronologia-"));
+await cp(resolve("resources/DemoProject"), timelineProject, { recursive: true });
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), timelineProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let timelinePath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-cronologia-")) timelinePath = join(dataDir, "Projects", file);
+}
+if (!timelinePath) throw new Error("Compact timeline: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(timelinePath, "utf8"));
+  // After the study, so the history reads in order below it.
+  const start = Date.now();
+  const at = (minute) => new Date(start + minute * 60_000).toISOString();
+  const files = [
+    "package.json",
+    "package-lock.json",
+    "src/app/layout.tsx",
+    "src/app/page.tsx",
+    "src/app/prodotti/page.tsx",
+    "src/app/carrello/page.tsx",
+    "src/lib/commerce.ts",
+    "src/lib/prezzi.ts",
+    "src/lib/ordini.ts",
+    "src/components/Header.tsx",
+    "src/components/Footer.tsx",
+    "src/components/Scheda.tsx",
+    "next.config.js",
+    "tsconfig.json",
+    "README.md",
+    "AGENTS.md",
+    ".env.example",
+    "vercel.json",
+  ];
+  const assignment = {
+    id: "A-5E1C0DE1",
+    specialistId: "S-LUCA",
+    requestId: "R-CRONO-1",
+    kind: "agreedTicket",
+    objective: "Correggere lo script typecheck",
+    issueNumber: 13,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(12),
+    status: "completed",
+    workspace: null,
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Ho corretto lo script typecheck in package.json.",
+    failure: null,
+    updatedAt: at(20),
+    lastUpdate: "Incarico concluso",
+    reportedStatus: "completed",
+  };
+  document.team.specialists.push({
+    id: "S-LUCA",
+    name: "Luca",
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color: "blue",
+    tag: "Next.js",
+    createdAt: at(1),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(20),
+    lastUpdate: "",
+    removal: null,
+    assignments: [assignment],
+  });
+  document.candidates.push({
+    id: "C-5E1C0DE1",
+    assignmentId: assignment.id,
+    specialistId: "S-LUCA",
+    snapshotId: "snap-crono",
+    baseSHA: "0000000000000000000000000000000000000000",
+    diff: "",
+    changedFiles: ["package.json"],
+    touchedModules: [],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["git_status"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(20),
+    updatedAt: at(20),
+    evidence: {},
+    technicalReview: null,
+    clearance: null,
+    humanApproval: null,
+    pullRequest: null,
+  });
+  document.conflicts = [
+    {
+      id: "snap-crono:main",
+      candidateId: "C-5E1C0DE1",
+      snapshotId: "snap-crono",
+      remoteSHA: "4df3c14a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+      references: ["main"],
+      classification: "conflict",
+      detail: "La fusione temporanea produce conflitti testuali.",
+      conflictingFiles: files,
+      checkedAt: at(21),
+    },
+  ];
+  document.requests.push({ id: "R-CRONO-1", text: "situazione?", moduleId: null, state: "completed", model: "gpt-6-luna", effort: null, createdAt: at(10), completedAt: at(11), failure: null });
+  document.decisionRequests.push({
+    id: "Q-5E1C0DE1",
+    requestId: "R-CRONO-1",
+    category: "product",
+    question: "Quali pagamenti accetta il negozio all'apertura?",
+    concreteCase: "Un cliente paga l'ordine 42 alla cassa online.",
+    alternatives: [
+      { behavior: "Solo carta", example: "Visa e Mastercard", consequence: null },
+      { behavior: "Carta e bonifico", example: "Visa, Mastercard e bonifico SEPA", consequence: "L'ordine resta in attesa finché arriva il bonifico." },
+    ],
+    revisesDecisionId: null,
+    askedAt: at(11),
+    outcome: { answer: "Carta e bonifico", alternativeIndex: 1, decisionId: "D-5E1C0DE1", version: 1, answeredAt: at(12) },
+  });
+  document.mandateRequests.push({
+    id: "M-5E1C0DE1",
+    requestId: "R-CRONO-1",
+    reason: "Serve il permesso di lavorare sullo script typecheck.",
+    objectives: ["Sbloccare la verifica tecnica"],
+    priorities: [],
+    scopeModuleIds: [],
+    authorizedActions: ["executeInWorktree"],
+    limits: [],
+    askedAt: at(11),
+    resolution: { kind: "granted", version: 1, resolvedAt: at(12) },
+  });
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const event = (minute, content, extra = {}) => ({ id: `E-crono-${++sequence}`, sequence, origin: "trama", requestId: "R-CRONO-1", createdAt: at(minute), content, ...extra });
+  const activity = (minute, title, detail, tone, extra) => event(minute, { type: "activity", title, detail, tone }, extra);
+  const card = (minute, kind, referenceId) => event(minute, { type: "card", kind, title: kind, detail: null, referenceId }, { requestId: null });
+  const luca = { requestId: null, assignmentId: assignment.id, workKey: `${assignment.id}:1` };
+  document.events.push(
+    event(10, { type: "personMessage", text: "situazione?", moduleId: null, moduleName: null, imageCount: 0 }, { origin: "person" }),
+    activity(10, "Messaggio inviato al Coordinatore", "gpt-6-luna, fase: lavoro", "info"),
+    ...Array.from({ length: 7 }, () => activity(10, "Strumento di Trama: read_issues", null, "tool")),
+    activity(11, "Nota del Coordinatore", "", "info"),
+    card(11, "decision", "Q-5E1C0DE1"),
+    card(11, "mandate", "M-5E1C0DE1"),
+    activity(12, "Avvio dell'incarico", "Correggere lo script typecheck", "info", luca),
+    activity(12, "Worktree pronto", "chore/issue-13-correggere-lo-script-typecheck", "info", luca),
+    activity(12, "Nota dello specialista", "", "info", luca),
+    activity(13, "Nota dello specialista", "  ", "info", luca),
+    ...[14, 15, 16].map((minute) => activity(minute, "/bin/zsh -lc 'npm run typecheck'", "tsc --noEmit", "tool", luca)),
+    activity(17, "Modifica di 1 file", "package.json", "tool", luca),
+    activity(20, "Incarico concluso", "Ho corretto lo script typecheck in package.json.", "info", luca),
+    card(20, "assignment", assignment.id),
+    event(21, { type: "coordinatorText", text: "Luca ha corretto lo script typecheck. Il candidato è in conflitto con main su 18 file.", model: "gpt-6-luna", references: [] }),
+    card(21, "conflict", "snap-crono:main"),
+  );
+  await writeFile(timelinePath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), timelineProject);
+const timelineConflict = page.locator(".chat-card", { has: page.getByTestId("conflict-files") });
+await timelineConflict.waitFor({ timeout: 30_000 });
+// A wheel up unpins the chat from its bottom, so it stays on the compact history.
+const timelineScroller = page.locator(".chat-timeline-scroll");
+await timelineScroller.hover();
+await page.mouse.wheel(0, -400);
+await page.waitForTimeout(300);
+await timelineScroller.getByTestId("work-line").filter({ hasText: "Luca" }).evaluate((line) => line.scrollIntoView({ block: "center" }));
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`28a-compact-timeline-${dark ? "dark" : "light"}`);
+}
+const chatPane = page.locator(".chat-timeline-scroll");
+// One line for each turn of work, none of its steps.
+const workLines = chatPane.getByTestId("work-line");
+if ((await workLines.filter({ hasText: "Luca" }).count()) !== 1) throw new Error(`Compact timeline: Luca's turn is not one line: ${await workLines.allInnerTexts()}`);
+if (await chatPane.getByTestId("technical-step").count()) throw new Error("Compact timeline: technical steps in the chat");
+for (const noise of ["read_issues", "Nota dello specialista", "npm run typecheck"]) {
+  if (await chatPane.getByText(noise).count()) throw new Error(`Compact timeline: "${noise}" in the chat`);
+}
+// The answered decision, the granted mandate and the finished work are one line each, with their outcome.
+const settled = chatPane.getByTestId("settled-card");
+for (const [what, outcome] of [["Decisione", "Hai scelto: Carta e bonifico"], ["Mandato", "Concesso, v1"], ["Incarico A-5E1C0DE1", "Concluso"]]) {
+  const line = settled.filter({ hasText: what }).filter({ hasText: outcome });
+  if ((await line.count()) !== 1) throw new Error(`Compact timeline: no settled line for ${what} with ${outcome}`);
+  const box = await line.boundingBox();
+  if (!box || box.height > 48) throw new Error(`Compact timeline: the line of ${what} is ${box?.height} px high`);
+}
+// The line opens the whole card, and closes it again.
+const decisionLine = settled.filter({ hasText: "Decisione" });
+await decisionLine.getByRole("button", { name: /^Apri: / }).click();
+await decisionLine.getByText("Apri nel Patto").waitFor();
+await decisionLine.getByRole("button", { name: /^Chiudi: / }).click();
+if (await decisionLine.getByText("Apri nel Patto").count()) throw new Error("Compact timeline: the decision did not close");
+// The live conflict stays whole, with its first files and the rest on request.
+const conflictChips = timelineConflict.getByTestId("conflict-files").locator("span.font-mono");
+if ((await conflictChips.count()) !== 5) throw new Error(`Compact timeline: the conflict shows ${await conflictChips.count()} files`);
+await timelineConflict.getByRole("button", { name: "Mostra tutti i 18 file" }).click();
+await timelineConflict.getByText("vercel.json").waitFor();
+// Luca's line opens its turn in Activity: the empty notes are gone, the same command three times is one entry.
+await workLines.filter({ hasText: "Luca" }).getByRole("button").click();
+const focusedTurn = page.getByTestId("inspector").locator('[data-testid="work-turn"][data-focused]');
+await focusedTurn.getByTestId("technical-steps").waitFor();
+const lucaSteps = await focusedTurn.getByTestId("technical-step").allInnerTexts();
+if (lucaSteps.some((text) => text.includes("Nota dello specialista"))) throw new Error(`Compact timeline: empty notes in Activity: ${lucaSteps}`);
+const command = focusedTurn.locator('[data-testid="technical-step"][data-count="3"]');
+if (!(await command.innerText()).includes("npm run typecheck")) throw new Error(`Compact timeline: the command is not grouped: ${lucaSteps}`);
+await command.getByRole("button").click();
+await command.getByText("tsc --noEmit").waitFor();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`28b-activity-steps-${dark ? "dark" : "light"}`);
+}
+// The Coordinator's seven read_issues in a row are one entry.
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await workLines.filter({ hasNotText: "Luca" }).last().getByRole("button").click();
+await page.getByTestId("inspector").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"][data-count="7"]').filter({ hasText: "read_issues" }).waitFor();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 

@@ -60,7 +60,7 @@ import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
-import { compareSides, linesLabel, type OverlapItem } from "@shared/overlap";
+import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
 
 export function CardFrame({
   icon,
@@ -1561,6 +1561,30 @@ const CONFLICT_LABEL = {
   unknown: { label: "Non verificato", tone: "secondary" as const },
 };
 
+/** How many files a conflict lists before "Mostra tutti" (issue #271). */
+const CONFLICT_FILES_SHOWN = 5;
+
+/** The files of a conflict: the first few, the rest on request (issue #271). */
+function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<string, LineRange[]> | null }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? files : files.slice(0, CONFLICT_FILES_SHOWN);
+  return (
+    <div className="flex flex-wrap items-center gap-1" data-testid="conflict-files">
+      {shown.map((file) => (
+        <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+          {file}
+          {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(lines[file]!)}</span> : null}
+        </span>
+      ))}
+      {files.length > shown.length ? (
+        <button type="button" className="px-1 text-ui-xs text-[var(--color-text-accent)] hover:underline" onClick={() => setAll(true)}>
+          Mostra tutti i {files.length} file
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -1639,14 +1663,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
       <p className="mt-1 text-ui-sm text-muted-foreground">{assessment.detail}</p>
       {assessment.conflictingFiles.length ? (
         <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
-          <div className="flex flex-wrap gap-1">
-            {assessment.conflictingFiles.map((file) => (
-              <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                {file}
-                {assessment.conflictingLines?.[file]?.length ? <span className="font-sans">, {linesLabel(assessment.conflictingLines[file]!)}</span> : null}
-              </span>
-            ))}
-          </div>
+          <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
         </Field>
       ) : null}
     </CardFrame>

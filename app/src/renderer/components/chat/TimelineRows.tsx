@@ -1,31 +1,18 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import {
-  IconAlertTriangle,
-  IconBolt,
-  IconBrain,
-  IconChevronRight,
-  IconClockPause,
-  IconCopy,
-  IconFileText,
-  IconInfoCircle,
-  IconPlayerStop,
-  IconShieldLock,
-  IconTerminal2,
-  IconTool,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconChevronRight, IconClockPause, IconCopy, IconFileText, IconPlayerStop } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
-import type { ConversationEvent, NextStepView } from "@shared/domain";
-import { providerWaitText, RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
+import { isUsableAccount, type ProviderId } from "@shared/codex";
+import type { NextStepView } from "@shared/domain";
+import { providerWaitText, RECOVERY_LABELS, type RecoveryAction } from "@shared/providerFailure";
 import { PROVIDERS, canCoordinate } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
-import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
+import { compactSteps, failedSteps } from "@shared/technicalSteps";
+import { type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { AgentName } from "@/components/AgentIdentity";
 import { GoalCard } from "@/components/inspector/GoalsView";
 import {
   AssignmentCard,
@@ -45,18 +32,11 @@ import {
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ReferenceText } from "./ReferenceText";
+import { SettledOr } from "./SettledCard";
+import { DisclosureChevron, WorkLabel } from "./WorkSteps";
 import { WaitingOr } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
 import { Sep } from "@/components/ui/sep";
-
-function DisclosureChevron({ open }: { open: boolean }) {
-  return (
-    <IconChevronRight
-      className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-out", open && "rotate-90 text-muted-foreground/70")}
-      stroke={1.8}
-    />
-  );
-}
 
 function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> }) {
   const [copied, setCopied] = useState(false);
@@ -116,79 +96,29 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
   );
 }
 
-function activityIcon(event: ConversationEvent) {
-  const content = event.content;
-  if (content.type !== "activity") return <IconInfoCircle />;
-  if (content.title === READ_OUTSIDE_SCOPE_TITLE) return <IconShieldLock className="text-destructive" />;
-  if (content.tone === "error") return <IconAlertTriangle className="text-destructive" />;
-  if (content.title.startsWith("Strumento") || content.title.includes(":")) return <IconTool />;
-  if (content.title === "Ragionamento") return <IconBrain />;
-  if (content.title.startsWith("Modifica")) return <IconFileText />;
-  if (content.title === "Messaggio inviato al Coordinatore" || content.title.startsWith("Nota")) return <IconBolt />;
-  return <IconTerminal2 />;
-}
-
-function ActivityRow({ event }: { event: ConversationEvent }) {
-  const [open, setOpen] = useState(false);
-  if (event.content.type !== "activity") return null;
-  const { title } = event.content;
-  // A failed turn or assignment never shows a provider's JSON body, also in records written before P10.
-  const detail = event.content.tone === "error" && /non (?:è )?riuscit|in attesa del provider/i.test(title) ? readableFailure(event.content.detail) : event.content.detail;
-  const isCommand = !title.includes(" ") || /^(git|ls|cat|rg|sed|grep|find|swift|npm|node|bun)\b/.test(title);
-  return (
-    <div className="group/tool-row">
-      <button
-        type="button"
-        disabled={!detail}
-        onClick={() => setOpen(!open)}
-        className="flex w-full min-w-0 items-center gap-1.5 text-left text-muted-foreground transition-colors group-hover/tool-row:text-foreground disabled:cursor-default"
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center [&>svg]:size-3.5 [&>svg]:stroke-[1.8]">{activityIcon(event)}</span>
-        <span className={cn("min-w-0 truncate leading-5", isCommand && "font-mono text-chat-code")}>{title}</span>
-        {detail ? <DisclosureChevron open={open} /> : null}
-      </button>
-      {open && detail ? (
-        <div className="mt-1 mb-1.5 ml-5.5 rounded-lg bg-[var(--app-chat-code-surface)] px-2.5 py-1.5 text-ui-sm whitespace-pre-wrap text-muted-foreground">
-          <ReferenceText text={detail} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
+/**
+ * A turn of work in the chat: one line with who worked and for how long (issue #271). Its technical steps are in
+ * Activity, where the line opens them; a turn with only empty notes has no line.
+ */
 function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
-  const [open, setOpen] = useState(false);
-  const specialist = useUi((s) =>
-    row.assignmentId ? (s.app?.project?.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId)) ?? null) : null,
-  );
+  const setInspector = useUi((s) => s.setInspector);
+  const steps = compactSteps(row.activities);
+  if (!steps.length && !row.running) return null;
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
-  // The specialist's identity leads the label (W15): avatar, name and tag in its color.
-  const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
-  const label = row.running
-    ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
-    : row.durationMs !== null
-      ? specialist ? <>{who}ha lavorato per {formatDuration(row.durationMs)}</> : `Ha lavorato per ${formatDuration(row.durationMs)}`
-      : specialist
-        ? <>{who}attività</>
-        : "Attività";
+  const failed = failedSteps(row.activities);
   return (
-    <div className="mb-3 text-chat">
+    <div className="mb-3 text-chat" data-testid="work-line">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        className="-ml-0.5 inline-flex items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
+        onClick={() => setInspector({ kind: "activity", work: row.id })}
+        title="Apri i passi in Attività"
+        className="-ml-0.5 inline-flex max-w-full items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >
-        <span className={cn(row.running && "shimmer-text")}>{label}</span>
-        {tools ? <span className="text-muted-foreground/60"><Sep />{tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
-        <DisclosureChevron open={open} />
+        <WorkLabel row={row} />
+        {tools ? <span className="shrink-0 text-muted-foreground/60"><Sep />{tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
+        {failed ? <span className="shrink-0 text-destructive/80"><Sep />{failed === 1 ? "1 errore" : `${failed} errori`}</span> : null}
+        <IconChevronRight className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
       </button>
-      {open ? (
-        <div className="mb-2.5 space-y-1.5">
-          {row.activities.map((event) => (
-            <ActivityRow key={event.id} event={event} />
-          ))}
-        </div>
-      ) : null}
       <div className="h-px w-full bg-border" />
     </div>
   );
@@ -398,7 +328,13 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
   );
 }
 
+/** A row of the chat; a card that asks nothing more of the person is one line that opens it (issue #271). */
 export function TimelineRowView({ row, streaming = false, latest = false }: { row: TimelineRow; streaming?: boolean; latest?: boolean }) {
+  const content = <RowContent row={row} streaming={streaming} latest={latest} />;
+  return row.kind === "card" || row.kind === "grillingRound" ? <SettledOr row={row}>{content}</SettledOr> : content;
+}
+
+function RowContent({ row, streaming = false, latest = false }: { row: TimelineRow; streaming?: boolean; latest?: boolean }) {
   switch (row.kind) {
     case "person":
       return <PersonMessage row={row} />;
