@@ -16,3 +16,22 @@ export function clampParallelDevelopers(value: unknown): number | null {
 export function parallelDevelopers(document: Pick<ProjectDocument, "settings">): number {
   return clampParallelDevelopers(document.settings?.parallelDevelopers) ?? DEFAULT_PARALLEL_DEVELOPERS;
 }
+
+/**
+ * Developers at work at the same time across every open project (issue #39): the projects the person left keep their
+ * authorized work, so one project cannot take every provider slot while another waits.
+ */
+export const DEFAULT_SHARED_DEVELOPERS = 6;
+export const MIN_SHARED_DEVELOPERS = 1;
+export const MAX_SHARED_DEVELOPERS = 12;
+
+/** A requested shared limit brought into the accepted range, or null when it is not a whole number. */
+export function clampSharedDevelopers(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null;
+  return Math.min(MAX_SHARED_DEVELOPERS, Math.max(MIN_SHARED_DEVELOPERS, value));
+}
+
+/** How many developers may work at the same time in all projects together: the person's setting, or six. */
+export function sharedDevelopers(settings: { sharedDevelopers?: number }): number {
+  return clampSharedDevelopers(settings.sharedDevelopers) ?? DEFAULT_SHARED_DEVELOPERS;
+}

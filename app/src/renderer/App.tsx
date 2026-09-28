@@ -125,7 +125,7 @@ export function App() {
         >
           <div
             className={cn(
-              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col border-r border-[color:var(--app-panel-border)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !sidebarOpen && "-translate-x-full",
             )}
             style={{ width: sidebar.width }}

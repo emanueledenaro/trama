@@ -607,12 +607,11 @@ const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-
 if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
 const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
 if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
-// W16, cost: CSS runs the steady moves; the frame loop runs only while the cursor moves or a bot morphs, at most
-// 24 times per second, and not at all at rest. Reduced motion stops everything and keeps the still pose.
+// W16, cost: CSS runs the steady moves; the frame loop runs only while a bot morphs, at most 24 times per second,
+// and not at all at rest. The eyes do not follow the cursor. Reduced motion stops everything and keeps the still pose.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
 await page.waitForFunction(() => !document.documentElement.classList.contains("bots-paused"), null, { timeout: 5_000 });
 const botFrames = () => page.evaluate(() => ({ frames: window.__tramaBots.frames, at: performance.now() }));
-const perSecond = (from, to) => ((to.frames - from.frames) * 1000) / (to.at - from.at);
 // CPU of the renderer and GPU processes over a few seconds, from Electron's own metrics.
 const cpuOver = async (ms) => {
   await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics());
@@ -634,18 +633,30 @@ const smooth = await page.evaluate(() =>
     .filter((a) => !a.effect.getKeyframes().slice(0, -1).every((k) => String(k.easing).startsWith("steps"))).length,
 );
 if (smooth) throw new Error(`${smooth} bot animations run at every frame instead of in steps`);
-const eyeOf = (bot) => bot.locator('[data-part="eye-0"]').getAttribute("transform");
-const follower = teamPanel.locator('[data-testid="agent-bot"][data-live]:is([data-activity="idle"], [data-activity="done"], [data-activity="waiting"])').first();
-const followerBox = await follower.boundingBox();
-const eyesBefore = await eyeOf(follower);
+// The eyes stay where they are while the cursor moves, and the loop draws no frame for it. The cursor moves over the
+// composer, away from every bot, so no hover wink starts a morph; blinks and winks change the eyes' size, not where
+// they sit, so only the position is compared.
+const eyePositions = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="agent-bot"] [data-part^="eye-"]')].map((eye) => /translate\([^)]*\)/.exec(eye.getAttribute("transform") ?? "")?.[0]),
+  );
+const composerBox = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
+// First let any morph under way finish: the loop is idle once a whole second passes without a frame.
+for (let quiet = 0, last = (await botFrames()).frames, tries = 0; quiet < 4 && tries < 40; tries++) {
+  await page.waitForTimeout(250);
+  const now = (await botFrames()).frames;
+  quiet = now === last ? quiet + 1 : 0;
+  last = now;
+}
+const eyesBefore = await eyePositions();
 const movingFrom = await botFrames();
 for (let i = 0; i < 40; i++) {
-  await page.mouse.move(followerBox.x + followerBox.width / 2 + 200 * Math.cos(i / 6), followerBox.y + followerBox.height / 2 + 120 * Math.sin(i / 6));
+  await page.mouse.move(composerBox.x + composerBox.width / 2 + (composerBox.width / 3) * Math.cos(i / 6), composerBox.y + composerBox.height / 2 + 10 * Math.sin(i / 6));
   await page.waitForTimeout(50);
 }
-const movingRate = perSecond(movingFrom, await botFrames());
-if (movingRate > 24 * 1.1) throw new Error(`The bot loop ran ${movingRate.toFixed(1)} frames per second while the cursor moved, over 24`);
-if ((await eyeOf(follower)) === eyesBefore) throw new Error("The eyes do not follow the cursor");
+const movingFrames = (await botFrames()).frames - movingFrom.frames;
+if (movingFrames > 0) throw new Error(`The bot loop ran ${movingFrames} frames while only the cursor moved`);
+if (JSON.stringify(await eyePositions()) !== JSON.stringify(eyesBefore)) throw new Error("The eyes moved with the cursor");
 await page.waitForTimeout(800);
 const restFrom = await botFrames();
 await page.waitForTimeout(3_000);
@@ -657,7 +668,7 @@ const cpuStill = await cpuOver(3_000);
 await page.emulateMedia({ reducedMotion: "no-preference" });
 if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
 console.log(
-  `bots: ${botSizes.length} on screen, ${movingRate.toFixed(1)} frames/s with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
+  `bots: ${botSizes.length} on screen, ${movingFrames} frames with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
     `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
 );
 const firstBot = teamPanel.getByTestId("agent-bot").first();
@@ -683,7 +694,7 @@ await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Memoria/ }).first().click();
 await page.getByRole("button", { name: "Rivedi ora" }).click();
-await page.getByText("Skill 'release-flow' created").first().waitFor({ timeout: 30_000 });
+await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
@@ -747,39 +758,146 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
+// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
+// provider: no provider name and no number past the window, in light and dark.
+{
+  const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
+  const noProviderName = (text, where) => {
+    const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
+    if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
+  };
+  await composer().fill("[pieno] Quanto contesto resta?");
+  await page.keyboard.press("Enter");
+  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
+  await notice.waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
+  noProviderName(noticeText, "The threshold card");
+  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
+  await notice.scrollIntoViewIfNeeded();
+  await themeShots("04l-context-threshold-card");
+  const meter = page.getByTestId("context-meter");
+  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await meter.click();
+  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  await meterPopup.waitFor();
+  const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
+  noProviderName(meterText, "The context meter");
+  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  await themeShots("04m-context-meter");
+  await page.keyboard.press("Escape");
+  await meterPopup.waitFor({ state: "hidden" });
+}
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
-// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
-// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+// #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
+// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
+// focusBorder, and while dragged it stays lit. Double-click and the arrow keys change the width. The panels meet edge
+// to edge as in VS Code: sidebar and inspector a shade darker than the chat, a 1px border that shows in light and dark.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
   const look = (sash) =>
     sash.evaluate((element) => {
       const style = getComputedStyle(element);
-      const probe = document.createElement("span");
-      probe.style.color = "var(--color-text-accent)";
-      element.append(probe);
-      const accent = getComputedStyle(probe).color;
-      probe.remove();
-      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
-      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+      const color = (value) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        element.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const strip = getComputedStyle(element, "::before");
+      return {
+        background: style.backgroundColor,
+        strip: strip.backgroundColor,
+        stripWidth: strip.width,
+        after: getComputedStyle(element, "::after").content,
+        accent: color("var(--app-focus-border)"),
+        width: element.getBoundingClientRect().width,
+        cursor: style.cursor,
+        zIndex: style.zIndex,
+        children: element.childElementCount,
+        text: element.textContent,
+      };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
+      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
+  }
+  // The line at rest is the panels' border: the sidebar's right edge and the inspector's left edge.
+  const borders = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--app-panel-border)";
+    document.body.append(probe);
+    const border = getComputedStyle(probe).color;
+    probe.remove();
+    const sidebar = getComputedStyle(document.querySelector(".app-sidebar-surface"));
+    const inspector = getComputedStyle(document.querySelector('[data-testid="inspector"]'));
+    return { border, sidebar: [sidebar.borderRightWidth, sidebar.borderRightColor], inspector: [inspector.borderLeftWidth, inspector.borderLeftColor] };
+  });
+  for (const [width, color] of [borders.sidebar, borders.inspector])
+    if (width !== "1px" || color !== borders.border) throw new Error(`A panel has no 1px border line: ${JSON.stringify(borders)}`);
+  // On screen, in light and dark: the border differs from the panels on both sides, and the sidebar and the inspector
+  // differ from the chat between them. Pixels come from the window capture, [r, g, b].
+  const pixel = (x, y) =>
+    app.evaluate(
+      async ({ BrowserWindow }, point) => {
+        const [b, g, r] = (await BrowserWindow.getAllWindows()[0].webContents.capturePage({ ...point, width: 1, height: 1 })).toBitmap();
+        return [r, g, b];
+      },
+      { x: Math.round(x), y: Math.round(y) },
+    );
+  const apart = (one, other) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index])));
+  await page.mouse.move(640, 500);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(400);
+    const edges = await page.evaluate(() => ({
+      sidebar: document.querySelector(".app-sidebar-surface").getBoundingClientRect().right,
+      inspector: document.querySelector('[data-testid="inspector"]').getBoundingClientRect().left,
+    }));
+    const y = 620;
+    const [sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel] = await Promise.all([
+      pixel(edges.sidebar - 1, y),
+      pixel(edges.sidebar - 12, y),
+      pixel(edges.sidebar + 12, y),
+      pixel(edges.inspector, y),
+      pixel(edges.inspector + 12, y),
+    ]);
+    const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel });
+    if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8 || apart(inspectorLine, inspectorPanel) < 8 || apart(inspectorLine, chat) < 8)
+      throw new Error(`A panel border does not show at rest: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3 || apart(inspectorPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
+    await shot(`22-sash-rest-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  // Nothing covers the grip: it sits over the content on both sides of each edge.
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const box = await sash.boundingBox();
+    const onTop = await sash.evaluate((element, points) => points.every(([x, y]) => document.elementFromPoint(x, y) === element), [
+      [box.x + 0.5, 620],
+      [box.x + box.width - 0.5, 620],
+    ]);
+    if (!onTop) throw new Error(`Something covers the sash ${await sash.getAttribute("aria-label")}`);
   }
   const sidebarBox = await sidebarSash.boundingBox();
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
-  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(500);
+  if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(250);
   const hovered = await look(sidebarSash);
-  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
-  for (const mode of ["light", "dark"]) {
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
+  for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(200);
+    const lit = (await look(sidebarSash)).strip;
+    if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -790,12 +908,12 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
   await page.waitForTimeout(200);
   const dragged = await look(inspectorSash);
-  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
   await page.mouse.move(640, 500);
   if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]'), "::before").backgroundColor === "rgba(0, 0, 0, 0)");
   await inspectorSash.dblclick();
   await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
   await inspectorSash.focus();
@@ -962,7 +1080,7 @@ await shot("14b-grilling-withdrawn");
 // The seams come first and wait for the person, with the confirmation on the right; then the spec with the
 // template's sections, which stays in Trama without GitHub. The mandate allows planning, so the Coordinator would
 // confirm the seams and the slices by itself (A06): the check pauses continuous work, and in pause they stay the person's.
-await page.getByTestId("status-line").getByRole("button", { name: "Pausa", exact: true }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
 await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
@@ -1019,7 +1137,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 // The slices held the work for the person while in pause. After Riprendi, the end of the next turn lets the
 // Coordinator confirm them by itself within the mandate (A06): they stay in Trama without GitHub, the first is ready
 // and the others wait for it, and the work goes on by itself (W04). The example project runs no periodic round.
-await page.getByTestId("status-line").getByRole("button", { name: "Riprendi" }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Riprendi il Coordinatore" }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ state: "detached", timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("A che punto sono le fette?");
@@ -1132,6 +1250,18 @@ await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
 await page.getByRole("button", { name: /^Lavoro/ }).first().click();
+// Issue #272: Lavoro names the plan as its chat card does, and a finished candidate never reads "In costruzione".
+{
+  const workPanel = page.getByTestId("inspector");
+  await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
+  if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await shot(`10h-work-states-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+}
 await page.getByTestId("inspector").locator('button[data-record-id^="C-"]').first().click();
 await page.getByTestId("inspector").getByText(/^Diff catturato da Trama/).waitFor();
 if (await page.getByTestId("inspector").getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
@@ -1206,11 +1336,11 @@ await understandingStep.getByRole("button", { name: "Annulla" }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
 // of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).click();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 const pausedLine = page.locator('[data-testid="status-line"][data-paused="true"]');
 await pausedLine.waitFor({ timeout: 20_000 });
-await pausedLine.getByTestId("status-line-text").getByText(/In pausa: i turni in corso finiscono/).waitFor();
-const resumeButton = pausedLine.getByRole("button", { name: "Riprendi" });
+await pausedLine.getByTestId("status-line-text").getByText(/Coordinatore in pausa: i turni in corso finiscono/).waitFor();
+const resumeButton = pausedLine.getByRole("button", { name: "Riprendi il Coordinatore" });
 await resumeButton.waitFor();
 // The primary sits last on the right: Riprendi, unless the person has a move of their own, which stays the primary.
 const lastButton = pausedLine.getByRole("button").last();
@@ -1223,7 +1353,7 @@ await page.waitForTimeout(300);
 if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started a move in pause");
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
@@ -1263,6 +1393,11 @@ const settings = page.getByTestId("settings");
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
+// Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
+const capabilityToggles = settings.getByRole("button", { name: /^Capacità/ });
+await capabilityToggles.first().click();
+await themeShots("11b-connections-capabilities");
+await capabilityToggles.first().click();
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 // Issue #301: the language sits in Generale and changes the page at once.
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano", checked: true }).waitFor();
@@ -1407,7 +1542,9 @@ await queueToggle.click();
 const queue = focusBar.getByTestId("focus-queue");
 await queue.waitFor();
 if (!(await queue.getByTestId("focus-queue-item").count())) throw new Error("The task queue is empty");
-const pause = focusBar.getByRole("button", { name: "Metti in pausa" });
+// Issue #272: suspending the task in focus and the Coordinator's Pause never share a name.
+const pause = focusBar.getByRole("button", { name: "Sospendi questo lavoro" });
+if (await focusBar.getByRole("button", { name: /^(Metti in pausa|Pausa)$/ }).count()) throw new Error("A pause in the focus bar has an ambiguous name");
 const actionsOnRight = async (size) => {
   const bar = await focusBar.boundingBox();
   const button = await pause.boundingBox();
@@ -1425,6 +1562,7 @@ const focusIs = (title, equal) =>
 await focusIs(firstFocus, false);
 const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
 await pausedItem.waitFor({ timeout: 10_000 });
+await pausedItem.getByText(/^Sospeso/).waitFor();
 await shot("17a-focus-paused-next");
 await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
@@ -1716,7 +1854,7 @@ const candidateOf = async (card) => candidateCards.filter({ has: page.locator(`[
 const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
-await failedCard.getByText("In costruzione", { exact: true }).waitFor();
+await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
 await failedCard.getByText("Verifica non superata").waitFor();
 await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
@@ -1787,7 +1925,7 @@ await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i 
 // The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
 await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
-await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
+await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
@@ -2100,11 +2238,11 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
 const questionWork = assignmentCards.nth(6);
-await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+await questionWork.getByText("Aspetta una risposta", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
 await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
-await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("Aspetta una risposta").waitFor({ timeout: 20_000 });
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19e-developer-question");
 await send("[blocca-dubbio]");
@@ -2406,6 +2544,88 @@ const presenceReply = await presenceAnswer.innerText();
 if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
 await presenceAnswer.scrollIntoViewIfNeeded();
 await shot("16d-presence-coordinator");
+// Issue #328: editorial typography. A message and its titles read in Newsreader, the controls in Inter and the code in
+// JetBrains Mono, all bundled with the app: the computed families use the tokens and each font is really loaded.
+// Every provider theme, light and dark, and the narrow window keep the 18px body inside the chat.
+await composer().fill("## Annullare un ordine\n\nUn ordine pagato e annullato va in revisione, come in `CancelPaidOrder.swift`.\n\n```swift\nlet stato = ordine.annulla()\n```");
+await page.keyboard.press("Enter");
+const typeMessage = page.locator(".chat-markdown--user").filter({ hasText: "Annullare un ordine" }).last();
+await typeMessage.locator("pre code").waitFor({ timeout: 20_000 });
+await page.getByText("Questa risposta arriva dal server di prova").last().waitFor({ timeout: 30_000 });
+const typography = () =>
+  page.evaluate(async () => {
+    await document.fonts.ready;
+    const user = [...document.querySelectorAll(".chat-markdown--user")].filter((node) => node.textContent.includes("Annullare un ordine")).pop();
+    const reply = [...document.querySelectorAll(".chat-markdown:not(.chat-markdown--user)")].filter((node) => node.textContent.includes("server di prova")).pop();
+    const style = (node) => {
+      if (!node) return null;
+      const s = getComputedStyle(node);
+      return { family: s.fontFamily, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, optical: s.fontOpticalSizing };
+    };
+    const loaded = (family) => [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+    return {
+      message: style(reply?.querySelector("p") ?? reply),
+      title: style(user?.querySelector("h2")),
+      button: style(document.querySelector("form.chat-composer-surface button")),
+      code: style(user?.querySelector("pre code")),
+      inline: style(user?.querySelector("p code")),
+      fonts: Object.fromEntries(
+        [
+          ["Newsreader Variable", '400 18px "Newsreader Variable"'],
+          ["Newsreader Variable 500", '500 24px "Newsreader Variable"'],
+          ["Inter Variable", '500 13px "Inter Variable"'],
+          ["JetBrains Mono Variable", '400 14px "JetBrains Mono Variable"'],
+        ].map(([name, font]) => [name, document.fonts.check(font, "Aa") && loaded(name.replace(/ 500$/, ""))]),
+      ),
+    };
+  });
+const types = await typography();
+const firstFamily = (style) => style?.family.split(",")[0].replace(/["']/g, "").trim();
+if (firstFamily(types.message) !== "Newsreader Variable" || types.message.size !== "18px" || types.message.optical !== "auto") throw new Error(`Message typography: ${JSON.stringify(types.message)}`);
+if (Math.abs(parseFloat(types.message.lineHeight) / 18 - 1.68) > 0.01) throw new Error(`Message line height: ${JSON.stringify(types.message)}`);
+if (firstFamily(types.title) !== "Newsreader Variable" || types.title.weight !== "500") throw new Error(`Title typography: ${JSON.stringify(types.title)}`);
+const titleLeading = parseFloat(types.title.lineHeight) / parseFloat(types.title.size);
+if (titleLeading < 1.3 || titleLeading > 1.35) throw new Error(`Title line height: ${JSON.stringify(types.title)}`);
+if (firstFamily(types.button) !== "Inter Variable") throw new Error(`Button typography: ${JSON.stringify(types.button)}`);
+if (firstFamily(types.code) !== "JetBrains Mono Variable" || firstFamily(types.inline) !== "JetBrains Mono Variable") throw new Error(`Code typography: ${JSON.stringify([types.code, types.inline])}`);
+const missingFonts = Object.entries(types.fonts).filter(([, ok]) => !ok).map(([name]) => name);
+if (missingFonts.length) throw new Error(`Fonts not loaded: ${missingFonts.join(", ")}`);
+// Nothing leaves the chat: no horizontal page scroll, every message inside the timeline, no text wider than its box.
+const typographyOverflow = () =>
+  page.evaluate(() => {
+    const timeline = document.querySelector(".chat-timeline-scroll")?.getBoundingClientRect();
+    const problems = [];
+    if (document.documentElement.scrollWidth > innerWidth) problems.push("page scroll");
+    for (const node of document.querySelectorAll(".chat-timeline-scroll .chat-markdown")) {
+      const box = node.getBoundingClientRect();
+      if (!box.width) continue;
+      if (timeline && (box.left < timeline.left - 1 || box.right > timeline.right + 1)) problems.push(`message outside the timeline: ${node.textContent.slice(0, 40)}`);
+      for (const child of node.querySelectorAll(":scope > :not(pre, table, .chat-compare)")) {
+        if (child.scrollWidth > child.clientWidth + 1) problems.push(`text wider than its box: ${child.textContent.slice(0, 40)}`);
+      }
+    }
+    return problems;
+  });
+const typeLook = await lookOf();
+await typeMessage.scrollIntoViewIfNeeded();
+for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok", "droid", "devin", "opencode", "pi"]) {
+  for (const dark of [false, true]) {
+    await setLookTo(provider, dark);
+    const problems = await typographyOverflow();
+    if (problems.length) throw new Error(`Typography with ${provider} ${dark ? "dark" : "light"}: ${problems.join("; ")}`);
+    if (provider === "codex" || provider === "claudeAgent") await shot(`16d1-typography-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLookTo(typeLook.provider, typeLook.dark);
+// In a narrow window the inspector floats over the chat: closed, the messages are what the shot shows.
+if (await page.getByTestId("inspector").count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await typeMessage.scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);
+const narrowProblems = await typographyOverflow();
+if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
+await shot("16d2-typography-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 // G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
 // "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();
@@ -2467,6 +2687,14 @@ await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" 
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+// Issue #272: the Monitor never says "no repository" above the repository it then offers.
+await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
+await page.getByTestId("settings").getByText("Repository osservati").waitFor();
+{
+  const text = await page.getByTestId("settings").innerText();
+  if (/Nessun repository/.test(text) && /Repository del progetto aperto/.test(text)) throw new Error("The Monitor says no repository above the project's one");
+}
+await shot("16f-monitor-settings");
 
 // P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
 await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();
@@ -2684,11 +2912,11 @@ await page.keyboard.press("Enter");
 // The card waits for the person in Aspetta te; the chat keeps its reference (issue #240).
 const reviewCard = await waitingItem(page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first(), 90_000);
 await reviewCard.getByText(/Approfondire l'annullamento/).first().waitFor();
-// Issue #270: Clean Code's card reads plain. The skill it received shows by name, not as "skill:<name>:<path>", the
-// proposal says "Approfondire" once, and its work is named, not cited by id. Both themes.
-await reviewCard.getByText(/Skill ricevute: .*improve-codebase-architecture/).first().waitFor();
+// Issues #270 and #272: Clean Code's card reads plain. The fake recommends only when the review received its skill,
+// no path or delivery proof shows, the options are the proposals' titles, and its work is named, not cited by id.
+await reviewCard.getByText(/Partire dall'annullamento/).first().waitFor();
 const reviewText = await reviewCard.innerText();
-if (/skill:|SKILL\.md|Approfondire: Approfondire|incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
+if (/skill:|SKILL\.md|Skill ricevute|Approfondire: |incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
 await reviewCard.evaluate((item) => item.scrollIntoView({ block: "start" }));
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
@@ -2780,6 +3008,25 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
+}
+// Issue #272: the Clean Code card offers the proposals by their own titles and no text of the fake's own checks; once
+// the person answers, the review's work says what was chosen, never "proposte da decidere" again.
+{
+  const reference = page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first();
+  const requestId = (await reference.getAttribute("data-waiting-key")).replace(/^question:/, "");
+  const body = await page.locator("body").innerText();
+  if (/Approfondire: /.test(body)) throw new Error("A Clean Code option repeats the verb of the question");
+  if (/Skill ricevute/.test(body)) throw new Error("The Clean Code card shows the fake's delivery proof");
+  await page.evaluate((id) => window.trama.invoke("decision:answer", { requestId: id, alternativeIndex: 1, freeText: null }), requestId);
+  await dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first().waitFor({ timeout: 20_000 });
+  if (/proposte da decidere/.test(await page.locator("body").innerText())) throw new Error("The review still asks to decide after the answer");
+  const answeredWork = dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first();
+  await answeredWork.scrollIntoViewIfNeeded();
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`22c-clean-code-answered-${dark ? "dark" : "light"}`);
+  }
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
@@ -3333,12 +3580,15 @@ await page.getByRole("button", { name: "Restringi", exact: true }).click();
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
+// Before it takes effect the form says which work stops (C06): here nothing runs, so nothing stops.
+await restrict.getByText(/si ferma subito; il resto continua\. Nessun lavoro in corso si ferma\./).waitFor();
 await mandateShots("26b-mandate-restrict");
 await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
 await mandateShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
@@ -3489,7 +3739,7 @@ const checkWaitingLine = async (where) => {
   await waitingLine.getByTestId("status-line-text").getByText(/^Aspetto che la quota di ChatGPT si sblocchi/).waitFor();
   await waitingLine.getByTestId("status-line-reason").getByText("Fino ad allora non parte nessun turno. Poi riprendo da solo.").waitFor();
   // The Pause stays reachable while the Coordinator waits.
-  await waitingLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+  await waitingLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
   if (/[–—]/.test(await waitingLine.innerText())) throw new Error(`${where}: dash in the status line`);
 };
 const alwaysReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
@@ -3552,7 +3802,7 @@ await reopenedRow.scrollIntoViewIfNeeded();
 await waitShots("28d-reopened-turn-resumed");
 
 // A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
-await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa", exact: true }).click();
+await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor();
 await app.close();
 ({ app, page } = await launch(alwaysEnv));
@@ -3713,4 +3963,48 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]')
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #39: the projects share the developers. The overview says how many work in all projects and keeps the
+// Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
+({ app, page } = await launch());
+await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+const priority = page.getByTestId("overview-priority");
+await priority.waitFor({ timeout: 10_000 });
+await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
+const priorityNames = () => priority.getByTestId("overview-priority-row").locator("span.truncate").allInnerTexts();
+const before39 = await priorityNames();
+if (before39.length < 2) throw new Error("The overview ranks fewer than two projects");
+await priority.getByRole("button", { name: `Sposta ${before39[1]} più in alto` }).click();
+await page.waitForFunction(
+  ([first]) => document.querySelector('[data-testid="overview-priority-row"] span.truncate')?.textContent === first,
+  [before39[1]],
+  { timeout: 10_000 },
+);
+const moved39 = await priorityNames();
+if (moved39[0] !== before39[1] || moved39[1] !== before39[0]) throw new Error(`The project did not move up: ${moved39.join(", ")}`);
+await priority.scrollIntoViewIfNeeded();
+await themeShots("39a-overview-priority");
+// Opening a project from the overview does not rank it.
+await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
+await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
+await page.waitForTimeout(1_500);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await priority.waitFor();
+let reopened39 = await priorityNames();
+for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
+if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+// The shared limit sits next to the project's own limit in the settings.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const sharedSettings = page.getByTestId("settings");
+await sharedSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const sharedPicker = sharedSettings.getByTestId("shared-developers");
+await sharedPicker.getByRole("radio", { name: "6", checked: true }).waitFor();
+await sharedPicker.getByRole("radio", { name: "4" }).click();
+await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
+await sharedPicker.scrollIntoViewIfNeeded();
+await noHorizontalScroll("shared developers");
+await themeShots("39b-shared-developers");
 await app.close();

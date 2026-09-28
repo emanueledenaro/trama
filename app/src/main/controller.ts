@@ -3,10 +3,11 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileBinary, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type ContextUsage, contextNoticeDetail, contextReading, invalidContextUsage } from "@shared/contextReading";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
-import { activeTerms, workStoppedBy } from "@shared/mandate";
+import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
 import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -42,6 +43,7 @@ import type {
   CoordinatorPhase,
   CoordinatorRequest,
   GitHubIssue,
+  GitHubSnapshot,
   GitHubState,
   Practice,
   PracticeView,
@@ -171,7 +173,8 @@ import {
   restoreGoal,
   updateGoal,
 } from "./core/goals";
-import { activeColleagues, orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import { activeColleagues, ciSummary, orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import { type CapacityRequest, inLine, moveProject, projectOrder } from "./core/sharedCapacity";
 import {
   closeIssue,
   commentOnIssue,
@@ -288,7 +291,7 @@ import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
-import { clampParallelDevelopers } from "@shared/parallel";
+import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
 import { CHECKS_RETRY_MS, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./core/merge";
@@ -316,11 +319,13 @@ import {
   shouldRunNow,
   snapshotLibrary,
 } from "./core/learning/curator";
+import { memoryActivityLine, memoryErrorCode, memoryFailureLine } from "./core/learning/memoryErrors";
 import { learningSettings, ProjectLearning } from "./core/learning/projectLearning";
 import {
   finishTurnSkillNudge,
   resetOnToolUse,
   REVIEW_MAX_TOOL_CALLS,
+  reviewErrorLine,
   reviewPrompt,
   reviewToolNames,
   reviewTranscript,
@@ -358,7 +363,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
-import { CoordinatorToolServer, TOOL_SERVER_NAME, toolFailure, toolSuccess } from "./core/toolServer";
+import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, BOUNDARY_LABELS, findRoute } from "@shared/askTrama";
@@ -688,6 +693,7 @@ export class TramaController {
       language: DEFAULT_LANGUAGE,
       error: null,
       backgroundProjects: [],
+      sharedCapacity: { running: 0, limit: sharedDevelopers({}), waiting: 0 },
       practices: [],
       platform: process.platform,
       onboarding: { ...EMPTY_ONBOARDING },
@@ -776,6 +782,11 @@ export class TramaController {
       pendingDecisions: p.document.decisionRequests.filter(isOpenQuestion).length,
       lastUpdate: p.document.team.specialists.map((s) => s.updatedAt).sort().at(-1) ?? null,
     }));
+    this.state.sharedCapacity = {
+      running: this.developerSlots.size,
+      limit: sharedDevelopers(this.state.settings),
+      waiting: this.capacityQueue.filter((r) => this.waitsForCapacity(r)).length,
+    };
     const project = this.state.project;
     if ((project?.id ?? null) !== this.learningViewProject) {
       // The view is rebuilt when learning changes; here only when the selected project changes.
@@ -807,6 +818,7 @@ export class TramaController {
   }
 
   async start(): Promise<void> {
+    const opens = this.openGeneration;
     const settings = await this.storage.loadSettings();
     this.state.settings = {
       theme: settings.theme ?? "system",
@@ -817,9 +829,11 @@ export class TramaController {
       continuousWork: settings.continuousWork !== false,
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
+      ...(clampSharedDevelopers(settings.sharedDevelopers) !== null ? { sharedDevelopers: clampSharedDevelopers(settings.sharedDevelopers)! } : {}),
+      ...(Array.isArray(settings.projectPriority) ? { projectPriority: settings.projectPriority.filter((id): id is string => typeof id === "string") } : {}),
     };
     this.state.language = this.resolveLanguage();
-    this.lastProjectId = settings.lastProjectId ?? null;
+    if (this.openGeneration === opens) this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
     this.state.onboarding = normalizeOnboarding(settings.onboarding);
     if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
@@ -841,6 +855,8 @@ export class TramaController {
     void this.refreshProviders();
     // GitHub CLI is read at startup too: "not checked yet" never reads as "not connected" (P10).
     void this.checkGitHubCli();
+    // A project the person opened while Trama was starting wins over the last one.
+    if (this.openGeneration !== opens) return;
     const last = this.state.recentProjects.find((p) => p.id === this.lastProjectId);
     if (last && existsSync(last.path)) {
       await this.openProject(last.path, last.isDemo).catch((error) => this.fail(error));
@@ -1144,7 +1160,12 @@ export class TramaController {
     return undefined;
   }
 
+  /** Counts the projects asked for: an open that a later one overtook leaves the state to it. */
+  private openGeneration = 0;
+
   async openProject(path: string, isDemo = false, idea: string | null = null): Promise<void> {
+    const generation = ++this.openGeneration;
+    const overtaken = () => generation !== this.openGeneration;
     const root = await realpath(path).catch(() => {
       throw new DomainError(`La cartella non è leggibile: ${path}`);
     });
@@ -1153,6 +1174,7 @@ export class TramaController {
       throw new DomainError("Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.");
     }
     await this.flushSave();
+    if (overtaken()) return;
     this.parkSelectedProject();
     this.unwatchProject();
     this.state.loadingProject = root;
@@ -1161,8 +1183,11 @@ export class TramaController {
 
     try {
       const existing = await this.findRecentProject(root);
+      // The example project reopened by its folder, from the sidebar or the overview, stays the example (issue #39).
+      if (existing?.isDemo) isDemo = true;
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
+      if (overtaken()) return;
       const parked = this.parkedProjects.get(id);
       if (parked) {
         // Its team kept working: resume the same state instead of reading an older copy from disk.
@@ -1179,6 +1204,7 @@ export class TramaController {
         await this.storage.saveRecentProjects(this.state.recentProjects);
         await this.saveSettings();
         this.publishNow();
+        if (overtaken()) return;
         if (!isDemo) void this.refreshGitHub();
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
@@ -1208,6 +1234,7 @@ export class TramaController {
           await this.storage.saveDocument(document);
         }
       }
+      if (overtaken()) return;
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
       const orphanNote = ASSIGNMENT_CRASH_NOTE;
@@ -1261,6 +1288,7 @@ export class TramaController {
       await this.storage.saveRecentProjects(this.state.recentProjects);
       await this.saveSettings();
       this.publishNow();
+      if (overtaken()) return;
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
@@ -1287,6 +1315,7 @@ export class TramaController {
       const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
       for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
+      if (overtaken()) throw error;
       this.state.loadingProject = null;
       this.publishNow();
       throw error;
@@ -1965,7 +1994,17 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId);
+    return (
+      [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) ||
+      [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId) ||
+      this.capacityQueue.some((r) => r.projectId === projectId && this.waitsForCapacity(r))
+    );
+  }
+
+  /** An open project by id: the selected one or one whose team keeps working in the background (C07). */
+  private openProjectById(projectId: string): ActiveProjectState | null {
+    if (this.state.project?.id === projectId) return this.state.project;
+    return this.parkedProjects.get(projectId) ?? null;
   }
 
   /**
@@ -2122,6 +2161,7 @@ export class TramaController {
         // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
         const error = toolErrorMessage(result);
         if (error && runningRequestId) this.turnToolErrors.set(runningRequestId, [...(this.turnToolErrors.get(runningRequestId) ?? []), error]);
+        if (name === "memory" && result.isError) this.memoryRefused(current, runningRequestId, result);
         return result;
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -2234,7 +2274,7 @@ export class TramaController {
           type: "card",
           kind: "contextNotice",
           title: "Nuovo thread del Coordinatore",
-          detail: `${providerName(provider)} non ha più il thread precedente. Il Coordinatore riparte dallo studio e dalla memoria.`,
+          detail: "La sessione precedente del Coordinatore non è più disponibile. Il Coordinatore riparte dallo studio e dalla memoria.",
           referenceId: null,
         });
       }
@@ -2326,6 +2366,9 @@ export class TramaController {
     }
     if (!transcript && projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
     const rules = await this.pendingRules(document, document.coordinator.threadProvider ?? this.coordinatorProvider(document));
+    let compacted = false;
+    // The study is a turn of the Coordinator: memory writes count from zero, as in any other turn (issue #305).
+    this.learningFor(project).memory.resetConsolidationFailures("foreground");
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
       prompt: [context, ...(rules ? [rules.section] : []), request].join("\n\n"),
@@ -2338,7 +2381,12 @@ export class TramaController {
           project.streaming.text += event.delta;
           this.publish();
         } else if (event.type === "tokenUsage") {
-          project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+          // The study is a turn of the Coordinator's thread: its reading counts against the threshold too (issue #305).
+          this.recordContextUsage(project, event);
+          this.publish();
+        } else if (event.type === "compacted") {
+          compacted = true;
+          this.coordinatorCompacted(project);
         } else if (event.type === "fixedBanRefused") {
           this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
@@ -2357,7 +2405,8 @@ export class TramaController {
       moveEvent(document, card.id, studyPosition);
     }
     document.coordinator.injectedStudy = fingerprints(study);
-    document.coordinator.memorySentToThread = document.coordinator.threadId;
+    // A compaction during the study may have dropped the memory it carried: the next turn sends it again.
+    document.coordinator.memorySentToThread = compacted ? null : document.coordinator.threadId;
     this.coordinatorLearning(document).skillsIndexSent = learned.skills;
     this.changed();
   }
@@ -2468,7 +2517,7 @@ export class TramaController {
     // The running request now keeps the Coordinator busy in place of the starting move.
     if (this.automaticStarting?.projectId === project.id) this.automaticStarting = null;
     const learning = this.learningFor(project);
-    learning.memory.resetConsolidationFailures();
+    learning.memory.resetConsolidationFailures("foreground");
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
     this.turnToolIterations.set(request.id, 0);
     this.changed();
@@ -2678,6 +2727,7 @@ export class TramaController {
     } finally {
       this.turnToolIterations.delete(request.id);
       this.turnToolErrors.delete(request.id);
+      this.turnMemoryRefusals.delete(request.id);
       this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -3147,13 +3197,15 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: paused ? "Lavoro continuo in pausa" : "Lavoro continuo ripreso",
-        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi." : null,
+        title: paused ? "Coordinatore in pausa" : "Coordinatore ripreso",
+        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi il Coordinatore." : null,
         tone: "info",
       },
       null,
     );
     this.changedIn(project);
+    // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
+    if (!paused) this.startNextInLine();
     if (!paused) await this.runRound();
   }
 
@@ -3219,17 +3271,12 @@ export class TramaController {
         }
         return;
       case "tokenUsage":
-        project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
-        this.checkContextThreshold(project);
+        this.recordContextUsage(project, event);
         this.publish();
         return;
-      case "compacted": {
-        project.document.coordinator.contextWarnedAt = null;
-        // Earlier events left the thread: session search may return them, and the next turn gets the memory again.
-        this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
-        project.document.coordinator.memorySentToThread = null;
+      case "compacted":
+        this.coordinatorCompacted(project);
         return;
-      }
       case "commandCompleted":
         activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
         if (isGitPushCommand(event.command)) {
@@ -3240,13 +3287,20 @@ export class TramaController {
       case "fileChangeCompleted":
         activity(`Modifica di ${event.paths.length} file`, event.paths.join(", "), event.succeeded ? "tool" : "error");
         return;
-      case "toolCallCompleted":
+      case "toolCallCompleted": {
+        // A refused memory write: one Italian line with the error tone; the retries the store refused unapplied add none (issue #305).
+        const refusal = event.server === TOOL_SERVER_NAME && event.tool === "memory" ? this.turnMemoryRefusals.get(request.id)?.shift() : undefined;
+        if (refusal) {
+          if (!refusal.repeated) activity(`Strumento di Trama: ${event.tool}`, refusal.line, "error");
+          return;
+        }
         activity(
           event.server === TOOL_SERVER_NAME ? `Strumento di Trama: ${event.tool}` : `${event.server}: ${event.tool}`,
           event.error,
           event.succeeded ? "tool" : "error",
         );
         return;
+      }
       case "readOutsideScope":
         activity(READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
         return;
@@ -3267,21 +3321,51 @@ export class TramaController {
     }
   }
 
-  /** Adds the notice once when the Coordinator's context passes the person's threshold. */
+  /**
+   * Keeps the latest context reading of the Coordinator's thread and checks the threshold. A reading that cannot be
+   * the context in use (past the window, negative) is kept as unknown, with one technical line in the log (issue #305).
+   */
+  private recordContextUsage(project: ActiveProjectState, event: Extract<TurnEvent, { type: "tokenUsage" }>): void {
+    const usage: ContextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+    if (invalidContextUsage(usage)) {
+      if (!this.invalidContextLogged.has(project.id)) {
+        this.invalidContextLogged.add(project.id);
+        console.warn(`[trama] context reading ignored: ${event.usedTokens} tokens against a window of ${event.contextWindow}`);
+      }
+      project.contextUsage = { usedTokens: null, contextWindow: event.contextWindow };
+      return;
+    }
+    project.contextUsage = usage;
+    this.checkContextThreshold(project);
+  }
+
+  /** The provider compacted the Coordinator's thread: earlier events left it, so session search may return them and the next turn gets the memory again. */
+  private coordinatorCompacted(project: ActiveProjectState): void {
+    this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
+    project.document.coordinator.memorySentToThread = null;
+  }
+
+  /**
+   * Adds the notice once when the Coordinator's context passes the person's threshold. The notice comes back only
+   * after a reading well under the threshold, not after each compaction (issue #305). No provider name and no number
+   * past the window: the reading is the one the meter shows.
+   */
   private checkContextThreshold(project: ActiveProjectState): void {
-    const usage = project.contextUsage;
     const coordinator = project.document.coordinator;
-    if (!usage?.contextWindow) return;
     const threshold = coordinator.contextThreshold ?? 80;
-    const percent = (usage.usedTokens / usage.contextWindow) * 100;
-    if (percent < threshold || coordinator.contextWarnedAt === threshold) return;
+    const reading = contextReading(project.contextUsage, threshold);
+    if (reading.state === "unknown") return;
+    if (reading.state === "ok") {
+      coordinator.contextWarnedAt = null;
+      return;
+    }
+    if (reading.state !== "over" || coordinator.contextWarnedAt === threshold) return;
     coordinator.contextWarnedAt = threshold;
-    const format = (n: number) => n.toLocaleString("it-IT");
     appendEvent(project.document, "trama", {
       type: "card",
       kind: "contextNotice",
       title: "Contesto oltre la soglia",
-      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. ${providerName(this.coordinatorProvider(project.document))} la compatta da solo quando serve, se lo supporta; puoi cambiare la soglia dal misuratore.`,
+      detail: contextNoticeDetail(reading, threshold),
       referenceId: coordinator.threadId,
     });
     this.changed();
@@ -3473,12 +3557,29 @@ export class TramaController {
     this.changed();
   }
 
-  /** The chat has one composer (U01): its draft lives on the document whatever goal the chat is filtered on. */
-  saveDraft(text: string): void {
-    const project = this.state.project;
-    if (!project) return;
-    project.document.composerDraft = text;
-    this.scheduleSave();
+  /**
+   * The chat has one composer (U01): its draft lives on the document whatever goal the chat is filtered on. The draft
+   * goes to the project it was written in, also when the person switched project before it was saved (issue #39).
+   */
+  async saveDraft(text: string, projectId: string | null = null): Promise<void> {
+    const selected = this.state.project;
+    if (!projectId || selected?.id === projectId) {
+      if (!selected) return;
+      selected.document.composerDraft = text;
+      this.scheduleSave();
+      return;
+    }
+    const parked = this.parkedProjects.get(projectId);
+    if (parked) {
+      parked.document.composerDraft = text;
+      if (parked.stateWritable) await this.storage.saveDocument(parked.document);
+      return;
+    }
+    // A project already let go: its saved document takes the draft, nothing else changes.
+    const loaded = await this.storage.loadDocument(projectId);
+    if (!loaded.document || !loaded.writable || this.openProjectById(projectId)) return;
+    loaded.document.composerDraft = text;
+    await this.storage.saveDocument(loaded.document);
   }
 
   // MARK: Goals
@@ -3598,7 +3699,9 @@ export class TramaController {
     const live = new Map<string, ActiveProjectState>([...this.parkedProjects].map(([id, p]) => [id, p]));
     if (this.state.project) live.set(this.state.project.id, this.state.project);
     const entries: ProjectOverview[] = [];
+    const order = this.projectPriority();
     for (const recent of this.state.recentProjects) {
+      const priority = order.indexOf(recent.id) + 1;
       const project = live.get(recent.id);
       if (project) {
         const reports = project.document.candidates.map((c) => candidateReport(project.document, c, project.snapshot.headSHA));
@@ -3609,15 +3712,18 @@ export class TramaController {
             runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
             candidateReports: reports,
             colleagues: project.isDemo ? null : activeColleagues(project.presence ?? this.lastPresence.get(project.id)),
+            priority,
+            waitingForCapacity: this.capacityQueue.filter((r) => r.projectId === project.id && this.waitsForCapacity(r)).length,
+            ci: project.isDemo ? null : ciSummary(project.github.snapshot ?? (await this.savedGitHubSnapshot(recent))),
           }),
         );
         continue;
       }
       const loaded = await this.storage.loadDocument(recent.id).catch((error: Error) => ({ document: null, writable: false, error: error.message }));
       if (loaded.error && !loaded.document) {
-        entries.push(unreadableProject(recent, loaded.error));
+        entries.push(unreadableProject(recent, loaded.error, priority));
       } else if (!loaded.document) {
-        entries.push(unreadableProject(recent, null));
+        entries.push(unreadableProject(recent, null, priority));
       } else {
         const document = loaded.document;
         entries.push(
@@ -3627,11 +3733,42 @@ export class TramaController {
             runningAssignments: 0,
             candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
             colleagues: activeColleagues(this.lastPresence.get(recent.id)),
+            priority,
+            ci: recent.isDemo ? null : ciSummary(await this.savedGitHubSnapshot(recent)),
           }),
         );
       }
     }
     return orderByAttention(entries);
+  }
+
+  /** The GitHub repository of each recent project's folder, read once: the overview refreshes often. */
+  private readonly repositoryOfPath = new Map<string, Promise<string | null>>();
+
+  /** The last GitHub reading Trama saved for a project's repository, without a new connection (issue #39). */
+  private async savedGitHubSnapshot(recent: RecentProject): Promise<GitHubSnapshot | null> {
+    if (recent.isDemo) return null;
+    let repository = this.repositoryOfPath.get(recent.path);
+    if (!repository) {
+      repository = readGitHubRepository(recent.path);
+      this.repositoryOfPath.set(recent.path, repository);
+    }
+    const name = await repository;
+    return name ? ((await this.monitorStore.load(name).catch(() => null))?.snapshot ?? null) : null;
+  }
+
+  /** The Product Owner's order of the recent projects (issue #39). */
+  private projectPriority(): string[] {
+    return projectOrder(this.state.settings.projectPriority, this.state.recentProjects);
+  }
+
+  /** The person moves a project up or down in the order that shares out the free developers (issue #39). */
+  async prioritizeProject(projectId: string, direction: "up" | "down"): Promise<void> {
+    const order = this.projectPriority();
+    if (!order.includes(projectId)) throw new DomainError("Il progetto non è tra quelli recenti.");
+    this.state.settings = { ...this.state.settings, projectPriority: moveProject(order, projectId, direction) };
+    this.publish();
+    await this.saveSettings();
   }
 
   // MARK: Pact and mandate
@@ -3719,15 +3856,17 @@ export class TramaController {
   }
 
   /**
-   * Narrows the mandate in force without revoking it (issue #244). Running turns end as they are; from the next turn
-   * the Coordinator reads the new version, and work outside it does not start again.
+   * Narrows the mandate in force without revoking it (issue #244). The work it no longer covers, and the work that
+   * depends on it, stops now with its worktree kept (C06); the rest goes on. From the next turn the Coordinator reads
+   * the new version.
    */
   async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
     const project = this.requireProject();
     const mandate = restrictMandate(project.document, input);
+    const stopped = this.stopWorkOutsideMandate("Il mandato ristretto non copre più questo lavoro. Il worktree resta com'è.");
     this.changed();
     const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
-    await this.send(restrictionMessage(mandate, moduleName), null, null, null, [], null, null, false);
+    await this.send(restrictionMessage(mandate, moduleName, stopped), null, null, null, [], null, null, false);
   }
 
   /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
@@ -3750,6 +3889,65 @@ export class TramaController {
   // MARK: Team
 
   private readonly specialistRuntimes = new Map<string, { client: AgentRuntime; projectId: string }>();
+
+  /** The developer assignments that hold one of the slots shared by all open projects (issue #39). */
+  private readonly developerSlots = new Set<string>();
+  /** Authorized developer work that found every shared slot taken, in order of arrival. */
+  private capacityQueue: CapacityRequest[] = [];
+  private capacitySequence = 0;
+
+  /** A request still waits while its project is open and its assignment has not started or stopped. */
+  private waitsForCapacity(request: CapacityRequest): boolean {
+    const project = this.openProjectById(request.projectId);
+    return !!project && findAssignment(project.document, request.assignmentId)?.status === "preparing";
+  }
+
+  /**
+   * Takes a shared developer slot for the assignment, or puts it in line when every slot is taken: it starts later, in
+   * its own project, when a slot frees up (issue #39).
+   */
+  private takeDeveloperSlot(project: ActiveProjectState, assignment: SpecialistAssignment): boolean {
+    this.capacityQueue = this.capacityQueue.filter((r) => this.waitsForCapacity(r));
+    const limit = sharedDevelopers(this.state.settings);
+    // A free slot is never left to work in line: startNextInLine hands it out as soon as it frees up.
+    if (this.developerSlots.size < limit) {
+      this.capacityQueue = this.capacityQueue.filter((r) => r.assignmentId !== assignment.id);
+      this.developerSlots.add(assignment.id);
+      return true;
+    }
+    if (this.capacityQueue.some((r) => r.assignmentId === assignment.id)) return false;
+    this.capacityQueue.push({ projectId: project.id, assignmentId: assignment.id, sequence: ++this.capacitySequence });
+    this.specialistActivity(
+      project,
+      assignment.id,
+      `${assignment.turns.length + 1}`,
+      "In attesa di uno sviluppatore libero",
+      `Nei progetti aperti lavorano già ${limit} ${limit === 1 ? "sviluppatore" : "sviluppatori"}, il massimo condiviso. L'incarico parte appena se ne libera uno, secondo l'ordine dei progetti della Panoramica.`,
+      "info",
+    );
+    return false;
+  }
+
+  /** A freed slot goes to the work in line of the project ranked first; paused projects keep their place (A05). */
+  private startNextInLine(): void {
+    if (this.quitting) return;
+    this.capacityQueue = this.capacityQueue.filter((r) => this.waitsForCapacity(r));
+    for (const request of inLine(this.capacityQueue, this.projectPriority())) {
+      if (this.developerSlots.size >= sharedDevelopers(this.state.settings)) return;
+      const project = this.openProjectById(request.projectId)!;
+      if (isPaused(project.document)) continue;
+      const assignment = findAssignment(project.document, request.assignmentId)!;
+      if (!withinMandate(project.document, assignment)) {
+        this.capacityQueue = this.capacityQueue.filter((r) => r !== request);
+        confirmStopWithoutTurn(project.document, assignment.id, "Il mandato non copre più questo incarico.");
+        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Avvio non eseguito", "Il mandato non copre più questo incarico.", "info");
+        this.releaseParkedProject(project);
+        continue;
+      }
+      this.capacityQueue = this.capacityQueue.filter((r) => r !== request);
+      void this.startAssignment(assignment.id, project);
+    }
+  }
 
   private get worktreesRoot(): string {
     return join(this.storage.root, "Worktrees");
@@ -3815,9 +4013,9 @@ export class TramaController {
   }
 
   /** Runs one turn of an assignment: worktree, Codex thread, turn, outcome. */
-  async startAssignment(assignmentId: string): Promise<void> {
-    const project = this.state.project;
-    if (!project || this.quitting || this.specialistRuntimes.has(assignmentId)) return;
+  async startAssignment(assignmentId: string, project: ActiveProjectState | null = this.state.project): Promise<void> {
+    // Work in line for a shared slot starts in its own project, also after the person left it (issue #39).
+    if (!project || project !== this.openProjectById(project.id) || this.quitting || this.specialistRuntimes.has(assignmentId)) return;
     const document = project.document;
     const assignment = findAssignment(document, assignmentId);
     if (!assignment || assignment.status !== "preparing") return;
@@ -3829,9 +4027,20 @@ export class TramaController {
       this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
       return;
     }
+    // Developers share one pool of slots across the open projects; the fixed roles never count (issue #39).
+    const developer = specialist.role === "developer";
+    if (developer && !this.developerSlots.has(assignmentId) && !this.takeDeveloperSlot(project, assignment)) {
+      this.publish();
+      return;
+    }
     // A developer asks the Coordinator with its one Trama tool (W06); a fixed role's automatic work has none.
     const toolServer = asksCoordinator(specialist, assignment) ? this.developerToolServer(project, assignmentId) : null;
-    if (toolServer) await toolServer.start();
+    try {
+      if (toolServer) await toolServer.start();
+    } catch (error) {
+      this.releaseDeveloperSlot(assignmentId);
+      throw error;
+    }
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
@@ -3993,6 +4202,7 @@ export class TramaController {
       client.stop();
       toolServer?.stop();
       this.specialistRuntimes.delete(assignmentId);
+      this.releaseDeveloperSlot(assignmentId);
     }
     if (turnId) {
       endTurn(document, assignmentId, turnId, outcome);
@@ -4034,7 +4244,11 @@ export class TramaController {
           `${providerUnavailableReason(provider, account)} Trama riprende da solo l'incarico quando torna disponibile, se il mandato lo copre ancora.`,
           "info",
         );
-        this.host.notify(`Trama: ${providerName(provider)} bloccato`, `L'incarico ${assignmentId} aspetta che ${providerName(provider)} si sblocchi.`, this.state.settings.sounds === true);
+        this.host.notify(
+          `Trama: ${providerName(provider)} bloccato`,
+          `Il lavoro di ${specialist.name} in ${project.isDemo ? "Progetto di esempio" : project.name} aspetta che ${providerName(provider)} si sblocchi.`,
+          this.state.settings.sounds === true,
+        );
         this.scheduleProviderWait(provider);
       } else if (classifyProviderFailure(outcome.message).kind === "temporaryLimit" && isUsableAccount(account)) {
         // A temporary limit (P10): the assignment waits a growing time, then resumes like after a block.
@@ -4060,6 +4274,11 @@ export class TramaController {
     this.continueWork(project, final.requestId, "assignmentEnded");
     this.releaseParkedProject(project);
     void this.runDuties();
+  }
+
+  /** Frees the assignment's shared slot, if it held one, and hands it to the next work in line (issue #39). */
+  private releaseDeveloperSlot(assignmentId: string): void {
+    if (this.developerSlots.delete(assignmentId)) this.startNextInLine();
   }
 
   /** The developer's tool server (W06): ask_coordinator records the question on its running work. */
@@ -4380,7 +4599,8 @@ export class TramaController {
       for (let pairs = worktreePairs(project.document).slice(0, 4); pairs.length; pairs = worktreePairs(project.document).slice(0, 4)) {
         for (const pair of pairs) {
           const assessment = await assessWorktreePair(project.document, pair, join(this.storage.root, "ConflictProbe"));
-          if (this.state.project !== project) return;
+          // A project the person left keeps its result in its own history (issue #39); a closed one drops it.
+          if (this.openProjectById(project.id) !== project) return;
           const document = project.document;
           (document.conflicts ??= []).push(assessment);
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
@@ -4421,6 +4641,7 @@ export class TramaController {
   private async stopAssignmentRuntime(assignmentId: string): Promise<void> {
     const project = this.state.project;
     const runtime = this.specialistRuntimes.get(assignmentId);
+    this.capacityQueue = this.capacityQueue.filter((r) => r.assignmentId !== assignmentId);
     if (runtime) {
       await runtime.client.interrupt().catch(() => runtime.client.stop());
       return;
@@ -4555,15 +4776,21 @@ export class TramaController {
   }
 
   /** Stops running work the mandate no longer covers, after a correction or a revocation. */
-  private stopWorkOutsideMandate(reason: string): void {
+  /**
+   * Stops the work the mandate in force no longer covers and the work that depends on it (C06). The stop keeps each
+   * worktree as it is, so the diff already written stays for the resume or for a new assignment.
+   */
+  private stopWorkOutsideMandate(reason: string): StoppedWork[] {
     const project = this.state.project;
-    if (!project) return;
+    if (!project) return [];
     const document = project.document;
-    for (const { specialist, assignment } of workStoppedBy(document, activeTerms(document.mandate))) {
-      requestStop(document, specialist.id, "Trama", reason);
+    const stopped = workStoppedBy(document, activeTerms(document.mandate));
+    for (const { specialist, assignment, dependsOn } of stopped) {
+      requestStop(document, specialist.id, "Trama", dependsOn ? `Dipende da ${dependsOn.id}. ${reason}` : reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
     this.changed();
+    return stopped;
   }
 
   private async runCheck(check: ReadOnlyCheck, root: string, requestId: string | null) {
@@ -5051,7 +5278,7 @@ export class TramaController {
     this.changedIn(project);
     if (!serious.length) return;
     const document = project.document;
-    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider));
+    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider), this.state.providers[runner.provider]?.models ?? []);
     if (!model) {
       for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
       return;
@@ -6170,6 +6397,10 @@ export class TramaController {
   private readonly turnToolIterations = new Map<string, number>();
   /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
   private readonly turnToolErrors = new Map<string, string[]>();
+  /** The Activity line of each refused memory write of a turn, in order, until its tool call is reported (issue #305). */
+  private readonly turnMemoryRefusals = new Map<string, { line: string; repeated: boolean }[]>();
+  /** Projects whose log already has the line about a context reading Trama ignored (issue #305). */
+  private readonly invalidContextLogged = new Set<string>();
   /** Learning tools the Coordinator wrote with in each running turn. */
   private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;
@@ -6188,7 +6419,8 @@ export class TramaController {
     }
     const state = this.coordinatorLearning(project.document);
     if (!state.memoryMigrated) {
-      learning.migrateLegacyMemory(project.document.coordinator.memory.text);
+      // An old text over the limit becomes a proposal for the person, not a loop of refused writes (issue #305).
+      if (learning.migrateLegacyMemory(project.document.coordinator.memory.text)) learning.proposeConsolidation("memory");
       state.memoryMigrated = true;
     }
     return learning;
@@ -6296,7 +6528,7 @@ export class TramaController {
       run.status = controller.signal.aborted ? "cancelled" : "completed";
     } catch (error) {
       run.status = controller.signal.aborted ? "cancelled" : "failed";
-      run.error = (error as Error).message;
+      run.error = reviewErrorLine((error as Error).message);
     } finally {
       this.learningReviews.delete(project.id);
       run.endedAt = new Date().toISOString();
@@ -6409,25 +6641,61 @@ export class TramaController {
     this.learningChanged();
   }
 
-  /** The person corrects memory directly: their writes apply at once, without a review. */
+  /**
+   * The person corrects memory directly: their writes apply at once, without a review. Their writes never count as
+   * the Coordinator's failures, and a refusal reaches them as one Italian line, never the model's text (issue #305).
+   */
   editLearnedMemory(input: { target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }): { success: boolean; error: string | null } {
     const learning = this.learningFor(this.requireProject());
     const store = learning.memory;
-    const result =
+    const result = store.withCaller(null, () =>
       input.action === "add"
         ? store.add(input.target, input.content ?? "")
         : input.action === "replace"
           ? store.replace(input.target, input.oldText ?? "", input.content ?? "")
-          : store.remove(input.target, input.oldText ?? "");
-    store.resetConsolidationFailures();
+          : store.remove(input.target, input.oldText ?? ""),
+    );
     this.learningChanged();
-    return { success: result.success === true, error: result.success === true ? null : String(result.error ?? "") };
+    if (result.success === true) return { success: true, error: null };
+    return { success: false, error: this.memoryRefusalLine(learning, input.target, result) };
   }
 
   resolveLearningProposal(id: string, approve: boolean): void {
-    const result = this.learningFor(this.requireProject()).resolveProposal(id, approve);
+    const learning = this.learningFor(this.requireProject());
+    const target = learning.proposals().find((p) => p.id === id)?.target ?? "memory";
+    const result = learning.resolveProposal(id, approve);
     this.learningChanged();
-    if (result.success !== true) throw new DomainError(String(result.error ?? "La proposta non si può applicare."));
+    if (result.success !== true) throw new DomainError(this.memoryRefusalLine(learning, target, result));
+  }
+
+  /**
+   * The Coordinator's memory write was refused: its Activity row gets one Italian line, and a memory already over
+   * its limit becomes a proposal for the person instead of more attempts (issue #305).
+   */
+  private memoryRefused(project: ActiveProjectState, requestId: string | null, result: ToolResult): void {
+    let answer: Record<string, unknown>;
+    try {
+      answer = JSON.parse(result.content.map((c) => c.text).join("\n")) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (requestId) {
+      const refusals = this.turnMemoryRefusals.get(requestId) ?? [];
+      refusals.push({ line: memoryActivityLine(answer), repeated: answer.repeated === true });
+      this.turnMemoryRefusals.set(requestId, refusals);
+    }
+    if (memoryErrorCode(answer) !== "memory_full" || answer.repeated === true) return;
+    // Only a store already over its limit gets a proposal: one merely too full for this note does not.
+    const learning = this.learningFor(project);
+    const proposed = (["memory", "user"] as const).map((target) => learning.proposeConsolidation(target)).some(Boolean);
+    if (proposed) this.learningChanged();
+  }
+
+  /** The person's line for a refused memory write; a store over its limit also gets a proposal to shorten it. */
+  private memoryRefusalLine(learning: ProjectLearning, target: "memory" | "user", result: Record<string, unknown>): string {
+    if (memoryErrorCode(result) === "memory_full" && learning.proposeConsolidation(target)) this.learningChanged();
+    const view = learning.view({ turnsSinceMemory: 0, itersSinceSkill: 0 })[target];
+    return memoryFailureLine(result, target, { chars: view.chars, limit: view.limit });
   }
 
   changeLearnedSkill(input: { name: string; action: "pin" | "unpin" | "adopt" | "archive" | "restore" | "delete" | "edit"; content?: string }): void {
@@ -6498,6 +6766,16 @@ export class TramaController {
 
   async updateSettings(update: Partial<AppSettings>): Promise<void> {
     if ("language" in update && update.language !== undefined && !isLanguage(update.language)) throw new DomainError("Lingua non disponibile.");
+    if (update.sharedDevelopers !== undefined) {
+      const limit = clampSharedDevelopers(update.sharedDevelopers);
+      if (limit === null) throw new DomainError("Il numero di sviluppatori condivisi deve essere un numero intero.");
+      update = { ...update, sharedDevelopers: limit };
+    }
+    // The order of the projects changes only with the arrows of the Panoramica.
+    if (update.projectPriority !== undefined) {
+      const { projectPriority: _ignored, ...rest } = update;
+      update = rest;
+    }
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
     this.state.settings = { ...this.state.settings, ...update, learning };
     // The new language holds at once: the window re-renders with the state, and the agents' next turn gets the updated rules.
@@ -6511,6 +6789,8 @@ export class TramaController {
     if (update.theme) this.host.applyTheme(update.theme);
     this.publish();
     await this.saveSettings();
+    // A higher shared limit lets the work in line start now.
+    if (update.sharedDevelopers !== undefined) this.startNextInLine();
   }
 
   dismissError(): void {

@@ -124,18 +124,16 @@ export type BotAnimation = "idle" | "thinking" | "wink" | "wide" | "alert" | "no
 export interface BotLook {
   animation: BotAnimation;
   expression: BotExpression;
-  /** The eyes follow the cursor. */
-  followsCursor: boolean;
 }
 
 export const ACTIVITY_LOOK: Record<AgentActivity, BotLook> = {
-  idle: { animation: "idle", expression: "neutral", followsCursor: true },
-  thinking: { animation: "thinking", expression: "attentive", followsCursor: false },
-  working: { animation: "idle", expression: "attentive", followsCursor: false },
-  waiting: { animation: "notification", expression: "surprised", followsCursor: true },
-  blocked: { animation: "exclamation", expression: "scared", followsCursor: false },
-  done: { animation: "idle", expression: "happy", followsCursor: true },
-  inactive: { animation: "sleep", expression: "sleepy", followsCursor: false },
+  idle: { animation: "idle", expression: "neutral" },
+  thinking: { animation: "thinking", expression: "attentive" },
+  working: { animation: "idle", expression: "attentive" },
+  waiting: { animation: "notification", expression: "surprised" },
+  blocked: { animation: "exclamation", expression: "scared" },
+  done: { animation: "idle", expression: "happy" },
+  inactive: { animation: "sleep", expression: "sleepy" },
 };
 
 /** A short move played once when the state changes: an alert before the notification, wide eyes on finishing. */

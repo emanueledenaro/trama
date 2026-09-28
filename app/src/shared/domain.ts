@@ -1787,7 +1787,7 @@ export interface ActiveProjectState {
   runningRequestId: string | null;
   /** Messages sent while a turn was running, in the order they will leave (W03). */
   queuedMessages: QueuedMessage[];
-  contextUsage: { usedTokens: number; contextWindow: number | null } | null;
+  contextUsage: import("./contextReading").ContextUsage | null;
   github: GitHubState;
   stateWritable: boolean;
   /** Work keys of specialist turns that are running now. */
@@ -1860,6 +1860,13 @@ export interface AppSettings {
    * own starts from it; without it, the provider's catalogue decides the default.
    */
   coordinatorModels?: Partial<Record<ProviderId, { model: string; effort: string | null }>>;
+  /** Developers at work at the same time in all open projects together (issue #39); six when missing. */
+  sharedDevelopers?: number;
+  /**
+   * The Product Owner's order of the projects, by id (issue #39): a freed developer slot goes to the first one that
+   * waits. Only the person changes it; opening a project leaves it as it is.
+   */
+  projectPriority?: string[];
 }
 
 export interface LearningSettings {
@@ -1889,6 +1896,7 @@ export interface LearningReviewRun {
   /** Writes the review made, one line each; empty when it saved nothing. */
   actions: string[];
   toolCalls: number;
+  /** Tokens the review processed, its cost, when the provider reports it (issue #305); never a context reading. */
   usedTokens: number | null;
   error: string | null;
 }
@@ -1945,6 +1953,8 @@ export interface AppState {
   learning?: LearningView | null;
   /** Projects not selected whose team is still working (C07). */
   backgroundProjects: BackgroundProject[];
+  /** The developers at work in all open projects and the authorized work waiting for a free slot (issue #39). */
+  sharedCapacity: SharedCapacity;
   platform: NodeJS.Platform;
   /** The first-run guide's persisted progress (C12). */
   onboarding: import("./onboarding").OnboardingState;
@@ -1985,6 +1995,18 @@ export interface ProjectOverview {
   attention: AttentionReason | null;
   reasons: string[];
   problem: string | null;
+  /** Place in the Product Owner's order of the projects, from 1 (issue #39). */
+  priority: number;
+  /** Authorized assignments waiting for a free developer slot shared by the projects. */
+  waitingForCapacity: number;
+  /** Checks of the open pull requests from the last GitHub reading; null when the repository was not read. */
+  ci: { passing: number; failing: number; pending: number } | null;
+}
+
+export interface SharedCapacity {
+  running: number;
+  limit: number;
+  waiting: number;
 }
 
 export interface BackgroundProject {
