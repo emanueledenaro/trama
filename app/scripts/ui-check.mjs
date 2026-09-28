@@ -3713,6 +3713,7 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]')
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
 
 // Issue #39: the projects share the developers. The overview says how many work in all projects and keeps the
 // Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
