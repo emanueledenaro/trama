@@ -1062,14 +1062,30 @@ const restFrom = await botFrames();
 await page.waitForTimeout(3_000);
 const restFrames = (await botFrames()).frames - restFrom.frames;
 if (restFrames > 3) throw new Error(`The bot loop ran ${restFrames} frames in 3 s at rest`);
-const cpuMoving = await cpuOver(3_000);
-await page.emulateMedia({ reducedMotion: "reduce" });
-const cpuStill = await cpuOver(3_000);
+// A shared CI runner adds short spikes of CPU that have nothing to do with the bots, and one 3 s reading could land on
+// one. The cost is read as five pairs of short samples, animated and with reduced motion, taken one after the other so
+// the still reading is the baseline of the same moment; the medians of the two series are compared. A spike moves one
+// sample and leaves the medians where they are, while a real cost shows in every animated sample and still fails.
+const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+const animatedSamples = [];
+const stillSamples = [];
+for (let pair = 0; pair < 5; pair++) {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.waitForTimeout(300);
+  animatedSamples.push(await cpuOver(1_500));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.waitForTimeout(300);
+  stillSamples.push(await cpuOver(1_500));
+}
 await page.emulateMedia({ reducedMotion: "no-preference" });
+const cpuMoving = median(animatedSamples);
+const cpuStill = median(stillSamples);
+const cpuReadings = `animated ${animatedSamples.map((v) => v.toFixed(1)).join(", ")}; reduced motion ${stillSamples.map((v) => v.toFixed(1)).join(", ")}`;
+console.log(`bots CPU samples: ${cpuReadings}`);
 if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
 console.log(
   `bots: ${botSizes.length} on screen, ${movingFrames} frames with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
-    `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
+    `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion (medians of 5)`,
 );
 const firstBot = teamPanel.getByTestId("agent-bot").first();
 const outline = () => firstBot.locator('[data-part="blob-0"]').getAttribute("d");
