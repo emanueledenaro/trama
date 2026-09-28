@@ -1,12 +1,15 @@
 # F04: dal rilievo alla issue, all'incarico o alla scheda del Patto
 
-Data: 28 settembre 2026. Issue #128, specifica #124. Base: `origin/main` BASE_SHA.
+Data: 28 settembre 2026. Issue #128, specifica #124. Base: `origin/main` 59e2a83.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`) e la GitHub CLI finta (`app/test-fixtures/fake-gh.mjs`). Nessuna esecuzione reale di Codex, nessuna chiamata a GitHub.
 
-RESULTS
+- `npx tsc --noEmit -p .`: nessun errore.
+- `npx vitest run`: 140 file, 1313 test superati, 3 saltati, 1 fallito. Il test fallito è `autonomousCycle.test.ts` ("confirms the shared understanding within a mandate that allows planning"): fallisce allo stesso modo su `origin/main` 59e2a83, senza questa modifica. Lo corregge la PR #321.
+- `npm run build`: riuscito.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0. Passi nuovi: `20g-finding-actions` e `20h-finding-work`, in chiaro e in scuro. Le schermate "prima" vengono da una corsa completa su `origin/main` 7e13d3f, uscita 0.
 
 ## Comportamento
 
