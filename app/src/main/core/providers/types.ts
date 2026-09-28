@@ -83,6 +83,8 @@ export interface AgentRuntime {
   listModels(): Promise<ProviderModel[]>;
   /** Opens the provider's sign-in flow. Returns a URL to open, or null when the flow runs elsewhere. */
   startLogin(): Promise<string | null>;
+  /** The skills the provider finds for `cwd`, where the adapter can list them (supportsSkillDiscovery). */
+  listSkills?(cwd: string): Promise<LoadedSkill[]>;
   openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }>;
   /** Runs one turn and resolves with the final answer. Rejects with a message containing "interrott" when interrupted. */
   runTurn(options: RunTurnOptions): Promise<string>;
