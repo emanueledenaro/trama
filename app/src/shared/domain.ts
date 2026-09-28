@@ -539,7 +539,7 @@ export interface CandidateCommit {
 
 /** One condition of the quality standard a candidate meets before Trama publishes it (Q01). */
 export interface QualityItem {
-  code: "VERIFIED" | "COMMIT_MESSAGE" | "NO_SECRETS" | "DIFF_CHECK" | "ISSUE_LINKED" | "PACT_SETTLED";
+  code: "VERIFIED" | "COMMIT_MESSAGE" | "NO_SECRETS" | "DIFF_CHECK" | "ISSUE_LINKED" | "PACT_SETTLED" | "MANDATE";
   passed: boolean;
   /** What Trama found, in the person's words. */
   detail: string;

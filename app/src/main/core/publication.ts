@@ -1,7 +1,8 @@
-import type { Candidate, CommitConventions, PactDecision, SpecialistAssignment } from "@shared/domain";
+import type { Candidate, CommitConventions, PactDecision, ProjectMandate, SpecialistAssignment } from "@shared/domain";
 import { commitHeader, parseCommitMessage, requireValidCommitMessage } from "./conventions";
 import { ghEnvironment } from "./github";
 import { git, runProcess } from "./process";
+import { pushAuthorization, pushBranch, type PushRecord, pushRefusal, PushRefusedError } from "./push";
 import { candidateTrailer } from "./quality";
 import { reviewWorktree } from "./workspace";
 
@@ -59,6 +60,8 @@ export function pullRequestBody(candidate: Candidate, assignment: SpecialistAssi
 /**
  * Commits the captured candidate in its own worktree with a valid Conventional Commits message, pushes its branch and
  * opens a pull request titled with the commit's header. The candidate must still match the worktree byte for byte.
+ * Nothing is committed or pushed unless the mandate allows opening pull requests; every push is reported to `onPush`
+ * (issue #273).
  */
 export async function publishCandidate(input: {
   candidate: Candidate;
@@ -69,9 +72,17 @@ export async function publishCandidate(input: {
   message: string;
   conventions: CommitConventions;
   body: string;
+  /** The project's mandate now: publishing needs `openPullRequest`. */
+  mandate: ProjectMandate | null;
+  onPush: (record: PushRecord) => void;
 }): Promise<{ url: string; number: number; branch: string }> {
   const workspace = input.assignment.workspace;
   if (!workspace) throw new Error("L'incarico non ha un worktree da pubblicare.");
+  const refusal = pushRefusal(pushAuthorization(input.mandate));
+  if (refusal) {
+    input.onPush({ outcome: "refused", branch: workspace.branch, remote: "origin", reason: refusal });
+    throw new PushRefusedError(refusal);
+  }
   const root = workspace.worktreeRoot;
   // A retry after a timeout finds the pull request or the commit of the first attempt instead of repeating them.
   // The snapshot is computed against the base, so it matches whether or not the candidate is already committed;
@@ -99,12 +110,7 @@ export async function publishCandidate(input: {
     if (extra.length) throw new Error(`L'indice contiene file fuori dal candidato: ${extra.join(", ")}.`);
     await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
-  const push = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "push", "-u", "origin", workspace.branch], {
-    cwd: root,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-    timeoutMs: 120_000,
-  });
-  if (push.exitCode !== 0) throw new Error(`git push non riuscito: ${push.stderr.trim().split("\n").at(-1) ?? push.exitCode}`);
+  await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush });
   // An open pull request of this branch now carries the candidate; a closed or merged one belongs to earlier work.
   // GitHub refuses a second pull request for the same branch, so an unreadable list is safe to skip.
   const afterPush = await findPullRequest(input.repository, workspace.branch).catch(() => null);

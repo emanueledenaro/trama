@@ -824,6 +824,7 @@ const QUALITY_LABEL: Record<QualityItem["code"], string> = {
   DIFF_CHECK: "git diff --check",
   ISSUE_LINKED: "Issue collegata",
   PACT_SETTLED: "Nessuna domanda aperta nel Patto",
+  MANDATE: "Mandato",
 };
 
 /** The quality standard before publishing (Q01): each condition, and for a missing one what to do. */
@@ -1278,11 +1279,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </pre>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
           <div className="cta-row">
-            <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
-              <IconGitPullRequest /> Pubblica
-            </Button>
             <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
               Annulla
+            </Button>
+            <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
+              <IconGitPullRequest /> Pubblica
             </Button>
           </div>
         </div>
