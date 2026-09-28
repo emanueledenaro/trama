@@ -721,8 +721,9 @@ await shot("04k-domain-proposal-written");
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
 // #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
-// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes the
-// provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
+// focusBorder, and while dragged it stays lit. Double-click and the arrow keys change the width. The panels meet edge
+// to edge as in VS Code: sidebar and inspector a shade darker than the chat, a 1px border that shows in light and dark.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
@@ -743,8 +744,7 @@ await shot("05-map");
         strip: strip.backgroundColor,
         stripWidth: strip.width,
         after: getComputedStyle(element, "::after").content,
-        accent: color("var(--color-text-accent)"),
-        border: color("var(--color-border)"),
+        accent: color("var(--app-focus-border)"),
         width: element.getBoundingClientRect().width,
         cursor: style.cursor,
         zIndex: style.zIndex,
@@ -762,7 +762,7 @@ await shot("05-map");
   // The line at rest is the panels' border: the sidebar's right edge and the inspector's left edge.
   const borders = await page.evaluate(() => {
     const probe = document.createElement("span");
-    probe.style.color = "var(--color-border)";
+    probe.style.color = "var(--app-panel-border)";
     document.body.append(probe);
     const border = getComputedStyle(probe).color;
     probe.remove();
@@ -772,15 +772,62 @@ await shot("05-map");
   });
   for (const [width, color] of [borders.sidebar, borders.inspector])
     if (width !== "1px" || color !== borders.border) throw new Error(`A panel has no 1px border line: ${JSON.stringify(borders)}`);
+  // On screen, in light and dark: the border differs from the panels on both sides, and the sidebar and the inspector
+  // differ from the chat between them. Pixels come from the window capture, [r, g, b].
+  const pixel = (x, y) =>
+    app.evaluate(
+      async ({ BrowserWindow }, point) => {
+        const [b, g, r] = (await BrowserWindow.getAllWindows()[0].webContents.capturePage({ ...point, width: 1, height: 1 })).toBitmap();
+        return [r, g, b];
+      },
+      { x: Math.round(x), y: Math.round(y) },
+    );
+  const apart = (one, other) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index])));
+  await page.mouse.move(640, 500);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(400);
+    const edges = await page.evaluate(() => ({
+      sidebar: document.querySelector(".app-sidebar-surface").getBoundingClientRect().right,
+      inspector: document.querySelector('[data-testid="inspector"]').getBoundingClientRect().left,
+    }));
+    const y = 620;
+    const [sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel] = await Promise.all([
+      pixel(edges.sidebar - 1, y),
+      pixel(edges.sidebar - 12, y),
+      pixel(edges.sidebar + 12, y),
+      pixel(edges.inspector, y),
+      pixel(edges.inspector + 12, y),
+    ]);
+    const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel });
+    if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8 || apart(inspectorLine, inspectorPanel) < 8 || apart(inspectorLine, chat) < 8)
+      throw new Error(`A panel border does not show at rest: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3 || apart(inspectorPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
+    await shot(`22-sash-rest-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  // Nothing covers the grip: it sits over the content on both sides of each edge.
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const box = await sash.boundingBox();
+    const onTop = await sash.evaluate((element, points) => points.every(([x, y]) => document.elementFromPoint(x, y) === element), [
+      [box.x + 0.5, 620],
+      [box.x + box.width - 0.5, 620],
+    ]);
+    if (!onTop) throw new Error(`Something covers the sash ${await sash.getAttribute("aria-label")}`);
+  }
   const sidebarBox = await sidebarSash.boundingBox();
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
   await page.waitForTimeout(250);
   const hovered = await look(sidebarSash);
-  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px accent strip: ${JSON.stringify(hovered)}`);
-  for (const mode of ["light", "dark"]) {
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
+  for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(200);
+    const lit = (await look(sidebarSash)).strip;
+    if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));

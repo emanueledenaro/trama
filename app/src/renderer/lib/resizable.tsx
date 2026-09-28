@@ -78,7 +78,7 @@ export const SASH_HOVER_DELAY = 300;
  * The separator between two panels, the same for every resizable panel, modeled on VS Code's sash
  * (src/vs/base/browser/ui/sash/sash.ts). It draws nothing at rest: the line is the panel's own 1px border, and the
  * sash is a 4px invisible grip centered on it. After 300ms of hover (`hover` class), while dragged (`active`) and
- * while focused from the keyboard it shows a 4px strip in the provider's accent (index.css, `.sash`).
+ * while focused from the keyboard it shows a 4px strip in VS Code's focusBorder color (index.css, `.sash`).
  * Drag to resize, double-click or Home to return to the default size, arrow keys to step.
  * The sash sits on the start edge (left or top) of its positioned parent.
  * A click without dragging calls `onClick`, so an edge that used to toggle the panel keeps doing it.

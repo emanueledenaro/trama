@@ -127,8 +127,17 @@
 
   /* Opaque shell off macOS; the macOS window draws vibrancy under a translucent sidebar. */
   --app-shell-background: var(--surface);
-  --app-sidebar-surface: var(--card);
   --app-sidebar-backdrop-filter: none;
+
+  /* Panels laid out as in VS Code (Light Modern / Dark Modern): the sidebar and the inspector are a shade darker
+     than the central area, and 1px borders separate them edge to edge. The values follow VS Code's on the neutral
+     Codex surface (sideBar.background #F8F8F8, sideBar.border and panel.border #E5E5E5 over editor #FFFFFF) and
+     derive from each provider's own surface, so every provider theme keeps its colors. */
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 97%, black);
+  --app-inspector-surface: var(--app-sidebar-surface);
+  --app-panel-border: color-mix(in srgb, var(--surface) 90%, black);
+  /* VS Code focusBorder: the lit sash. */
+  --app-focus-border: #005fb8;
 }
 
 :root.dark {
@@ -150,6 +159,10 @@
   --input: rgb(252 252 252 / 0.1);
   --ring: #737373;
   --destructive: color-mix(in srgb, #ef4444 90%, white);
+  /* Dark Modern on the neutral surface: sideBar.background #181818, borders #2B2B2B, editor #1F1F1F. */
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 78%, black);
+  --app-panel-border: color-mix(in srgb, var(--surface) 95%, white);
+  --app-focus-border: #0078d4;
 }
 
 :root[data-platform="darwin"],
@@ -161,6 +174,8 @@
   --app-content-glass: color-mix(in srgb, var(--surface) 80%, transparent);
   --card: color-mix(in srgb, var(--surface) 78%, transparent);
   --app-sidebar-surface: color-mix(in srgb, var(--surface) 55%, transparent);
+  /* The inspector can float over the chat: it keeps an opaque surface. */
+  --app-inspector-surface: var(--color-background-surface);
   --app-sidebar-backdrop-filter: none;
 }
 
@@ -1417,10 +1432,10 @@ button {
 /* The sash between two panels (Sash in lib/resizable.tsx), modeled on VS Code (base/browser/ui/sash/sash.css).
    It draws nothing at rest: the 1px line is the panel's own border. It is an absolute 4px grip centered on that
    border, above the content. The `hover` class, added after 300ms (Sash), the `active` class of a drag and the
-   keyboard focus paint its 4px ::before in the provider's accent. */
+   keyboard focus paint its 4px ::before in VS Code's focusBorder (--app-focus-border). */
 .sash {
   --sash-size: 4px;
-  --sash-hover-border: var(--color-text-accent);
+  --sash-hover-border: var(--app-focus-border);
   position: absolute;
   z-index: 35;
   touch-action: none;
