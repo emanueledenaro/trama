@@ -5,6 +5,8 @@ import { AgentName } from "@/components/AgentIdentity";
 import { Spinner } from "@/components/Spinner";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
+import { plainText } from "@shared/plainLanguage";
+import { ReferenceText } from "./ReferenceText";
 
 const RESULT: Record<"pass" | "fail" | "notRun", string> = { pass: "passa", fail: "fallisce", notRun: "non eseguita" };
 
@@ -23,7 +25,7 @@ function ReviewRow({ review, document }: { review: GateReview; document: Project
           <Badge tone={outcome.tone}>{outcome.label}</Badge>
         </span>
       </div>
-      {review.status === "skipped" && review.report ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{review.report}</p> : null}
+      {review.status === "skipped" && review.report ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{plainText(review.report)}</p> : null}
       {review.status === "failed" ? <p className="mt-0.5 text-ui-sm text-destructive">{review.failure ?? "La revisione non è riuscita."}</p> : null}
       {findings.length ? (
         <ul className="mt-0.5 space-y-0.5 text-ui-sm">
@@ -31,7 +33,7 @@ function ReviewRow({ review, document }: { review: GateReview; document: Project
             <li key={`${f.severity}-${f.title}-${f.file}`} data-testid="gate-finding" data-severity={f.severity} className="break-words">
               <span className={f.severity === "blocking" ? "text-destructive" : "text-muted-foreground"}>{f.severity === "blocking" ? "Bloccante" : "Suggerimento"}</span>
               <Sep />
-              {f.title}
+              <ReferenceText text={f.title} />
               {f.file ? (
                 <>
                   <Sep />

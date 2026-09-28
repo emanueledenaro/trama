@@ -84,7 +84,7 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
       // The spec was being written after the seam check (M04): the seams wait for the person's answer again.
       plan.status = "seams";
       plan.spec.seamsAnswer = null;
-      plan.failure = "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui seam.";
+      plan.failure = "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui punti di prova.";
     } else if (plan.status === "planning") {
       plan.status = "failed";
       plan.failure = "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.";

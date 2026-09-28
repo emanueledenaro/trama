@@ -418,9 +418,9 @@ describe("architecture review when the team is free (W11)", () => {
     const card = document.decisionRequests.find((r) => r.id === decisionRequestId)!;
     expect(card.category).toBe("product");
     expect(card.alternatives.map((a) => a.behavior)).toEqual([
-      "Approfondire: Approfondire il modulo 3",
-      "Approfondire: Approfondire il modulo 2",
-      "Approfondire: Approfondire il modulo 4",
+      "Approfondire il modulo 3",
+      "Approfondire il modulo 2",
+      "Approfondire il modulo 4",
       "Nessuno per ora",
     ]);
     expect(card.concreteCase).toContain("Partire dal modulo 3");

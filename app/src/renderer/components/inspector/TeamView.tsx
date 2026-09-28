@@ -304,12 +304,12 @@ export function SpecialistView({ id }: { id: string }) {
       {fixed ? <AutomaticWorkSection role={specialist.role} /> : null}
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
       {current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? (
-        <InspectorSection title="Worktree">
+        <InspectorSection title="Copia di lavoro">
           <p className="text-ui-sm text-muted-foreground">
             <span className="font-mono">{current.workspace.branch}</span>. Trama lo rimuove solo se non perdi lavoro: nessuna modifica fuori da un commit e commit già pubblicati.
           </p>
           <Button size="sm" variant="ghost" className="mt-2" onClick={() => void act("assignment:removeWorktree", { assignmentId: current.id })}>
-            Rimuovi il worktree
+            Rimuovi la copia di lavoro
           </Button>
         </InspectorSection>
       ) : null}
@@ -329,8 +329,7 @@ export function SpecialistView({ id }: { id: string }) {
           assignment.id === current?.id ? (
             <AssignmentCard key={assignment.id} assignmentId={assignment.id} />
           ) : (
-            <div key={assignment.id} className="flex items-center gap-2 py-1 text-ui-sm">
-              <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span>
+            <div key={assignment.id} className="flex items-center gap-2 py-1 text-ui-sm" title={assignment.id}>
               <span className="min-w-0 flex-1 truncate text-foreground/90" title={assignment.modelReason ?? undefined}>
                 {assignment.objective}
                 <span className="text-muted-foreground">
@@ -434,7 +433,7 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
   return (
     <InspectorSection title="Provider dell'incarico">
       <p className="text-ui-sm text-muted-foreground">
-        Ora: {providerLabel(current)}<Sep />{assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
+        Ora: {providerLabel(current)}<Sep />{assignment.model}. Puoi cambiarlo prima della ripresa: incarico e copia di lavoro restano, riparte solo la sessione.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
         <PickerSelect

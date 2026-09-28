@@ -203,7 +203,7 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(document, "r1")).toEqual({
       phase: "spec",
       blocker: null,
-      moves: [{ move: "confirmSeams", actor: "person", label: "Conferma i seam", targetId: seams.id, url: null, message: null }],
+      moves: [{ move: "confirmSeams", actor: "person", label: "Conferma i punti di prova", targetId: seams.id, url: null, message: null }],
     });
   });
 
