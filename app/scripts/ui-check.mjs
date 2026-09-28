@@ -3533,3 +3533,143 @@ if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in 
 await lookShots("28e-reopened-paused");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// Issue #247: with the Coordinator's green light and the gate passed, Trama publishes and merges a candidate by itself,
+// and Activity says so. A candidate that changes the interface waits in Aspetta te with the screenshots before and
+// after, in light and dark, from the project's screenshots script; a refusal with a reason goes back to the developer,
+// and the person's ok merges the corrected one. The fake gh opens and merges the pull requests; pushes reach a local
+// bare repository.
+const vetrinaGhLog = join(await mkdtemp(join(tmpdir(), "trama-ui-vetrina-gh-")), "gh.log");
+const vetrina = await mkdtemp(join(tmpdir(), "trama-ui-vetrina-"));
+await cp(resolve("resources/DemoProject"), vetrina, { recursive: true });
+await mkdir(join(vetrina, "web"));
+await writeFile(join(vetrina, "web/index.css"), ":root { --accent: #336699; }\n");
+await writeFile(join(vetrina, "package.json"), JSON.stringify({ name: "vetrina", private: true, scripts: { screenshots: `node ${resolve("test-fixtures/fake-screenshots.mjs")}` } }));
+const vetrinaRemote = await mkdtemp(join(tmpdir(), "trama-ui-vetrina-remote-"));
+execFileSync("git", ["init", "-q", "--bare", "-b", "main", vetrinaRemote]);
+const inVetrina = (...args) => execFileSync("git", ["-C", vetrina, ...args], { stdio: "ignore" });
+inVetrina("init", "-q", "-b", "main");
+inVetrina("config", "user.name", "Trama UI");
+inVetrina("config", "user.email", "ui@trama.local");
+inVetrina("add", ".");
+inVetrina("commit", "-q", "-m", "Vetrina");
+inVetrina("remote", "add", "origin", "https://github.com/trama-ui/vetrina.git");
+inVetrina("config", "remote.origin.pushurl", vetrinaRemote);
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_PULLS: "1", FAKE_GH_LOG: vetrinaGhLog, TRAMA_MERGE_CHECKS_MS: "500" }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), vetrina);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-vetrina" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const stateUntil = async (check, what, timeout = 60_000) => {
+  const start = Date.now();
+  for (;;) {
+    const state = await page.evaluate(() => window.trama.getState());
+    const value = state.project ? check(state.project.document, state.project) : null;
+    if (value) return value;
+    if (Date.now() - start > timeout) throw new Error(`${what}: timeout`);
+    await page.waitForTimeout(250);
+  }
+};
+await stateUntil((_, project) => project.github.repository === "trama-ui/vetrina", "GitHub remote");
+await page.evaluate(() => window.trama.invoke("pact:decide", { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "Evita rimborsi errati" }));
+const vetrinaDecision = await stateUntil((document) => document.decisions[0]?.id, "Decision");
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Rinnovare la vetrina"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree", "openPullRequest", "integrateCandidate"],
+    limits: [],
+  }),
+);
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+// Typed, not filled: a draft filled right after the grant does not reach the composer's state and is not sent.
+await composer().click({ timeout: 60_000 });
+await composer().pressSequentially("[proponi-team]");
+await page.keyboard.press("Enter");
+await page.getByText("[proponi-team]", { exact: true }).first().waitFor({ timeout: 20_000 });
+await (await openWaiting("team")).getByRole("button", { name: "Conferma il team" }).click({ timeout: 20_000 });
+await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const adaWork = (document) => document.team.specialists.find((s) => s.name === "Ada")?.assignments.at(-1);
+const workDone = async (before) => {
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  return stateUntil((document) => {
+    const work = adaWork(document);
+    return work && work.id !== before && work.status === "completed" ? work.id : null;
+  }, "Ada's work");
+};
+const candidateOfWork = (document, assignmentId) => document.candidates.filter((c) => c.assignmentId === assignmentId).at(-1);
+
+// No interface change: merged by Trama on the green light, told in Activity.
+await send("[assegna]");
+const plainWork = await workDone(null);
+await send(`[candidato:${plainWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, plainWork)?.pullRequest?.mergedAt, "Merge with the green light");
+const mergeCalls = (await readFile(vetrinaGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+if (!mergeCalls.some((call) => call.includes("PUT") && call.some((arg) => /\/pulls\/21\/merge$/.test(arg)))) throw new Error("Trama did not merge the pull request");
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+const mergedEntry = page.getByTestId("activity-log").locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidato unito con il via libera del Coordinatore" });
+await mergedEntry.waitFor({ timeout: 20_000 });
+await mergedEntry.getByRole("button", { name: "Apri la pull request" }).waitFor();
+if (/[–—]/.test(await mergedEntry.innerText())) throw new Error("A dash in the merge entry");
+await themeShots("30a-merge-activity");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// An interface change waits for the person with the screenshots before and after, in light and dark.
+await send("[assegna] [interfaccia]");
+const styledWork = await workDone(plainWork);
+await send(`[candidato:${styledWork}:${vetrinaDecision}]`);
+const styledItem = await openWaiting("candidate", undefined, 60_000);
+if (!(await styledItem.innerText()).includes("Interfaccia da guardare")) throw new Error("The interface candidate does not say it changes the interface");
+await styledItem.locator('[data-testid="interface-shots"][data-status="ready"]').waitFor({ timeout: 60_000 });
+const styledShots = styledItem.locator('[data-testid="interface-shot"] img');
+await styledShots.nth(3).waitFor({ timeout: 20_000 });
+if ((await styledShots.count()) !== 4) throw new Error(`Expected four screenshots, found ${await styledShots.count()}`);
+await styledItem.getByText("web/index.css").first().waitFor();
+const styledActions = styledItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Approva e unisci" }) });
+await primaryLast(styledActions, "Interface candidate");
+if (await styledItem.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("The interface candidate offers the plain approval");
+if (/[–—]/.test(await styledItem.innerText())) throw new Error("A dash in the interface candidate");
+await styledItem.locator('[data-testid="interface-shots"]').evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30b-interface-candidate-waiting");
+await page.setViewportSize({ width: 900, height: 820 });
+await styledItem.locator('[data-testid="interface-shots"]').evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30b2-interface-candidate-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
+
+// The person refuses it with a reason: it leaves Aspetta te and the reason reaches the developer.
+await styledItem.getByRole("button", { name: "Rifiuta", exact: true }).click();
+await styledItem.getByLabel("Motivo del rifiuto del candidato").fill("Il rosso del pulsante Paga è troppo acceso in scuro");
+await primaryLast(styledItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Rifiuta il candidato" }) }), "Refusal");
+await themeShots("30c-interface-candidate-refusing");
+await styledItem.getByRole("button", { name: "Rifiuta il candidato" }).click();
+await styledItem.waitFor({ state: "detached", timeout: 20_000 });
+await stateUntil((document) => (adaWork(document)?.gateReturn?.findings ?? []).some((f) => f.includes("troppo acceso in scuro")), "Refusal back to the developer");
+await workDone(null);
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The refused candidate is one line of the chat with the reason; the line opens the whole card.
+const refusedLine = page.getByTestId("settled-card").filter({ hasText: "Rifiutato da te" }).filter({ hasText: "troppo acceso in scuro" }).last();
+await refusedLine.waitFor({ timeout: 20_000 });
+await refusedLine.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30d-interface-candidate-refused");
+
+// The corrected candidate: the person's ok merges it.
+await send("[assegna] [interfaccia]");
+const correctedWork = await workDone(styledWork);
+await send(`[candidato:${correctedWork}:${vetrinaDecision}]`);
+const correctedItem = await openWaiting("candidate", undefined, 60_000);
+await correctedItem.locator('[data-testid="interface-shots"][data-status="ready"]').waitFor({ timeout: 60_000 });
+await correctedItem.getByRole("button", { name: "Approva e unisci" }).click();
+await stateUntil((document) => candidateOfWork(document, correctedWork)?.pullRequest?.mergedBy === "person", "Merge on the person's ok");
+await correctedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
+await themeShots("30e-merge-activity-person");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
