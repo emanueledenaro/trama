@@ -10,7 +10,7 @@ import { activeAssignments } from "./team";
 import { workState, workStateText } from "./workPhase";
 
 /**
- * The context summary (ADR 0018): what the Coordinator needs to go on in a new session, written by Trama from its own
+ * The context summary (ADR 0019): what the Coordinator needs to go on in a new session, written by Trama from its own
  * records, never by the model. Trama writes it when the Coordinator's context passes the project's threshold and hands it
  * to the new session with the study and the memory. The person reads another view of the same records in Activity and
  * in the chat: plain sections, without the framing written for the model. Pure.
@@ -140,7 +140,7 @@ export interface PersonSummaryInput extends ContextSummaryInput {
 }
 
 /**
- * The same records for the person (ADR 0018): goals, Pact decisions, mandate, assignments, candidates and what waits
+ * The same records for the person (ADR 0019): goals, Pact decisions, mandate, assignments, candidates and what waits
  * for them, as plain sections in their language. No framing for the model, no ids, no tool names.
  */
 export function personSummary({ document, waiting, candidateStates = {}, language = DEFAULT_LANGUAGE }: PersonSummaryInput): string {

@@ -360,7 +360,7 @@ export const en: Record<keyof typeof it, string> = {
   "audit.lens.failed": "{lens}: did not finish.",
   "audit.lens.running": "{lens}: running.",
 
-  // Context managed by Trama (ADR 0018)
+  // Context managed by Trama (ADR 0019)
   "context.meter.aria": "Coordinator context: {percent}%, reorder above {threshold}%",
   "context.meter.ariaUnknown": "Coordinator context: measure not available, reorder above {threshold}%",
   "context.meter.unknown": "Measure not available for this model.",
