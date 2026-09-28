@@ -189,7 +189,8 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
             <span className="text-foreground">
               <ReferenceText text={entry.label} links={false} />
             </span>
-            {summary ? (
+            {/* Open, the row shows the whole detail below: the line keeps the name only. */}
+            {summary && !(open && entry.detail) ? (
               <span className="text-muted-foreground">
                 <Sep />
                 <ReferenceText text={summary} links={false} />
@@ -335,8 +336,19 @@ function TurnRow({ item, focused, open, onToggle }: { item: Extract<ActivityItem
 
 /** The text of an item for the summary: the entry's name, or who worked. */
 function ItemText({ item }: { item: ActivityItem }) {
+  const t = useT();
   if (item.type === "entry") return <ReferenceText text={item.entry.label} links={false} />;
-  return <WorkLabel row={item.row} avatar={false} />;
+  return (
+    <>
+      <WorkLabel row={item.row} avatar={false} />
+      {item.failed ? (
+        <span className="text-muted-foreground">
+          <Sep />
+          {t("activity.turn.failed", { count: item.failed })}
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 /** At the top of the panel: what runs now and the last thing that went wrong, which opens its row. */
