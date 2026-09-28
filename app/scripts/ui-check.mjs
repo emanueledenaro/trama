@@ -2836,7 +2836,8 @@ for (const dark of [false, true]) {
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
-for (const group of await page.getByRole("button", { name: /ha lavorato per/ }).all()) {
+// The chat's lines only: the side bar sits before the chat (issue #330) and its Activity lists the same names.
+for (const group of await page.getByRole("main").getByRole("button", { name: /ha lavorato per/ }).all()) {
   if (await blockedRead.count()) break;
   await group.click();
 }
