@@ -943,7 +943,7 @@ describe("TramaController", () => {
       const document = project.document;
       // The understanding is confirmed in Pause, so the Coordinator's move waits for Riprendi.
       await controller!.pauseContinuousWork(true);
-      await confirmUnderstanding(document);
+      await confirmUnderstanding(document, true);
       await writeFile(quota, "");
       await controller!.pauseContinuousWork(false);
       await until(() => automaticRequests(document)[0]?.state === "failed");
