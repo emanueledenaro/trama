@@ -1,5 +1,6 @@
 import type { InlineCode, Link, PhrasingContent, Root, Text } from "mdast";
 import { SKIP, visit } from "unist-util-visit";
+import { plainText } from "@shared/plainLanguage";
 import { lookupReference, type Reference, type ReferenceIndex, referenceHref, referenceText, referenceTitle, splitReferences } from "@shared/references";
 
 /** The hover of an id that looks like one of Trama's and names nothing of the project. */
@@ -54,6 +55,19 @@ export function remarkReferences(options: { index: ReferenceIndex | null }) {
       });
       parent.children.splice(position, 1, ...(nodes as typeof parent.children));
       return [SKIP, position + nodes.length];
+    });
+  };
+}
+
+/**
+ * Makes an agent's or Trama's words plain for the person (issue #270): a skill cited with its path shows its name,
+ * technical codes read in Italian. Code, inline code and links stay as written.
+ */
+export function remarkPlainText() {
+  return (tree: Root) => {
+    visit(tree, (node) => {
+      if (node.type === "link" || node.type === "linkReference" || node.type === "code" || node.type === "inlineCode" || node.type === "html") return SKIP;
+      if (node.type === "text") (node as Text).value = plainText((node as Text).value);
     });
   };
 }

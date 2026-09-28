@@ -52,11 +52,11 @@ export function worktreePairs(document: ProjectDocument): WorktreePair[] {
   return pairs;
 }
 
-/** Who made the other candidate and on which branch, as the card and the blockers read it. */
-function reference(document: ProjectDocument, candidate: Candidate, session: WorktreeSession): string {
-  const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
-  return `${candidate.id} di ${specialist?.name ?? candidate.specialistId} (${session.branch})`;
-}
+/**
+ * The other candidate by its id: the card and the blockers show it by name, with who made it, and the id on hover
+ * (issue #270). Records written before kept "C-1 di Ada (branch)": plainConflictReference reads them the same way.
+ */
+const reference = (candidate: Candidate) => candidate.id;
 
 /** Runs the merge probe of one pair and returns its assessment; a probe that cannot run is `unknown`. */
 export async function assessWorktreePair(document: ProjectDocument, pair: WorktreePair, probeRoot: string, now = new Date()): Promise<ConflictAssessment> {
@@ -64,7 +64,7 @@ export async function assessWorktreePair(document: ProjectDocument, pair: Worktr
     id: worktreeAssessmentId(pair.mine, pair.other),
     candidateId: pair.mine.id,
     snapshotId: pair.mine.snapshotId,
-    references: [reference(document, pair.other, pair.otherSession)],
+    references: [reference(pair.other)],
     otherCandidateId: pair.other.id,
     otherSnapshotId: pair.other.snapshotId,
     checkedAt: now.toISOString(),
@@ -85,9 +85,9 @@ export async function assessWorktreePair(document: ProjectDocument, pair: Worktr
       ...(result.status === "conflict" && Object.keys(result.lines).length ? { conflictingLines: result.lines } : {}),
       detail:
         classification === "overlap"
-          ? `Nessun conflitto testuale tra i due worktree, ma entrambi cambiano ${pair.sharedFiles.join(", ")}.`
+          ? `Nessun conflitto testuale tra le due copie di lavoro, ma entrambe cambiano ${pair.sharedFiles.join(", ")}.`
           : result.status === "conflict"
-            ? "La fusione temporanea dei due worktree produce conflitti testuali: si risolvono prima dell'unione."
+            ? "La fusione temporanea delle due copie di lavoro produce conflitti testuali: si risolvono prima dell'unione."
             : result.detail,
     };
   } catch (error) {

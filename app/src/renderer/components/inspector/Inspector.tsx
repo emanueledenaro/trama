@@ -18,6 +18,9 @@ import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
 import { BranchView, CommitView, PullRequestView } from "./GitView";
 import { WaitingList } from "@/components/WaitingView";
+import { Sep } from "@/components/ui/sep";
+import { asTitle, useRecord } from "@/lib/references";
+import type { InspectorTarget } from "@/lib/store";
 
 /** The narrowest the dialog gets next to a docked inspector. */
 const CHAT_MIN_WIDTH = 420;
@@ -35,7 +38,7 @@ const TITLES = {
   specialist: "Specialista",
   agentThread: "Chat tra agenti",
   candidate: "Candidato",
-  audit: "Focus mode",
+  audit: "Esame approfondito",
   group: "Il lavoro del gruppo",
   work: "Lavoro",
   activity: "Attività",
@@ -47,6 +50,46 @@ const TITLES = {
   goals: "Obiettivi",
   goal: "Obiettivo",
 } as const;
+
+// Panels that already open with the record's name (an agent, a goal) keep their generic title, not the name twice.
+const targetId = (target: InspectorTarget): string | null => (target.kind === "candidate" || target.kind === "audit" || target.kind === "decision" ? target.id : null);
+
+/**
+ * The title follows what the panel shows (issue #270): a record by its name, with the id on hover; Aspetta te opened
+ * on one item says which one, since the card on screen is that item's.
+ */
+function InspectorTitle({ target }: { target: InspectorTarget }) {
+  const waitingItem = useUi((s) => (target.kind === "waiting" && target.key ? (s.app?.project?.waiting ?? []).find((i) => i.key === target.key) ?? null : null));
+  const candidateId = waitingItem?.kind === "candidate" ? waitingItem.targetId : null;
+  const record = useRecord(targetId(target) ?? candidateId);
+  const id = targetId(target) ?? candidateId ?? undefined;
+  if (target.kind === "waiting") {
+    return (
+      <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="inspector-title">
+        {TITLES.waiting}
+        {waitingItem ? (
+          <>
+            <Sep />
+            <span className="text-muted-foreground">{record ? asTitle(record.label) : waitingItem.label}</span>
+          </>
+        ) : null}
+      </h3>
+    );
+  }
+  const title =
+    target.kind === "issue"
+      ? `Issue #${target.number}`
+      : target.kind === "pullRequest"
+        ? `Pull request #${target.number}`
+        : record
+            ? asTitle(record.label)
+            : TITLES[target.kind];
+  return (
+    <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="inspector-title">
+      {title}
+    </h3>
+  );
+}
 
 export function Inspector() {
   const target = useUi((s) => s.inspector)!;
@@ -81,7 +124,7 @@ export function Inspector() {
         onDragChange={panel.setResizing}
       />
       <div className="chat-surface-divider drag-region flex h-[46px] shrink-0 items-center gap-2 px-4">
-        <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground">{TITLES[target.kind]}</h3>
+        <InspectorTitle target={target} />
         <Tooltip label={isWide ? "Larghezza normale" : "Allarga l'ispettore"}>
           <button
             type="button"

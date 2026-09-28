@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { plainConflictReference } from "@shared/plainLanguage";
 import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { blockingFindings, latestGate } from "@shared/gate";
@@ -166,7 +167,7 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
     if (assessment.classification === "conflict") {
       blockers.push({
         code: assessment.otherCandidateId ? "WORKTREE_CONFLICT" : "REMOTE_CONFLICT",
-        detail: `${assessment.references.join(", ")}: ${assessment.conflictingFiles.join(", ")}`,
+        detail: `${assessment.references.map(plainConflictReference).join(", ")}: ${assessment.conflictingFiles.join(", ")}`,
       });
     }
   }
@@ -250,6 +251,8 @@ export function approveCandidate(document: ProjectDocument, candidateId: string,
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
+  // An ok on the same content takes back an earlier refusal (issue #247).
+  if (candidate.humanRejection) candidate.humanRejection = null;
   candidate.updatedAt = now.toISOString();
   return candidate;
 }

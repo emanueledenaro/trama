@@ -15,6 +15,8 @@ I nomi dei branch seguono [Conventional Branch 1.1.0](https://conventionalbranch
 - `chore`
 - prefissi per agenti AI: `ai`, `claude`, `codex`, `copilot`, `cursor`
 
+I branch di Dependabot (`dependabot/...`) sono esclusi dal controllo del nome: GitHub li crea con quel formato, che non si può cambiare. I loro commit e i titoli delle PR seguono comunque Conventional Commits (`build(deps): ...`, `ci(deps): ...`).
+
 In questo repository persone e agenti usano i prefissi di tipo (`feature/`, `bugfix/`, `hotfix/`), non i prefissi con il nome dell'agente. `feature` è preferito a `feat`, `bugfix` a `fix`.
 
 ## Regole della descrizione

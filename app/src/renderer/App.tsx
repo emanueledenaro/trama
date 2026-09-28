@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { useDocumentLanguage } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
@@ -42,6 +43,7 @@ function useProviderTheme() {
 export function App() {
   const app = useUi((s) => s.app);
   useProviderTheme();
+  useDocumentLanguage();
   const setApp = useUi((s) => s.setApp);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);

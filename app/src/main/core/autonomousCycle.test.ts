@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { activityLog } from "@shared/activity";
 import { placeGrillingQuestion } from "@shared/grilling";
@@ -20,8 +20,21 @@ import { workState } from "./workPhase";
 
 const free: ContinuationGuards = { enabled: true, paused: false, busy: false, unavailable: null };
 
+// One clock for the test and the code it calls: questions and mandates stamp the system time, and a step counts only
+// after the question it answers, so a fixed test clock behind the real one would fail once the day moves on.
 let clock = Date.UTC(2026, 8, 28, 9, 0);
-const tick = () => new Date((clock += 60_000)).toISOString();
+const tick = () => {
+  clock += 60_000;
+  vi.setSystemTime(clock);
+  return new Date(clock).toISOString();
+};
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(clock);
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 function request(document: ProjectDocument, id: string, options: { state?: CoordinatorRequest["state"] } = {}): CoordinatorRequest {
   const at = tick();
