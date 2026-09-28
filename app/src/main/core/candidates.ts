@@ -175,6 +175,10 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
         detail: `${assessment.references.map(plainConflictReference).join(", ")}: ${assessment.conflictingFiles.join(", ")}`,
       });
     }
+    // A semantic hypothesis blocks only once the scenario on the combined candidate proved it (issue #40).
+    if (assessment.classification === "semantic") {
+      blockers.push({ code: "SEMANTIC_CONFLICT", detail: `${assessment.references.map(plainConflictReference).join(", ")}: ${assessment.detail}` });
+    }
   }
   return blockers;
 }
