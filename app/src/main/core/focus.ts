@@ -200,7 +200,7 @@ export function focusText(document: ProjectDocument, requestId: string): string 
     const names = queued.slice(0, QUEUE_IN_PROMPT).map(promptName);
     lines.push(`In coda: ${names.join(", ")}${queued.length > QUEUE_IN_PROMPT ? ` e altri ${queued.length - QUEUE_IN_PROMPT}` : ""}.`);
   }
-  if (paused.length) lines.push(`In pausa: ${paused.map(promptName).join(", ")}.`);
+  if (paused.length) lines.push(`Sospesi dalla persona: ${paused.map(promptName).join(", ")}.`);
   const own = taskIdOf(document, requestId);
   if (own === view.focus.id) {
     lines.push("Il messaggio riguarda il task in focus: resta su questo task.");

@@ -31,8 +31,9 @@ In entrambi i profili l'hook nega `run_command`, gli strumenti web e browser, i 
 La sola lettura non parte mai senza l'hook:
 
 - prima della sessione Trama esegue l'hook installato con lo stesso comando che usa la CLI e controlla che neghi una modifica e un comando di shell e permetta una lettura;
-- durante il turno, se la CLI produce un passo prima di aver chiamato l'hook, Trama ferma il processo;
-- in entrambi i casi la sessione o il turno falliscono con un motivo chiaro e l'azione da fare: aggiornare Antigravity CLI con `agy update` o reinstallarlo.
+- durante il turno, se la CLI produce un passo del modello prima di aver chiamato l'hook, Trama ferma il processo. Il messaggio della persona non conta: agy 1.2.12 lo trasmette come passo `user_input` prima di chiamare l'hook PreInvocation (verificato sul Mac il 28 settembre 2026);
+- in entrambi i casi Trama prova prima a ripararsi da sola, senza chiedere niente: esegue `agy update` se la versione è più vecchia di quella che serve, reinstalla il plugin con `agy plugin install`, controlla di nuovo l'hook e ripete il turno una volta. La riparazione resta in Attività;
+- solo se la riparazione non riesce la sessione o il turno falliscono, con quello che Trama ha provato e l'unica cosa che resta da fare alla persona.
 
 Il flag `--sandbox` della CLI è una difesa in più, non la regola. Trama lo aggiunge ai turni in sola lettura solo quando `agy --help` lo elenca come opzione senza valore. Non abbiamo potuto verificarne il comportamento senza la CLI reale, quindi la regola resta l'hook; la prova dal vivo con `agy` controlla anche questo flag.
 

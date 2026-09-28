@@ -57,7 +57,7 @@ export interface ActionMap {
   "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null }, void];
   "coordinator:setFastMode": [{ enabled: boolean }, void];
   "coordinator:selectProvider": [{ provider: ProviderId }, void];
-  "coordinator:saveDraft": [{ text: string }, void];
+  "coordinator:saveDraft": [{ text: string; projectId?: string | null }, void];
   /** Deletes a message still waiting in the queue (W03); a message that reports a recorded choice stays. */
   "coordinator:deleteQueued": [{ id: string }, void];
   "goal:create": [GoalInputPayload, string];
@@ -74,6 +74,7 @@ export interface ActionMap {
   "focus:change": [{ action: "focus" | "pause" | "resume"; taskId: string }, void];
   "candidate:observeExample": [{ candidateId: string; exampleId: string; observed: boolean; snapshotId: string }, void];
   "overview:read": [void, ProjectOverview[]];
+  "overview:prioritize": [{ projectId: string; direction: "up" | "down" }, void];
   "coordinator:setContextThreshold": [{ percent: number }, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
@@ -101,6 +102,8 @@ export interface ActionMap {
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];
   "assignment:resume": [{ assignmentId: string }, void];
+  "assignment:place": [{ assignmentId: string; where: import("./domain").WorkPlace }, void];
+  "assignment:cloudCheck": [{ assignmentId: string }, void];
   "assignment:removeWorktree": [{ assignmentId: string }, void];
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
