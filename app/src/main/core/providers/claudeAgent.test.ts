@@ -297,6 +297,8 @@ describe("query options", () => {
     expect(filesystem.denyRead.slice(0, 2)).toEqual([homedir(), process.env.CODEX_HOME || join(homedir(), ".codex")]);
     expect(filesystem.denyRead).not.toContain("/usr");
     expect(filesystem.allowRead).toContain("/work");
+    // The sandbox hides ~/.gitconfig: git in its commands reads no global file, so it does not fail (issue #391).
+    expect(options.env).toMatchObject({ GIT_CONFIG_GLOBAL: "/dev/null" });
     expect(options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
   });
 });
