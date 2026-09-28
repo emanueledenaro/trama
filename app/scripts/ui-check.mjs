@@ -1699,9 +1699,16 @@ await shot("15b-group-follow");
 await page.setViewportSize({ width: 720, height: 640 });
 await groupPanel.getByRole("button", { name: "Chiedi al Coordinatore l'impatto" }).click();
 await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Gruppo, Chiedi al Coordinatore l'impatto");
-await groupPanel.waitFor({ state: "detached" });
+// Issue #330: the side bar is attached and no longer floats over the chat, so it stays open and leaves the question
+// in view beside it.
+{
+  const question = await composer().boundingBox();
+  const side = await groupPanel.boundingBox();
+  if (!question || !side || question.x < side.x + side.width || question.x + question.width > 720) throw new Error("The question is not in view beside Gruppo at 720x640");
+}
 await shot("15c-group-ask-narrow");
 await composer().fill("");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // V04 and V05 on a fresh copy of the example project. The person stops a developer's work and resumes it; a check fails
 // on a candidate and the card opens its original output; the correction is a new candidate that gets the green light,

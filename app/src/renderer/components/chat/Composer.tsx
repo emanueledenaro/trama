@@ -126,9 +126,7 @@ export function Composer() {
     if (question === null) return;
     const next = withQuestion(text, question);
     updateText(next);
-    // In a narrow window the inspector floats over the chat: close it, or it would hide the question.
-    const panel = document.querySelector<HTMLElement>('[data-testid="inspector"]');
-    if (panel && getComputedStyle(panel).position === "absolute") useUi.getState().setInspector(null);
+    // The side bar is attached and the chat keeps 420 px beside it (issue #330): the question stays in view.
     requestAnimationFrame(() => {
       textarea.current?.focus();
       textarea.current?.setSelectionRange(next.length, next.length);
