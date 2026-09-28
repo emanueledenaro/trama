@@ -1,15 +1,15 @@
 # A04: mandato di progetto per tutto il ciclo, con divieti fissi
 
-Data: 28 settembre 2026. Issue #244, specifica #239 (Q8, Q1), ADR 0017. Base: `origin/main` 2b91dd3.
+Data: 28 settembre 2026. Issue #244, specifica #239 (Q8, Q1), ADR 0017. Base: `origin/main` f22ca3f.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 119 file, 1139 test superati, 3 saltati.
+- `npx vitest run`: 120 file, 1169 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 292 schermate. Passi nuovi: `26a-project-mandate`, `26b-mandate-restrict`, `26c-mandate-restricted`, `26d-fixed-ban`, ognuno con Codex e Claude, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 298 schermate. Passi nuovi: `26a-project-mandate`, `26b-mandate-restrict`, `26c-mandate-restricted`, `26d-fixed-ban`, ognuno con Codex e Claude, in chiaro e in scuro.
 
 ## Comportamento
 
