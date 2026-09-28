@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, translate } from "@shared/i18n";
 import type { CoordinatorRequest, NextMove, ProjectDocument, SpecialistAssignment, StatusLineAction, StatusLineView } from "@shared/domain";
 import { focusView } from "./focus";
 import { BLOCK_LABELS, BLOCK_PHRASES, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, nextStepViews, workRequests, workState } from "./workPhase";
@@ -66,6 +67,10 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
       return target ? `Sto verificando ${target}` : "Sto verificando il lavoro";
     case "answerQuestion":
       return "Sto rispondendo a uno sviluppatore";
+    case "decideWithDelegation":
+      return translate(DEFAULT_LANGUAGE, "delegation.move.decide.running");
+    case "takeTicket":
+      return translate(DEFAULT_LANGUAGE, "delegation.move.ticket.running");
   }
 }
 
@@ -80,6 +85,10 @@ function nextPhrase(move: CoordinatorMove, target: string | null): string {
       return target ? `verifico ${target}` : "verifico il lavoro";
     case "answerQuestion":
       return "rispondo allo sviluppatore";
+    case "decideWithDelegation":
+      return translate(DEFAULT_LANGUAGE, "delegation.move.decide.next");
+    case "takeTicket":
+      return translate(DEFAULT_LANGUAGE, "delegation.move.ticket.next");
   }
 }
 

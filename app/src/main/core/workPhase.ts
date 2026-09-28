@@ -14,6 +14,7 @@ import type {
   WorkPlan,
 } from "@shared/domain";
 import { readableFailure } from "@shared/providerFailure";
+import { DEFAULT_LANGUAGE, translate } from "@shared/i18n";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
@@ -127,7 +128,7 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 });
 
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion";
+export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "decideWithDelegation" | "takeTicket";
 
 /** The words of the Coordinator's moves: the button's label and the message that asks for the move. */
 export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message: string }> = {
@@ -135,6 +136,9 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   assignWork: { label: "Assegna il lavoro", message: "Assegna il lavoro." },
   verifyCandidate: { label: "Esegui le verifiche", message: "Esegui le verifiche del lavoro." },
   answerQuestion: { label: "Rispondi allo sviluppatore", message: "Rispondi alla domanda dello sviluppatore." },
+  // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
+  decideWithDelegation: { label: translate(DEFAULT_LANGUAGE, "delegation.move.decide.label"), message: translate(DEFAULT_LANGUAGE, "delegation.move.decide.message") },
+  takeTicket: { label: translate(DEFAULT_LANGUAGE, "delegation.move.ticket.label"), message: translate(DEFAULT_LANGUAGE, "delegation.move.ticket.label") },
 };
 
 /** The name of the move that resolves a technical block (A06), as the status line, Activity and the recap show it. */

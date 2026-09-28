@@ -945,3 +945,91 @@ describe("run_requested_action: the person's written request unlocks a banned ac
     expect(tool?.description).toContain("typed in the composer");
   });
 });
+
+describe("the full delegation in the Coordinator's tools (issue #423)", () => {
+  function delegatedContext() {
+    const document = emptyDocument("p");
+    document.events.push({
+      id: "E-1",
+      sequence: 1,
+      origin: "person",
+      requestId: null,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      content: { type: "personMessage", text: "Fai tutto tu in automatico, vado a dormire", moduleId: null, moduleName: null, composer: true },
+    });
+    const changes: string[] = [];
+    const decided: string[] = [];
+    const context = {
+      ...teamContext(document),
+      delegationChanged: (delegation: { revokedAt: string | null }) => void changes.push(delegation.revokedAt ? "revoked" : "granted"),
+      questionDecided: (questionId: string) => void decided.push(questionId),
+    } as unknown as ToolContext;
+    return { document, context, changes, decided };
+  }
+
+  const question = (document: ProjectDocument) =>
+    createDecisionRequest(document, {
+      requestId: null,
+      category: "product",
+      question: "Chi vede la revisione?",
+      concreteCase: "Ordine 42",
+      alternatives: [
+        { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
+        { behavior: "Anche il cliente", example: "Il cliente vede lo stato", consequence: null },
+      ],
+      revisesDecisionId: null,
+    });
+
+  it("refuses to decide for the person without the delegation", async () => {
+    const { document, context } = delegatedContext();
+    const open = question(document);
+    const refused = await runCoordinatorTool("decide_with_delegation", { question: open.id, alternative: 1, reason: "r" }, context);
+    expect(parse(refused).error.code).toBe("not_delegated");
+    expect(open.outcome).toBeNull();
+  });
+
+  it("grants it from the person's words, decides with the recommendation and records the doubt", async () => {
+    const { document, context, changes, decided } = delegatedContext();
+    const granted = await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu in automatico" }, context);
+    expect(parse(granted)).toMatchObject({ status: "in_force", tickets: false });
+    expect(changes).toEqual(["granted"]);
+    const open = question(document);
+    const result = await runCoordinatorTool("decide_with_delegation", { question: open.id, alternative: 1, reason: "Il cliente chiede sempre lo stato", doubt: "Non so per gli ordini con buono" }, context);
+    expect(result.isError).toBeFalsy();
+    expect(open.outcome).toMatchObject({ answer: "Anche il cliente", byDelegation: { choiceId: parse(result).choiceID } });
+    expect(document.decisions.at(-1)).toMatchObject({ value: "Anche il cliente" });
+    expect(document.delegatedChoices).toMatchObject([{ kind: "decision", subject: "Chi vede la revisione?", doubt: "Non so per gli ordini con buono", targetId: open.id }]);
+    expect(decided).toEqual([open.id]);
+  });
+
+  it("opens the goal it proposes, notes a doubt, and stops once the person withdraws the delegation in the chat", async () => {
+    const { document, context, changes } = delegatedContext();
+    await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu in automatico" }, context);
+    const goal = await runCoordinatorTool("propose_goal", { title: "Revisione degli ordini", outcome: "Gli ordini annullati vanno in revisione", acceptedExamples: ["L'ordine 42 va in revisione"] }, context);
+    expect(parse(goal).status).toBe("open");
+    const noted = await runCoordinatorTool("note_doubt", { subject: "Ordini vecchi", choice: "Li lascio come sono", doubt: "La issue non ne parla" }, context);
+    expect(parse(noted).status).toBe("recorded");
+    expect(document.delegatedChoices?.map((c) => c.kind)).toEqual(["goal", "doubt"]);
+    // The words that gave the delegation never withdraw it; the person's later words do.
+    expect(parse(await runCoordinatorTool("revoke_full_delegation", { quote: "fai tutto tu in automatico" }, context)).error.code).toBe("not_the_person");
+    document.events.push({
+      id: "E-2",
+      sequence: 2,
+      origin: "person",
+      requestId: null,
+      createdAt: "2999-01-01T00:00:00.000Z",
+      content: { type: "personMessage", text: "Sono tornato, ritira la delega piena", moduleId: null, moduleName: null, composer: true },
+    });
+    expect(parse(await runCoordinatorTool("revoke_full_delegation", { quote: "ritira la delega piena" }, context)).status).toBe("withdrawn");
+    expect(changes).toEqual(["granted", "revoked"]);
+    const after = await runCoordinatorTool("propose_goal", { title: "Altro", outcome: "Altro risultato", acceptedExamples: ["x"] }, context);
+    expect(parse(after).status).toBe("proposed");
+  });
+
+  it("refuses words that are not the person's", async () => {
+    const { context, changes } = delegatedContext();
+    const refused = await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu senza di me" }, context);
+    expect(parse(refused).error.code).toBe("not_the_person");
+    expect(changes).toEqual([]);
+  });
+});

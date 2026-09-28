@@ -1,4 +1,7 @@
 import type { NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
+import { activeDelegation } from "@shared/delegation";
+import { candidateSuperseded } from "@shared/conflictScope";
+import { touchesInterface } from "@shared/interfaceChange";
 import { focusView } from "./focus";
 import { isActive } from "./team";
 import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
@@ -21,6 +24,16 @@ export type { WorkEvent } from "@shared/domain";
  * mandate the Coordinator takes the understanding, the team, the seams and the slices by itself (A06, `autonomousCycle`).
  */
 const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"];
+
+/**
+ * The person's moves the Coordinator takes with the full delegation (issue #423): a product decision, and a candidate
+ * that waits for the person's ok (the interface, or a choice it leaves open). The mandate and the team are covered by
+ * the full mandate the delegation brings.
+ */
+const DELEGATION_DECIDES: NextMove[] = ["answerQuestions", "reviewCandidate"];
+
+/** Whether the work waits for a choice of the person the full delegation lets the Coordinator make. */
+const delegatedHolds = (state: Pick<WorkState, "moves">): boolean => state.moves.some((m) => m.actor === "person" && DELEGATION_DECIDES.includes(m.move));
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
 export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "round"];
@@ -89,6 +102,12 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // A block waits for the person, except the technical ones the Coordinator resolves by itself within the mandate (A06, Q3),
   // whatever event brought it: a red check, a conflict between worktrees, an assignment that stopped.
   if (state.phase === "blocked" && !state.block && !RESOLVES_BLOCKS.includes(event)) return null;
+  // With the full delegation (issue #423) the Coordinator decides what waits for the person, first: it unblocks the rest.
+  if (activeDelegation(document) && delegatedHolds(state)) {
+    // The round does not repeat a decision the latest automatic turn of the dialog already tried: a new event does.
+    if (event === "round" && latest.step?.by === "trama" && latest.step.move === "decideWithDelegation") return null;
+    return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
+  }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
   const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
   const option = state.moves.find((m) => m.actor === "coordinator");
@@ -151,6 +170,28 @@ export function projectMove(document: ProjectDocument, event: WorkEvent, guards:
   return null;
 }
 
+/**
+ * With the full delegation and "fai tutti i ticket" (issue #423), the move that takes the next open issue when the
+ * project has no open work left, or null. Pure: the issue comes from `nextTicket`, which the caller passes.
+ */
+export function ticketMove(
+  document: ProjectDocument,
+  issue: { number: number; title: string } | null,
+  guards: ContinuationGuards,
+  latest: { model: string | null; effort: string | null } | null,
+): AutomaticMove | null {
+  if (!issue || !guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+  if (!activeDelegation(document)?.tickets || !mandateGranted(document) || hasOpenWork(document)) return null;
+  return {
+    move: "takeTicket",
+    label: COORDINATOR_MOVES.takeTicket.label,
+    message: `Con la delega piena prendi la issue #${issue.number} «${issue.title}»: leggila con read_issues, trasformala in lavoro e portala fino all'unione, senza la persona.`,
+    goalId: null,
+    model: latest?.model ?? null,
+    effort: latest?.effort ?? null,
+  };
+}
+
 /** Records a round that did something, for Activity (A05). Keeps the latest KEPT_ROUNDS. */
 export function recordRound(document: ProjectDocument, round: { id: string; at: string; detail: string; requestId: string | null }): void {
   const record = (document.continuousWork ??= { paused: false, changedAt: null, rounds: [] });
@@ -168,12 +209,14 @@ export function setPaused(document: ProjectDocument, paused: boolean, at: string
 
 
 /** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. */
-export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null): string {
+export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null, document: ProjectDocument | null = null): string {
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
     "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
     ...(block ? [blockSection(block)] : []),
+    ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
+    ...(move === "takeTicket" ? [TAKE_TICKET] : []),
     ...(move === "verifyCandidate"
       ? [
           "Le verifiche girano su un candidato, non su un incarico: per un incarico concluso senza candidato chiama prima declare_candidate, poi verify_candidate con il candidateID che restituisce. La fase del lavoro qui sopra elenca gli incarichi e i candidati.",
@@ -181,6 +224,35 @@ export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["
       : []),
   ].join("\n");
 }
+
+/** What deciding with the full delegation means (issue #423): the Coordinator's own recommendation, recorded with its doubt. */
+const DECIDE_WITH_DELEGATION =
+  "La persona ti ha dato la delega piena: decidi tu quello che aspetta lei. Per ogni domanda di prodotto aperta scegli la risposta che consiglieresti e registrala con decide_with_delegation, con il dubbio se ne hai uno. Per un candidato che aspetta il suo ok guarda le schermate prima e dopo e approvalo con approve_with_delegation, o fallo correggere. Poi vai avanti con il lavoro. Non chiedere nulla alla persona: le conferme di cancellazione restano sue.";
+
+/**
+ * What waits for the person that the delegation lets the Coordinator decide, with the ids its tools take: the open
+ * product questions with their alternatives and the recommended one, and the candidates that wait for the person's ok.
+ */
+function waitingChoices(document: ProjectDocument): string[] {
+  const questions = document.decisionRequests
+    .filter((q) => !q.outcome && !q.withdrawal)
+    .map((q) => {
+      const options = q.alternatives.map((a, index) => `${index}: ${a.behavior}`).join("; ");
+      const recommended = q.grilling?.recommendedIndex ?? null;
+      return `- ${q.id}: ${q.question} (alternative ${options}${recommended !== null ? `; consigliata ${recommended}` : ""})`;
+    });
+  const candidates = document.candidates
+    .filter((c) => touchesInterface(c.changedFiles) && !c.humanApproval && !c.humanRejection && !c.pullRequest?.mergedAt && !candidateSuperseded(document, c))
+    .map((c) => `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`);
+  return [
+    ...(questions.length ? ["Domande di prodotto aperte:", ...questions] : []),
+    ...(candidates.length ? ["Candidati che aspettano l'ok della persona:", ...candidates] : []),
+  ];
+}
+
+/** What taking an open issue means (issue #423): the whole cycle without the person, doubts written down. */
+const TAKE_TICKET =
+  "Porta la issue fino all'unione come faresti con una richiesta della persona: comprensione, piano, fette, incarichi, verifiche e unione. Un dubbio non ti ferma: scegli la strada che consiglieresti e scrivila con note_doubt.";
 
 /** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. */
 const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
@@ -295,6 +367,11 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     }
     case "answerQuestion":
       // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
+      return null;
+    case "decideWithDelegation":
+      // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
+      return delegatedHolds(state) ? "il Coordinatore non ha deciso quello che aspettava la persona." : null;
+    case "takeTicket":
       return null;
   }
 }

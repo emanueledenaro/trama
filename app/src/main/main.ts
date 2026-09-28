@@ -1,6 +1,6 @@
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
 import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
@@ -25,6 +25,11 @@ function surfaceColor(): string {
 
 // The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
+/** The power save blocker the full delegation holds (issue #423), or null. */
+let keepAwakeId: number | null = null;
+/** How long the person stays away before Trama tells them what it did with the delegation; TRAMA_RETURN_AFTER_MS for checks. */
+const RETURN_AFTER_MS = Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000);
+
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
     window?.webContents.send("trama:state", state);
@@ -50,6 +55,14 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
   systemLanguages: () => {
     const override = process.env.TRAMA_SYSTEM_LANGUAGE;
     return override ? [override] : [...app.getPreferredSystemLanguages(), app.getLocale()];
+  },
+  // The full delegation keeps the computer awake while there is open work (issue #423); without it, the usual sleep.
+  setKeepAwake: (awake) => {
+    if (awake && keepAwakeId === null) keepAwakeId = powerSaveBlocker.start("prevent-app-suspension");
+    if (!awake && keepAwakeId !== null) {
+      powerSaveBlocker.stop(keepAwakeId);
+      keepAwakeId = null;
+    }
   },
   setOpenAtLogin: (enabled) => {
     if (process.platform === "linux") return;
@@ -94,7 +107,11 @@ function createWindow(): void {
   window.on("closed", () => {
     window = null;
   });
-  window.on("focus", () => void controller.refreshCodex());
+  window.on("focus", () => {
+    void controller.refreshCodex();
+    controller.personReturned(RETURN_AFTER_MS);
+  });
+  window.on("blur", () => controller.personAway());
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -173,6 +190,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "fixedBan:acknowledge": ({ id }) => controller.acknowledgeFixedBan(id),
   "requestedAction:confirm": ({ id }) => controller.confirmRequestedAction(id),
   "requestedAction:decline": ({ id }) => controller.declineRequestedAction(id),
+  "delegation:revoke": () => controller.revokeDelegation(),
+  "delegation:seen": ({ id }) => controller.markDelegatedChoiceSeen(id),
   "mandate:reject": ({ requestId, reason }) => controller.rejectMandateRequest(requestId, reason),
   "autonomousStep:correct": ({ stepId, note }) => controller.correctAutonomousStep(stepId, note),
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),

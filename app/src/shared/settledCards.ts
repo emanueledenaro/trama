@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, translate } from "./i18n";
 import { CONFLICT_SIDE_TITLE, candidateSuperseded, conflictSide, explainedByDivergence, otherSideSuperseded } from "./conflictScope";
 import type { AssignmentStatus, CandidateState, ProjectDocument } from "./domain";
 import { isExerciseAssessment } from "./onboarding";
@@ -73,7 +74,9 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (request.withdrawal) return { title, subject: request.question, answer: null, outcome: { label: "Ritirata", tone: "secondary" } };
       const outcome = request.outcome!;
       const chosen = outcome.alternativeIndex === null ? outcome.answer : (request.alternatives[outcome.alternativeIndex]?.behavior ?? outcome.answer);
-      return { title, subject: request.question, answer: chosen, outcome: { label: "Decisa", tone: "success" } };
+      // Decided by the Coordinator with the person's full delegation (issue #423): the line says so, for the review.
+      const label = outcome.byDelegation ? translate(DEFAULT_LANGUAGE, "delegation.decision.badge") : "Decisa";
+      return { title, subject: request.question, answer: chosen, outcome: { label, tone: "success" } };
     }
     case "mandate": {
       const request = document.mandateRequests.find((r) => r.id === id);
