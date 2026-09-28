@@ -1064,7 +1064,8 @@ function architectureCard(document: ProjectDocument, assignment: SpecialistAssig
         .join(" "),
       alternatives: [
         ...proposals.slice(0, CARD_PROPOSALS).map((p) => ({
-          behavior: `Approfondire: ${p.title}`,
+          // The question already asks what to deepen: each option is the proposal's own title (issues #270, #272).
+          behavior: p.title,
           example: `${p.files.join(", ") || "File non indicati"}: ${p.solution}`,
           consequence: `${p.benefits}${p.adrConflict ? ` Attenzione: ${p.adrConflict}` : ""}`,
         })),

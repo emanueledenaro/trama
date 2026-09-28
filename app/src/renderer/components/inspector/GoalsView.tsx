@@ -4,7 +4,7 @@ import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
 import { GOAL_STATUS_LABELS, findGoal, goalDialogIsEmpty, goalLinks, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
 import type { GoalExampleInputPayload } from "@shared/ipc";
 import { PROVIDERS } from "@shared/providers";
-import { ASSIGNMENT_STATUS, CANDIDATE_STATE } from "@/components/chat/Cards";
+import { ASSIGNMENT_STATUS, candidateStatus } from "@shared/states";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
@@ -463,7 +463,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
             >
               <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span>
               <span className="min-w-0 flex-1 truncate">{candidate.changedFiles.length} file</span>
-              {report ? <Badge tone={CANDIDATE_STATE[report.state].tone}>{CANDIDATE_STATE[report.state].label}</Badge> : null}
+              {report ? <Badge tone={candidateStatus(report).tone}>{candidateStatus(report).label}</Badge> : null}
             </button>
           );
         })}

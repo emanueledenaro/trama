@@ -2,6 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 import { act, useUi } from "@/lib/store";
 import { PickerSelect } from "@/components/ui/picker";
 import { Sep } from "@/components/ui/sep";
+import { contextFill } from "@shared/states";
 
 const format = (n: number) => n.toLocaleString("it-IT");
 
@@ -9,11 +10,12 @@ const format = (n: number) => n.toLocaleString("it-IT");
 export function ContextMeter() {
   const usage = useUi((s) => s.app?.project?.contextUsage ?? null);
   const threshold = useUi((s) => s.app?.project?.document.coordinator.contextThreshold ?? 80);
-  if (!usage || !usage.contextWindow) return null;
-  const fraction = Math.min(1, usage.usedTokens / usage.contextWindow);
+  const fill = usage ? contextFill(usage) : null;
+  if (!fill) return null;
+  const fraction = fill.percent / 100;
   const radius = 6;
   const circumference = 2 * Math.PI * radius;
-  const percent = Math.round(fraction * 100);
+  const percent = fill.percent;
   return (
     <Popover.Root>
       <Popover.Trigger
@@ -41,7 +43,13 @@ export function ContextMeter() {
           <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
             <div className="font-medium text-foreground">Finestra di contesto</div>
             <p className="mt-1 text-ui-sm text-muted-foreground">
-              {percent}% usato<Sep />{format(usage.usedTokens)} su {format(usage.contextWindow)} token
+              {fill.over ? (
+                <>Piena<Sep />oltre {format(fill.window)} token</>
+              ) : (
+                <>
+                  {percent}% usato<Sep />{format(fill.used)} su {format(fill.window)} token
+                </>
+              )}
             </p>
             <p className="text-ui-sm text-muted-foreground">Codex compatta il contesto automaticamente quando serve.</p>
             <div className="my-3 h-px bg-border" />

@@ -675,8 +675,10 @@ export class CodexClient {
       case "thread/tokenUsage/updated": {
         const turn = this.matchingTurn(params);
         const usage = asObject(params.tokenUsage);
-        const total = asObject(usage?.total) ?? asObject(usage?.last);
-        const used = typeof total?.totalTokens === "number" ? total.totalTokens : null;
+        // The context holds what the last request sent and received; `total` adds up every turn of the thread and
+        // grows past the window (issue #272).
+        const context = asObject(usage?.last) ?? asObject(usage?.total);
+        const used = typeof context?.totalTokens === "number" ? context.totalTokens : null;
         const window = typeof usage?.modelContextWindow === "number" ? usage.modelContextWindow : null;
         if (turn && used !== null) turn.onEvent({ type: "tokenUsage", usedTokens: used, contextWindow: window });
         return;

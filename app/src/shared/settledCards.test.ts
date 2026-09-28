@@ -1,20 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocument } from "../main/core/document";
-import type { AssignmentStatus, CandidateState, CardKind, ConflictAssessment, DecisionRequest, ProjectDocument, SpecialistAssignment, WorkPlan } from "./domain";
+import type { CandidateState, CardKind, ConflictAssessment, DecisionRequest, ProjectDocument, SpecialistAssignment, WorkPlan } from "./domain";
 import { type SettledContext, settledCard } from "./settledCards";
 import type { TimelineRow } from "./timeline";
 
 const at = "2026-09-28T12:00:00.000Z";
 
-const label = (text: string) => ({ label: text, tone: "secondary" as const });
-const context = (candidateStates: Record<string, CandidateState> = {}): SettledContext => ({
-  candidateStates,
-  colleagues: [],
-  labels: {
-    assignment: Object.fromEntries((["preparing", "running", "stopRequested", "stopped", "completed", "failed", "paused"] as AssignmentStatus[]).map((s) => [s, label(s)])) as SettledContext["labels"]["assignment"],
-    candidate: Object.fromEntries((["building", "verified", "decided", "superseded"] as CandidateState[]).map((s) => [s, label(s)])) as SettledContext["labels"]["candidate"],
-  },
-});
+const context = (candidateStates: Record<string, CandidateState> = {}): SettledContext => ({ candidateStates, colleagues: [] });
 
 const card = (cardKind: CardKind, referenceId: string): TimelineRow => ({
   kind: "card",
@@ -103,8 +95,8 @@ describe("settledCard (issue #271)", () => {
       { id: "A-2", status: "completed" },
       { id: "A-3", status: "running" },
     ]);
-    expect(settledCard(document, card("assignment", "A-1"), context())).toMatchObject({ subject: "Luca: Correggi lo script typecheck", outcome: { label: "failed" } });
-    expect(settledCard(document, card("assignment", "A-2"), context())?.outcome.label).toBe("completed");
+    expect(settledCard(document, card("assignment", "A-1"), context())).toMatchObject({ subject: "Luca: Correggi lo script typecheck", outcome: { label: "Non riuscito", tone: "destructive" } });
+    expect(settledCard(document, card("assignment", "A-2"), context())?.outcome.label).toBe("Concluso");
     expect(settledCard(document, card("assignment", "A-3"), context())).toBeNull();
     document.team.specialists.at(-1)!.assignments[2]!.status = "stopped";
     expect(settledCard(document, card("assignment", "A-3"), context())).toBeNull();
@@ -115,7 +107,7 @@ describe("settledCard (issue #271)", () => {
     document.candidates.push({ id: "C-1", assignmentId: "A-1", specialistId: "S-1", changedFiles: ["package.json"] } as ProjectDocument["candidates"][number]);
     expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "verified" }))).toBeNull();
     expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "decided" }))).toBeNull();
-    expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "superseded" }))).toMatchObject({ subject: "1 file", outcome: { label: "superseded" } });
+    expect(settledCard(document, card("candidate", "C-1"), context({ "C-1": "superseded" }))).toMatchObject({ subject: "1 file", outcome: { label: "Superato", tone: "secondary" } });
 
     const conflict = { id: "K-1", candidateId: "C-1", snapshotId: "s", remoteSHA: "abc", references: ["main"], classification: "conflict", detail: "", conflictingFiles: ["package.json"], checkedAt: at } as ConflictAssessment;
     document.conflicts = [conflict];

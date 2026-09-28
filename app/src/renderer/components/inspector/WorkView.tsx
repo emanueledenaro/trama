@@ -1,19 +1,10 @@
-import type { CandidateState, WorkPlan } from "@shared/domain";
-import { CANDIDATE_STATE } from "@/components/chat/Cards";
+import type { CandidateState } from "@shared/domain";
+import { CANDIDATE_STATE, candidateStatus, planStatus } from "@shared/states";
 import { Badge } from "@/components/ui/field";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
 const ORDER: CandidateState[] = ["decided", "building", "verified", "superseded"];
-const PLAN_STATUS: Record<WorkPlan["status"], { label: string; tone: "info" | "warning" | "destructive" | "secondary" }> = {
-  planning: { label: "In preparazione", tone: "secondary" },
-  seams: { label: "Seam da rivedere", tone: "warning" },
-  ready: { label: "Da rivedere", tone: "info" },
-  stale: { label: "Da rivalutare", tone: "warning" },
-  failed: { label: "Non riuscito", tone: "destructive" },
-  superseded: { label: "Superato", tone: "secondary" },
-};
-const TITLES: Record<CandidateState, string> = { decided: "Deciso", building: "In costruzione", verified: "Verificato", superseded: "Superato" };
 
 export function WorkView() {
   const project = useUi((s) => s.app?.project)!;
@@ -33,10 +24,11 @@ export function WorkView() {
         const list = candidates.filter((c) => project.candidateReports[c.id]?.state === state);
         if (!list.length) return null;
         return (
-          <InspectorSection key={state} title={`${TITLES[state]} (${list.length})`}>
+          <InspectorSection key={state} title={`${CANDIDATE_STATE[state].label} (${list.length})`}>
             <div className="-mx-2 flex flex-col gap-0.5">
               {list.map((candidate) => {
                 const assignment = project.document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+                const status = candidateStatus(project.candidateReports[candidate.id]!);
                 return (
                   <button
                     key={candidate.id}
@@ -46,7 +38,7 @@ export function WorkView() {
                   >
                     <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span>
                     <span className="min-w-0 flex-1 truncate text-ui text-foreground/90">{assignment?.objective ?? candidate.assignmentId}</span>
-                    {candidate.pullRequest ? <Badge tone="success">PR #{candidate.pullRequest.number}</Badge> : <Badge tone={CANDIDATE_STATE[state].tone}>{CANDIDATE_STATE[state].label}</Badge>}
+                    {candidate.pullRequest ? <Badge tone="success">PR #{candidate.pullRequest.number}</Badge> : <Badge tone={status.tone}>{status.label}</Badge>}
                   </button>
                 );
               })}
@@ -65,7 +57,7 @@ export function WorkView() {
                   <Badge tone="success">Issue #{plan.spec.issue.number}</Badge>
                 </button>
               ) : null}
-              <Badge tone={PLAN_STATUS[plan.status].tone}>{PLAN_STATUS[plan.status].label}</Badge>
+              <Badge tone={planStatus(plan).tone}>{planStatus(plan).label}</Badge>
             </div>
           ))}
         </InspectorSection>
@@ -73,3 +65,4 @@ export function WorkView() {
     </>
   );
 }
+

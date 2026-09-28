@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
+import { contextFill } from "@shared/states";
 import { shortId } from "@shared/ids";
 import { activeTerms, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
@@ -3123,8 +3124,8 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: paused ? "Lavoro continuo in pausa" : "Lavoro continuo ripreso",
-        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi." : null,
+        title: paused ? "Coordinatore in pausa" : "Coordinatore ripreso",
+        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi il Coordinatore." : null,
         tone: "info",
       },
       null,
@@ -3247,9 +3248,10 @@ export class TramaController {
   private checkContextThreshold(project: ActiveProjectState): void {
     const usage = project.contextUsage;
     const coordinator = project.document.coordinator;
-    if (!usage?.contextWindow) return;
+    const fill = usage ? contextFill(usage) : null;
+    if (!fill) return;
     const threshold = coordinator.contextThreshold ?? 80;
-    const percent = (usage.usedTokens / usage.contextWindow) * 100;
+    const percent = fill.percent;
     if (percent < threshold || coordinator.contextWarnedAt === threshold) return;
     coordinator.contextWarnedAt = threshold;
     const format = (n: number) => n.toLocaleString("it-IT");
@@ -3257,7 +3259,7 @@ export class TramaController {
       type: "card",
       kind: "contextNotice",
       title: "Contesto oltre la soglia",
-      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. ${providerName(this.coordinatorProvider(project.document))} la compatta da solo quando serve, se lo supporta; puoi cambiare la soglia dal misuratore.`,
+      detail: `La finestra di contesto del Coordinatore è piena al ${percent}% (${fill.over ? `oltre ${format(fill.window)}` : `${format(fill.used)} su ${format(fill.window)}`} token), sopra la soglia impostata del ${threshold}%. ${providerName(this.coordinatorProvider(project.document))} la compatta da solo quando serve, se lo supporta; puoi cambiare la soglia dal misuratore.`,
       referenceId: coordinator.threadId,
     });
     this.changed();

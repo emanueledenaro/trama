@@ -1,5 +1,6 @@
 import { IconArrowLeft, IconPlus, IconTarget } from "@tabler/icons-react";
 import { useState } from "react";
+import { checkOutcome } from "@shared/states";
 import { isOpenQuestion } from "@shared/domain";
 import { decisionDependents } from "@shared/goals";
 import { ASSIGNMENT_STATUS, DecisionCard } from "@/components/chat/Cards";
@@ -136,7 +137,7 @@ function PactDemoBox() {
           <Badge tone={blockers.length === 0 ? "success" : "warning"}>{blockers.length === 0 ? "Simulazione verificata e revisionata" : "Revisione da completare"}</Badge>
           {demo.evidence.map((e) => (
             <p key={e.check} className="text-ui-xs text-muted-foreground">
-              {e.check}: {e.result === "pass" ? "superata" : e.result === "fail" ? "non superata" : "non eseguita"}<Sep />{e.output}
+              {checkOutcome(e.check, e.result === "pass" || e.result === "fail" ? e.result : null)}<Sep />{e.output}
             </p>
           ))}
           {blockers.map((b) => (

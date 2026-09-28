@@ -371,7 +371,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           strength,
           adrConflict: "",
         });
-        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}${memory}` };
+        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `${seen.some((item) => item.startsWith("skill:improve-codebase-architecture:") && item.endsWith("/improve-codebase-architecture/SKILL.md")) ? "Partire dall'annullamento: tocca un solo modulo." : `Skill mancante: ${seen.join(", ") || "nessuna"}.`}${memory}` };
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
@@ -904,7 +904,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         // Issue #228: the study itself tries `gh`, which the read-only sandbox stops.
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh-study", type: "commandExecution", command: "gh issue list", exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
       }
-      send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
+      // As Codex does: `total` adds up the whole thread and passes the window, `last` is the context (issue #272).
+      send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: 2_917_200 }, last: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
       const reply =
         (text.startsWith("Studio del progetto scritto da Trama")
           ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."

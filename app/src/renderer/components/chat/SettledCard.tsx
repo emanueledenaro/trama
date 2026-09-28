@@ -16,11 +16,8 @@ import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { REVEAL_EVENT } from "@/lib/nextStep";
 import { useUi } from "@/lib/store";
-import { ASSIGNMENT_STATUS, CANDIDATE_STATE } from "./Cards";
 import { ReferenceText } from "./ReferenceText";
 import { DisclosureChevron } from "./WorkSteps";
-
-const LABELS = { assignment: ASSIGNMENT_STATUS, candidate: CANDIDATE_STATE };
 
 function lineIcon(row: TimelineRow) {
   if (row.kind === "grillingRound") return <IconListCheck stroke={1.8} />;
@@ -55,7 +52,7 @@ function useSettled(row: TimelineRow): SettledCard | null {
     if (!document) return null;
     const candidateStates: Record<string, CandidateState> = {};
     for (const [id, report] of Object.entries(reports ?? {})) candidateStates[id] = report.state;
-    return settledCard(document, row, { candidateStates, colleagues: (others ?? []).map((o) => o.record), labels: LABELS });
+    return settledCard(document, row, { candidateStates, colleagues: (others ?? []).map((o) => o.record) });
   }, [document, reports, others, row]);
 }
 

@@ -1,6 +1,7 @@
 import { CONFLICT_SIDE_TITLE, candidateSuperseded, conflictSide, explainedByDivergence, otherSideSuperseded } from "./conflictScope";
 import type { AssignmentStatus, CandidateState, ProjectDocument } from "./domain";
 import { isExerciseAssessment } from "./onboarding";
+import { ASSIGNMENT_STATUS, CANDIDATE_STATE, planStatus } from "./states";
 import type { PresenceRecord } from "./presence";
 import type { TimelineRow } from "./timeline";
 
@@ -29,8 +30,6 @@ export interface SettledContext {
   candidateStates: Record<string, CandidateState>;
   /** The colleagues sharing their presence, for the side of a conflict. */
   colleagues: PresenceRecord[];
-  /** The labels the cards themselves show, so the line and the card say the same. */
-  labels: { assignment: Record<AssignmentStatus, Label>; candidate: Record<CandidateState, Label> };
 }
 
 const MANDATE_OUTCOME: Record<"granted" | "corrected" | "rejected" | "revoked" | "superseded", (version: number | null) => Label> = {
@@ -102,7 +101,7 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (!plan) return null;
       // A plan with confirmed slices stays whole: it shows how its slices go while the work runs.
       if (plan.status !== "superseded") return null;
-      return { title: `Piano ${plan.id}`, subject: plan.summary, answer: null, outcome: { label: "Superato", tone: "secondary" } };
+      return { title: `Piano ${plan.id}`, subject: plan.summary, answer: null, outcome: planStatus(plan) };
     }
     case "conflict": {
       const assessment = document.conflicts?.find((a) => a.id === id);
@@ -122,7 +121,7 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (!specialist || !assignment || !ENDED.includes(assignment.status)) return null;
       // The last work of a developer that stopped or failed keeps its card: "Riprendi" is on it.
       if (assignment.status !== "completed" && specialist.assignments.at(-1)?.id === assignment.id) return null;
-      return { title: `Incarico ${assignment.id}`, subject: `${specialist.name}: ${assignment.objective}`, answer: null, outcome: context.labels.assignment[assignment.status] };
+      return { title: `Incarico ${assignment.id}`, subject: `${specialist.name}: ${assignment.objective}`, answer: null, outcome: ASSIGNMENT_STATUS[assignment.status] };
     }
     case "candidate": {
       const state = context.candidateStates[id];
@@ -131,7 +130,7 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (!candidate || state !== "superseded") return null;
       const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
       const files = candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`;
-      return { title: `Candidato ${candidate.id}`, subject: specialist ? `${specialist.name}: ${files}` : files, answer: null, outcome: context.labels.candidate[state] };
+      return { title: `Candidato ${candidate.id}`, subject: specialist ? `${specialist.name}: ${files}` : files, answer: null, outcome: CANDIDATE_STATE[state] };
     }
     default:
       return null;

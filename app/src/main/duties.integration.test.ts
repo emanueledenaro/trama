@@ -131,11 +131,10 @@ describe("fixed roles' automatic work (W11)", () => {
     expect(review).toMatchObject({ tools: ["commands"], workspace: null });
     const architecture = review!.duty?.outcome;
     expect(architecture).toMatchObject({ kind: "architecture", proposals: [{ strength: "Strong" }, { strength: "Speculative" }] });
-    expect(architecture?.kind === "architecture" && architecture.topRecommendation).toContain(
-      `skill:improve-codebase-architecture:${join(skills, "improve-codebase-architecture/SKILL.md")}`,
-    );
+    // The fake recommends only when the session received the skill from its SKILL.md; otherwise it says it is missing.
+    expect(architecture?.kind === "architecture" && architecture.topRecommendation).toBe("Partire dall'annullamento: tocca un solo modulo.");
     const card = document.decisionRequests.find((r) => architecture?.kind === "architecture" && r.id === architecture.decisionRequestId)!;
-    expect(card.alternatives.map((a) => a.behavior)).toEqual(["Approfondire: Approfondire l'annullamento", "Approfondire: Unire i pagamenti", "Nessuno per ora"]);
+    expect(card.alternatives.map((a) => a.behavior)).toEqual(["Approfondire l'annullamento", "Unire i pagamenti", "Nessuno per ora"]);
     expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "decision" && e.content.referenceId === card.id)).toBe(true);
     expect(document.decisions).toHaveLength(0);
   }, 90_000);

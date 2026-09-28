@@ -26,6 +26,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
+import { RuleLabel } from "@/components/chat/RuleLabel";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { act, type SettingsSection, useUi } from "@/lib/store";
@@ -490,7 +491,7 @@ function MethodSection() {
       <Group title="Lavoro continuo">
         <ToggleRow
           label="Il Coordinatore va avanti da solo dentro il mandato"
-          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con Pausa."
+          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con «Pausa del Coordinatore»."
           checked={continuousWork}
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
@@ -581,7 +582,7 @@ function StandardSection() {
                 key={rule.id}
                 label={
                   <span className="flex items-center gap-2">
-                    {rule.label}
+                    <RuleLabel rule={rule} />
                     {rule.severity === "blocking" ? <Badge tone="warning">Bloccante</Badge> : null}
                   </span>
                 }
@@ -662,7 +663,10 @@ function MonitorSection() {
         ) : null}
       </Group>
       <Group title="Repository osservati">
-        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">Nessun repository.</span>} /> : null}
+        {/* The empty note never sits above the open project's repository: that row says it is not observed yet (issue #272). */}
+        {monitor.repositories.length === 0 && !(repository && !monitored) ? (
+          <Row label={<span className="text-muted-foreground">Nessun repository osservato.</span>} />
+        ) : null}
         {monitor.repositories.map((repo) => {
           const status = monitor.status[repo];
           return (
@@ -681,7 +685,7 @@ function MonitorSection() {
         {repository && !monitored ? (
           <Row
             label={<span className="font-mono text-[12px]">{repository}</span>}
-            description="Repository del progetto aperto."
+            description="Repository del progetto aperto, non ancora osservato."
             control={
               <Button size="sm" variant="outline" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
                 Osserva

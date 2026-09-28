@@ -1,3 +1,4 @@
+import { specialistLine } from "@shared/duties";
 import { IconArrowLeft, IconMessageCircle } from "@tabler/icons-react";
 import { useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
@@ -75,7 +76,7 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
         </span>
         <span className="flex items-center gap-1.5 truncate text-ui-sm text-muted-foreground">
           <StatusDot status={specialist.status} />
-          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}</span>
+          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialistLine(project.document, specialist)}</span>
         </span>
         {current ? (
           <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
@@ -92,6 +93,7 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
 /** A fixed role at one moment: what it does there and with which skills; it opens the specialist. */
 function FigureRow({ figure }: { figure: RosterFigure }) {
   const setInspector = useUi((s) => s.setInspector);
+  const document = useUi((s) => s.app?.project?.document ?? null);
   const specialist = figure.specialists[0];
   const body = (
     <>
@@ -104,7 +106,7 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
         <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
         {specialist && specialist.status !== "available" ? (
           <span className="block truncate text-ui-sm text-muted-foreground">
-            {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
+            {STATUS_LABEL[specialist.status]}<Sep />{specialistLine(document, specialist)}
           </span>
         ) : null}
         <SkillList skills={figure.duty.skills} />
