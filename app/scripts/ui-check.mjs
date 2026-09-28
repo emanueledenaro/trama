@@ -112,6 +112,14 @@ const expectAsked = async (fragment, control) => {
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
+// Issue #392: Trama's ids stay on hover; the text the person reads names the records.
+const rawIds = async (locator) => (await locator.innerText()).match(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g) ?? [];
+const expectNoRawIds = async (locator, where) => {
+  const text = await locator.innerText();
+  const ids = [...text.matchAll(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g)];
+  if (ids.length) throw new Error(`${where} shows raw ids: ${ids.map((m) => `…${text.slice(Math.max(0, m.index - 50), m.index + 12)}`).join(" | ")}`);
+};
+
 // W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
 // each use is saved in light and dark. With high contrast the stitch becomes a continuous edge.
 const visibleSeams = () =>
@@ -480,6 +488,9 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
+// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
+const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -544,7 +555,10 @@ await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ 
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
 // W13: the person renames the developer from the Team view; the id stays and a fixed role's name is refused.
 await teamPanel.getByTestId("team-developer").first().click();
-const developerId = (await teamPanel.getByText(/^S-[0-9A-F]{8}$/).first().textContent()).trim();
+// Issue #392: the id is Trama's, so the header keeps it on hover and in the DOM, not as a visible badge.
+const developerId = await teamPanel.getByTestId("specialist-header").locator("h3[data-record-id]").getAttribute("data-record-id");
+if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "")) throw new Error(`The specialist's header lost its id: ${developerId}`);
+await expectNoRawIds(teamPanel.getByTestId("specialist-header"), "The specialist's header");
 await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
 const rename = teamPanel.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
@@ -556,7 +570,8 @@ if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not 
 await shot("04e3-team-rename");
 await rename.getByRole("button", { name: "Rinomina" }).click();
 await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
-await teamPanel.getByText(developerId, { exact: true }).waitFor();
+// The id stays the same after the rename.
+await teamPanel.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // W15: the person picks another color; only the avatar and the tag take it.
 await teamPanel.getByRole("radio", { name: "Rame" }).click();
 await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
@@ -1295,6 +1310,7 @@ await page.getByRole("button", { name: /^Lavoro/ }).first().click();
   const workPanel = page.getByTestId("inspector");
   await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
   if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  await expectNoRawIds(workPanel, "Lavoro");
   const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
   for (const dark of [false, true]) {
     await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
@@ -1926,6 +1942,13 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
 await toolErrors.locator("summary").click();
 await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
+// The activity's labels, details and steps name the records (issue #392); the tool's own error text stays as written.
+{
+  const activityLog = page.getByTestId("activity-log");
+  const toolErrorIds = await rawIds(activityLog.getByTestId("activity-tool-errors").first());
+  const shown = (await rawIds(activityLog)).filter((id) => !toolErrorIds.includes(id));
+  if (shown.length) throw new Error(`Attività shows raw ids: ${[...new Set(shown)].join(", ")}`);
+}
 for (const dark of [false, true]) {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
   await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
@@ -2056,7 +2079,8 @@ await shot("24a1-candidate-after-the-fix");
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
 await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
 await page.getByText("Candidato nuovo sulla copia di lavoro").last().waitFor({ timeout: 10_000 });
-const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
+// The step names the candidate, not its id (issue #392).
+const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
 await toDeveloper.waitFor({ timeout: 10_000 });
 await toDeveloper.click();
 await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
@@ -2073,6 +2097,10 @@ const review = correctedCard.getByTestId("technical-review");
 await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
 const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
 await suggestion.getByText("NOTE.md:1").waitFor();
+// Issue #392: Clean Code's finding is listed once on the card, in the technical review, not again in its gate row.
+if (await correctedCard.locator('[data-testid="gate-review"][data-role="cleanCode"] [data-testid="gate-finding"]').filter({ hasText: "NOTE.md:1" }).count()) {
+  throw new Error("A Clean Code finding shows twice on the candidate card");
+}
 await suggestion.getByText("Suggerimento").waitFor();
 await review.getByText(/non un'evidenza/).waitFor();
 await review.scrollIntoViewIfNeeded();
@@ -2454,7 +2482,8 @@ await setLookTo(questionLook.provider, questionLook.dark);
 // assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
 // with the Coordinator (Q32 of #239).
 if (await page.getByTestId("sidebar-agent-thread").count()) throw new Error("A conversation between agents is in the sidebar");
-const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+// The title names the slice as the other cards do (issue #392): "fetta S1" reads "fetta 1, <its title>".
+const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await threadLink.waitFor({ timeout: 10_000 });
 await threadLink.click();
 const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
@@ -2479,8 +2508,9 @@ for (const provider of ["codex", "claudeAgent"]) {
 await setLookTo(questionLook.provider, questionLook.dark);
 // The specialist's page lists every conversation the developer takes part in.
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
-const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await specialistThreads.waitFor();
+await expectNoRawIds(page.getByTestId("inspector"), "The specialist's page");
 await specialistThreads.scrollIntoViewIfNeeded();
 await shot("19m-specialist-threads");
 await specialistThreads.click();

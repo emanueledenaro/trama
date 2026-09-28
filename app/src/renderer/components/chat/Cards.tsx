@@ -780,7 +780,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.seams ? (
         <ContractFields assignment={assignment} decisions={project.document.decisions} />
       ) : assignment.dependencies.length ? (
-        <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field>
+        <Field label="Dipendenze">
+          <ReferenceText text={assignment.dependencies.join(", ")} />
+        </Field>
       ) : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
@@ -815,7 +817,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
+      <p className="mt-2 text-ui-sm text-muted-foreground">
+        <ReferenceText text={assignmentLine(project.document, assignment)} />
+      </p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
@@ -940,7 +944,7 @@ function QualityField({ items }: { items: QualityItem[] }) {
                 <span className="text-foreground">{QUALITY_LABEL[item.code]}</span>
                 <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
                   <Sep />
-                  {item.detail}
+                  {item.code === "COMMIT_MESSAGE" ? item.detail : <ReferenceText text={item.detail} />}
                 </span>
                 {item.fix ? <span className="block text-ui-xs text-muted-foreground">Come sistemarlo: {item.fix}</span> : null}
               </span>
@@ -1133,12 +1137,12 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
               {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
               {answer?.kind === "facts" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  Risposta del Coordinatore: {answer.text}
+                  Risposta del Coordinatore: <ReferenceText text={answer.text} />
                   <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
                 </div>
               ) : answer?.kind === "person" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  {answer.text ? `Risposta della persona: ${answer.text}` : <ReferenceText text={`Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />}
+                  <ReferenceText text={answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />
                 </div>
               ) : null}
             </li>
@@ -1159,7 +1163,7 @@ function ThreadLinks({ assignmentId }: { assignmentId: string }) {
       <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
         {threads.map((thread) => (
           <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
-            {thread.title} ({thread.messages.length})
+            <ReferenceText text={thread.title} links={false} /> ({thread.messages.length})
           </button>
         ))}
       </div>
