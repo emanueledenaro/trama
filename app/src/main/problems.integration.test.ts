@@ -170,7 +170,13 @@ describe("the Coordinator opens and triages the issues of the problems it finds 
   }, 120_000);
 
   it("links the open issue that already describes the problem instead of opening another", async () => {
-    const already: StoredIssue = { number: 1, title: "La verifica test Node non passa sul branch del progetto", body: "Lo vedo anche io.", state: "open", labels: [] };
+    const already: StoredIssue = {
+      number: 1,
+      title: "La verifica test Node non passa sul branch del progetto",
+      body: "Lo vedo anche io.",
+      state: "open",
+      labels: [],
+    };
     const document = await open(await repository(), [already]);
     await controller!.send("[verifica:node_test]", null, null, null);
     await until(() => document.problems?.items[0]?.issue !== null && document.problems?.items[0]?.issue !== undefined);
@@ -182,7 +188,14 @@ describe("the Coordinator opens and triages the issues of the problems it finds 
 
   it("keeps the problem in Trama's backlog when GitHub is not connected", async () => {
     const document = await open(await repository(), []);
-    controller!.snapshot.project!.github = { repository: null, status: "unavailable", message: "Il remoto origin non punta a GitHub.", issues: [], snapshot: null, events: [] };
+    controller!.snapshot.project!.github = {
+      repository: null,
+      status: "unavailable",
+      message: "Il remoto origin non punta a GitHub.",
+      issues: [],
+      snapshot: null,
+      events: [],
+    };
     await controller!.send("[verifica:node_test]", null, null, null);
     await until(() => problemBacklog(document).length === 1);
     expect(document.problems!.items[0]).toMatchObject({ issue: null, placement: { kind: "backlog" } });

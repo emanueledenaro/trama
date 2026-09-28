@@ -350,10 +350,11 @@ import {
   parseTriageLabels,
   placeProblems,
   problemIssueBody,
-  problemsWithoutIssue,
+  problemsToOpen,
   recordIssueFailure,
   recordProblemIssue,
   sameProblemIssue,
+  ISSUE_RETRY_MS,
   TRIAGE_LABELS_PATH,
 } from "./core/problems";
 
@@ -3926,6 +3927,9 @@ export class TramaController {
    * assignment that works on it or in the backlog. Without GitHub the problems stay in Trama as backlog items. Nothing
    * is opened in pause, in the example project or without a granted mandate. Every step goes to Activity.
    */
+  /** When Trama last tried to apply the triage labels to a problem's issue, by problem id. */
+  private readonly problemLabelAttempts = new Map<string, number>();
+
   private async handleProblems(): Promise<void> {
     const project = this.state.project;
     if (!project || !project.stateWritable || project.isDemo || this.quitting) return;
@@ -3943,7 +3947,7 @@ export class TramaController {
     }
     const repository = github.repository!;
     const labels = parseTriageLabels(await readRepositoryFile(TRIAGE_LABELS_PATH, project.rootPath).catch(() => null));
-    const waiting = problemsWithoutIssue(document);
+    const waiting = problemsToOpen(document);
     if (waiting.length) {
       // Read again just before opening, so an issue opened meanwhile about the same problem is not duplicated.
       const issues = await listIssues(repository).catch((error: Error) => {
@@ -3988,6 +3992,10 @@ export class TramaController {
       const issue = problem.issue;
       const outcome = issue?.opened && !problem.labelsApplied ? latestTriage(document, issue.number)?.duty?.outcome : null;
       if (!issue || outcome?.kind !== "triage") continue;
+      // A failed attempt waits before the next one, like the opening of the issue.
+      const tried = this.problemLabelAttempts.get(problem.id);
+      if (tried && Date.now() - tried < ISSUE_RETRY_MS) continue;
+      this.problemLabelAttempts.set(problem.id, Date.now());
       const { add, remove } = labelsAfterTriage(labels, outcome);
       try {
         await addIssueLabels(repository, issue.number, add);

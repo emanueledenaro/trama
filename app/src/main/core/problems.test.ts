@@ -15,6 +15,7 @@ import {
   placeProblems,
   problemIssueBody,
   problemMarker,
+  problemsToOpen,
   problemsWithoutIssue,
   recordIssueFailure,
   recordProblemIssue,
@@ -47,7 +48,11 @@ const issue = (number: number, overrides: Partial<GitHubIssue> = {}): GitHubIssu
 
 /** A red test on the checkout at `sha`, recorded as Trama records the checks it runs. */
 const redTest = (document: ProjectDocument, sha: string, minute: number) =>
-  recordCheckOutcome(document, { check: "node_test", passed: false, ran: true, output: "1 failed", command: "npm test", target: { kind: "checkout", headSHA: sha } }, at(minute))!;
+  recordCheckOutcome(
+    document,
+    { check: "node_test", passed: false, ran: true, output: "1 failed", command: "npm test", target: { kind: "checkout", headSHA: sha } },
+    at(minute),
+  )!;
 
 function finish(document: ProjectDocument, assignment: SpecialistAssignment, answer: string): void {
   beginTurn(document, assignment.id, `turn-${assignment.id}`, "m");
@@ -165,7 +170,12 @@ describe("found problems (A08)", () => {
   it("reads the repository's triage labels, keeping the skill's names for the roles it does not map", () => {
     expect(parseTriageLabels(null)).toEqual(DEFAULT_TRIAGE_LABELS);
     const labels = parseTriageLabels(
-      ["| Label in mattpocock/skills | Label in our tracker | Meaning |", "| --- | --- | --- |", "| `needs-triage` | `triage` | Da valutare |", "| bug | kind/bug | Bug |"].join("\n"),
+      [
+        "| Label in mattpocock/skills | Label in our tracker | Meaning |",
+        "| --- | --- | --- |",
+        "| `needs-triage` | `triage` | Da valutare |",
+        "| bug | kind/bug | Bug |",
+      ].join("\n"),
     );
     expect(labels).toMatchObject({ "needs-triage": "triage", bug: "kind/bug", "ready-for-agent": "ready-for-agent" });
     expect(labelsAfterTriage(labels, { state: "ready-for-agent", category: "bug" })).toEqual({ add: ["ready-for-agent", "kind/bug"], remove: "triage" });
@@ -180,7 +190,22 @@ describe("found problems (A08)", () => {
     const [problem] = collectProblems(document, null, at(2));
     // The diagnosis of the red check comes first; it does not reproduce the bug, so no fix is assigned.
     const diagnosis = nextDuty(document, context([issue(1)]))!;
-    finish(document, diagnosis, JSON.stringify({ loopCommand: "", loopOutput: "", reproduced: false, hypotheses: [], cause: "", regressionTest: "", seamNote: "", fix: "", moduleIDs: [], openQuestions: "" }));
+    finish(
+      document,
+      diagnosis,
+      JSON.stringify({
+        loopCommand: "",
+        loopOutput: "",
+        reproduced: false,
+        hypotheses: [],
+        cause: "",
+        regressionTest: "",
+        seamNote: "",
+        fix: "",
+        moduleIDs: [],
+        openQuestions: "",
+      }),
+    );
 
     const opened = issue(2, { title: problem!.title, body: problemIssueBody(problem!), labels: ["needs-triage"] });
     recordProblemIssue(problem!, opened, true, at(3));
@@ -212,7 +237,18 @@ describe("found problems (A08)", () => {
     finish(
       document,
       diagnosis,
-      JSON.stringify({ loopCommand: "npm test", loopOutput: "1 failed", reproduced: true, hypotheses: ["h"], cause: "c", regressionTest: "t", seamNote: "", fix: "f", moduleIDs: ["app"], openQuestions: "" }),
+      JSON.stringify({
+        loopCommand: "npm test",
+        loopOutput: "1 failed",
+        reproduced: true,
+        hypotheses: ["h"],
+        cause: "c",
+        regressionTest: "t",
+        seamNote: "",
+        fix: "f",
+        moduleIDs: ["app"],
+        openQuestions: "",
+      }),
     );
     const fix = nextDuty(document, context(null))!;
     expect(fix.duty?.trigger.kind).toBe("diagnosisFix");
@@ -232,6 +268,17 @@ describe("found problems (A08)", () => {
     // The item stands: the same check red again is the same problem.
     redTest(document, "h2", 4);
     expect(collectProblems(document, null, at(5))).toEqual([]);
+  });
+
+  it("waits a while after a failed attempt before it tries to open the issue again", () => {
+    const document = project();
+    collectProblems(document, null, at(0));
+    redTest(document, "h1", 1);
+    const [problem] = collectProblems(document, null, at(2));
+    expect(problemsToOpen(document, at(2))).toEqual([problem]);
+    recordIssueFailure(problem!, "La issue non è stata aperta.", at(2));
+    expect(problemsToOpen(document, at(4))).toEqual([]);
+    expect(problemsToOpen(document, at(7))).toEqual([problem]);
   });
 
   it("lists every choice in Activity and cites the issues it opened in the recap, with their number", () => {

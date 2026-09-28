@@ -89,7 +89,7 @@ function findings(document: ProjectDocument): Finding[] {
         evidence: {
           kind: "check",
           reference: gate.id,
-          label: `Verifica ${row.check} rossa anche sulla base ${short(gate.baseSHA)} del candidato ${gate.candidateId} (${gate.id})`,
+          label: `Verifica ${checkTitle(row.check)} rossa anche sulla base ${short(gate.baseSHA)} del candidato ${gate.candidateId} (${gate.id})`,
         },
         at: finishedAt,
       });
@@ -121,8 +121,8 @@ function findings(document: ProjectDocument): Finding[] {
 }
 
 /**
- * Whether a recorded problem still stands for its key: not in Trama's backlog without an issue, and with an issue that
- * is open, or whose state Trama does not know. A closed issue lets the same problem be found again.
+ * Whether a recorded problem still stands for its key: always without an issue, and with one while it is open or Trama
+ * does not know its state. A closed issue lets the same problem be found again.
  */
 function stillOpen(problem: FoundProblem, issues: GitHubIssue[] | null): boolean {
   if (!problem.issue) return true;
@@ -165,6 +165,13 @@ export function collectProblems(document: ProjectDocument, issues: GitHubIssue[]
 
 /** The problems that still wait for their issue: recorded, without an issue and not placed. */
 export const problemsWithoutIssue = (document: ProjectDocument): FoundProblem[] => (document.problems?.items ?? []).filter((p) => !p.issue && !p.placement);
+
+/** How long Trama waits after a failed attempt before it tries to open the same issue again. */
+export const ISSUE_RETRY_MS = 5 * 60_000;
+
+/** The problems whose issue Trama tries to open now: those without one, apart from a recent failed attempt. */
+export const problemsToOpen = (document: ProjectDocument, now = new Date()): FoundProblem[] =>
+  problemsWithoutIssue(document).filter((p) => !p.issueFailure || now.getTime() - Date.parse(p.issueFailure.at) >= ISSUE_RETRY_MS);
 
 // MARK: Issue
 
@@ -307,22 +314,11 @@ export function placeProblems(document: ProjectDocument, now = new Date()): Foun
     const triage = latestTriage(document, problem.issue.number);
     if (!problem.placement && problem.issue.opened && !triageOver(triage)) continue;
     const work = workingAssignment(document, problem);
+    if (!work && problem.placement) continue;
     const note = triageNote(triage);
-    let placement: ProblemPlacement | null = null;
-    if (work)
-      placement = {
-        kind: "assignment",
-        assignmentId: work.id,
-        at: now.toISOString(),
-        reason: `${note} L'incarico ${work.id} lavora già su questo problema.`,
-      };
-    else if (!problem.placement)
-      placement = {
-        kind: "backlog",
-        at: now.toISOString(),
-        reason: `${note} Nessun incarico lavora su questo problema: resta nel backlog.`,
-      };
-    if (!placement) continue;
+    const placement: ProblemPlacement = work
+      ? { kind: "assignment", assignmentId: work.id, at: now.toISOString(), reason: `${note} L'incarico ${work.id} lavora già su questo problema.` }
+      : { kind: "backlog", at: now.toISOString(), reason: `${note} Nessun incarico lavora su questo problema: resta nel backlog.` };
     problem.placement = placement;
     placed.push(problem);
   }
@@ -334,11 +330,6 @@ export const LOCAL_BACKLOG_REASON = "GitHub non è collegato: il problema resta 
 /** Without GitHub the problems that wait for an issue become backlog items in Trama. Returns them. */
 export function keepInLocalBacklog(document: ProjectDocument, now = new Date()): FoundProblem[] {
   const kept = problemsWithoutIssue(document);
-  for (const problem of kept)
-    problem.placement = {
-      kind: "backlog",
-      at: now.toISOString(),
-      reason: LOCAL_BACKLOG_REASON,
-    };
+  for (const problem of kept) problem.placement = { kind: "backlog", at: now.toISOString(), reason: LOCAL_BACKLOG_REASON };
   return kept;
 }
