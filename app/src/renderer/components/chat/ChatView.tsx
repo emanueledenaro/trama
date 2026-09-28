@@ -35,6 +35,7 @@ import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { ProjectPicker } from "@/components/launch/ProjectPicker";
 import { Composer } from "./Composer";
+import { BranchDivergenceNotice } from "./BranchDivergenceNotice";
 import { FocusBar } from "./FocusBar";
 import { TimelineRowView } from "./TimelineRows";
 
@@ -462,6 +463,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
         <>
           {/* Outside the chat's pane: the bar and its open queue stay while the person changes the filter (W02). */}
           <FocusBar key={project.id} />
+          <BranchDivergenceNotice />
           <div key={project.id} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
             <Timeline key={goalId ?? "all"} />

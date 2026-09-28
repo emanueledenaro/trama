@@ -53,6 +53,21 @@ export interface ConflictAssessment {
   checkedAt: string;
 }
 
+/** A divergence between the project's branch and the default branch on GitHub, with the files the merge leaves in conflict. */
+export interface BranchDivergence {
+  /** The branch checked out in the project; null on a detached head. */
+  branch: string | null;
+  defaultBranch: string;
+  headSHA: string;
+  remoteSHA: string;
+  /** Commits only in the project's branch. */
+  ahead: number;
+  /** Commits only in the default branch on GitHub. */
+  behind: number;
+  conflictingFiles: string[];
+  checkedAt: string;
+}
+
 export type EventContent =
   | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
   | { type: "coordinatorText"; text: string; model: string | null; references: string[]; provider?: ProviderId | null }
@@ -924,7 +939,8 @@ export interface ExampleObservation {
   at: string;
 }
 
-export type CandidateState = "building" | "verified" | "decided";
+/** "superseded": newer work replaced the candidate (U02); it is not merged and does not collide with anyone. */
+export type CandidateState = "building" | "verified" | "decided" | "superseded";
 
 export interface CandidateBlocker {
   code: string;
@@ -1153,6 +1169,11 @@ export interface ProjectDocument {
   candidates: Candidate[];
   plans: WorkPlan[];
   conflicts?: ConflictAssessment[];
+  /**
+   * The project's branch and the default branch on GitHub went different ways with files in conflict (U02): one notice
+   * for the project, instead of the same conflict on every candidate. Null or absent while they are aligned.
+   */
+  branchDivergence?: BranchDivergence | null;
   /** The idea the person started this project from (T10); the Coordinator proposes purpose and structure first. */
   createdFromIdea?: string | null;
   /** Goals of the project (UX01); absent in documents written before goals. */
