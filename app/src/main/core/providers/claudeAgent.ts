@@ -40,7 +40,7 @@ import {
 } from "./types";
 import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
 import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
-import { isGitPushCommand } from "../push";
+import { checkedOutBranch, isGitPushCommand } from "../push";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
 import { externalToolKind, refusalReason } from "./toolRefusal";
 
@@ -446,7 +446,7 @@ export function decideToolPermission(
   const bannedPath = READ_TOOLS.has(toolName) || WRITE_TOOLS.has(toolName) ? toolPath(input) : null;
   if (bannedPath && pathBan(bannedPath)) return banned(pathBan(bannedPath)!, `${toolName} ${bannedPath}`);
   if (SHELL_TOOLS.has(toolName) && typeof input.command === "string") {
-    const ban = commandBan(input.command, policy.mainBranches);
+    const ban = commandBan(input.command, policy.mainBranches, () => checkedOutBranch(policy.cwd));
     if (ban) return banned(ban, input.command);
   }
   if (READ_TOOLS.has(toolName)) {

@@ -60,7 +60,8 @@ export function MandateView() {
     setScope(source?.scopeModuleIds ?? []);
     setActions(source?.authorizedActions ?? ["plan"]);
     setEditing(Boolean(pending));
-  }, [source?.objectives.join("|"), pending?.id]);
+    // A new version (a restriction, a correction) reloads the form: saving a correction never brings back what went.
+  }, [source?.objectives.join("|"), pending?.id, mandate?.version, mandate?.status]);
 
   const valid = lines(objectives).length > 0 && scope.length > 0 && actions.length > 0;
   const grant = () =>

@@ -7,6 +7,7 @@ import type { AccountStatus, CodexModel, TurnEvent } from "@shared/codex";
 import { commandBan, type FixedBan, pathBan } from "@shared/fixedBans";
 import type { LoadedSkill } from "@shared/skills";
 import { runProcess } from "./process";
+import { checkedOutBranch } from "./push";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -51,7 +52,8 @@ const asArray = (value: Json | undefined): Json[] => (Array.isArray(value) ? val
 export function startedItemBan(item: JsonObject): { ban: FixedBan; action: string } | null {
   if (item.type === "commandExecution") {
     const command = asString(item.command) ?? "";
-    const ban = command ? commandBan(command) : null;
+    const cwd = asString(item.cwd);
+    const ban = command ? commandBan(command, undefined, () => (cwd ? checkedOutBranch(cwd) : null)) : null;
     return ban ? { ban, action: command } : null;
   }
   if (item.type === "fileChange") {

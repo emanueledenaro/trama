@@ -1,5 +1,6 @@
 import type { EventContent, ProjectMandate } from "@shared/domain";
 import { type FixedBan, fixedBanInfo, pushBan } from "@shared/fixedBans";
+import { execFileSync } from "node:child_process";
 import { runProcess } from "./process";
 import { type Authorization, authorize } from "./team";
 
@@ -119,4 +120,18 @@ export function agentPushActivity(command: string, succeeded: boolean): Activity
       : `Richiesta: ${command}\nIl sandbox l'ha fermato: solo Trama pubblica, e solo con un mandato che lo permette.`,
     tone: "error",
   };
+}
+
+/**
+ * The branch checked out in `cwd`, for the fixed ban on an implicit push (`git push` with no branch, issue #244); null
+ * on a detached head or outside a repository. Synchronous because the providers decide before the command runs; it
+ * runs only for a push that names no branch.
+ */
+export function checkedOutBranch(cwd: string): string | null {
+  try {
+    const branch = execFileSync("git", ["-C", cwd, "symbolic-ref", "--short", "-q", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5_000 }).trim();
+    return branch || null;
+  } catch {
+    return null;
+  }
 }

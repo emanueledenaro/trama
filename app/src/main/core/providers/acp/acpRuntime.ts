@@ -31,6 +31,7 @@ import {
 } from "../types";
 import { expandHome, readableRoots } from "../../readScope";
 import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, PendingTurn, usageLimitError, writeFileNoFollow } from "../providerSupport";
+import { checkedOutBranch } from "../../push";
 import { prepareStdioHostToolServer, type StdioHostToolServer } from "../hostToolProxy";
 import { ToolRefusals } from "../toolRefusal";
 
@@ -468,10 +469,10 @@ export function decidePermission(input: {
 }
 
 /** The fixed ban a permission request runs into (issue #244): a secret file it names, or a banned command. */
-export function permissionBan(kind: string | null, paths: string[], command: string | null): { ban: FixedBan; action: string } | null {
+export function permissionBan(kind: string | null, paths: string[], command: string | null, cwd: string | null = null): { ban: FixedBan; action: string } | null {
   const secret = paths.find((path) => pathBan(path));
   if (secret) return { ban: pathBan(secret)!, action: `${kind ?? "accesso"} ${secret}` };
-  const ban = kind === "execute" && command ? commandBan(command) : null;
+  const ban = kind === "execute" && command ? commandBan(command, undefined, () => (cwd ? checkedOutBranch(cwd) : null)) : null;
   return ban && command ? { ban, action: command } : null;
 }
 
@@ -1332,7 +1333,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         });
     const itemId = trimmed(toolCall.toolCallId) ?? randomUUID();
     // The fixed bans hold before every other rule (issue #244): a secret file or a banned command is refused and recorded.
-    const banned = policy.active ? permissionBan(kind, paths, toolCallCommand(toolCall.rawInput, title)) : null;
+    const banned = policy.active ? permissionBan(kind, paths, toolCallCommand(toolCall.rawInput, title), policy.cwd) : null;
     if (banned) {
       this.activeTurn?.onEvent({ type: "fixedBanRefused", itemId, ...banned });
       const optionId = selectPermissionOption("reject", params.options);

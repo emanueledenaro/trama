@@ -960,7 +960,11 @@ describe("TramaController", () => {
     ]);
     expect(waitingForYou(document).map((i) => i.kind)).toEqual(["fixedBan"]);
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Azione fermata da un divieto fisso"))).toBe(true);
-    controller!.acknowledgeFixedBan(document.fixedBanRefusals![0]!.id);
+    // The same command tried again is a second refusal, not folded into the first.
+    await controller!.send("[vietato:git push --force origin main]", null, null, null);
+    await until(() => project.runningRequestId === null && document.fixedBanRefusals!.length === 2, 20_000);
+    expect(waitingForYou(document).map((i) => i.kind)).toEqual(["fixedBan", "fixedBan"]);
+    for (const refusal of document.fixedBanRefusals!) controller!.acknowledgeFixedBan(refusal.id);
     expect(waitingForYou(document)).toEqual([]);
   });
 

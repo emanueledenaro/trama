@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { ProjectMandate } from "@shared/domain";
 import { decideToolPermission } from "./providers/claudeAgent";
 import { git } from "./process";
-import { agentPushActivity, isGitPushCommand, pushActivity, pushBranch, type PushRecord, PushRefusedError } from "./push";
+import { commandBan } from "@shared/fixedBans";
+import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushBranch, type PushRecord, PushRefusedError } from "./push";
 
 const mandate = (authorizedActions: ProjectMandate["authorizedActions"]) =>
   ({ version: 1, objectives: [], priorities: [], scopeModuleIds: [], authorizedActions, limits: [], grantedAt: "", status: "granted", revocation: null, history: [] }) as ProjectMandate;
@@ -65,6 +66,15 @@ describe("fixed bans on Trama's own pushes (issue #244)", () => {
     expect((await git(["branch", "--list"], remote)).trim()).toBe("");
     expect(records).toEqual([{ outcome: "refused", branch: "main", remote: "origin", reason: expect.stringMatching(/Nessun mandato/), ban: "pushMainBranch" }]);
     expect(pushActivity(records[0]!).title).toBe("Pubblicazione fermata da un divieto fisso");
+  });
+
+  it("reads the branch checked out, for an implicit push", async () => {
+    const { repo, branch } = await repository();
+    expect(checkedOutBranch(repo)).toBe("main");
+    expect(commandBan("git push", undefined, () => checkedOutBranch(repo))).toBe("pushMainBranch");
+    await git(["checkout", "-q", branch], repo, false);
+    expect(commandBan("git push", undefined, () => checkedOutBranch(repo))).toBeNull();
+    expect(checkedOutBranch(tmpdir())).toBeNull();
   });
 
   it("counts the project's default branch as the main one", async () => {

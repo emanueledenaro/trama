@@ -62,6 +62,8 @@ export function isSecretPath(path: string): boolean {
   if ((name === ".env" || name.startsWith(".env.")) && !ENV_EXAMPLES.test(name)) return true;
   if (SECRET_NAMES.has(name)) return true;
   if (SECRET_EXTENSIONS.some((extension) => name.endsWith(extension))) return true;
+  // The credential directory itself: reading or removing `.ssh` reaches every key in it.
+  if (SECRET_DIRECTORIES.includes(name)) return true;
   const directories = parts.slice(0, -1).map((p) => p.toLowerCase());
   if (directories.some((d) => SECRET_DIRECTORIES.includes(d))) return !name.endsWith(".pub");
   // The GitHub CLI keeps its token in hosts.yml.
@@ -111,21 +113,49 @@ function simpleCommands(line: string): string[][] {
   return commands.map(unwrap).filter((words) => words.length > 0);
 }
 
-/** Leading environment assignments and wrappers (`sudo`, `env`, `timeout 10`) are not the command. */
+const program = (word: string) => word.split("/").at(-1) ?? word;
+
+/**
+ * The options of each wrapper that take a value as the next word: `sudo -u user`, `env -u NAME`, `nice -n 10`. Other
+ * options stand alone. A wrapper's options end at its first word that is not an option, or after `--`.
+ */
+const WRAPPERS: Record<string, string[]> = {
+  sudo: ["-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "--user", "--group", "--host", "--prompt", "--chdir"],
+  env: ["-u", "-C", "-S", "--unset", "--chdir", "--split-string"],
+  command: [],
+  exec: ["-a"],
+  time: ["-f", "-o", "--format", "--output"],
+  nohup: [],
+  nice: ["-n", "--adjustment"],
+  xargs: ["-I", "-i", "-n", "-P", "-L", "-l", "-s", "-d", "-E", "-e", "-a", "--max-args", "--max-procs", "--delimiter", "--arg-file"],
+  timeout: ["-s", "-k", "--signal", "--kill-after"],
+};
+
+/** Leading environment assignments and wrappers (`sudo -u me`, `env -u X`, `timeout 10`) with their options are not the command. */
 function unwrap(words: string[]): string[] {
   let start = 0;
   while (start < words.length) {
     const word = words[start]!;
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word) || ["sudo", "env", "command", "exec", "time", "nohup", "nice", "xargs"].includes(word)) start++;
-    else if (word === "timeout" && /^\d/.test(words[start + 1] ?? "")) start += 2;
-    else break;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
+      start++;
+      continue;
+    }
+    const valued = WRAPPERS[program(word)];
+    if (!valued) break;
+    start++;
+    while (start < words.length && words[start]!.startsWith("-")) {
+      const option = words[start]!;
+      start++;
+      if (option === "--") break;
+      if (valued.includes(option)) start++;
+    }
+    // timeout takes its duration before the command.
+    if (program(word) === "timeout" && start < words.length) start++;
   }
   return words.slice(start);
 }
 
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
-
-const program = (word: string) => word.split("/").at(-1) ?? word;
 
 /** Git's global options before the subcommand, the ones that take a value as the next word. */
 const GIT_OPTIONS_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"]);
@@ -144,7 +174,10 @@ const destination = (refspec: string) => {
   return target.replace(/^\+/, "").replace(/^refs\/heads\//, "");
 };
 
-function gitPushBan(args: string[], mainBranches: string[]): FixedBan | null {
+/** The branch checked out where the command runs, asked only when a push names no branch; null when unknown. */
+export type CurrentBranch = () => string | null;
+
+function gitPushBan(args: string[], mainBranches: string[], currentBranch: CurrentBranch): FixedBan | null {
   const options = args.filter((a) => a.startsWith("-"));
   // The first word that is not an option is the remote; the rest are refspecs.
   const refspecs = args.filter((a) => !a.startsWith("-")).slice(1);
@@ -159,24 +192,30 @@ function gitPushBan(args: string[], mainBranches: string[]): FixedBan | null {
   if (has("--tags", "--follow-tags") || refspecs.some((r) => r === "tag" || r.includes("refs/tags/"))) return "tagOrRelease";
   if (has("--all")) return "pushMainBranch";
   if (refspecs.some((r) => mainBranches.includes(destination(r)))) return "pushMainBranch";
+  // `git push`, `git push origin` and `git push origin HEAD` publish the branch checked out.
+  if (refspecs.length === 0 || refspecs.some((r) => destination(r) === "HEAD")) {
+    const branch = currentBranch();
+    if (branch && mainBranches.includes(branch)) return "pushMainBranch";
+  }
   return null;
 }
 
 /** `git tag` lists with no argument or with a listing option; anything else creates, moves or deletes a tag. */
 function gitTagBan(args: string[]): FixedBan | null {
   if (args.length === 0) return null;
-  if (args.some((a) => a === "-d" || a === "--delete")) return "deleteRemoteRef";
+  // Deleting a local tag changes nothing on the remote: `git push --delete` is what the ban covers.
+  if (args.some((a) => a === "-d" || a === "--delete")) return null;
   const listing = ["-l", "--list", "-v", "--verify", "-n", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--column", "--sort"];
   if (args.some((a) => listing.some((l) => a === l || a.startsWith(`${l}=`) || (l === "-n" && /^-n\d+$/.test(a))))) return null;
   return "tagOrRelease";
 }
 
-function gitBan(args: string[], mainBranches: string[]): FixedBan | null {
+function gitBan(args: string[], mainBranches: string[], currentBranch: CurrentBranch): FixedBan | null {
   const sub = gitSubcommand(args);
   if (!sub) return null;
   switch (sub.name) {
     case "push":
-      return gitPushBan(sub.rest, mainBranches);
+      return gitPushBan(sub.rest, mainBranches, currentBranch);
     case "tag":
       return gitTagBan(sub.rest);
     case "credential":
@@ -264,7 +303,7 @@ function secretReaderBan(name: string, args: string[]): FixedBan | null {
  * The fixed ban a shell command runs into, or null. It looks at every simple command of the line (`a && b`, pipes,
  * subshells), however git or gh are invoked, and at every word that names a secret file.
  */
-export function commandBan(command: string, mainBranches: string[] = MAIN_BRANCHES): FixedBan | null {
+export function commandBan(command: string, mainBranches: string[] = MAIN_BRANCHES, currentBranch: CurrentBranch = () => null): FixedBan | null {
   const branches = [...new Set([...mainBranches, ...MAIN_BRANCHES])];
   for (const cmd of simpleCommands(command)) {
     const name = program(cmd[0]!);
@@ -273,12 +312,12 @@ export function commandBan(command: string, mainBranches: string[] = MAIN_BRANCH
     if (SHELLS.has(name)) {
       const flag = args.findIndex((a) => /^-[a-z]*c[a-z]*$/.test(a));
       const script = flag >= 0 ? args[flag + 1] : undefined;
-      const inner = script ? commandBan(script, branches) : null;
+      const inner = script ? commandBan(script, branches, currentBranch) : null;
       if (inner) return inner;
       continue;
     }
     const ban =
-      name === "git" ? gitBan(args, branches) : name === "gh" ? ghBan(args, branches) : secretReaderBan(name, args);
+      name === "git" ? gitBan(args, branches, currentBranch) : name === "gh" ? ghBan(args, branches) : secretReaderBan(name, args);
     if (ban) return ban;
     if (cmd.some((word) => !word.startsWith("-") && isSecretPath(word.replace(/^[<>]+/, "")))) return "secrets";
   }

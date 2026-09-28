@@ -3438,7 +3438,8 @@ export class TramaController {
 
   /**
    * An action a fixed ban stopped before it started (issue #244): it becomes an item of "Aspetta te" with its reason and
-   * an activity line where it happened. The same call is recorded once, however many hooks refuse it.
+   * an activity line where it happened. Every attempt counts, also the same command tried again; the providers report
+   * each call once, however many of their hooks refuse it.
    */
   private recordFixedBan(
     project: ActiveProjectState,
@@ -3448,8 +3449,6 @@ export class TramaController {
     work: { assignmentId: string; workKey: string } | null = null,
   ): void {
     const document = project.document;
-    const recent = document.fixedBanRefusals?.at(-1);
-    if (recent && recent.action === event.action.trim().slice(0, 500) && !recent.acknowledgedAt && JSON.stringify(recent.by) === JSON.stringify(by)) return;
     const refusal = recordFixedBanRefusal(document, { ban: event.ban, action: event.action, by });
     appendEvent(document, by.kind === "specialist" ? "specialist" : "trama", fixedBanActivity(refusal), requestId, new Date(), work);
     this.changedIn(project);

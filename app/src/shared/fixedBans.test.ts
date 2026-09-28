@@ -23,6 +23,32 @@ describe("fixed bans on commands (issue #244)", () => {
     },
   );
 
+  it("sees through wrappers with their own options", () => {
+    expect(commandBan("env -u UNUSED git tag v1.0.0")).toBe("tagOrRelease");
+    expect(commandBan("sudo -u deploy git push --force")).toBe("forcePush");
+    expect(commandBan("command -- git push origin main")).toBe("pushMainBranch");
+    expect(commandBan("timeout -s KILL 30 gh release create v1")).toBe("tagOrRelease");
+    expect(commandBan("nice -n 10 cat .env")).toBe("secrets");
+    expect(commandBan("env -i PATH=/bin git status")).toBeNull();
+  });
+
+  it("refuses an implicit push when the branch checked out is the main one", () => {
+    const onMain = () => "main";
+    const onFeature = () => "feature/x";
+    for (const command of ["git push", "git push origin", "git push -u origin HEAD", "git push origin HEAD:refs/heads/main"]) {
+      expect(commandBan(command, undefined, onMain), command).toBe("pushMainBranch");
+    }
+    expect(commandBan("git push", undefined, onFeature)).toBeNull();
+    expect(commandBan("git push origin HEAD", undefined, onFeature)).toBeNull();
+    // The branch is asked only when the push names none.
+    let asked = 0;
+    commandBan("git push origin feature/x", undefined, () => {
+      asked++;
+      return "main";
+    });
+    expect(asked).toBe(0);
+  });
+
   it("counts the project's own default branch as main", () => {
     expect(commandBan("git push origin trunk", ["trunk"])).toBe("pushMainBranch");
     expect(commandBan("git push origin trunk")).toBeNull();
@@ -32,7 +58,6 @@ describe("fixed bans on commands (issue #244)", () => {
     "git push origin --delete feature/x",
     "git push origin -d v1.0.0",
     "git push origin :feature/x",
-    "git tag -d v1.0.0",
     "gh api -X DELETE repos/o/r/git/refs/heads/feature-x",
     "gh api --method DELETE repos/o/r/git/refs/tags/v1",
   ])("refuses deleting a remote branch or tag: %s", (command) => {
@@ -67,6 +92,8 @@ describe("fixed bans on commands (issue #244)", () => {
     "git config --global credential.helper store",
     "security find-generic-password -s github",
     "cat ~/.config/gh/hosts.yml",
+    "rm -rf .ssh",
+    "ls ~/.aws",
     "openssl rsa -in server.key",
   ])("refuses reading or writing secrets and credentials: %s", (command) => {
     expect(commandBan(command)).toBe("secrets");
@@ -91,6 +118,8 @@ describe("fixed bans on commands (issue #244)", () => {
     "git tag",
     "git tag -l 'v*'",
     "git tag --contains HEAD",
+    // A local tag: nothing changes on the remote.
+    "git tag -d v1.0.0",
     "grep -rn 'git push --force' docs",
     'grep "git tag v1" README.md',
     "gh release list",
@@ -111,7 +140,7 @@ describe("fixed bans on commands (issue #244)", () => {
 
 describe("fixed bans on files and pushes", () => {
   it("recognises secret and credential files", () => {
-    for (const path of [".env", "app/.env.local", "/home/me/.ssh/id_rsa", "certs/server.pem", "deploy.p12", "/home/me/.aws/credentials", ".npmrc", ".git-credentials"]) {
+    for (const path of [".ssh", "/home/me/.aws", ".env", "app/.env.local", "/home/me/.ssh/id_rsa", "certs/server.pem", "deploy.p12", "/home/me/.aws/credentials", ".npmrc", ".git-credentials"]) {
       expect(isSecretPath(path), path).toBe(true);
       expect(pathBan(path)).toBe("secrets");
     }

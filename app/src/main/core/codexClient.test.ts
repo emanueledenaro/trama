@@ -290,6 +290,8 @@ describe("fixed bans on what Codex starts (issue #244)", () => {
       action: "Modifica di /work/.env",
     });
     expect(startedItemBan({ type: "commandExecution", id: "i3", command: "/bin/zsh -lc 'npm test'" })).toBeNull();
+    // An implicit push from a folder that is not a repository: no branch to publish, nothing banned.
+    expect(startedItemBan({ type: "commandExecution", id: "i5", command: "git push", cwd: tmpdir() })).toBeNull();
     expect(startedItemBan({ type: "agentMessage", id: "i4" })).toBeNull();
   });
 });

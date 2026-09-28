@@ -2816,6 +2816,12 @@ const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
 await mandateShots("26c-mandate-restricted");
+// The correction form starts from the restricted version: saving it never brings back what the restriction took away.
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+if (await page.getByTestId("inspector").getByRole("checkbox", { name: "Integrare candidati verificati" }).isChecked()) {
+  throw new Error("The correction form brings back an action the restriction removed");
+}
+await page.getByTestId("inspector").getByRole("button", { name: "Annulla", exact: true }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
 // A force push is refused whatever the mandate: the turn stops and the action waits in Aspetta te with its reason.
