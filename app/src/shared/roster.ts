@@ -31,7 +31,7 @@ export const TEAM_MOMENTS: { moment: TeamMoment; label: string; when: string }[]
 ];
 
 const PROFILES: RoleProfile[] = [
-  { role: "qa", name: "QA", tag: "QA", competence: "Sceglie i seam da testare e i casi che le verifiche devono coprire." },
+  { role: "qa", name: "QA", tag: "QA", competence: "Sceglie i punti di prova da testare e i casi che le verifiche devono coprire." },
   { role: "ux", name: "UX", tag: "UX", competence: "Cura l'esperienza e l'interfaccia." },
   { role: "research", name: "Ricerca", tag: "Ricerca", competence: "Studia librerie e API sconosciute su fonti affidabili." },
   { role: "documentation", name: "Documentazione e dominio", tag: "Documentazione", competence: "Tiene allineati glossario, ADR e documentazione." },
@@ -48,7 +48,7 @@ const PROFILES: RoleProfile[] = [
 
 /** The spec's table of moments, row by row and in its order. */
 const DUTIES: (RoleDuty & { role: TeamRole })[] = [
-  { moment: "spec", role: "qa", task: "Indica i seam da testare.", skills: ["codebase-design"] },
+  { moment: "spec", role: "qa", task: "Indica i punti di prova da testare.", skills: ["codebase-design"] },
   { moment: "spec", role: "ux", task: "Interviene quando la spec tocca l'interfaccia.", skills: ["prototype"] },
   { moment: "spec", role: "research", task: "Studia le librerie e le API sconosciute.", skills: ["research"] },
   { moment: "spec", role: "documentation", task: "Aggiorna glossario e decisioni.", skills: ["domain-modeling"] },
