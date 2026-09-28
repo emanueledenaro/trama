@@ -1,6 +1,7 @@
 // The first-run guide (C12) and the exercises on the example project (C13, C14).
 // Every step state is derived from AppState or from the project document: nothing is marked done
 // by a timer, by the renderer or by a model's claim.
+import { translator } from "./i18n";
 import { readableFailure } from "./providerFailure";
 import { isUsableAccount, type ProviderId } from "./codex";
 import type { AppState, Candidate, ConflictAssessment, ProjectDocument, ProjectOverview, SpecialistAssignment } from "./domain";
@@ -117,61 +118,65 @@ const providerNames: Partial<Record<ProviderId, string>> = { codex: "ChatGPT", c
 function providerStep(app: AppState): StepState {
   const entries = Object.entries(app.providers) as [ProviderId, AppState["providers"][ProviderId]][];
   const usable = entries.filter(([, state]) => isUsableAccount(state?.account));
-  const base = { id: "provider", title: "Collega un provider", optional: false };
+  const t = translator(app.language);
+  const base = { id: "provider", title: t("guide.provider.title"), optional: false };
   if (usable.length) {
     const names = usable.map(([id, state]) => {
       const account = state.account;
       const who = account?.kind === "chatgpt" ? account.email : account?.kind === "authenticated" ? account.label : null;
       return `${providerNames[id] ?? id}${who ? ` (${who})` : ""}`;
     });
-    return { ...base, status: "done", detail: `Account utilizzabile: ${names.join(", ")}.` };
+    return { ...base, status: "done", detail: t("guide.provider.done", { names: names.join(", ") }) };
   }
   if (entries.some(([, state]) => state?.checking) || entries.every(([, state]) => !state?.account)) {
-    return { ...base, status: "checking", detail: "Trama sta verificando gli account dei provider." };
+    return { ...base, status: "checking", detail: t("guide.provider.checking") };
   }
   const codex = app.providers.codex?.account;
   const detail =
     codex?.kind === "unsupported"
-      ? `Codex usa un account di tipo ${codex.type}: Trama accetta solo un account ChatGPT.`
+      ? t("guide.provider.unsupported", { type: codex.type })
       : codex?.kind === "unavailable" || codex?.kind === "blocked"
-        ? `Codex: ${readableFailure(codex.message)}`
-        : "Nessun provider ha un account utilizzabile. Accedi con ChatGPT o a un altro provider, poi verifica.";
+        ? t("guide.provider.failure", { reason: readableFailure(codex.message) })
+        : t("guide.provider.none");
   return { ...base, status: "pending", detail };
 }
 
 function gitHubStep(app: AppState): StepState {
-  const base = { id: "github", title: "Collega GitHub CLI", optional: true };
+  const t = translator(app.language);
+  const base = { id: "github", title: t("guide.github.title"), optional: true };
   const cli = app.gitHubCli;
   switch (cli.status) {
     case "ready":
-      return { ...base, status: "done", detail: `gh è autenticato come ${cli.account}. I permessi su ogni repository si verificano quando lo apri.` };
+      return { ...base, status: "done", detail: t("guide.github.ready", { account: cli.account ?? "" }) };
     case "checking":
-      return { ...base, status: "checking", detail: "Trama sta leggendo gh auth status." };
+      return { ...base, status: "checking", detail: t("guide.github.checking") };
     case "missing":
-      return { ...base, status: "pending", detail: "GitHub CLI (gh) non è installato. Il progetto di esempio e i progetti locali funzionano anche senza." };
+      return { ...base, status: "pending", detail: t("guide.github.missing") };
     case "signedOut":
-      return { ...base, status: "pending", detail: `gh non ha un accesso valido${cli.detail ? `: ${cli.detail}` : ""}. Esegui gh auth login nel terminale.` };
+      return { ...base, status: "pending", detail: cli.detail ? t("guide.github.signedOutDetail", { detail: cli.detail }) : t("guide.github.signedOut") };
     case "error":
-      return { ...base, status: "pending", detail: `gh auth status non è riuscito${cli.detail ? `: ${cli.detail}` : ""}.` };
+      return { ...base, status: "pending", detail: cli.detail ? t("guide.github.errorDetail", { detail: cli.detail }) : t("guide.github.error") };
     default:
-      return { ...base, status: "pending", detail: "Stato di gh non ancora verificato." };
+      return { ...base, status: "pending", detail: t("guide.github.unknown") };
   }
 }
 
 function projectStep(app: AppState): StepState {
-  const base = { id: "project", title: "Apri o crea un progetto", optional: false };
+  const t = translator(app.language);
+  const base = { id: "project", title: t("guide.project.title"), optional: false };
   const active = app.project && !app.project.isDemo ? app.project : null;
-  if (active) return { ...base, status: "done", detail: `Progetto attivo: ${active.name}.` };
+  if (active) return { ...base, status: "done", detail: t("guide.project.active", { name: active.name }) };
   const recent = app.recentProjects.find((p) => !p.isDemo);
-  if (recent) return { ...base, status: "done", detail: `Hai già aperto ${recent.name}.` };
-  return { ...base, status: "pending", detail: "Scegli la cartella di un tuo progetto o creane una nuova. Il progetto di esempio serve per gli esercizi." };
+  if (recent) return { ...base, status: "done", detail: t("guide.project.recent", { name: recent.name }) };
+  return { ...base, status: "pending", detail: t("guide.project.pending") };
 }
 
 function aiHeroStep(app: AppState): StepState {
-  const base = { id: "aiHero", title: "Prepara il metodo AI Hero", optional: true };
+  const t = translator(app.language);
+  const base = { id: "aiHero", title: t("guide.aiHero.title"), optional: true };
   const project = app.project && !app.project.isDemo ? app.project : null;
-  if (project?.aiHeroPrepared) return { ...base, status: "done", detail: `Le skill AI Hero sono presenti in ${project.name}.` };
-  if (!project && app.onboarding.aiHeroPreparedAt) return { ...base, status: "done", detail: "Metodo preparato in un tuo progetto." };
+  if (project?.aiHeroPrepared) return { ...base, status: "done", detail: t("guide.aiHero.present", { name: project.name }) };
+  if (!project && app.onboarding.aiHeroPreparedAt) return { ...base, status: "done", detail: t("guide.aiHero.preparedElsewhere") };
   const choice = app.onboarding.methodChoice;
   if (!project && choice) {
     // The answer is the step while no project is open; what happens when one opens follows the current setting.
@@ -180,25 +185,26 @@ function aiHeroStep(app: AppState): StepState {
       ...base,
       status: "done",
       detail: prepare
-        ? "Trama copia le skill nel primo tuo progetto che apri, senza toccare i file che esistono già."
-        : "Hai scelto di non preparare il metodo. Puoi prepararlo da Impostazioni, Metodo di lavoro.",
+        ? t("guide.aiHero.willPrepare")
+        : t("guide.aiHero.declined"),
     };
   }
-  if (!project) return { ...base, status: "pending", detail: "Scegli se Trama deve copiare le skill di AI Hero nei tuoi progetti quando li apri. I file esistenti restano invariati." };
-  return { ...base, status: "pending", detail: `Copia le skill in ${project.name}. I file esistenti restano invariati.` };
+  if (!project) return { ...base, status: "pending", detail: t("guide.aiHero.choose") };
+  return { ...base, status: "pending", detail: t("guide.aiHero.copy", { name: project.name }) };
 }
 
 function exerciseStep(app: AppState): StepState {
-  const base = { id: "exercise", title: "Fai il primo esercizio", optional: false };
+  const t = translator(app.language);
+  const base = { id: "exercise", title: t("guide.exercise.title"), optional: false };
   const done = app.onboarding.completedExercises.first;
-  if (done) return { ...base, status: "done", detail: "Hai completato il primo esercizio sul progetto di esempio." };
+  if (done) return { ...base, status: "done", detail: t("guide.exercise.done") };
   const project = app.project?.isDemo ? app.project : null;
   if (project) {
     const steps = exerciseSteps("first", project.document, { providerReady: hasUsableProvider(app) });
     const count = steps.filter((s) => s.status === "done").length;
-    return { ...base, status: "pending", detail: `${count} passi su ${steps.length} osservati nella copia di esempio.` };
+    return { ...base, status: "pending", detail: t("guide.exercise.progress", { done: count, total: steps.length }) };
   }
-  return { ...base, status: "pending", detail: "Una copia locale del Negozio di esempio: niente viene pubblicato." };
+  return { ...base, status: "pending", detail: t("guide.exercise.pending") };
 }
 
 export function hasUsableProvider(app: AppState): boolean {
