@@ -165,6 +165,38 @@ describe("focus mode on a candidate (F01)", () => {
     expect(JSON.parse(JSON.stringify({ evidence: candidate.evidence, clearance: candidate.clearance, humanApproval: candidate.humanApproval }))).toEqual(untouched);
     expect(candidate.pullRequest).toBeNull();
 
+    // F04: from a finding to work. Without GitHub the ticket stays in Trama's backlog; the report is not published.
+    await controller.followUpFinding(auditId, "standards-1", "ticket");
+    const ticket = document.problems!.items.at(-1)!;
+    expect(ticket).toMatchObject({ issue: null, placement: { kind: "backlog" }, evidence: { kind: "finding", reference: auditId } });
+    await expect(controller.followUpFinding(auditId, "standards-1", "ticket")).rejects.toThrow("hai già creato una issue o una voce del backlog");
+    await expect(controller.publishAuditReport(auditId)).rejects.toThrow("Nessun repository GitHub collegato");
+    expect(audit.publication).toBeUndefined();
+    // A hypothesis never becomes an assignment; a trade-off becomes a question of the Pact in the work's dialog.
+    await expect(controller.followUpFinding(auditId, minor!.id, "assignment")).rejects.toThrow("è un'ipotesi");
+    await controller.followUpFinding(auditId, minor!.id, "pactCard");
+    const card = document.decisionRequests.at(-1)!;
+    expect(card).toMatchObject({ requestId: work.requestId, outcome: null });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "decision" && e.content.referenceId === card.id)).toBe(true);
+    // The verified finding goes to Ada, who wrote the candidate, within the mandate, and the work starts.
+    await controller.followUpFinding(auditId, "standards-1", "assignment");
+    const correction = specialist.assignments.at(-1)!;
+    expect(correction).toMatchObject({ objective: expect.stringContaining("Mysterious Name"), moduleIds: work.moduleIds, mandateVersion: document.mandate!.version });
+    expect(audit.standards.items![0]!.followUps!.map((f) => f.kind)).toEqual(["ticket", "assignment"]);
+    await until(() => correction.status === "completed");
+    // Nothing starts outside the mandate: once it is revoked the confirmed Spec finding stays without an assignment.
+    await controller.revokeMandate("Fine del lavoro");
+    await expect(controller.followUpFinding(auditId, serious!.id, "assignment")).rejects.toThrow("nessun incarico parte fuori dal mandato");
+    expect(specialist.assignments.at(-1)).toBe(correction);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Documentare l'annullamento"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree", "integrateCandidate"],
+      limits: [],
+    });
+
     // Without a spec the Spec axis does not run and says so in the skill's words.
     work.issueNumber = null;
     process.env.FAKE_CODEX_AUDIT_GATE = join(gates, "second");

@@ -288,6 +288,28 @@ export const it = {
   "settings.presence.openProject": "Apri un progetto per scegliere se condividere la presenza.",
   "settings.presence.demo": "Il progetto di esempio non condivide la presenza.",
   "settings.presence.share": "Condividi la presenza in {name}",
+  // From a finding to work (F04)
+  "audit.finding.backlog": "Metti nel backlog",
+  "audit.finding.backlogHint": "GitHub non è collegato: il rilievo va nel backlog di Trama.",
+  "audit.finding.issue": "Apri una issue",
+  "audit.finding.issueHint": "Apre una issue su GitHub con la prova del rilievo.",
+  "audit.finding.tradeOff": "È un compromesso",
+  "audit.finding.tradeOffHint": "Il rilievo è un compromesso: diventa una domanda del Patto.",
+  "audit.finding.assign": "Affida la correzione",
+  "audit.finding.assignHint": "Uno sviluppatore libero corregge il rilievo, solo dentro il mandato.",
+  "audit.finding.issueLink": "Issue {number} su GitHub",
+  "audit.finding.backlogLink": "Nel {backlog}, senza GitHub",
+  "audit.finding.backlogName": "backlog di Trama",
+  "audit.finding.assignmentLink": "Incarico: {name}",
+  "audit.finding.pactLink": "Scheda del Patto: {name}",
+  "audit.publication.title": "Pubblicazione",
+  "audit.publication.optional":
+    "Il rapporto resta in Trama. Pubblicarlo su GitHub è facoltativo: va come commento alla pull request del candidato, o in una issue nuova se non ne ha una.",
+  "audit.publication.noGitHub": "Il rapporto resta in Trama. Con GitHub collegato puoi pubblicarlo, se vuoi.",
+  "audit.publication.done": "Pubblicato su GitHub: {link}",
+  "audit.publication.issue": "issue #{number}",
+  "audit.publication.comment": "commento alla pull request #{number}",
+  "audit.publication.publish": "Pubblica su GitHub",
 
   // Ticket updates in Activity (C10)
   "ticket.issue": "Issue #{number} «{title}»",
