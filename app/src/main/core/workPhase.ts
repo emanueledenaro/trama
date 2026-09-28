@@ -20,7 +20,7 @@ import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
-import { inspectCandidate, latestCandidate } from "./candidates";
+import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
@@ -72,6 +72,8 @@ export interface WorkState {
 export interface VerificationTargets {
   undeclared: string[];
   unverified: string[];
+  /** Of the undeclared, the assignments whose latest candidate no longer matches their worktree (issue #388); absent when none. */
+  outdated?: string[];
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -454,6 +456,8 @@ function assignedWork(
     if (!candidate) continue;
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
     if (isActive(assignment)) continue;
+    // A candidate that lags its worktree (issue #388) is not the work: its blockers wait for the new candidate.
+    if (worktreeChanged(document, candidate)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     // The review stopped this work too many times in a row (issue #389): it waits for the person in Aspetta te, with no
     // move of the Coordinator, so neither Trama nor the Coordinator starts another round.
@@ -512,15 +516,22 @@ function assignedWork(
   if (!edits.length) return null;
   const pending = edits.filter((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
   if (pending.length) {
+    // A candidate that lags its worktree (issue #388) counts as none: the work is declared again before any check.
+    const declared = (i: (typeof pending)[number]) => (i.candidate && !worktreeChanged(document, i.candidate) ? i.candidate : null);
     // A candidate whose reviewers are at work is being verified already: there is nothing to start on it (issue #389).
     const reviewing = (candidate: Candidate) => inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_RUNNING");
-    const actionable = pending.filter((i) => !i.candidate || !reviewing(i.candidate));
+    const actionable = pending.filter((i) => {
+      const candidate = declared(i);
+      return !candidate || !reviewing(candidate);
+    });
+    const outdated = actionable.filter((i) => i.candidate && !declared(i)).map((i) => i.assignment.id);
     const verification: VerificationTargets = {
-      undeclared: actionable.filter((i) => !i.candidate).map((i) => i.assignment.id),
-      unverified: actionable.flatMap((i) => (i.candidate ? [i.candidate.id] : [])),
+      undeclared: actionable.filter((i) => !declared(i)).map((i) => i.assignment.id),
+      unverified: actionable.flatMap((i) => (declared(i) ? [i.candidate!.id] : [])),
+      ...(outdated.length ? { outdated } : {}),
     };
     if (actionable.length && (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized")) {
-      moves.add(coordinator("verifyCandidate", actionable[0]!.candidate?.id ?? null));
+      moves.add(coordinator("verifyCandidate", actionable.map(declared).find((c) => c !== null)?.id ?? null));
     }
     return { phase: "verification", blocker: null, verification };
   }
@@ -580,9 +591,15 @@ export function workStateText(state: WorkState): string {
  */
 export function verificationText(targets: VerificationTargets): string[] {
   const lines: string[] = [];
-  if (targets.undeclared.length) {
+  if (targets.outdated?.length) {
     lines.push(
-      `Incarichi conclusi senza candidato: ${targets.undeclared.join(", ")}. Per ognuno prima declare_candidate (assignment: l'id dell'incarico, decisionIDs: le decisioni del Patto che deve rispettare), poi verify_candidate con il candidateID che restituisce, per ogni verifica richiesta, poi review_candidate.`,
+      `Incarichi con la copia di lavoro cambiata dopo l'ultimo candidato: ${targets.outdated.join(", ")}. Quel candidato non è il lavoro: non dire che il lavoro è finito e non proporlo alla persona. Prima declare_candidate sulla copia di lavoro di ora, poi verify_candidate e review_candidate sul candidato nuovo.`,
+    );
+  }
+  const without = targets.undeclared.filter((id) => !targets.outdated?.includes(id));
+  if (without.length) {
+    lines.push(
+      `Incarichi conclusi senza candidato: ${without.join(", ")}. Per ognuno prima declare_candidate (assignment: l'id dell'incarico, decisionIDs: le decisioni del Patto che deve rispettare), poi verify_candidate con il candidateID che restituisce, per ogni verifica richiesta, poi review_candidate.`,
     );
   }
   if (targets.unverified.length) {

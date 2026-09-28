@@ -7,7 +7,7 @@ import { workRequests } from "@shared/grilling";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
-import { findAssignment } from "./team";
+import { authorize, findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
 
 export class CandidateError extends Error {
@@ -77,6 +77,17 @@ export function worktreeAssessmentCurrent(document: ProjectDocument, assessment:
   return !candidateSuperseded(document, other);
 }
 
+/** The current version of each decision a candidate must respect. */
+function boundDecisions(document: ProjectDocument, decisionIds: string[]): Record<string, number> {
+  const decisionVersions: Record<string, number> = {};
+  for (const id of decisionIds) {
+    const decision = document.decisions.find((d) => d.id === id);
+    if (!decision) throw new CandidateError("unknown_decision", `Unknown decision ${id}. Read the Pact with read_pact.`);
+    decisionVersions[id] = decision.version;
+  }
+  return decisionVersions;
+}
+
 /** Binds a captured worktree to the assignment's modules and checks and to the decisions named. */
 export function declareCandidate(
   document: ProjectDocument,
@@ -91,12 +102,7 @@ export function declareCandidate(
   if (assignment.requiredChecks.length === 0) {
     throw new CandidateError("missing_checks", `Assignment ${assignment.id} declares no required check, so its candidate cannot be verified.`);
   }
-  const decisionVersions: Record<string, number> = {};
-  for (const id of decisionIds) {
-    const decision = document.decisions.find((d) => d.id === id);
-    if (!decision) throw new CandidateError("unknown_decision", `Unknown decision ${id}. Read the Pact with read_pact.`);
-    decisionVersions[id] = decision.version;
-  }
+  const decisionVersions = boundDecisions(document, decisionIds);
   const candidate: Candidate = {
     id: shortId("C", randomUUID()),
     assignmentId: assignment.id,
@@ -125,6 +131,88 @@ export function declareCandidate(
   if (slice) candidate.testedSeams = readTestedSeams(assignment.result, agreedSeams(slice.plan));
   document.candidates.push(candidate);
   return candidate;
+}
+
+/** Whether the worktree Trama read after the developer's latest turn is not the one the candidate captured (issue #388). */
+export function worktreeChanged(document: ProjectDocument, candidate: Candidate): boolean {
+  const worktree = findAssignment(document, candidate.assignmentId)?.worktreeSnapshot;
+  return !!worktree && worktree.snapshotId !== candidate.snapshotId;
+}
+
+/**
+ * What a developer's turn left for the candidate (issue #388). "none": the work has no candidate yet, the Coordinator
+ * declares the first with the Pact decisions it picks. "current": the latest candidate still matches the worktree.
+ * "declared": Trama declared the new candidate of the worktree. "refused": it could not, and says why.
+ */
+export type TurnCandidate =
+  | { kind: "none" }
+  | { kind: "current"; candidate: Candidate }
+  | { kind: "declared"; candidate: Candidate; previous: Candidate }
+  | { kind: "refused"; reason: "emptyWorktree" | "published" | "notAuthorized" | "invalid"; previous: Candidate; message: string };
+
+/**
+ * Records the worktree as it is after a developer's turn and keeps the candidate in step with it (issue #388): when
+ * the turn changed the worktree after the latest candidate, Trama declares the new candidate from it, bound to the
+ * same Pact decisions, open choices and external effects. A candidate that lags the worktree is never reviewed.
+ */
+export function candidateAfterTurn(document: ProjectDocument, assignmentId: string, review: WorkspaceReview, now = new Date()): TurnCandidate {
+  const assignment = findAssignment(document, assignmentId);
+  if (!assignment) throw new CandidateError("unknown_assignment", `Unknown assignment: ${assignmentId}.`);
+  assignment.worktreeSnapshot = { snapshotId: review.snapshotId, at: now.toISOString() };
+  const previous = latestCandidate(document, assignment.id);
+  if (!previous) return { kind: "none" };
+  if (previous.snapshotId === review.snapshotId) return { kind: "current", candidate: previous };
+  if (previous.pullRequest) {
+    return { kind: "refused", reason: "published", previous, message: `Candidate ${previous.id} is already pull request #${previous.pullRequest.number}.` };
+  }
+  if (review.changedFiles.length === 0) return { kind: "refused", reason: "emptyWorktree", previous, message: `The worktree of ${assignment.id} has no changes.` };
+  if (authorize(document.mandate, "executeInWorktree", assignment.moduleIds) !== "authorized") {
+    return { kind: "refused", reason: "notAuthorized", previous, message: `The mandate does not cover work in the worktree of ${assignment.id}.` };
+  }
+  try {
+    const candidate = declareCandidate(
+      document,
+      {
+        assignmentId: assignment.id,
+        decisionIds: previous.requiredDecisionIds,
+        unresolvedChoices: previous.unresolvedChoices,
+        externalEffects: previous.externalEffects,
+      },
+      review,
+      now,
+    );
+    candidate.declaredBy = "trama";
+    candidate.whitespaceErrors = review.whitespaceErrors;
+    return { kind: "declared", candidate, previous };
+  } catch (error) {
+    if (!(error instanceof CandidateError)) throw error;
+    return { kind: "refused", reason: "invalid", previous, message: error.message };
+  }
+}
+
+/**
+ * The candidate Trama declared by itself on this same snapshot, still untouched by checks and reviews (issue #388): the
+ * Coordinator's declaration of the unchanged worktree binds it to its decisions instead of declaring a copy.
+ */
+export function rebindTramaCandidate(
+  document: ProjectDocument,
+  input: { assignmentId: string; decisionIds: string[]; unresolvedChoices: string[]; externalEffects: string[] },
+  review: WorkspaceReview,
+  now = new Date(),
+): Candidate | null {
+  const latest = latestCandidate(document, input.assignmentId);
+  if (!latest || latest.declaredBy !== "trama" || latest.snapshotId !== review.snapshotId || latest.pullRequest) return null;
+  const touched = Object.keys(latest.evidence).length > 0 || latest.technicalReview !== null || (document.gates ?? []).some((g) => g.candidateId === latest.id);
+  if (touched) return null;
+  const decisionIds = cleaned(input.decisionIds);
+  if (decisionIds.length === 0) throw new CandidateError("missing_decisions", "A candidate needs the relevant Pact decisions it must respect.");
+  const decisionVersions = boundDecisions(document, decisionIds);
+  latest.requiredDecisionIds = decisionIds;
+  latest.decisionVersions = decisionVersions;
+  latest.unresolvedChoices = cleaned(input.unresolvedChoices);
+  latest.externalEffects = cleaned(input.externalEffects);
+  latest.updatedAt = now.toISOString();
+  return latest;
 }
 
 /** Records evidence Trama produced by running a required check; an agent's claim never becomes evidence. */
@@ -163,6 +251,10 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   const blockers: CandidateBlocker[] = [];
   if (headSHA && headSHA !== candidate.baseSHA) {
     blockers.push({ code: "BASE_CHANGED", detail: "Rebuild and recheck the candidate on the current integration base." });
+  }
+  // The developer changed the worktree after the candidate (issue #388): it no longer describes the work to review.
+  if (!candidate.pullRequest && worktreeChanged(document, candidate)) {
+    blockers.push({ code: "WORKTREE_CHANGED", detail: "The worktree changed after this candidate: declare a new candidate from it." });
   }
   for (const [id, version] of Object.entries(candidate.decisionVersions)) {
     if (document.decisions.find((d) => d.id === id)?.version !== version) blockers.push({ code: "DECISION_CHANGED", detail: id });

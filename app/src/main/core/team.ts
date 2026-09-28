@@ -680,6 +680,8 @@ export function beginTurn(
   updateAssignment(document, id, now, (assignment) => {
     if (!isActive(assignment)) throw new TeamError("not_running", `Specialist ${assignment.specialistId} has no work in progress.`);
     if (assignment.status === "preparing") assignment.status = "running";
+    // The turn may change the worktree: Trama reads it again when the turn ends (issue #388).
+    assignment.worktreeSnapshot = null;
     // The turn that starts carries the answer to the developer's question (W06): the work has resumed.
     const question = pendingQuestion(assignment);
     if (question && pendingState(assignment) === "answered") question.resumedAt = now.toISOString();

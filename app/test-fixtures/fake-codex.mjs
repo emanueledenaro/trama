@@ -552,6 +552,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         // "[segreto]" leaves a key in the note, which Trama's scan blocks at the candidate gate (W10); "[bloccante]" leaves
         // a line a reviewer blocks. The turn that resumes with the findings writes the note without either.
         const resumedWithFindings = text.includes("Rilievi bloccanti dei revisori");
+        // With FAKE_CODEX_SECRET_FIX_HOLD the developer's fix of the secret waits for that file: a check sees the blocked
+        // candidate while the developer is still at work, before Trama declares the corrected one (issue #388).
+        const fixHold = process.env.FAKE_CODEX_SECRET_FIX_HOLD;
+        if (resumedWithFindings && fixHold && text.includes("Segreto nel diff")) {
+          const { existsSync } = await import("node:fs");
+          await new Promise((resolve) => {
+            const release = setInterval(() => {
+              if (!existsSync(fixHold)) return;
+              clearInterval(release);
+              resolve();
+            }, 10);
+          });
+        }
         const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}`;
         writeFileSync(join(root, "NOTE.md"), `Lavoro dello specialista\n${extra}`);
         // "[impostazioni]" also changes the code owners, a setting of the repository: its merge runs into a fixed ban (issue #247).
