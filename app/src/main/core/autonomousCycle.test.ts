@@ -250,6 +250,13 @@ describe("technical blocks the Coordinator resolves by itself (A06, Q3)", () => 
       expect(automaticMove(document, "r1", event, free)).toMatchObject({ move: "assignWork", label: "Riprendi l'incarico fermo", block: { kind: "stalledAssignment" } });
     }
     expect(automaticMove(stalled(["plan"]), "r1", "assignmentEnded", free)).toBeNull();
+    // A stopped assignment is someone's choice, not a technical block: it waits for the person.
+    const stopped = stalled();
+    const assignment = stopped.team.specialists.flatMap((s) => s.assignments)[0]!;
+    assignment.status = "stopped";
+    expect(workState(stopped, "r1")).toMatchObject({ phase: "blocked" });
+    expect(workState(stopped, "r1").block).toBeUndefined();
+    expect(automaticMove(stopped, "r1", "assignmentEnded", free)).toBeNull();
   });
 
   it("reads the outcome when the turn ends: resolved when the work is no longer blocked by it", () => {

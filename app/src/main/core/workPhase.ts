@@ -427,7 +427,13 @@ function assignedWork(
       moves.assignWork();
       const reason = assignment.status === "failed" ? `non è riuscito${assignment.failure ? `: ${assignment.failure}` : "."}` : "è stato fermato.";
       const outcome = assignment.status === "failed" ? "non è riuscito" : "è stato fermato";
-      return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}`, why: `Il ${workOf(document, assignment)} ${outcome}.`, block: "stalledAssignment" };
+      // Only work that failed is a technical block the Coordinator resolves by itself (A06): a stop is someone's choice.
+      return {
+        phase: "blocked",
+        blocker: `L'incarico ${assignment.id} ${reason}`,
+        why: `Il ${workOf(document, assignment)} ${outcome}.`,
+        ...(assignment.status === "failed" ? { block: "stalledAssignment" as const } : {}),
+      };
     }
     if (!candidate) continue;
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
