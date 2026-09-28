@@ -238,6 +238,8 @@ describe("diagnosis of failed checks (W11)", () => {
       "mkdir: /private/var/folders/x: Read-only file system",
       "sh: tsc: command not found",
       "bwrap: Creating new namespace failed: Operation not permitted",
+      "env: ‘npm’: No such file or directory",
+      "sh: tsc: Command not found",
     ];
     recordCheckOutcome(document, { ...failed, passed: true, output: "" });
     for (const output of sandbox) {
@@ -271,6 +273,17 @@ describe("diagnosis of failed checks (W11)", () => {
       diagnosisId: null,
     });
     expect(nextDuty(document, context())).toBeNull();
+    // Once the machine is fixed, a failure of the code on the same check and version is recorded and diagnosed.
+    const failure = recordCheckOutcome(document, {
+      check: "node_typecheck",
+      passed: false,
+      ran: true,
+      output: "src/app/page.tsx(3,7): error TS2322",
+      command: "npm run typecheck",
+      target: { kind: "checkout", headSHA: HEAD },
+    });
+    expect(failure).not.toBeNull();
+    expect(nextDuty(document, context())?.duty?.trigger).toEqual({ kind: "failedCheck", failureId: failure!.id });
   });
 
   it("marks a regression when the same check passed before, on an earlier HEAD or on the candidate's base", () => {
