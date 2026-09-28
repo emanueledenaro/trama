@@ -25,7 +25,9 @@ export function toolErrorMessage(result: ToolResult): string | null {
   if (!result.isError) return null;
   const text = result.content.map((c) => c.text).join("\n").trim();
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: unknown } };
+    const parsed = JSON.parse(text) as { error?: { message?: unknown } | string };
+    // The learning tools answer `{ success: false, error: "..." }` (issue #305).
+    if (typeof parsed.error === "string") return parsed.error.trim() || null;
     if (typeof parsed.error?.message === "string") return parsed.error.message.trim() || null;
   } catch {
     // Not JSON: the text is the error itself.

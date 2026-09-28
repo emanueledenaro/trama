@@ -3,6 +3,7 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileBinary, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type ContextUsage, contextNoticeDetail, contextReading, invalidContextUsage } from "@shared/contextReading";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
@@ -316,11 +317,13 @@ import {
   shouldRunNow,
   snapshotLibrary,
 } from "./core/learning/curator";
+import { memoryActivityLine, memoryErrorCode, memoryFailureLine } from "./core/learning/memoryErrors";
 import { learningSettings, ProjectLearning } from "./core/learning/projectLearning";
 import {
   finishTurnSkillNudge,
   resetOnToolUse,
   REVIEW_MAX_TOOL_CALLS,
+  reviewErrorLine,
   reviewPrompt,
   reviewToolNames,
   reviewTranscript,
@@ -358,7 +361,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
-import { CoordinatorToolServer, TOOL_SERVER_NAME, toolFailure, toolSuccess } from "./core/toolServer";
+import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, BOUNDARY_LABELS, findRoute } from "@shared/askTrama";
@@ -2136,6 +2139,7 @@ export class TramaController {
         // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
         const error = toolErrorMessage(result);
         if (error && runningRequestId) this.turnToolErrors.set(runningRequestId, [...(this.turnToolErrors.get(runningRequestId) ?? []), error]);
+        if (name === "memory" && result.isError) this.memoryRefused(current, runningRequestId, result);
         return result;
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -2248,7 +2252,7 @@ export class TramaController {
           type: "card",
           kind: "contextNotice",
           title: "Nuovo thread del Coordinatore",
-          detail: `${providerName(provider)} non ha più il thread precedente. Il Coordinatore riparte dallo studio e dalla memoria.`,
+          detail: "La sessione precedente del Coordinatore non è più disponibile. Il Coordinatore riparte dallo studio e dalla memoria.",
           referenceId: null,
         });
       }
@@ -2340,6 +2344,9 @@ export class TramaController {
     }
     if (!transcript && projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
     const rules = await this.pendingRules(document, document.coordinator.threadProvider ?? this.coordinatorProvider(document));
+    let compacted = false;
+    // The study is a turn of the Coordinator: memory writes count from zero, as in any other turn (issue #305).
+    this.learningFor(project).memory.resetConsolidationFailures("foreground");
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
       prompt: [context, ...(rules ? [rules.section] : []), request].join("\n\n"),
@@ -2352,7 +2359,12 @@ export class TramaController {
           project.streaming.text += event.delta;
           this.publish();
         } else if (event.type === "tokenUsage") {
-          project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+          // The study is a turn of the Coordinator's thread: its reading counts against the threshold too (issue #305).
+          this.recordContextUsage(project, event);
+          this.publish();
+        } else if (event.type === "compacted") {
+          compacted = true;
+          this.coordinatorCompacted(project);
         } else if (event.type === "fixedBanRefused") {
           this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
@@ -2371,7 +2383,8 @@ export class TramaController {
       moveEvent(document, card.id, studyPosition);
     }
     document.coordinator.injectedStudy = fingerprints(study);
-    document.coordinator.memorySentToThread = document.coordinator.threadId;
+    // A compaction during the study may have dropped the memory it carried: the next turn sends it again.
+    document.coordinator.memorySentToThread = compacted ? null : document.coordinator.threadId;
     this.coordinatorLearning(document).skillsIndexSent = learned.skills;
     this.changed();
   }
@@ -2482,7 +2495,7 @@ export class TramaController {
     // The running request now keeps the Coordinator busy in place of the starting move.
     if (this.automaticStarting?.projectId === project.id) this.automaticStarting = null;
     const learning = this.learningFor(project);
-    learning.memory.resetConsolidationFailures();
+    learning.memory.resetConsolidationFailures("foreground");
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
     this.turnToolIterations.set(request.id, 0);
     this.changed();
@@ -2692,6 +2705,7 @@ export class TramaController {
     } finally {
       this.turnToolIterations.delete(request.id);
       this.turnToolErrors.delete(request.id);
+      this.turnMemoryRefusals.delete(request.id);
       this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -3233,17 +3247,12 @@ export class TramaController {
         }
         return;
       case "tokenUsage":
-        project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
-        this.checkContextThreshold(project);
+        this.recordContextUsage(project, event);
         this.publish();
         return;
-      case "compacted": {
-        project.document.coordinator.contextWarnedAt = null;
-        // Earlier events left the thread: session search may return them, and the next turn gets the memory again.
-        this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
-        project.document.coordinator.memorySentToThread = null;
+      case "compacted":
+        this.coordinatorCompacted(project);
         return;
-      }
       case "commandCompleted":
         activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
         if (isGitPushCommand(event.command)) {
@@ -3254,13 +3263,20 @@ export class TramaController {
       case "fileChangeCompleted":
         activity(`Modifica di ${event.paths.length} file`, event.paths.join(", "), event.succeeded ? "tool" : "error");
         return;
-      case "toolCallCompleted":
+      case "toolCallCompleted": {
+        // A refused memory write: one Italian line with the error tone; the retries the store refused unapplied add none (issue #305).
+        const refusal = event.server === TOOL_SERVER_NAME && event.tool === "memory" ? this.turnMemoryRefusals.get(request.id)?.shift() : undefined;
+        if (refusal) {
+          if (!refusal.repeated) activity(`Strumento di Trama: ${event.tool}`, refusal.line, "error");
+          return;
+        }
         activity(
           event.server === TOOL_SERVER_NAME ? `Strumento di Trama: ${event.tool}` : `${event.server}: ${event.tool}`,
           event.error,
           event.succeeded ? "tool" : "error",
         );
         return;
+      }
       case "readOutsideScope":
         activity(READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
         return;
@@ -3281,21 +3297,51 @@ export class TramaController {
     }
   }
 
-  /** Adds the notice once when the Coordinator's context passes the person's threshold. */
+  /**
+   * Keeps the latest context reading of the Coordinator's thread and checks the threshold. A reading that cannot be
+   * the context in use (past the window, negative) is kept as unknown, with one technical line in the log (issue #305).
+   */
+  private recordContextUsage(project: ActiveProjectState, event: Extract<TurnEvent, { type: "tokenUsage" }>): void {
+    const usage: ContextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+    if (invalidContextUsage(usage)) {
+      if (!this.invalidContextLogged.has(project.id)) {
+        this.invalidContextLogged.add(project.id);
+        console.warn(`[trama] context reading ignored: ${event.usedTokens} tokens against a window of ${event.contextWindow}`);
+      }
+      project.contextUsage = { usedTokens: null, contextWindow: event.contextWindow };
+      return;
+    }
+    project.contextUsage = usage;
+    this.checkContextThreshold(project);
+  }
+
+  /** The provider compacted the Coordinator's thread: earlier events left it, so session search may return them and the next turn gets the memory again. */
+  private coordinatorCompacted(project: ActiveProjectState): void {
+    this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
+    project.document.coordinator.memorySentToThread = null;
+  }
+
+  /**
+   * Adds the notice once when the Coordinator's context passes the person's threshold. The notice comes back only
+   * after a reading well under the threshold, not after each compaction (issue #305). No provider name and no number
+   * past the window: the reading is the one the meter shows.
+   */
   private checkContextThreshold(project: ActiveProjectState): void {
-    const usage = project.contextUsage;
     const coordinator = project.document.coordinator;
-    if (!usage?.contextWindow) return;
     const threshold = coordinator.contextThreshold ?? 80;
-    const percent = (usage.usedTokens / usage.contextWindow) * 100;
-    if (percent < threshold || coordinator.contextWarnedAt === threshold) return;
+    const reading = contextReading(project.contextUsage, threshold);
+    if (reading.state === "unknown") return;
+    if (reading.state === "ok") {
+      coordinator.contextWarnedAt = null;
+      return;
+    }
+    if (reading.state !== "over" || coordinator.contextWarnedAt === threshold) return;
     coordinator.contextWarnedAt = threshold;
-    const format = (n: number) => n.toLocaleString("it-IT");
     appendEvent(project.document, "trama", {
       type: "card",
       kind: "contextNotice",
       title: "Contesto oltre la soglia",
-      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. ${providerName(this.coordinatorProvider(project.document))} la compatta da solo quando serve, se lo supporta; puoi cambiare la soglia dal misuratore.`,
+      detail: contextNoticeDetail(reading, threshold),
       referenceId: coordinator.threadId,
     });
     this.changed();
@@ -6184,6 +6230,10 @@ export class TramaController {
   private readonly turnToolIterations = new Map<string, number>();
   /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
   private readonly turnToolErrors = new Map<string, string[]>();
+  /** The Activity line of each refused memory write of a turn, in order, until its tool call is reported (issue #305). */
+  private readonly turnMemoryRefusals = new Map<string, { line: string; repeated: boolean }[]>();
+  /** Projects whose log already has the line about a context reading Trama ignored (issue #305). */
+  private readonly invalidContextLogged = new Set<string>();
   /** Learning tools the Coordinator wrote with in each running turn. */
   private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;
@@ -6202,7 +6252,8 @@ export class TramaController {
     }
     const state = this.coordinatorLearning(project.document);
     if (!state.memoryMigrated) {
-      learning.migrateLegacyMemory(project.document.coordinator.memory.text);
+      // An old text over the limit becomes a proposal for the person, not a loop of refused writes (issue #305).
+      if (learning.migrateLegacyMemory(project.document.coordinator.memory.text)) learning.proposeConsolidation("memory");
       state.memoryMigrated = true;
     }
     return learning;
@@ -6310,7 +6361,7 @@ export class TramaController {
       run.status = controller.signal.aborted ? "cancelled" : "completed";
     } catch (error) {
       run.status = controller.signal.aborted ? "cancelled" : "failed";
-      run.error = (error as Error).message;
+      run.error = reviewErrorLine((error as Error).message);
     } finally {
       this.learningReviews.delete(project.id);
       run.endedAt = new Date().toISOString();
@@ -6423,25 +6474,61 @@ export class TramaController {
     this.learningChanged();
   }
 
-  /** The person corrects memory directly: their writes apply at once, without a review. */
+  /**
+   * The person corrects memory directly: their writes apply at once, without a review. Their writes never count as
+   * the Coordinator's failures, and a refusal reaches them as one Italian line, never the model's text (issue #305).
+   */
   editLearnedMemory(input: { target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }): { success: boolean; error: string | null } {
     const learning = this.learningFor(this.requireProject());
     const store = learning.memory;
-    const result =
+    const result = store.withCaller(null, () =>
       input.action === "add"
         ? store.add(input.target, input.content ?? "")
         : input.action === "replace"
           ? store.replace(input.target, input.oldText ?? "", input.content ?? "")
-          : store.remove(input.target, input.oldText ?? "");
-    store.resetConsolidationFailures();
+          : store.remove(input.target, input.oldText ?? ""),
+    );
     this.learningChanged();
-    return { success: result.success === true, error: result.success === true ? null : String(result.error ?? "") };
+    if (result.success === true) return { success: true, error: null };
+    return { success: false, error: this.memoryRefusalLine(learning, input.target, result) };
   }
 
   resolveLearningProposal(id: string, approve: boolean): void {
-    const result = this.learningFor(this.requireProject()).resolveProposal(id, approve);
+    const learning = this.learningFor(this.requireProject());
+    const target = learning.proposals().find((p) => p.id === id)?.target ?? "memory";
+    const result = learning.resolveProposal(id, approve);
     this.learningChanged();
-    if (result.success !== true) throw new DomainError(String(result.error ?? "La proposta non si può applicare."));
+    if (result.success !== true) throw new DomainError(this.memoryRefusalLine(learning, target, result));
+  }
+
+  /**
+   * The Coordinator's memory write was refused: its Activity row gets one Italian line, and a memory already over
+   * its limit becomes a proposal for the person instead of more attempts (issue #305).
+   */
+  private memoryRefused(project: ActiveProjectState, requestId: string | null, result: ToolResult): void {
+    let answer: Record<string, unknown>;
+    try {
+      answer = JSON.parse(result.content.map((c) => c.text).join("\n")) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (requestId) {
+      const refusals = this.turnMemoryRefusals.get(requestId) ?? [];
+      refusals.push({ line: memoryActivityLine(answer), repeated: answer.repeated === true });
+      this.turnMemoryRefusals.set(requestId, refusals);
+    }
+    if (memoryErrorCode(answer) !== "memory_full" || answer.repeated === true) return;
+    // Only a store already over its limit gets a proposal: one merely too full for this note does not.
+    const learning = this.learningFor(project);
+    const proposed = (["memory", "user"] as const).map((target) => learning.proposeConsolidation(target)).some(Boolean);
+    if (proposed) this.learningChanged();
+  }
+
+  /** The person's line for a refused memory write; a store over its limit also gets a proposal to shorten it. */
+  private memoryRefusalLine(learning: ProjectLearning, target: "memory" | "user", result: Record<string, unknown>): string {
+    if (memoryErrorCode(result) === "memory_full" && learning.proposeConsolidation(target)) this.learningChanged();
+    const view = learning.view({ turnsSinceMemory: 0, itersSinceSkill: 0 })[target];
+    return memoryFailureLine(result, target, { chars: view.chars, limit: view.limit });
   }
 
   changeLearnedSkill(input: { name: string; action: "pin" | "unpin" | "adopt" | "archive" | "restore" | "delete" | "edit"; content?: string }): void {
