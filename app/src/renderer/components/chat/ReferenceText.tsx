@@ -21,17 +21,27 @@ export function ReferenceButton({ reference, children }: { reference: Reference;
   );
 }
 
+/** A reference by name without a link, for a place that is already a control; the id on hover and in the DOM. */
+function ReferenceName({ reference, children }: { reference: Reference; children: React.ReactNode }) {
+  return (
+    <span title={referenceTitle(reference)} data-record-id={reference.id}>
+      {children}
+    </span>
+  );
+}
+
 /** A stretch of plain text with its references as buttons; `before` is what the text wrote just before it. */
-function linked(text: string, index: ReferenceIndex, before: string, key: string): { nodes: React.ReactNode[]; written: string } {
+function linked(text: string, index: ReferenceIndex, before: string, key: string, links: boolean): { nodes: React.ReactNode[]; written: string } {
+  const Name = links ? ReferenceButton : ReferenceName;
   let written = before;
   const nodes = splitReferences(text, index).map((part, position) => {
     const previous = written;
     written += part.text;
     if ("reference" in part) {
       return (
-        <ReferenceButton key={`${key}-${position}`} reference={part.reference}>
+        <Name key={`${key}-${position}`} reference={part.reference}>
           {referenceText(part.reference, part.text, previous)}
-        </ReferenceButton>
+        </Name>
       );
     }
     if ("unknown" in part) {
@@ -51,7 +61,7 @@ function linked(text: string, index: ReferenceIndex, before: string, key: string
  * details and notices, where ChatMarkdown's blocks do not belong. The text reads plain (issue #270): a stretch in
  * backticks shows as code, or as the name of what it cites, never with the backticks.
  */
-export function ReferenceText({ text }: { text: string }) {
+export function ReferenceText({ text, links = true }: { text: string; links?: boolean }) {
   const index = useReferenceIndex();
   const stretches = plainText(text).split(/`([^`\n]+)`/);
   if (!index) return <>{stretches.map((stretch, position) => (position % 2 ? <code key={position} className="plain-code">{stretch}</code> : stretch))}</>;
@@ -60,7 +70,7 @@ export function ReferenceText({ text }: { text: string }) {
     <>
       {stretches.flatMap<React.ReactNode>((stretch, position) => {
         if (position % 2 === 0) {
-          const { nodes, written } = linked(stretch, index, before, String(position));
+          const { nodes, written } = linked(stretch, index, before, String(position), links);
           before = written;
           return nodes;
         }

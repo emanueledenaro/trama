@@ -1,0 +1,121 @@
+import {
+  IconBriefcase,
+  IconFileDiff,
+  IconGitBranch,
+  IconListCheck,
+  IconRosetteDiscountCheck,
+  IconShieldCheck,
+  IconUsersGroup,
+} from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type * as React from "react";
+import type { CandidateState } from "@shared/domain";
+import { type SettledCard, settledCard } from "@shared/settledCards";
+import type { TimelineRow } from "@shared/timeline";
+import { Badge } from "@/components/ui/field";
+import { Sep } from "@/components/ui/sep";
+import { REVEAL_EVENT } from "@/lib/nextStep";
+import { useUi } from "@/lib/store";
+import { ASSIGNMENT_STATUS, CANDIDATE_STATE } from "./Cards";
+import { ReferenceText } from "./ReferenceText";
+import { DisclosureChevron } from "./WorkSteps";
+
+const LABELS = { assignment: ASSIGNMENT_STATUS, candidate: CANDIDATE_STATE };
+
+function lineIcon(row: TimelineRow) {
+  if (row.kind === "grillingRound") return <IconListCheck stroke={1.8} />;
+  if (row.kind !== "card") return null;
+  switch (row.cardKind) {
+    case "decision":
+      return <IconRosetteDiscountCheck stroke={1.8} />;
+    case "mandate":
+      return <IconShieldCheck stroke={1.8} />;
+    case "teamProposal":
+      return <IconUsersGroup stroke={1.8} />;
+    case "plan":
+      return <IconListCheck stroke={1.8} />;
+    case "conflict":
+      return <IconGitBranch stroke={1.8} />;
+    case "assignment":
+      return <IconBriefcase stroke={1.8} />;
+    case "candidate":
+      return <IconFileDiff stroke={1.8} />;
+    default:
+      return null;
+  }
+}
+
+/** The settled line of a row, recomputed only when the records it reads change. */
+function useSettled(row: TimelineRow): SettledCard | null {
+  const project = useUi((s) => s.app?.project);
+  const document = project?.document;
+  const reports = project?.candidateReports;
+  const others = project?.presence?.others;
+  return useMemo(() => {
+    if (!document) return null;
+    const candidateStates: Record<string, CandidateState> = {};
+    for (const [id, report] of Object.entries(reports ?? {})) candidateStates[id] = report.state;
+    return settledCard(document, row, { candidateStates, colleagues: (others ?? []).map((o) => o.record), labels: LABELS });
+  }, [document, reports, others, row]);
+}
+
+/**
+ * A card that asks nothing more of the person, as one line of the chat (issue #271): the title, the subject, the
+ * answer and how it ended. The line opens the full card, and so does a link or a next step that brings it into view.
+ * A card still open stays whole.
+ */
+export function SettledOr({ row, children }: { row: TimelineRow; children: React.ReactNode }) {
+  const settled = useSettled(row);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const anchor = ref.current?.closest("[data-anchors]");
+    if (!anchor) return;
+    const reveal = () => setOpen(true);
+    anchor.addEventListener(REVEAL_EVENT, reveal);
+    return () => anchor.removeEventListener(REVEAL_EVENT, reveal);
+  }, [settled !== null]);
+  if (!settled) return <>{children}</>;
+  return (
+    <div ref={ref} className="my-2" data-testid="settled-card" data-open={open || undefined}>
+      {/* The line is not a button: the subject's references are links of their own. */}
+      <div
+        onClick={() => setOpen(!open)}
+        className="group/settled flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-ui transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{lineIcon(row)}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">
+            <span className="text-foreground">
+              {/* The title names its record, the id on hover (issue #270); the line itself opens the card. */}
+              <ReferenceText text={settled.title} links={false} />
+            </span>
+            <Sep />
+            <span className="text-muted-foreground">
+              <ReferenceText text={settled.subject} />
+            </span>
+          </span>
+          {settled.answer ? (
+            <span className="block truncate text-ui-sm text-foreground/85" data-testid="settled-answer">
+              Hai scelto: <ReferenceText text={settled.answer} />
+            </span>
+          ) : null}
+        </span>
+        <Badge tone={settled.outcome.tone}>{settled.outcome.label}</Badge>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? `Chiudi: ${settled.title}` : `Apri: ${settled.title}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen(!open);
+          }}
+          className="sidebar-icon-button size-5 shrink-0"
+        >
+          <DisclosureChevron open={open} />
+        </button>
+      </div>
+      {open ? <div className="-mt-1">{children}</div> : null}
+    </div>
+  );
+}

@@ -73,6 +73,28 @@ export interface DutyContext {
 /** Checks whose failure is a bug to diagnose; the Git checks describe the checkout's state, not the code. */
 export const DIAGNOSABLE_CHECKS: ReadOnlyCheck[] = ["swift_build", "swift_test", "node_test", "node_typecheck"];
 
+/**
+ * Signs in a check's output that it failed because of Trama's sandbox or the machine, not the project's code
+ * (issue #271): a permission the sandbox refused, a read-only or full disk, a tool the machine lacks. Such a
+ * failure says nothing about the code, so it never becomes a diagnosis of the project.
+ */
+const ENVIRONMENT_FAILURES: RegExp[] = [
+  /\[Trama\] Alcuni fallimenti vengono dalla sandbox/,
+  /\b(?:EPERM|EACCES|EROFS|ENOSPC)\b/,
+  /\bOperation not permitted\b/i,
+  /\bread-only file system\b/i,
+  /\bno space left on device\b/i,
+  /^bwrap: /m,
+  /^sandbox-exec: /m,
+  /\bcommand not found\b/,
+];
+
+/** Whether a check failed because of the sandbox or the machine rather than the code. */
+export const environmentFailure = (output: string): boolean => ENVIRONMENT_FAILURES.some((pattern) => pattern.test(output));
+
+/** The failures that wait for a diagnosis: without one yet, and caused by the code, not by the environment. */
+const toDiagnose = (ledger: DutyLedger) => ledger.failures.filter((f) => !f.diagnosisId && !environmentFailure(f.output));
+
 /** State roles of the triage skill: an issue that carries one of them was already evaluated. */
 const EVALUATED_STATES = TRIAGE_STATES.filter((state) => state !== "needs-triage");
 
@@ -114,9 +136,11 @@ export function recordCheckOutcome(document: ProjectDocument, outcome: CheckOutc
   let candidateId: string | null = null;
   let assignmentId: string | null = null;
   let regression: boolean;
+  // A failure of the sandbox or the machine is not a result of the code: it neither diagnoses nor hides a pass.
+  const environment = !outcome.passed && environmentFailure(outcome.output);
   if (outcome.target.kind === "checkout") {
     const previous = ledger.checkoutChecks[outcome.check];
-    if (outcome.ran) ledger.checkoutChecks[outcome.check] = { headSHA: outcome.target.headSHA, passed: outcome.passed };
+    if (outcome.ran && !environment) ledger.checkoutChecks[outcome.check] = { headSHA: outcome.target.headSHA, passed: outcome.passed };
     version = outcome.target.headSHA;
     regression = previous?.passed === true;
   } else {
@@ -131,7 +155,7 @@ export function recordCheckOutcome(document: ProjectDocument, outcome: CheckOutc
     );
     regression = (base?.passed === true && base.headSHA === candidate.baseSHA) || earlier;
   }
-  if (outcome.passed || !outcome.ran || !DIAGNOSABLE_CHECKS.includes(outcome.check)) return null;
+  if (outcome.passed || !outcome.ran || environment || !DIAGNOSABLE_CHECKS.includes(outcome.check)) return null;
   const known = ledger.failures.some(
     (f) => f.check === outcome.check && f.target === outcome.target.kind && f.candidateId === candidateId && f.version === version,
   );
@@ -276,7 +300,7 @@ function failurePlace(failure: CheckFailure): string {
 }
 
 function startDiagnosis(document: ProjectDocument, runner: DutyRunner, now: Date): SpecialistAssignment | null {
-  const failure = dutyLedger(document).failures.find((f) => !f.diagnosisId);
+  const failure = toDiagnose(dutyLedger(document))[0];
   if (!failure || !roleFree(document, "bugTriage")) return null;
   const work = failure.assignmentId ? findAssignment(document, failure.assignmentId) : null;
   const diagnosis = giveDuty(
@@ -516,14 +540,14 @@ function triageRule(document: ProjectDocument, context: Pick<DutyContext, "issue
   const others = pending.length > 1 ? ` (e altre ${pending.length - 1} dopo)` : "";
   const busy = roleWork(document, "bugTriage");
   if (busy) return { state: "waiting", detail: `La issue #${next.number}${others} aspetta che il bug triage finisca l'incarico ${busy.id}.` };
-  if (readLedger(document).failures.some((f) => !f.diagnosisId)) {
+  if (toDiagnose(readLedger(document)).length) {
     return { state: "waiting", detail: `La issue #${next.number}${others} aspetta la diagnosi di una verifica non superata, che viene prima.` };
   }
   return { state: "due", detail: `Parte ora sulla issue #${next.number}${others}.` };
 }
 
 function diagnosisRule(document: ProjectDocument): RuleState {
-  const failure = readLedger(document).failures.find((f) => !f.diagnosisId);
+  const failure = toDiagnose(readLedger(document))[0];
   const waitingFix = dutiesOf(document, "diagnosing-bugs")
     .map((a) => a.duty?.outcome)
     .find((o) => o?.kind === "diagnosis" && o.reproduced && !o.fixAssignmentId && o.fixWaiting);
