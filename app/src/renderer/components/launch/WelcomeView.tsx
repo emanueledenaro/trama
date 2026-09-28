@@ -6,47 +6,47 @@ import { type GuideStepId, nextSetupStep, resumeSetupStep, SETUP_STEP_IDS, setup
 import { PROVIDERS } from "@shared/providers";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { StepActions } from "@/components/onboarding/StepActions";
-import { STATUS_LABEL, StepIcon } from "@/components/onboarding/StepRow";
+import { StepIcon, stepStatusLabel } from "@/components/onboarding/StepRow";
 import { ProviderIcon } from "@/components/ProviderIcon";
+import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { providerStatus } from "@/components/settings/SettingsView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { useLanguage, useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
+import type { MessageKey, Translate } from "@shared/i18n";
 
-/** Codex and Claude come first; the other providers wait behind "Altri provider". */
+/** Codex and Claude come first; the other providers wait behind their toggle. */
 const MAIN_PROVIDERS: ProviderId[] = ["codex", "claudeAgent"];
 
-const STEP_COPY: Record<GuideStepId, { title: string; lead: string }> = {
-  provider: {
-    title: "Collega un provider",
-    lead: "Gli agenti di Trama lavorano con il provider che scegli. Accedi con la sua app o CLI ufficiale: Trama non legge né copia le credenziali.",
-  },
-  github: {
-    title: "Collega GitHub",
-    lead: "Con GitHub CLI Trama legge issue e pull request e pubblica il lavoro approvato. Senza, i progetti locali e l'esempio funzionano lo stesso.",
-  },
-  aiHero: {
-    title: "Il metodo AI Hero",
-    lead: "Le skill di Matt Pocock guidano il Coordinatore: domande prima di costruire, specifiche, fette verticali, test. Trama le copia nel progetto senza toccare i file che ci sono già.",
-  },
-  project: { title: "", lead: "" },
-  exercise: { title: "", lead: "" },
+/** The welcome's own title and lead for the setup steps; the other guide steps do not appear here. */
+const STEP_COPY: Partial<Record<GuideStepId, { title: MessageKey; lead: MessageKey }>> = {
+  provider: { title: "welcome.provider.title", lead: "welcome.provider.lead" },
+  github: { title: "welcome.github.title", lead: "welcome.github.lead" },
+  aiHero: { title: "welcome.aiHero.title", lead: "welcome.aiHero.lead" },
+};
+
+const stepCopy = (t: Translate, id: GuideStepId) => {
+  const copy = STEP_COPY[id];
+  return copy ? { title: t(copy.title), lead: t(copy.lead) } : { title: "", lead: "" };
 };
 
 function ProviderList() {
+  const t = useT();
+  const language = useLanguage();
   const providers = useUi((s) => s.app!.providers);
   const [others, setOthers] = useState(false);
   const [hint, setHint] = useState<Partial<Record<ProviderId, string>>>({});
   const shown = PROVIDERS.filter((p) => others || MAIN_PROVIDERS.includes(p.id as ProviderId));
   return (
     <div className="mt-4">
-      <ul className="divide-y divide-[color:var(--app-surface-divider)] rounded-xl border border-[color:var(--color-border)]" aria-label="Provider">
+      <ul className="divide-y divide-[color:var(--app-surface-divider)] rounded-xl border border-[color:var(--color-border)]" aria-label={t("welcome.providers")}>
         {shown.map((provider) => {
           const id = provider.id as ProviderId;
           const state = providers[id];
-          const status = providerStatus(state?.account ?? null, state?.checking ?? false);
+          const status = providerStatus(t, language, state?.account ?? null, state?.checking ?? false);
           return (
             <li key={id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2.5" data-provider-row={id}>
               <ProviderIcon provider={id} className="size-4" />
@@ -62,11 +62,14 @@ function ProviderList() {
                     id === "codex"
                       ? void act("codex:login", undefined)
                       : void act("provider:login", { provider: id }).then((result) =>
-                          setHint((h) => ({ ...h, [id]: result?.command ? `Esegui ${result.command} nel terminale, poi premi Controlla di nuovo.` : `Accesso: ${provider.signInCommand}` })),
+                          setHint((h) => ({
+                            ...h,
+                            [id]: result?.command ? t("welcome.signInHint", { command: result.command }) : t("welcome.signInCommand", { command: provider.signInCommand }),
+                          })),
                         )
                   }
                 >
-                  Accedi
+                  {t("welcome.signIn")}
                 </Button>
               ) : null}
               {hint[id] ? <span className="w-full pl-6.5 text-ui-xs text-foreground/80">{hint[id]}</span> : null}
@@ -80,7 +83,7 @@ function ProviderList() {
         onClick={() => setOthers(!others)}
         className="mt-2 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
       >
-        {others ? "Mostra solo Codex e Claude" : `Altri provider (${PROVIDERS.length - MAIN_PROVIDERS.length})`}
+        {others ? t("welcome.onlyMainProviders") : t("welcome.otherProviders", { count: PROVIDERS.length - MAIN_PROVIDERS.length })}
         <IconChevronDown className={cn("size-3.5 transition-transform", others && "rotate-180")} stroke={1.8} />
       </button>
     </div>
@@ -88,22 +91,21 @@ function ProviderList() {
 }
 
 function StepProgress({ steps, current }: { steps: StepState[]; current: GuideStepId }) {
+  const t = useT();
   return (
-    <ol className="flex items-center gap-1.5" aria-label="Passi della configurazione">
+    <ol className="flex items-center gap-1.5" aria-label={t("welcome.stepsLabel")}>
       {steps.map((step, index) => (
         <li
           key={step.id}
           aria-current={step.id === current ? "step" : undefined}
-          title={`${STEP_COPY[step.id as GuideStepId].title}: ${STATUS_LABEL[step.status]}`}
+          title={`${stepCopy(t, step.id as GuideStepId).title}: ${stepStatusLabel(t, step.status)}`}
           className={cn(
             "h-1 w-8 rounded-full bg-[var(--color-border-heavy)] transition-colors",
             step.status === "done" && "bg-[color:var(--color-text-accent)]/50",
             step.id === current && "bg-[var(--color-text-accent)]",
           )}
         >
-          <span className="sr-only">
-            Passo {index + 1}: {STATUS_LABEL[step.status]}
-          </span>
+          <span className="sr-only">{t("welcome.stepStatus", { index: index + 1, status: stepStatusLabel(t, step.status) })}</span>
         </li>
       ))}
     </ol>
@@ -111,53 +113,63 @@ function StepProgress({ steps, current }: { steps: StepState[]; current: GuideSt
 }
 
 function Hello({ steps, resuming, onStart, onClose }: { steps: StepState[]; resuming: boolean; onStart: () => void; onClose: () => void }) {
+  const t = useT();
   return (
     <>
       <TramaMark size={72} variant="tile" />
-      <h1 className="mt-6 text-[28px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground sm:text-[32px]">Benvenuto in Trama</h1>
-      <p className="mt-3 text-ui-lg text-foreground/85">Un team di agenti lavora sul tuo progetto: tu decidi, loro costruiscono.</p>
-      <p className="mt-2 text-ui text-muted-foreground">
-        Prima colleghiamo gli strumenti, in tre passi. Puoi saltarli e riprenderli quando vuoi dalla guida, in Impostazioni o nel menu Aiuto.
-      </p>
-      <ol className="mt-6 space-y-1" aria-label="Passi della configurazione">
+      {/* The language comes first (issue #301): the system's is already selected, and the page changes at once. */}
+      <div
+        className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[color:var(--color-border)] px-3.5 py-2.5"
+        data-testid="welcome-language"
+      >
+        <div className="min-w-[12rem] flex-1">
+          <p className="text-ui-sm font-medium text-foreground">{t("language.label")}</p>
+          <p className="mt-0.5 text-ui-xs text-muted-foreground">{t("language.welcomeHint")}</p>
+        </div>
+        <LanguageChoice />
+      </div>
+      <h1 className="mt-6 text-[28px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground sm:text-[32px]">{t("welcome.title")}</h1>
+      <p className="mt-3 text-ui-lg text-foreground/85">{t("welcome.tagline")}</p>
+      <p className="mt-2 text-ui text-muted-foreground">{t("welcome.intro")}</p>
+      <ol className="mt-6 space-y-1" aria-label={t("welcome.stepsLabel")}>
         {steps.map((step, index) => (
           <li key={step.id} className="flex items-center gap-2.5 py-1 text-ui">
             <span className="flex size-4 items-center justify-center">
               <StepIcon status={step.status} index={index} current={false} />
             </span>
-            <span className="min-w-0 flex-1 truncate text-foreground/90">{STEP_COPY[step.id as GuideStepId].title}</span>
-            {step.optional ? <span className="text-ui-xs text-muted-foreground/70">facoltativo</span> : null}
-            <span className={cn("text-ui-xs", step.status === "done" ? "text-success" : "text-muted-foreground")}>{STATUS_LABEL[step.status]}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground/90">{stepCopy(t, step.id as GuideStepId).title}</span>
+            {step.optional ? <span className="text-ui-xs text-muted-foreground/70">{t("welcome.optional")}</span> : null}
+            <span className={cn("text-ui-xs", step.status === "done" ? "text-success" : "text-muted-foreground")}>{stepStatusLabel(t, step.status)}</span>
           </li>
         ))}
       </ol>
       <div className="cta-row mt-8">
         <Button variant="ghost" onClick={onClose}>
-          Salta la configurazione
+          {t("welcome.skipSetup")}
         </Button>
-        <Button onClick={onStart}>{resuming ? "Riprendi la configurazione" : "Configura"}</Button>
+        <Button onClick={onStart}>{resuming ? t("welcome.resume") : t("welcome.start")}</Button>
       </div>
     </>
   );
 }
 
 function SetupStep({ step, index, total, onBack, onNext }: { step: StepState; index: number; total: number; onBack: () => void; onNext: () => void }) {
+  const t = useT();
   const id = step.id as GuideStepId;
+  const copy = stepCopy(t, id);
   const last = index === total - 1;
   const done = step.status === "done";
   return (
     <>
       <div className="flex items-center gap-3">
         <TramaMark size={28} />
-        <span className="text-ui-sm text-muted-foreground">
-          Passo {index + 1} di {total}
-        </span>
+        <span className="text-ui-sm text-muted-foreground">{t("welcome.stepOf", { index: index + 1, total })}</span>
       </div>
       <h1 className="mt-5 text-[24px] leading-[1.2] font-normal tracking-[-0.01em] text-foreground">
-        {STEP_COPY[id].title}
-        {step.optional ? <span className="ml-2 align-middle text-ui-sm text-muted-foreground/70">facoltativo</span> : null}
+        {copy.title}
+        {step.optional ? <span className="ml-2 align-middle text-ui-sm text-muted-foreground/70">{t("welcome.optional")}</span> : null}
       </h1>
-      <p className="mt-2 text-ui text-muted-foreground">{STEP_COPY[id].lead}</p>
+      <p className="mt-2 text-ui text-muted-foreground">{copy.lead}</p>
       <div
         className="mt-5 flex items-start gap-2.5 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-3"
         data-testid="welcome-step-state"
@@ -167,7 +179,7 @@ function SetupStep({ step, index, total, onBack, onNext }: { step: StepState; in
           <StepIcon status={step.status} index={index} current />
         </span>
         <div className="min-w-0 flex-1">
-          <p className={cn("text-ui-sm font-medium", done ? "text-success" : "text-foreground")}>{STATUS_LABEL[step.status]}</p>
+          <p className={cn("text-ui-sm font-medium", done ? "text-success" : "text-foreground")}>{stepStatusLabel(t, step.status)}</p>
           <p className="mt-0.5 text-ui-sm text-muted-foreground">{step.detail}</p>
         </div>
       </div>
@@ -177,16 +189,16 @@ function SetupStep({ step, index, total, onBack, onNext }: { step: StepState; in
       </div>
       <div className="mt-8 flex items-center gap-2 border-t border-[color:var(--app-surface-divider)] pt-4">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          Indietro
+          {t("welcome.back")}
         </Button>
         <div className="cta-row flex-1">
           {done || step.status === "skipped" ? (
             <Button size="sm" onClick={onNext}>
-              {last ? "Scegli un progetto" : "Continua"}
+              {last ? t("welcome.chooseProject") : t("welcome.continue")}
             </Button>
           ) : (
             <Button variant="outline" size="sm" onClick={() => void act("onboarding:update", { skipStep: id }).then(onNext)}>
-              {step.optional ? "Rimanda" : "Salta per ora"}
+              {step.optional ? t("welcome.postpone") : t("welcome.skipForNow")}
             </Button>
           )}
         </div>
@@ -204,6 +216,7 @@ export function WelcomeView() {
   const page = useUi((s) => s.welcome);
   const setWelcome = useUi((s) => s.setWelcome);
   const app = useUi((s) => s.app);
+  const t = useT();
   const steps = useMemo(() => (app ? setupSteps(app) : []), [app]);
 
   useEffect(() => {
@@ -228,14 +241,14 @@ export function WelcomeView() {
     <DialogPrimitive.Root open={page !== null} onOpenChange={(open) => (open ? null : close())}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Popup
-          aria-label="Benvenuto in Trama"
+          aria-label={t("welcome.title")}
           data-testid="welcome"
           data-page={page ?? undefined}
           className="chat-pane-enter fixed inset-0 z-[45] flex flex-col bg-[var(--color-background-surface)] text-foreground outline-none"
         >
           <div className="drag-region flex h-[46px] shrink-0 items-center justify-end gap-3 px-3 sm:px-5">
             {step ? <StepProgress steps={steps} current={step.id as GuideStepId} /> : null}
-            <Button variant="ghost" size="icon-sm" aria-label="Chiudi il benvenuto" onClick={close}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("welcome.close")} onClick={close}>
               <IconX className="size-4" />
             </Button>
           </div>
