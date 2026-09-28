@@ -1769,6 +1769,8 @@ export type ThemePreference = "system" | "light" | "dark";
 
 export interface AppSettings {
   theme: ThemePreference;
+  /** The interface language the person chose (issue #301). Missing: the system's language. */
+  language?: import("./i18n").Language;
   sidebarWidth: number;
   /** Prepare the AI Hero method when a project without it opens (T04). On unless the person turns it off. */
   autoPrepareMethod?: boolean;
@@ -1859,6 +1861,8 @@ export interface AppState {
   codex: ProviderState;
   providers: Record<ProviderId, ProviderState>;
   settings: AppSettings;
+  /** The language Trama speaks: the person's choice, else the system's (issue #301). */
+  language: import("./i18n").Language;
   error: string | null;
   /** General practices as the selected project may see them (C15). */
   practices: PracticeView[];
