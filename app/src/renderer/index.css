@@ -11,6 +11,7 @@
   --font-sans: var(--font-ui-family);
   --font-mono: var(--font-mono-family);
   --font-display: var(--font-display-family);
+  --font-content: var(--font-content-family);
   --text-ui: 13px;
   --text-ui-lg: 14px;
   --text-ui-sm: 12px;
@@ -68,9 +69,18 @@
   --radius: 0.625rem;
   --radius-user-message: 1rem;
   --composer-radius: 1.2rem;
-  --font-ui-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-display-family: "Cal Sans", var(--font-ui-family);
+  /* Editorial typography (issue #328): Inter for the interface, Newsreader for content and titles, JetBrains Mono
+     for code. The fonts ship with the app (main.tsx); components use these tokens, never a family of their own. */
+  --font-ui-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-content-family: "Newsreader Variable", "Newsreader", Georgia, serif;
+  --font-display-family: var(--font-content-family);
   --font-mono-family: "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --content-font-size: 1.125rem;
+  --content-line-height: 1.68;
+  --content-letter-spacing: -0.01em;
+  --content-opsz: 18;
+  --content-heading-weight: 500;
+  --content-heading-line-height: 1.32;
 
   /* Codex seed: surface #ffffff, ink #0d0d0d, accent #0169cc. */
   --ink: #0d0d0d;
@@ -1033,13 +1043,26 @@ button {
   }
 }
 
+/* Content text (issue #328): messages, markdown and long texts read in Newsreader at the content size. Labels,
+   badges and controls inside them stay on the interface token. */
+.chat-markdown,
+.content-text {
+  font-family: var(--font-content-family);
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
+  letter-spacing: var(--content-letter-spacing);
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" var(--content-opsz);
+}
+.content-text {
+  overflow-wrap: anywhere;
+}
+
 /* Chat markdown. */
 .chat-markdown {
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
-  font-size: 13px;
-  line-height: 21.125px;
 }
 .chat-markdown strong,
 .chat-markdown b {
@@ -1100,7 +1123,7 @@ button {
 .chat-markdown li > p {
   margin: 0.2rem 0;
 }
-/* Headings stay at chat scale: a message is not a document. h3 reads as a section label. */
+/* Headings stay close to the body size: a message is not a document. Newsreader at 500 for h1 to h3. */
 .chat-markdown h1,
 .chat-markdown h2,
 .chat-markdown h3,
@@ -1108,27 +1131,25 @@ button {
 .chat-markdown h5,
 .chat-markdown h6 {
   margin: 1.15rem 0 0.35rem;
-  font-weight: 620;
-  line-height: 1.3;
-  letter-spacing: -0.005em;
+  font-weight: var(--content-heading-weight);
+  line-height: var(--content-heading-line-height);
+  letter-spacing: -0.012em;
+  font-variation-settings: normal;
 }
 .chat-markdown h1 {
-  font-size: 16px;
+  font-size: 1.5rem;
 }
 .chat-markdown h2 {
-  font-size: 14.5px;
+  font-size: 1.3rem;
 }
 .chat-markdown h3 {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
+  font-size: 1.175rem;
 }
 .chat-markdown h4,
 .chat-markdown h5,
 .chat-markdown h6 {
-  font-size: 13px;
+  font-size: var(--content-font-size);
+  font-weight: 600;
 }
 .chat-markdown :is(h1, h2, h3, h4, h5, h6) + :is(h1, h2, h3, h4, h5, h6) {
   margin-top: 0.4rem;
@@ -1186,8 +1207,6 @@ button {
   background: color-mix(in srgb, var(--glow-1, var(--info)) 9%, color-mix(in srgb, var(--foreground) 6%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
   backdrop-filter: blur(16px) saturate(1.3);
-  font-size: 14.5px;
-  line-height: 1.5;
 }
 .chat-markdown .chat-callout {
   --callout: var(--info);
@@ -1227,7 +1246,9 @@ button {
 }
 .chat-callout__label {
   margin-bottom: 0.1rem;
+  font-family: var(--font-ui-family);
   font-size: 11px;
+  line-height: 1.5;
   font-weight: 650;
   letter-spacing: 0.01em;
   color: color-mix(in srgb, var(--callout) 70%, var(--foreground));
@@ -1273,7 +1294,8 @@ button {
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.45rem;
-  font-weight: 620;
+  font-weight: 600;
+  line-height: var(--content-heading-line-height);
 }
 .chat-compare__badge {
   flex: none;
@@ -1281,8 +1303,11 @@ button {
   padding: 0.05rem 0.5rem;
   background: var(--foreground);
   color: var(--background);
+  font-family: var(--font-ui-family);
   font-size: 10.5px;
   font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: normal;
 }
 .chat-compare dl {
   margin: 0;
@@ -1294,7 +1319,9 @@ button {
   border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 .chat-compare dt {
+  font-family: var(--font-ui-family);
   font-size: 11px;
+  letter-spacing: normal;
   font-weight: 560;
   color: color-mix(in srgb, var(--foreground) 66%, transparent);
 }
@@ -1303,8 +1330,8 @@ button {
 }
 .chat-compare dd {
   margin: 0.05rem 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: 1rem;
+  line-height: 1.5;
 }
 /* A stretch in backticks inside a plain text (issue #270): code, without the backticks. */
 .plain-code {
@@ -1318,8 +1345,10 @@ button {
   border-radius: 0.4rem;
   background: var(--app-user-message-background);
   padding: 0.1rem 0.35rem;
-  font-size: 12px;
+  font-size: 0.82em;
   font-family: var(--font-mono-family);
+  font-variation-settings: normal;
+  letter-spacing: normal;
 }
 .chat-markdown--user code {
   background: color-mix(in srgb, var(--foreground) 9%, transparent);
@@ -1333,8 +1362,8 @@ button {
 .chat-markdown pre code {
   background: transparent;
   padding: 0;
-  line-height: 1.5;
-  font-size: 12px;
+  line-height: 1.55;
+  font-size: 0.78em;
 }
 .chat-markdown table {
   width: 100%;
@@ -1343,7 +1372,12 @@ button {
   border: 1px solid color-mix(in srgb, var(--foreground) 11%, transparent);
   border-radius: 10px;
   overflow: hidden;
+  /* A table is a dense area: it stays on the interface token and size. */
+  font-family: var(--font-ui-family);
   font-size: 12.5px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  font-variation-settings: normal;
 }
 .chat-markdown th,
 .chat-markdown td {
