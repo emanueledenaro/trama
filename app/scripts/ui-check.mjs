@@ -60,6 +60,11 @@ const openView = async (view, tab) => {
   await page.locator(`[data-testid="side-bar"][data-view="${VIEWS[view]}"]`).waitFor();
   if (tab) await sideBar.getByRole("tab", { name: tab, exact: true }).click();
 };
+// The overview opens from the Projects view (issue #330); the view opens first when the side bar shows another one.
+const overviewButton = async () => {
+  if (!(await page.getByRole("button", { name: "Panoramica dei progetti" }).count())) await openView("Progetti");
+  return page.getByRole("button", { name: "Panoramica dei progetti" });
+};
 // Issue #333: the shared roles of the Squads view wait in a closed section; the checks that read them open it first.
 const openSharedRoles = async () => {
   const toggle = page.getByTestId("side-bar").getByTestId("shared-roles-toggle");
@@ -4400,7 +4405,7 @@ await app.close();
 // Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
 ({ app, page } = await launch());
 await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 const priority = page.getByTestId("overview-priority");
 await priority.waitFor({ timeout: 10_000 });
 await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
@@ -4421,12 +4426,12 @@ await themeShots("39a-overview-priority");
 await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
 await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
 await page.waitForTimeout(1_500);
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 await priority.waitFor();
 let reopened39 = await priorityNames();
 for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
 if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 // The shared limit sits next to the project's own limit in the settings.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const sharedSettings = page.getByTestId("settings");
