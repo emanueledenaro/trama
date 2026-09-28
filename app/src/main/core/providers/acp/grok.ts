@@ -5,6 +5,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "../../personLanguage";
 import { ProviderError, type ProviderModel, type RuntimeOptions } from "../types";
 import {
   AcpAgentRuntime,
@@ -74,17 +75,17 @@ export function resolveGrokAuthMethod(advertised: string[], hasApiKey: boolean):
   const ids = new Set(advertised.map((id) => id.trim()).filter(Boolean));
   if (hasApiKey && ids.has(GROK_API_KEY_AUTH_METHOD_ID)) return GROK_API_KEY_AUTH_METHOD_ID;
   if (ids.has(GROK_CACHED_TOKEN_AUTH_METHOD_ID)) return GROK_CACHED_TOKEN_AUTH_METHOD_ID;
-  const list = ids.size ? [...ids].join(", ") : "nessuno";
+  const list = ids.size ? [...ids].join(", ") : t("main.provider.noMethods");
   if (!hasApiKey && ids.has(GROK_API_KEY_AUTH_METHOD_ID)) {
-    throw new ProviderError("authenticationRequired", "Grok richiede una chiave API: imposta XAI_API_KEY oppure esegui `grok login`.");
+    throw new ProviderError("authenticationRequired", t("main.grok.apiKeyRequired"));
   }
   if (!hasApiKey && ids.size > 0 && [...ids].every((id) => GROK_INTERACTIVE_AUTH_METHOD_IDS.has(id))) {
-    throw new ProviderError("authenticationRequired", `Grok non ha un accesso utilizzabile senza browser. Esegui \`grok login\` e riprova (metodi offerti: ${list}).`);
+    throw new ProviderError("authenticationRequired", t("main.grok.browserOnly", { methods: list }));
   }
   if (hasApiKey && !ids.has(GROK_API_KEY_AUTH_METHOD_ID)) {
-    throw new ProviderError("authenticationRequired", `Grok non offre l'accesso con chiave API anche se XAI_API_KEY è impostata (metodi offerti: ${list}). Aggiorna Grok.`);
+    throw new ProviderError("authenticationRequired", t("main.grok.apiKeyNotOffered", { methods: list }));
   }
-  throw new ProviderError("authenticationRequired", `Grok non offre un metodo di accesso senza browser (metodi offerti: ${list}). Aggiorna Grok.`);
+  throw new ProviderError("authenticationRequired", t("main.grok.noHeadlessMethod", { methods: list }));
 }
 
 /**
@@ -92,6 +93,7 @@ export function resolveGrokAuthMethod(advertised: string[], hasApiKey: boolean):
  * allow only Grok's read-only tools, every turn refuses the agent's own network tools, and
  * calls to Trama's MCP server pass.
  */
+// @model-text: the hook's systemMessage goes to the agent.
 export function grokHookResponse(params: JsonObject, policy: AcpTurnPolicy): Json {
   if (params.hookCallbackId !== GUARD_HOOK_ID) return {};
   if (asString(params.hookEventName)?.trim().toLowerCase() !== "pre_tool_use") return {};
@@ -157,7 +159,7 @@ const ignoredModel = (model: string) => !model.trim() || model === "default" || 
 export const grokProfile: AcpProviderProfile = {
   id: "grok",
   label: LABEL,
-  resolveExecutable: (configured) => resolveBinary(configured, ["grok"], "Grok CLI (grok) non trovato. Installalo e accedi con `grok login`."),
+  resolveExecutable: (configured) => resolveBinary(configured, ["grok"], t("main.grok.notInstalled")),
   async launch(executable, input) {
     // Request-based permission mode: Trama never passes --always-approve.
     const args = ["--permission-mode", "default", "agent", "--no-leader"];
@@ -185,6 +187,7 @@ export const grokProfile: AcpProviderProfile = {
       case "x.ai/ask_user_question":
         return { result: { outcome: "cancelled" } };
       case "x.ai/exit_plan_mode":
+        // @model-text: the feedback goes to the agent.
         return { result: { outcome: "cancelled", feedback: "Trama non usa la modalità piano di Grok. Concludi il turno." } };
       default:
         return null;
@@ -193,8 +196,8 @@ export const grokProfile: AcpProviderProfile = {
   async readAccount(executable) {
     const missing = await probeCliVersion(executable, buildChildEnvironment(executable, GROK_API_KEY_ENV_KEYS), LABEL);
     if (missing) return missing;
-    if (firstEnv(GROK_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: "Chiave API xAI" };
-    return fileExists(grokAuthFile()) ? { kind: "authenticated", label: "Accesso Grok CLI" } : { kind: "signedOut" };
+    if (firstEnv(GROK_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: t("main.grok.apiKeyLabel") };
+    return fileExists(grokAuthFile()) ? { kind: "authenticated", label: t("main.grok.cliSignInLabel") } : { kind: "signedOut" };
   },
   async listModelsFromCli(executable) {
     const result = await runCli(executable, ["models"], buildChildEnvironment(executable, GROK_API_KEY_ENV_KEYS));

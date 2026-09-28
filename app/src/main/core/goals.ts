@@ -3,6 +3,7 @@ import type { GoalExample, GoalStatus, ProjectDocument, ProjectGoal } from "@sha
 import { findGoal, goalDialogIsEmpty, goalLinks, isArchived, projectGoals } from "@shared/goals";
 import { shortId } from "@shared/ids";
 import { DomainError } from "./pact";
+import { t } from "./personLanguage";
 
 export const GOAL_TITLE_LIMIT = 200;
 export const GOAL_TEXT_LIMIT = 4_000;
@@ -24,15 +25,15 @@ export interface GoalInput {
 
 function cleanTitle(value: string): string {
   const title = value.trim().replace(/\s+/g, " ");
-  if (!title) throw new DomainError("Un obiettivo richiede un titolo.");
-  if (title.length > GOAL_TITLE_LIMIT) throw new DomainError(`Il titolo supera ${GOAL_TITLE_LIMIT} caratteri.`);
+  if (!title) throw new DomainError(t("main.goals.titleMissing"));
+  if (title.length > GOAL_TITLE_LIMIT) throw new DomainError(t("main.goals.titleTooLong", { limit: GOAL_TITLE_LIMIT }));
   return title;
 }
 
 function cleanOutcome(value: string): string {
   const outcome = value.trim();
-  if (!outcome) throw new DomainError("Descrivi il risultato atteso dell'obiettivo.");
-  if (outcome.length > GOAL_TEXT_LIMIT) throw new DomainError(`Il risultato atteso supera ${GOAL_TEXT_LIMIT} caratteri.`);
+  if (!outcome) throw new DomainError(t("main.goals.outcomeMissing"));
+  if (outcome.length > GOAL_TEXT_LIMIT) throw new DomainError(t("main.goals.outcomeTooLong", { limit: GOAL_TEXT_LIMIT }));
   return outcome;
 }
 
@@ -42,12 +43,12 @@ function cleanExamples(input: GoalExampleInput[], previous: GoalExample[] = []):
   for (const item of input) {
     const text = item.text.trim();
     if (!text) continue;
-    if (item.kind !== "accepted" && item.kind !== "refused") throw new DomainError("Un esempio è accettato o rifiutato.");
-    if (text.length > GOAL_TEXT_LIMIT) throw new DomainError(`Un esempio supera ${GOAL_TEXT_LIMIT} caratteri.`);
+    if (item.kind !== "accepted" && item.kind !== "refused") throw new DomainError(t("main.goals.exampleKind"));
+    if (text.length > GOAL_TEXT_LIMIT) throw new DomainError(t("main.goals.exampleTooLong", { limit: GOAL_TEXT_LIMIT }));
     const kept = item.id ? previous.find((e) => e.id === item.id) : undefined;
     examples.push({ id: kept?.id ?? shortId("E", randomUUID()), kind: item.kind, text });
   }
-  if (examples.length > GOAL_EXAMPLE_LIMIT) throw new DomainError(`Un obiettivo ha al massimo ${GOAL_EXAMPLE_LIMIT} esempi.`);
+  if (examples.length > GOAL_EXAMPLE_LIMIT) throw new DomainError(t("main.goals.tooManyExamples", { limit: GOAL_EXAMPLE_LIMIT }));
   return examples;
 }
 
@@ -79,7 +80,7 @@ export function proposeGoal(document: ProjectDocument, input: GoalInput, now = n
 
 export function requireGoal(document: ProjectDocument, id: string): ProjectGoal {
   const goal = findGoal(document, id);
-  if (!goal) throw new DomainError(`Obiettivo ${id} non trovato.`);
+  if (!goal) throw new DomainError(t("main.goals.notFound", { id }));
   return goal;
 }
 
@@ -93,13 +94,13 @@ export function updateGoal(
   const title = change.title !== undefined ? cleanTitle(change.title) : goal.title;
   const outcome = change.outcome !== undefined ? cleanOutcome(change.outcome) : goal.outcome;
   const examples = change.examples !== undefined ? cleanExamples(change.examples, goal.examples) : goal.examples;
-  if (change.status !== undefined && !STATUSES.includes(change.status)) throw new DomainError("Stato dell'obiettivo non valido.");
-  if (change.status === "proposed" && goal.status !== "proposed") throw new DomainError("Solo il Coordinatore propone un obiettivo.");
+  if (change.status !== undefined && !STATUSES.includes(change.status)) throw new DomainError(t("main.goals.statusInvalid"));
+  if (change.status === "proposed" && goal.status !== "proposed") throw new DomainError(t("main.goals.onlyCoordinatorProposes"));
   let decisionIds = goal.decisionIds;
   if (change.decisionIds !== undefined) {
     decisionIds = [...new Set(change.decisionIds.map((d) => d.trim()).filter(Boolean))];
     const unknown = decisionIds.filter((d) => !goal.decisionIds.includes(d) && !document.decisions.some((x) => x.id === d));
-    if (unknown.length) throw new DomainError(`Decisioni sconosciute: ${unknown.join(", ")}.`);
+    if (unknown.length) throw new DomainError(t("main.goals.unknownDecisions", { ids: unknown.join(", ") }));
   }
   Object.assign(goal, { title, outcome, examples, decisionIds, status: change.status ?? goal.status, updatedAt: now.toISOString() });
   return goal;
@@ -113,9 +114,9 @@ const ACTIVE_WORK = ["preparing", "running", "stopRequested"];
  */
 export function archiveGoal(document: ProjectDocument, id: string, now = new Date()): ProjectGoal {
   const goal = requireGoal(document, id);
-  if (isArchived(goal)) throw new DomainError("L'obiettivo è già archiviato.");
+  if (isArchived(goal)) throw new DomainError(t("main.goals.alreadyArchived"));
   if (goalLinks(document, goal.id).assignments.some((a) => ACTIVE_WORK.includes(a.assignment.status))) {
-    throw new DomainError("Il lavoro di questo obiettivo è in corso: fermalo o aspetta che finisca prima di archiviarlo.");
+    throw new DomainError(t("main.goals.workRunning"));
   }
   goal.archivedAt = now.toISOString();
   goal.updatedAt = now.toISOString();
@@ -125,7 +126,7 @@ export function archiveGoal(document: ProjectDocument, id: string, now = new Dat
 /** Brings an archived goal back to the working view, with the status it had. */
 export function restoreGoal(document: ProjectDocument, id: string, now = new Date()): ProjectGoal {
   const goal = requireGoal(document, id);
-  if (!isArchived(goal)) throw new DomainError("L'obiettivo non è archiviato.");
+  if (!isArchived(goal)) throw new DomainError(t("main.goals.notArchived"));
   goal.archivedAt = null;
   goal.updatedAt = now.toISOString();
   return goal;
@@ -138,7 +139,7 @@ export function restoreGoal(document: ProjectDocument, id: string, now = new Dat
 export function deleteEmptyGoal(document: ProjectDocument, id: string): void {
   const goal = requireGoal(document, id);
   if (!goalDialogIsEmpty(document, goal.id)) {
-    throw new DomainError("Questo obiettivo ha già una cronologia nella chat, che resta. Puoi archiviarlo.");
+    throw new DomainError(t("main.goals.hasHistory"));
   }
   document.goals = projectGoals(document).filter((g) => g.id !== goal.id);
   document.events = document.events.filter((e) => e.goalId !== goal.id);
@@ -160,14 +161,14 @@ export function observeExample(
   now = new Date(),
 ): void {
   const candidate = document.candidates.find((c) => c.id === input.candidateId);
-  if (!candidate) throw new DomainError("Candidato non trovato.");
+  if (!candidate) throw new DomainError(t("main.goals.candidateNotFound"));
   if (candidate.snapshotId !== input.snapshotId) {
-    throw new DomainError("Il candidato è cambiato mentre lo guardavi: ricontrolla gli esempi sulla versione attuale.");
+    throw new DomainError(t("main.goals.candidateChanged"));
   }
   const goal = findGoal(document, goalIdOf(candidate.id));
-  if (!goal) throw new DomainError("Il candidato non è collegato a un obiettivo.");
+  if (!goal) throw new DomainError(t("main.goals.candidateUnlinked"));
   const example = goal.examples.find((e) => e.id === input.exampleId);
-  if (!example) throw new DomainError("Esempio non trovato nell'obiettivo.");
+  if (!example) throw new DomainError(t("main.goals.exampleNotFound"));
   candidate.exampleObservations = [
     ...(candidate.exampleObservations ?? []),
     {
@@ -186,6 +187,7 @@ const exampleLines = (goal: ProjectGoal, kind: GoalExample["kind"]) =>
   goal.examples.filter((e) => e.kind === kind).map((e) => `- ${e.id}: ${e.text}`);
 
 /** The goal as the Coordinator reads it with a message sent while the chat is filtered on it (data, not instructions). */
+// @model-text: the Coordinator's turn input.
 export function goalContext(goal: ProjectGoal): string {
   const accepted = exampleLines(goal, "accepted");
   const refused = exampleLines(goal, "refused");
