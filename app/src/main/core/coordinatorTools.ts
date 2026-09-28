@@ -688,10 +688,12 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
   const learning = context.learning;
   if (!learning) return toolFailure("learning_unavailable", "Learning is not available for this project.");
   const skillContext = { origin: "foreground" as const };
-  // Only a write that succeeded resets its review counter: a refused one saved nothing.
-  const wrote = (result: Record<string, unknown>) => {
+  // Only a write that succeeded resets its review counter: a refused one saved nothing. A refused write is a tool
+  // error (issue #305), and the model still reads the store's whole answer.
+  const wrote = (result: Record<string, unknown>): ToolResult => {
     if (result.success === true) context.learningToolUsed?.(name);
-    return toolSuccess(result as JsonObject);
+    const answer = toolSuccess(result as JsonObject);
+    return result.success === false ? { ...answer, isError: true } : answer;
   };
   switch (name) {
     case "memory":

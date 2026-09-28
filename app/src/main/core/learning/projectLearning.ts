@@ -45,7 +45,12 @@ export interface MemoryProposal {
   operations?: string[];
   /** The entry each old_text matched when the review proposed it: approval needs the same match. */
   expected?: { oldText: string; entry: string | null }[];
+  /** Trama's own proposal for a memory over its limit (issue #305); absent for a review's proposal. */
+  kind?: "consolidation";
 }
+
+/** What the person reads in Aspetta te for a review's proposal: the review's own summary is written for the model. */
+const REVIEW_PROPOSAL_SUMMARY = "Una revisione propone di cambiare la memoria.";
 
 const payloadOperations = (payload: JsonRecord): JsonRecord[] =>
   Array.isArray(payload.operations) ? (payload.operations as JsonRecord[]).map((op) => (op && typeof op === "object" ? op : {})) : [payload];
@@ -155,22 +160,53 @@ export class ProjectLearning {
   }
 
   stageProposal(proposal: { target: MemoryTarget; summary: string; payload: JsonRecord }): string {
-    const id = randomUUID().slice(0, 8);
     const operations = payloadOperations(proposal.payload).map(batchOpLine);
+    return this.saveProposal({ ...proposal, summary: REVIEW_PROPOSAL_SUMMARY }, operations);
+  }
+
+  private saveProposal(proposal: Pick<MemoryProposal, "target" | "summary" | "payload" | "kind">, operations: string[]): string {
+    const id = randomUUID().slice(0, 8);
     const expected = this.matches(proposal.target, proposal.payload);
     writeJson(join(this.projectDir, "proposals.json"), [...this.proposals(), { id, createdAt: new Date().toISOString(), ...proposal, operations, expected }]);
     return id;
+  }
+
+  /**
+   * A store over its limit (after the move from the old single text, or a file edited by hand) becomes a proposal
+   * for the person instead of a loop of refused writes (issue #305): the oldest notes leave until the rest fits.
+   * Nothing changes before the person applies it; one proposal per store at a time.
+   */
+  proposeConsolidation(target: MemoryTarget): string | null {
+    if (!this.memory.targetEnabled(target)) return null;
+    if (this.proposals().some((p) => p.kind === "consolidation" && p.target === target)) return null;
+    const entries = this.currentEntries(target);
+    const limit = this.memory.limitFor(target);
+    const size = (list: string[]) => [...list.join(ENTRY_DELIMITER)].length;
+    const chars = size(entries);
+    if (chars <= limit) return null;
+    const kept = [...entries];
+    const removed: string[] = [];
+    while (kept.length > 1 && size(kept) > limit) removed.push(kept.shift()!);
+    if (!removed.length || size(kept) > limit) return null;
+    const format = (n: number) => n.toLocaleString("it-IT");
+    const summary =
+      `${target === "user" ? "Il profilo" : "La memoria del progetto"} supera il limite (${format(chars)} su ${format(limit)} caratteri). ` +
+      "Trama propone di togliere le note più vecchie; puoi anche accorciarle a mano.";
+    return this.saveProposal(
+      { target, summary, kind: "consolidation", payload: { target, operations: removed.map((entry) => ({ action: "remove", old_text: entry })) } },
+      [summary, ...removed.map((entry) => `- Togli: ${entry}`)],
+    );
   }
 
   /** The person approves or discards a proposal; an approved one is applied as they wrote it. */
   resolveProposal(id: string, approve: boolean): JsonRecord {
     const all = this.proposals();
     const proposal = all.find((p) => p.id === id);
-    if (!proposal) return { success: false, error: `Unknown proposal ${id}.` };
+    if (!proposal) return { success: false, code: "unknown_proposal", error: `Unknown proposal ${id}.` };
     if (approve && proposal.expected) {
       const now = this.matches(proposal.target, proposal.payload);
       const changed = proposal.expected.some((e, i) => now[i]?.entry !== e.entry);
-      if (changed) return { success: false, error: "La memoria è cambiata dopo la proposta: le voci che toccava non sono più le stesse. Scartala." };
+      if (changed) return { success: false, code: "stale_proposal", error: "La memoria è cambiata dopo la proposta: le voci che toccava non sono più le stesse. Scartala." };
     }
     const result = approve ? applyMemoryProposal(this.memory, proposal.payload) : { success: true, message: "Discarded." };
     if (result.success === true) writeJson(join(this.projectDir, "proposals.json"), all.filter((p) => p.id !== id));
