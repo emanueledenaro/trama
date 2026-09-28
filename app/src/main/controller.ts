@@ -392,6 +392,7 @@ import { type AgentWork, type PresenceContext, PresenceService } from "./core/pr
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
 import { candidateSuperseded, divergenceHolds, divergenceSummary } from "@shared/conflictScope";
+import { blockedReviews, REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -1045,7 +1046,11 @@ export class TramaController {
       Object.fromEntries(
         document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, { ...candidateReport(document, c, project.snapshot.headSHA), ...this.mergeView(project, c) }]),
       );
-    return { sliceViews: views, candidateReports: reports, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
+    return {
+      sliceViews: views,
+      candidateReports: reports,
+      memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined,
+    };
   }
 
   /**
@@ -5546,7 +5551,19 @@ export class TramaController {
    * the suite on the base and on the candidate; the other figures are read-only sessions on cheap models. The review
    * recorded on the candidate carries the gate's verdict; a blocking finding sends the work back to its developer.
    */
-  private async reviewCandidate(candidateId: string, requestId: string | null): Promise<TechnicalReview> {
+  private reviewCandidate(candidateId: string, requestId: string | null): Promise<TechnicalReview> {
+    // A second call while the gate runs, as after a tool call that timed out, waits for the same gate (issue #389).
+    const running = this.reviewsInFlight.get(candidateId);
+    if (running) return running;
+    const review = this.runCandidateGate(candidateId, requestId).finally(() => this.reviewsInFlight.delete(candidateId));
+    this.reviewsInFlight.set(candidateId, review);
+    return review;
+  }
+
+  /** The candidates whose gate runs now, with the review it will record. */
+  private readonly reviewsInFlight = new Map<string, Promise<TechnicalReview>>();
+
+  private async runCandidateGate(candidateId: string, requestId: string | null): Promise<TechnicalReview> {
     const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
@@ -5791,7 +5808,13 @@ export class TramaController {
         { assignmentId: assignment.id, workKey },
       );
     }
-    gate.returned = { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
+    // Too many blocks in a row on the same work (issue #389): the findings stay with the developer's work, but Trama
+    // does not resume it; the person decides how to go on from Aspetta te.
+    const rounds = blockedReviews(document, assignment).length;
+    gate.returned =
+      rounds >= REVIEW_LOOP_LIMIT
+        ? { assignmentId: assignment.id, at: new Date().toISOString(), waiting: translate(this.state.language, "reviewLoop.held", { count: rounds }), held: true }
+        : { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
     this.changedIn(project);
   }
 
