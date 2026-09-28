@@ -200,6 +200,28 @@ export const en: Record<keyof typeof it, string> = {
   "settings.parallel.openProject": "Open a project to choose the limit.",
   "settings.parallel.demo": "The example project has no limit to choose.",
   "settings.parallel.default": "Three, unless you change it.",
+  "settings.parallel.shared": "At most in all projects",
+  "settings.parallel.sharedLabel": "Developers in all projects",
+  "settings.parallel.sharedDescription":
+    "It also covers the projects you leave while their team works. Work without a free slot waits and starts in the project order of the Overview. Six, unless you change it.",
+
+  // Projects overview (issue #39)
+  "overview.ci.summary": "CI of the open pull requests: {parts}",
+  "overview.ci.none": "CI: no open pull request with checks",
+  "overview.ci.failing": "{count} failing",
+  "overview.ci.failing.one": "{count} failing",
+  "overview.ci.pending": "{count} running",
+  "overview.ci.passing": "{count} passing",
+  "overview.ci.passing.one": "{count} passing",
+  "overview.priority.title": "Project order",
+  "overview.priority.note":
+    "The projects you leave go on with the work already authorized. When a developer is free, it goes to the first project in this list with work waiting. Opening a project does not change the order.",
+  "overview.priority.capacity": "Developers at work in all projects: {running} of {limit}.",
+  "overview.priority.waiting": "{count} assignments wait for a free developer.",
+  "overview.priority.waiting.one": "{count} assignment waits for a free developer.",
+  "overview.priority.waitingBadge": "{count} waiting",
+  "overview.priority.up": "Move {name} up",
+  "overview.priority.down": "Move {name} down",
 
   "settings.standard.description":
     "Trama's Clean Code standard, version {version}. Developers get it as Trama's text next to the skills, which keep their original text, and the technical review also checks the diff against this standard.",

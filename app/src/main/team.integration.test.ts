@@ -301,6 +301,188 @@ describe("switching project (C07)", () => {
   }, 30_000);
 });
 
+describe("switching project with shared capacity (issue #39)", () => {
+  const makeRepo = async (remote: string | null = null) => {
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    if (remote) await git(["remote", "add", "origin", remote], repo, false);
+    return repo;
+  };
+  const makeController = async (data?: string) => {
+    data ??= await mkdtemp(join(tmpdir(), "trama-data-"));
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.updateSettings({ continuousWork: false });
+    return data;
+  };
+  const open = async (repo: string) => {
+    await controller!.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    return controller!.snapshot.project!;
+  };
+  const teamWithMandate = async () => {
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[proponi-team]", null, null, null);
+    await controller!.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller!.grantMandate({
+      requestId: null,
+      objectives: ["Nota"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    });
+    return document;
+  };
+
+  it("queues work beyond the shared limit and starts it in its own project when a slot frees up", async () => {
+    await makeController();
+    await controller!.updateSettings({ sharedDevelopers: 1 });
+    const first = await makeRepo();
+    const second = await makeRepo();
+    const a = await open(first);
+    const firstDocument = await teamWithMandate();
+    await controller!.send("[assegna] [lento]", null, null, null);
+    const running = findSpecialist(firstDocument, "Ada")!.assignments[0]!;
+    await until(() => running.status === "running");
+
+    const b = await open(second);
+    const secondDocument = await teamWithMandate();
+    await controller!.send("[assegna] [lento]", null, null, null);
+    const waiting = findSpecialist(secondDocument, "Ada")!.assignments[0]!;
+    await until(() => secondDocument.events.some((e) => e.assignmentId === waiting.id && e.content.type === "activity" && e.content.title === "In attesa di uno sviluppatore libero"));
+    expect(waiting.status).toBe("preparing");
+    expect(controller!.snapshot.sharedCapacity).toEqual({ running: 1, limit: 1, waiting: 1 });
+    // Opening projects never ranks them: the order stays the Product Owner's.
+    expect(controller!.snapshot.settings.projectPriority).toBeUndefined();
+
+    // Back in the first project, the second one keeps its place in line in the background.
+    await open(first);
+    expect(controller!.snapshot.backgroundProjects.map((p) => p.id)).toEqual([b.id]);
+    const overview = await controller!.projectsOverview();
+    expect(overview.find((o) => o.id === b.id)).toMatchObject({ waitingForCapacity: 1, attention: "running", ci: null });
+    expect(overview.map((o) => o.priority).sort()).toEqual([1, 2]);
+
+    // The freed slot goes to the second project's work, which runs and writes in its own history.
+    await controller!.stopSpecialistWork(running.id);
+    await until(() => running.status === "stopped");
+    await until(() => waiting.status === "running");
+    expect(controller!.snapshot.project!.id).toBe(a.id);
+    expect(secondDocument.events.some((e) => e.assignmentId === waiting.id && e.content.type === "activity" && e.content.title === "Avvio dell'incarico")).toBe(true);
+    expect(firstDocument.events.some((e) => e.assignmentId === waiting.id)).toBe(false);
+    expect(controller!.snapshot.sharedCapacity).toEqual({ running: 1, limit: 1, waiting: 0 });
+
+    await open(second);
+    await controller!.stopSpecialistWork(waiting.id);
+    await until(() => waiting.status === "stopped");
+  }, 40_000);
+
+  it("gives a freed slot to the project the Product Owner ranked first, whatever was opened last", async () => {
+    await makeController();
+    await controller!.updateSettings({ sharedDevelopers: 1 });
+    const repos = [await makeRepo(), await makeRepo(), await makeRepo()];
+    const holder = await open(repos[0]!);
+    const holderDocument = await teamWithMandate();
+    await controller!.send("[assegna] [lento]", null, null, null);
+    const running = findSpecialist(holderDocument, "Ada")!.assignments[0]!;
+    await until(() => running.status === "running");
+    const queued: { id: string; assignment: () => ReturnType<typeof findSpecialist> }[] = [];
+    for (const repo of repos.slice(1)) {
+      const project = await open(repo);
+      const document = await teamWithMandate();
+      await controller!.send("[assegna] [lento]", null, null, null);
+      await until(() => findSpecialist(document, "Ada")!.assignments[0]?.status === "preparing");
+      queued.push({ id: project.id, assignment: () => findSpecialist(document, "Ada") });
+    }
+    expect(controller!.snapshot.sharedCapacity.waiting).toBe(2);
+    // The person puts the project opened last first; opening the other one again does not move it.
+    const last = queued[1]!;
+    await controller!.prioritizeProject(last.id, "up");
+    await controller!.prioritizeProject(last.id, "up");
+    await controller!.prioritizeProject(last.id, "up");
+    const order = controller!.snapshot.settings.projectPriority!;
+    expect(order[0]).toBe(last.id);
+    await open(repos[1]!);
+    await open(repos[0]!);
+    expect(controller!.snapshot.settings.projectPriority).toEqual(order);
+    await controller!.updateSettings({ projectPriority: [] });
+    expect(controller!.snapshot.settings.projectPriority).toEqual(order);
+
+    await controller!.stopSpecialistWork(running.id);
+    await until(() => last.assignment()!.assignments[0]!.status === "running");
+    expect(queued[0]!.assignment()!.assignments[0]!.status).toBe("preparing");
+    expect(controller!.snapshot.project!.id).toBe(holder.id);
+
+    // A higher shared limit starts the rest of the line at once.
+    await controller!.updateSettings({ sharedDevelopers: 2 });
+    await until(() => queued[0]!.assignment()!.assignments[0]!.status === "running");
+    for (const [index, repo] of repos.slice(1).entries()) {
+      await open(repo);
+      const assignment = queued[index]!.assignment()!.assignments[0]!;
+      await controller!.stopSpecialistWork(assignment.id);
+      await until(() => assignment.status === "stopped");
+    }
+  }, 60_000);
+
+  it("keeps the shared limit and the order of the projects after a restart", async () => {
+    const data = await makeController();
+    const a = await open(await makeRepo());
+    const b = await open(await makeRepo());
+    await controller!.updateSettings({ sharedDevelopers: 3 });
+    const order = [...(await controller!.projectsOverview())].sort((x, y) => x.priority - y.priority).map((o) => o.id);
+    await controller!.prioritizeProject(order[1]!, "up");
+    await controller!.stop();
+    await makeController(data);
+    expect(controller!.snapshot.settings.sharedDevelopers).toBe(3);
+    expect(controller!.snapshot.sharedCapacity.limit).toBe(3);
+    expect(controller!.snapshot.settings.projectPriority).toEqual([order[1], order[0]]);
+    expect([a.id, b.id].sort()).toEqual([...order].sort());
+  }, 30_000);
+
+  it("saves a late draft into the project it was written in", async () => {
+    await makeController();
+    const first = await makeRepo();
+    const second = await makeRepo();
+    const a = await open(first);
+    const b = await open(second);
+    // The first project has no running work, so it was saved and let go when the person left it.
+    await controller!.saveDraft("Bozza scritta nel primo progetto", a.id);
+    expect(controller!.snapshot.project!.document.composerDraft ?? "").toBe("");
+    await controller!.saveDraft("Bozza del secondo", b.id);
+    const reopened = await open(first);
+    expect(reopened.document.composerDraft).toBe("Bozza scritta nel primo progetto");
+    expect((await open(second)).document.composerDraft).toBe("Bozza del secondo");
+  }, 30_000);
+
+  it("keeps two folders with the same remote as two projects", async () => {
+    await makeController();
+    // One remote for both copies; not on GitHub, so the test opens no connection.
+    const remote = join(tmpdir(), "negozio-condiviso.git");
+    const first = await makeRepo(remote);
+    const second = await makeRepo(remote);
+    const a = await open(first);
+    await controller!.saveDraft("Solo nella prima copia", a.id);
+    const b = await open(second);
+    expect(b.id).not.toBe(a.id);
+    expect(b.document).not.toBe(a.document);
+    expect(b.document.composerDraft ?? "").toBe("");
+    expect(controller!.snapshot.recentProjects.map((p) => p.id).sort()).toEqual([a.id, b.id].sort());
+    expect((await open(first)).document.composerDraft).toBe("Solo nella prima copia");
+  }, 30_000);
+});
+
 describe("quit and provider waits (C11)", () => {
   async function running() {
     const data = await mkdtemp(join(tmpdir(), "trama-data-"));

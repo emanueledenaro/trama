@@ -20,7 +20,7 @@ import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference 
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -511,6 +511,9 @@ function MethodSection() {
   );
 }
 
+/** The shared limit's choices (issue #39): the small numbers one by one, then the larger steps. */
+const SHARED_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+
 const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
 
 /** W08: how many developers work at the same time in the open project; three unless the person changes it. */
@@ -519,6 +522,7 @@ function ParallelDevelopersGroup() {
   const usable = project && !project.isDemo && project.stateWritable;
   const limit = project ? parallelDevelopers(project.document) : null;
   const t = useT();
+  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
   return (
     <Group title={t("settings.parallel.title")} note={t("settings.parallel.note")}>
       <Row
@@ -544,6 +548,29 @@ function ParallelDevelopersGroup() {
               ))}
             </div>
           ) : null
+        }
+      />
+      <Row
+        label={t("settings.parallel.shared")}
+        description={t("settings.parallel.sharedDescription")}
+        control={
+          <div role="radiogroup" aria-label={t("settings.parallel.sharedLabel")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="shared-developers">
+            {SHARED_OPTIONS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={shared === value}
+                onClick={() => void act("settings:update", { sharedDevelopers: value })}
+                className={cn(
+                  "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+                  shared === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
         }
       />
     </Group>
