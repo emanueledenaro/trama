@@ -3592,6 +3592,8 @@ await app.close();
 {
   const focusProject = await mkdtemp(join(tmpdir(), "trama-ui-esame-"));
   await cp(resolve("resources/DemoProject"), focusProject, { recursive: true });
+  // Only git's checks: a machine with Swift would build and test the package before the axes open.
+  await rm(join(focusProject, "Package.swift"));
   const focusGit = (...args) => execFileSync("git", ["-C", focusProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", ...args], { stdio: "ignore" });
   focusGit("init", "-q", "-b", "main");
   focusGit("add", ".");

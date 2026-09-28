@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -203,6 +203,9 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     process.env.FAKE_CODEX_LIGHT_MODEL = "gpt-5.5-mini";
     const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    // Without Package.swift the checkout's checks are git's own: the fake Codex runs checks for real, and a runner with
+    // Swift would build and test the package before the axes open.
+    await rm(join(repo, "Package.swift"));
     const commit = (message: string) => git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", message], repo, false);
     await git(["init", "-b", "main"], repo, false);
     await git(["add", "."], repo, false);
@@ -254,6 +257,10 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     // The checks ran on the checkout at the pinned HEAD; both axes are open and wait for their gate.
     await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null);
     expect(audit.specSource).toBe("Issue #12 citata nei commit");
+    expect(audit.checks.map((c) => [c.check, c.result])).toEqual([
+      ["git_status", "pass"],
+      ["git_diff_check", "pass"],
+    ]);
 
     // The authorized work goes on while focus mode is open.
     await controller.send("[proponi-team]", null, null, null);
