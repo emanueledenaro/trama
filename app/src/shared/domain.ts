@@ -1596,6 +1596,11 @@ export interface ActiveProjectState {
   sliceViews?: Record<string, SliceView[]>;
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
+  /**
+   * What waits for the person, ordered (issue #292): the one list the summary, the sidebar counter and the next step
+   * read, computed by the main process; absent before the first computation.
+   */
+  waiting?: import("./waitingForYou").WaitingItem[];
   /** The Coordinator's status line (Q6), computed by the main process; absent before the first computation. */
   statusLine?: StatusLineView | null;
   /** The AI Hero skills Trama copies are present in the project. */
