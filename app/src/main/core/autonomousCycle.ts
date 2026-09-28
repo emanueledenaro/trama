@@ -176,6 +176,3 @@ export function autonomyLine(document: ProjectDocument): string {
     : "Senza un mandato che li copra, comprensione, team, seam e fette restano della persona.";
   return `${steps} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
 }
-
-/** The line under a step the Coordinator took, in Activity: whose step it was and how to undo it. */
-export const AUTONOMOUS_STEP_DETAIL = "Passo fatto dal Coordinatore dentro il mandato, senza chiederti conferma. Puoi correggerlo da Attività.";

@@ -3,6 +3,7 @@ import { cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { activityLog } from "@shared/activity";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { developers, findSpecialist } from "./core/team";
@@ -184,8 +185,10 @@ describe("team flow", () => {
     expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
     expect(plan.slicing!.approvedBy).toBe("coordinator");
     expect((document.autonomousSteps ?? []).map((s) => s.move)).toEqual(["confirmUnderstanding", "confirmSeams", "confirmSlices"]);
-    const told = document.events.filter((e) => e.origin === "coordinator" && e.content.type === "activity").map((e) => (e.content as { title: string }).title);
-    expect(told).toEqual(expect.arrayContaining(["Comprensione confermata dal Coordinatore", "Seam confermati dal Coordinatore", "Fette confermate dal Coordinatore"]));
+    // Activity tells them from the records; the chat keeps no line for them (Q6).
+    const told = activityLog(document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
+    expect(told).toEqual(["Fette confermate dal Coordinatore", "Seam confermati dal Coordinatore", "Comprensione confermata dal Coordinatore"]);
+    expect(document.events.some((e) => e.content.type === "activity" && /dal Coordinatore$/.test(e.content.title))).toBe(false);
 
     // Then Trama assigns the first unblocked slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
     const specialist = findSpecialist(document, "Ada")!;

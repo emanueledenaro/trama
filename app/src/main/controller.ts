@@ -149,7 +149,6 @@ import {
 } from "./core/continuousWork";
 import { openGrillingQuestions } from "@shared/grilling";
 import {
-  AUTONOMOUS_STEP_DETAIL,
   correctAutonomousStep,
   correctionMessage,
   type DelegatedStep,
@@ -2946,13 +2945,8 @@ export class TramaController {
       for (const step of steps) {
         const summary = this.takeDelegatedStep(project, step);
         if (!summary) continue;
+        // Told in Activity and in the recap from the record, not in the chat: the single moves stay out of it (Q6).
         const record = recordAutonomousStep(document, step, summary);
-        appendEvent(
-          document,
-          "coordinator",
-          { type: "activity", title: STEP_LABELS[step.move], detail: `${summary}\n${AUTONOMOUS_STEP_DETAIL}`, tone: "info" },
-          step.requestId,
-        );
         taken.push(STEP_LABELS[record.move]);
       }
     }
