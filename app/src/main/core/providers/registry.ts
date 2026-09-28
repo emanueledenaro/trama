@@ -12,7 +12,8 @@ import type { AgentRuntime, RuntimeOptions } from "./types";
 
 type Factory = (options: RuntimeOptions) => AgentRuntime;
 
-const FACTORIES: Partial<Record<ProviderId, Factory>> = {
+/** One factory per provider: a Record, so a tenth provider does not compile without its adapter. */
+const FACTORIES: Record<ProviderId, Factory> = {
   codex: (options) => new CodexRuntime(options),
   claudeAgent: (options) => new ClaudeAgentRuntime(options),
   opencode: (options) => new OpenCodeRuntime(options),
@@ -23,9 +24,6 @@ const FACTORIES: Partial<Record<ProviderId, Factory>> = {
   antigravity: (options) => new AntigravityRuntime(options),
   pi: (options) => new PiRuntime(options),
 };
-
-/** Providers with an adapter in this build. */
-export const ADAPTED_PROVIDERS = Object.keys(FACTORIES) as ProviderId[];
 
 export function hasAdapter(id: ProviderId): boolean {
   return Boolean(FACTORIES[id]);
