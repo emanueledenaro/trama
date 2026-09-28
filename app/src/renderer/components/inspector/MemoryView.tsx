@@ -290,7 +290,7 @@ function ReviewsSection({ learning }: { learning: LearningView }) {
               {run.error ? ` ${run.error}` : ""}
             </p>
             <p className="mt-0.5 text-muted-foreground/80">
-              {run.toolCalls} chiamate{run.usedTokens !== null ? `, ${run.usedTokens.toLocaleString("it-IT")} token` : ""}
+              {run.toolCalls} chiamate{run.usedTokens !== null ? `, ${run.usedTokens.toLocaleString("it-IT")} token elaborati` : ""}
               {run.model ? `, ${run.model}` : ""}
             </p>
           </div>

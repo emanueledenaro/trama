@@ -308,6 +308,27 @@ export const ANTIGRAVITY_KNOWN_MODELS: Readonly<Record<string, readonly string[]
   "GPT-OSS 120B": ["medium"],
 };
 
+/**
+ * The context window of each model Antigravity offers, from the model makers' catalogs: `agy models` prints only
+ * names and levels (issue #305). A model missing here gives no context reading, so the meter never guesses.
+ */
+export const ANTIGRAVITY_CONTEXT_WINDOWS: Readonly<Record<string, number>> = {
+  "Gemini 3.8 Flash": 1_048_576,
+  "Gemini 3.7 Flash": 1_048_576,
+  "Gemini 3.6 Flash": 1_048_576,
+  "Gemini 3.5 Flash": 1_048_576,
+  "Gemini 3.1 Pro": 1_048_576,
+  "Claude Sonnet 4.6": 200_000,
+  "Claude Opus 4.6": 200_000,
+  "GPT-OSS 120B": 131_072,
+};
+
+/** The window of a model label such as `Gemini 3.8 Flash (High)`, or null when the catalog does not know it. */
+export function antigravityContextWindow(label: string): number | null {
+  const name = parseAntigravityCliModelLabel(label)?.model ?? label.trim();
+  return Object.hasOwn(ANTIGRAVITY_CONTEXT_WINDOWS, name) ? ANTIGRAVITY_CONTEXT_WINDOWS[name]! : null;
+}
+
 const DEFAULT_EFFORT_BY_MODEL: Readonly<Record<string, string>> = {
   "Gemini 3.8 Flash": "high",
   "Gemini 3.7 Flash": "high",
@@ -1106,6 +1127,7 @@ export class AntigravityRuntime implements AgentRuntime {
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
     let sandboxFlag = false;
     const named = parseAntigravityCliModelLabel(options.model);
+    const contextWindow = antigravityContextWindow(options.model);
     this.pending = pending;
     const toolServer = this.options.toolServer ?? null;
     let text: string;
@@ -1266,8 +1288,9 @@ export class AntigravityRuntime implements AgentRuntime {
         const usage = update.usage;
         const input = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
         const output = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
-        if (input !== null || output !== null) {
-          options.onEvent({ type: "tokenUsage", usedTokens: (input ?? 0) + (output ?? 0), contextWindow: null });
+        // A step's request is the context in use; without the model's window there is no reading at all.
+        if ((input !== null || output !== null) && contextWindow !== null) {
+          options.onEvent({ type: "tokenUsage", usedTokens: (input ?? 0) + (output ?? 0), contextWindow });
         }
       });
       child.stdout!.setEncoding("utf8");
