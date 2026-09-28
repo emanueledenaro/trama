@@ -9,6 +9,7 @@ import { Sep } from "@/components/ui/sep";
 import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { InspectorSection } from "./Inspector";
+import { ReferenceText } from "@/components/chat/ReferenceText";
 
 /**
  * Activity (Q6): the Coordinator's automatic moves of the project, the rounds that did something (A05), the steps of
@@ -97,7 +98,11 @@ function RoundRow({ entry }: { entry: ActivityEntry }) {
         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
       </div>
       <p className="mt-0.5 text-ui-xs text-muted-foreground">{formatDate(entry.startedAt)}</p>
-      {entry.detail ? <p className="mt-1 text-ui-sm text-muted-foreground">{entry.detail}</p> : null}
+      {entry.detail ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={entry.detail} />
+        </p>
+      ) : null}
     </li>
   );
 }
@@ -119,7 +124,11 @@ function ProblemRow({ entry }: { entry: ActivityEntry }) {
           </>
         ) : null}
       </p>
-      {entry.detail ? <p className="mt-1 text-ui-sm text-muted-foreground">{entry.detail}</p> : null}
+      {entry.detail ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={entry.detail} />
+        </p>
+      ) : null}
       {entry.issue ? (
         <div className="cta-row mt-1.5">
           <Button size="xs" variant="ghost" onClick={() => void act("shell:openExternal", { url: entry.issue!.url })}>
@@ -146,7 +155,11 @@ function ProblemBacklog() {
               <Badge tone="secondary">{problem.issue ? `#${problem.issue.number}` : "Solo in Trama"}</Badge>
             </div>
             <p className="mt-0.5 text-ui-xs text-muted-foreground">{problem.evidence.label}</p>
-            {problem.placement ? <p className="mt-1 text-ui-sm text-muted-foreground">{problem.placement.reason}</p> : null}
+            {problem.placement ? (
+              <p className="mt-1 text-ui-sm text-muted-foreground">
+                <ReferenceText text={problem.placement.reason} />
+              </p>
+            ) : null}
             {problem.issue ? (
               <div className="cta-row mt-1.5">
                 <Button size="xs" variant="ghost" onClick={() => void act("shell:openExternal", { url: problem.issue!.url })}>
@@ -187,7 +200,11 @@ function ActivityRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }
           </>
         ) : null}
       </p>
-      {entry.detail ? <p className="mt-1 text-ui-sm text-muted-foreground">{entry.detail}</p> : null}
+      {entry.detail ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={entry.detail} />
+        </p>
+      ) : null}
       {entry.toolErrors.length ? (
         <details className="mt-1 text-ui-xs text-muted-foreground" data-testid="activity-tool-errors">
           <summary className="cursor-pointer">

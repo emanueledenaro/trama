@@ -26,6 +26,10 @@ export type InspectorTarget =
   | { kind: "activity" }
   | { kind: "issues" }
   | { kind: "issue"; number: number }
+  /** A pull request, a commit or a branch a message cites (issue #277). */
+  | { kind: "pullRequest"; number: number }
+  | { kind: "commit"; sha: string }
+  | { kind: "branch"; name: string }
   | { kind: "goals"; create?: boolean }
   | { kind: "goal"; id: string; edit?: boolean };
 

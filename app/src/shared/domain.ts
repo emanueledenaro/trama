@@ -482,6 +482,8 @@ export interface CoordinatorState {
   memorySentToThread: string | null;
   /** Fingerprint of the adopted practices last sent to the thread. */
   practicesSent?: string | null;
+  /** The listing of Trama's references last sent to the thread (issue #277). */
+  referencesSent?: string | null;
   /** The late rules (writing, grilling) the thread holds: a thread opened before they changed receives them in a turn. */
   rulesSent?: string | null;
   /** Percent of the context window above which the chat shows a notice (5-95). */
