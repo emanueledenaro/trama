@@ -1,12 +1,20 @@
 # A07: unione dei candidati con il via libera; quelli di interfaccia aspettano la persona
 
-Data: 28 settembre 2026. Issue #247, specifica #239 (Q1, Q9), ADR 0017 che aggiorna l'ADR 0003. Base: `origin/main` {{BASE}}.
+Data: 28 settembre 2026. Issue #247, specifica #239 (Q1, Q9), ADR 0017 che aggiorna l'ADR 0003. Base: `origin/main` d550ab7.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`) e il gh finto (`app/test-fixtures/fake-gh.mjs`). Nessuna esecuzione reale di un provider e nessuna pull request vera su GitHub.
 
-{{RESULTS}}
+Su Linux nel container (xvfb), dopo il merge di `origin/main` a `d550ab7`:
+
+- `npm ci`: riuscito.
+- `npx tsc --noEmit -p .`: nessun errore.
+- `npx vitest run`: 135 file, 1265 test superati, 3 saltati.
+- `npm run build`: riuscito.
+- `xvfb-run -a node scripts/ui-check.mjs`: corsa completa, uscita 0, 357 schermate. Passo nuovo `30a`-`30e`, in chiaro e in scuro. Una corsa precedente sulla stessa base si era fermata al passo del monitor ("Monitor attivo" non visibile entro il tempo), un passo che questo lavoro non tocca; la corsa successiva è passata. Anche una corsa prima dell'ultimo merge di main era passata con 357 schermate.
+- `npm run check:names`, `npm run check:upstream-names`: ok.
+- `node scripts/conventional-commits/cli.mjs commit-range origin/main HEAD`: ok.
 
 ## Comportamento
 
@@ -32,7 +40,7 @@ Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`) e il gh
 
 ## Schermate
 
-Prima e dopo, in chiaro e in scuro, in `a07-unione-con-via-libera/`. Le schermate "prima" vengono da `origin/main` {{BASE}}, con la stessa prova della ui-check (lo stesso progetto con lo script `screenshots` e il gh finto) eseguita sulla build di main solo per questa prova.
+Prima e dopo, in chiaro e in scuro, in `a07-unione-con-via-libera/`. Le schermate "prima" vengono da `origin/main` 58ec23f, con la stessa prova della ui-check (lo stesso progetto con lo script `screenshots` e il gh finto) eseguita sulla build di main solo per questa prova.
 
 - 01-04: un candidato senza modifiche all'interfaccia, verificato e con il via libera. Prima aspetta la persona con "Approva questo candidato"; dopo Trama lo unisce da sola e Attività e il riepilogo lo dicono.
 - 05-08: un candidato che cambia `web/index.css`. Prima è un "Candidato da guardare" senza schermate; dopo è un'"Interfaccia da guardare" con le schermate prima e dopo, in chiaro e in scuro, e "Rifiuta" e "Approva e unisci" a destra, il primario per ultimo.
