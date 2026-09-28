@@ -32,7 +32,7 @@ Tutte le prove usano il Codex finto e un GitHub finto nei test. Nessuna esecuzio
 - `npx tsc --noEmit -p .`: nessun errore.
 - `npx vitest run`: 136 file, 1296 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: vedi il resoconto della pull request. Passi nuovi: `26a-merge-stopped` e `26b-merge-by-mandate`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 355 schermate. Passi nuovi: `26a-merge-stopped` e `26b-merge-by-mandate`, in chiaro e in scuro.
 
 ## Test
 
