@@ -316,6 +316,18 @@ import { fixedBanInfo } from "@shared/fixedBans";
 import { interfaceFiles } from "@shared/interfaceChange";
 import { roleProfile } from "@shared/roster";
 import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
+import {
+  assignFinding,
+  auditReportMarkdown,
+  candidateName,
+  findingIssueBody,
+  findingPactCard,
+  FindingWorkError,
+  actionableFinding,
+  publicationTarget,
+  recordFindingTicket,
+  recordPublication,
+} from "./core/findingWork";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
@@ -5529,6 +5541,115 @@ export class TramaController {
     this.auditRuns.set(audit.id, { projectId: project.id, clients: new Set() });
     void this.runAudit(project, audit.id);
     return audit.id;
+  }
+
+  /**
+   * From a finding to work (F04): the person turns a finding into a ticket (a GitHub issue when the repository is
+   * linked, else Trama's own backlog item), an assignment within the mandate, or a Pact card for a trade-off.
+   */
+  async followUpFinding(auditId: string, findingId: string, kind: "ticket" | "assignment" | "pactCard"): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const audit = findAudit(document, auditId);
+    if (!audit) throw new DomainError("Esame non trovato.");
+    const candidate = findCandidate(document, audit.target.candidateId);
+    const requestId = (candidate ? findAssignment(document, candidate.assignmentId)?.requestId : null) ?? null;
+    try {
+      if (kind === "ticket") {
+        const finding = actionableFinding(audit, findingId);
+        if (finding.followUps?.some((f) => f.kind === "ticket")) throw new FindingWorkError("Da questo rilievo hai già creato una issue o una voce del backlog.");
+        const repository = project.github.status === "ready" ? project.github.repository : null;
+        let issue: { number: number; url: string } | null = null;
+        if (repository) {
+          const labels = parseTriageLabels(await readRepositoryFile(TRIAGE_LABELS_PATH, project.rootPath).catch(() => null));
+          try {
+            issue = await createIssue(repository, finding.title, findingIssueBody(document, audit, finding), [labels["needs-triage"]]);
+          } catch (error) {
+            throw new DomainError(`La issue non è stata aperta: ${classifyGitHubError((error as Error).message).message}`);
+          }
+        }
+        if (this.state.project !== project) return;
+        const problem = recordFindingTicket(document, audit, finding, issue);
+        appendEvent(
+          document,
+          "person",
+          {
+            type: "activity",
+            title: issue ? `Issue #${issue.number} aperta da un rilievo dell'esame approfondito` : "Un rilievo dell'esame approfondito va nel backlog di Trama",
+            detail: `${finding.title}\n${problem.evidence.label}`,
+            tone: "info",
+          },
+          requestId,
+        );
+        this.changedIn(project);
+        if (issue) void this.refreshGitHub();
+        return;
+      }
+      if (kind === "pactCard") {
+        const request = findingPactCard(document, audit, findingId);
+        appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, request.requestId);
+        this.changedIn(project);
+        return;
+      }
+      const provider = this.coordinatorProvider(document);
+      const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
+      const assignment = assignFinding(document, audit, findingId, {
+        modules: project.snapshot.modules,
+        presence: project.presence ?? null,
+        providers: this.connectedProviders(),
+        fallback: model ? { provider, model } : null,
+      });
+      const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name ?? assignment.specialistId;
+      appendEvent(
+        document,
+        "person",
+        { type: "activity", title: `${name} riceve la correzione di un rilievo dell'esame approfondito`, detail: `${assignment.objective}\nViene dal ${candidateName(document, audit)}.`, tone: "info" },
+        assignment.requestId,
+      );
+      appendEvent(document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, assignment.requestId);
+      this.changedIn(project);
+      void this.startAssignment(assignment.id);
+    } catch (error) {
+      if (error instanceof FindingWorkError) throw new DomainError(error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Publishes the report of a finished focus mode on GitHub, only when the person asks (spec #124, Q5): a comment on the
+   * candidate's open pull request, else a new issue. The report stays in Trama either way.
+   */
+  async publishAuditReport(auditId: string): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const audit = findAudit(document, auditId);
+    if (!audit) throw new DomainError("Esame non trovato.");
+    const repository = project.github.status === "ready" ? project.github.repository : null;
+    if (!repository) throw new DomainError("Nessun repository GitHub collegato: il rapporto resta in Trama.");
+    let target: ReturnType<typeof publicationTarget>;
+    try {
+      target = publicationTarget(document, audit);
+    } catch (error) {
+      if (error instanceof FindingWorkError) throw new DomainError(error.message);
+      throw error;
+    }
+    const body = auditReportMarkdown(document, audit);
+    let published: { kind: "pullRequestComment" | "issue"; number: number; url: string };
+    try {
+      if (target.kind === "pullRequestComment") {
+        await commentOnIssue(repository, target.number, body);
+        published = target;
+      } else {
+        const issue = await createIssue(repository, `Rapporto dell'esame approfondito sul ${candidateName(document, audit)}`, body);
+        published = { kind: "issue", number: issue.number, url: issue.url };
+      }
+    } catch (error) {
+      throw new DomainError(`Il rapporto non è stato pubblicato: ${classifyGitHubError((error as Error).message).message}`);
+    }
+    if (this.state.project !== project) return;
+    recordPublication(audit, published);
+    this.changedIn(project);
+    if (published.kind === "issue") void this.refreshGitHub();
   }
 
   /** Running examinations are running work: their project stays loaded when the person leaves it (C07). */
