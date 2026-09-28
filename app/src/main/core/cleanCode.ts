@@ -39,7 +39,7 @@ function ruleLines(rules: CleanCodeRule[], settings: CleanCodeSettings | undefin
 
 /**
  * The standard in the developer's instructions: Trama's own block, above the skills and apart from them. Null when
- * the project switched every rule off.
+ * the project switched every rule off. @model-text
  */
 export function developerStandard(settings: CleanCodeSettings | undefined): string | null {
   const rules = activeRules(settings);
@@ -103,7 +103,7 @@ const MEASURE_TEXT: Record<CodeMeasure["kind"], (m: CodeMeasure) => string> = {
   duplication: (m) => `${m.file}:${m.line} repeats ${m.value} lines found at ${m.subject}`,
 };
 
-/** The part of the review prompt about the standard: Trama's measures and the developer's exceptions. */
+/** The part of the review prompt about the standard: Trama's measures and the developer's exceptions. @model-text */
 export function reviewStandardBriefing(check: StandardCheck | null, exceptions: string[] | null): string | null {
   if (!check) return null;
   const lines = [

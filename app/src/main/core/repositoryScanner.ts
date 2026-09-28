@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import type { RepositoryFile, RepositoryModule, RepositorySnapshot } from "@shared/repository";
+import { t } from "./personLanguage";
 
 const MAXIMUM_FILE_COUNT = 3_000;
 const MAXIMUM_FILE_BYTES = 256 * 1_024;
@@ -15,12 +16,15 @@ export class RepositoryScannerError extends Error {
     readonly path: string,
   ) {
     super(
-      {
-        invalidRoot: `La cartella del repository non è leggibile: ${path}`,
-        invalidRelativePath: `Il percorso deve essere relativo: ${path}`,
-        unsafePath: `Il percorso non è disponibile per la lettura: ${path}`,
-        fileTooLarge: `Il file supera il limite di lettura: ${path}`,
-      }[kind],
+      t(
+        ({
+          invalidRoot: "main.scanner.invalidRoot",
+          invalidRelativePath: "main.scanner.invalidRelativePath",
+          unsafePath: "main.scanner.unsafePath",
+          fileTooLarge: "main.scanner.fileTooLarge",
+        } as const)[kind],
+        { path },
+      ),
     );
   }
 }
@@ -208,7 +212,7 @@ export async function scanRepository(root: string, isDemo = false): Promise<Repo
     try {
       entries = await readdir(directory, { withFileTypes: true });
     } catch {
-      warnings.push(`Impossibile leggere gli attributi di ${prefix.join("/") || "."}.`);
+      warnings.push(t("main.scanner.unreadableAttributes", { path: prefix.join("/") || "." }));
       return;
     }
     entries.sort((a, b) => naturalCompare(a.name, b.name));
@@ -224,20 +228,20 @@ export async function scanRepository(root: string, isDemo = false): Promise<Repo
       }
       if (!entry.isFile() || !isSupportedSourceFile(entry.name)) continue;
       if (accepted >= MAXIMUM_FILE_COUNT) {
-        warnings.push(`La scansione si è fermata a ${MAXIMUM_FILE_COUNT} file sorgente.`);
+        warnings.push(t("main.scanner.stopped", { count: String(MAXIMUM_FILE_COUNT) }));
         stopped = true;
         return;
       }
       const info = await stat(join(directory, entry.name)).catch(() => null);
       if (!info || info.size > MAXIMUM_FILE_BYTES) {
-        if (info) warnings.push(`File ignorato perché supera ${MAXIMUM_FILE_BYTES / 1_024} KB: ${relativePath}.`);
+        if (info) warnings.push(t("main.scanner.fileTooLargeSkipped", { size: String(MAXIMUM_FILE_BYTES / 1_024), path: relativePath }));
         continue;
       }
       let contents: string;
       try {
         contents = await readRepositoryFile(relativePath, rootPath);
       } catch {
-        warnings.push(`File non leggibile o non UTF-8 ignorato: ${relativePath}.`);
+        warnings.push(t("main.scanner.unreadableFile", { path: relativePath }));
         continue;
       }
       const location = moduleLocation(relativePath);
@@ -280,7 +284,7 @@ export async function scanRepository(root: string, isDemo = false): Promise<Repo
       return {
         id: builder.id,
         name: builder.name,
-        summary: `${files.length} file rilevati in ${builder.relativePath}. Per Swift sono riportati solo gli import diretti; per gli altri linguaggi restano disponibili i file e gli import relativi risolvibili.`,
+        summary: t("main.scanner.moduleSummary", { files: String(files.length), path: builder.relativePath }),
         relativePath: builder.relativePath,
         files,
         dependencies: [...builder.dependencies].sort(naturalCompare),
@@ -295,7 +299,7 @@ export async function scanRepository(root: string, isDemo = false): Promise<Repo
     try {
       contextualInputHashes[name] = contentHash(await readRepositoryFile(name, rootPath));
     } catch (error) {
-      warnings.push(`File di contesto ignorato: ${name}. ${(error as Error).message}`);
+      warnings.push(t("main.scanner.contextSkipped", { name, detail: (error as Error).message }));
     }
   }
   const git = await gitMetadata(rootPath);
