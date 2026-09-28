@@ -14,8 +14,8 @@ Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessun
 ## Comportamento
 
 - Ogni rilievo di un asse ha una prova: `file:riga` con il testo citato, un comando o una riproduzione. Senza prova il rilievo resta un'ipotesi.
-- Trama ricontrolla le prove che può eseguire. Per `file:riga` legge la riga nel worktree del candidato, con le stesse regole delle letture del repository: niente segreti, niente collegamenti simbolici, niente percorsi fuori dal worktree. Per un comando guarda se è una delle verifiche di Trama in quell'esame e se è fallita davvero. Trama non esegue comandi o riproduzioni scritti da un modello.
-- Un rilievo grave che Trama non può ricontrollare passa al modello del Coordinatore, in una sessione in sola lettura, quando è diverso dal modello più leggero usato dagli assi. Senza un modello più forte, o se la conferma fallisce, il rilievo resta un'ipotesi.
+- Trama ricontrolla le prove che può eseguire. Per `file:riga` serve il testo citato: Trama legge la riga nel worktree del candidato, con le stesse regole delle letture del repository (niente segreti, niente collegamenti simbolici, niente percorsi fuori dal worktree), e controlla che contenga quel testo. Una riga senza citazione non è una prova. Per un comando guarda se è una delle verifiche di Trama in quell'esame, scritta con il suo nome, con il comando esatto o nella forma nuda (`swift test`), e se è fallita davvero. Un comando con argomenti aggiunti dal modello non è quello eseguito da Trama e non vale come prova. Trama non esegue comandi o riproduzioni scritti da un modello.
+- Un rilievo grave che Trama non può ricontrollare passa al modello del Coordinatore, in una sessione in sola lettura, solo quando gli assi hanno usato un modello leggero e quello del Coordinatore non lo è. Senza un modello più forte, o se la conferma fallisce, il rilievo resta un'ipotesi.
 - Stati: "Verificato da Trama", "Confermato da un secondo modello", "Ipotesi". Un rilievo in attesa di verifica compare come "Da verificare"; se l'esame si interrompe diventa un'ipotesi.
 
 ## Test

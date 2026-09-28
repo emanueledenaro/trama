@@ -1,8 +1,25 @@
 name: Rilascio
+# Builds the Trama packages: macOS (dmg and zip, arm64 and x64), Windows
+# (NSIS installer, x64) and Linux (AppImage, x64), with the SHA-256 checksums.
+# Started by hand it is a test build: the packages stay in the run's
+# artifacts and no release is created. Called by release-publish.yml it also
+# attaches them to the draft release and publishes it. Policy in
+# docs/agents/versioning.md.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag o commit da impacchettare. Vuoto: il branch scelto sopra"
+        required: false
+        type: string
+      platforms:
+        description: Piattaforme da costruire
+        required: false
+        type: choice
+        default: all
+        options: [all, windows, macos, linux]
   # Called by release-publish.yml with the commit to build and the draft
   # release that receives the packages.
   workflow_call:
@@ -18,17 +35,26 @@ on:
 permissions:
   contents: read
 jobs:
+  # The platforms of this run: every one, unless a test build asks for one.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Piattaforme
+        id: plan
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'all' }}
+        run: |
+          all='[{"platform":"macos","os":"macos-latest","target":"--mac"},{"platform":"windows","os":"windows-latest","target":"--win"},{"platform":"linux","os":"ubuntu-latest","target":"--linux"}]'
+          if [ "$PLATFORMS" = "all" ]; then matrix="$all"; else matrix=$(jq -c --arg p "$PLATFORMS" 'map(select(.platform == $p))' <<<"$all"); fi
+          if [ "$matrix" = "[]" ]; then echo "Piattaforma sconosciuta: $PLATFORMS" >&2; exit 1; fi
+          echo "matrix={\"include\":$matrix}" >> "$GITHUB_OUTPUT"
   package:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: --mac
-          - os: windows-latest
-            target: --win
-          - os: ubuntu-latest
-            target: --linux
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -45,46 +71,122 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Dipendenze
         run: npm ci
-      - name: Controllo dei tipi e test
-        run: npm run typecheck && npm test
+      - name: Controllo dei tipi
+        run: npm run typecheck
+      # The suite runs on Linux, as electron.yml does for main, and on macOS. On Windows its fake provider
+      # CLIs are POSIX scripts and many fixtures use POSIX paths, so it does not run there yet.
+      - name: Test
+        if: matrix.platform != 'windows'
+        run: npm test
       - name: Build
         run: npm run build
-      # Firma e notarizzazione partono solo quando i secret esistono: senza, il pacchetto resta non firmato.
+      # Signing and notarization start only when the secrets exist: without them the package stays unsigned.
+      # macOS uses CSC_LINK and CSC_KEY_PASSWORD, Windows WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD, so one
+      # platform never tries the other's certificate.
       - name: Pacchetto
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ matrix.platform == 'macos' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'macos' && secrets.CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ matrix.platform == 'windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.platform == 'windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           extra=()
-          if [ -z "$CSC_LINK" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
-          if [ "${{ matrix.target }}" = "--mac" ] && [ -n "$APPLE_ID" ] && [ -n "$CSC_LINK" ]; then extra+=("-c.mac.notarize=true"); fi
+          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          if [ -z "${CSC_LINK:-}" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          if [ "${{ matrix.platform }}" = "macos" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${CSC_LINK:-}" ]; then extra+=("-c.mac.notarize=true"); fi
           npx electron-builder ${{ matrix.target }} --publish never "${extra[@]}"
-      - uses: actions/upload-artifact@v4
+      - name: Pacchetti prodotti
+        run: ls -l release/Trama-*.dmg release/Trama-*.zip release/Trama-*.exe release/Trama-*.AppImage 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
         with:
-          name: trama-${{ matrix.os }}
+          name: trama-${{ matrix.platform }}
           path: |
-            app/release/*.dmg
-            app/release/*.zip
-            app/release/*.exe
-            app/release/*.AppImage
+            app/release/Trama-*.dmg
+            app/release/Trama-*.zip
+            app/release/Trama-*.exe
+            app/release/Trama-*.AppImage
           if-no-files-found: error
-  # Attaches the packages to the draft release and publishes it. Publishing
-  # creates the tag, so it happens only once every package is in place.
-  publish:
+          compression-level: 0
+  # One SHA256SUMS.txt for every package of the run, also on a test build.
+  checksums:
     needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          pattern: trama-*
+          merge-multiple: true
+      - name: Checksum SHA-256
+        working-directory: packages
+        run: |
+          sha256sum Trama-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          {
+            echo "## Pacchetti"
+            echo
+            echo "| File | Dimensione (byte) | SHA-256 |"
+            echo "| --- | ---: | --- |"
+            for file in Trama-*; do
+              echo "| \`$file\` | $(stat -c %s "$file") | \`$(sha256sum "$file" | cut -d' ' -f1)\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checksums
+          path: packages/SHA256SUMS.txt
+          if-no-files-found: error
+  # Attaches the packages and the checksums to the draft release and publishes
+  # it. Publishing creates the tag, so it happens only once every package is
+  # in place.
+  publish:
+    needs: checksums
     if: inputs.tag
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: packages
-          pattern: trama-*
           merge-multiple: true
+      - name: Note sulla firma
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          MAC_SIGNED: ${{ secrets.CSC_LINK != '' }}
+          MAC_NOTARIZED: ${{ secrets.CSC_LINK != '' && secrets.APPLE_ID != '' }}
+          WIN_SIGNED: ${{ secrets.WIN_CSC_LINK != '' }}
+        run: |
+          gh release view "$TAG" --json body --jq .body > notes.md
+          # A retry after a failed publish finds the section already there.
+          if grep -q '^## Pacchetti$' notes.md; then exit 0; fi
+          {
+            echo
+            echo "## Pacchetti"
+            echo
+            echo "- macOS: \`.dmg\` e \`.zip\` per Apple Silicon (\`arm64\`) e Intel (\`x64\`)."
+            echo "- Windows: installer \`.exe\` (\`x64\`)."
+            echo "- Linux: \`.AppImage\` (\`x86_64\`)."
+            echo "- Checksum SHA-256 di ogni file in \`SHA256SUMS.txt\`."
+            echo
+            if [ "$MAC_SIGNED" != "true" ] || [ "$MAC_NOTARIZED" != "true" ]; then
+              echo "I pacchetti macOS non sono firmati e notarizzati. Al primo avvio Gatekeeper dice che non può verificare lo sviluppatore: aprire Trama con clic destro, Apri, oppure da Impostazioni di Sistema, Privacy e sicurezza, Apri comunque."
+              echo
+            fi
+            if [ "$WIN_SIGNED" != "true" ]; then
+              echo "L'installer Windows non è firmato. SmartScreen mostra \"Windows ha protetto il PC\": scegliere Ulteriori informazioni, poi Esegui comunque."
+              echo
+            fi
+            echo "L'AppImage non ha una firma: prima di aprirla va resa eseguibile con \`chmod +x\`."
+          } >> notes.md
+          gh release edit "$TAG" --notes-file notes.md
       - name: Pubblicazione
         env:
           GH_TOKEN: ${{ github.token }}
@@ -93,4 +195,8 @@ jobs:
         run: |
           # A retry after a failed publish finds the assets already there.
           gh release upload "$TAG" packages/* --clobber
-          gh release edit "$TAG" --draft=false --latest
+          # A pre-release (vX.Y.Z-beta.N) is published as such and never becomes the latest release.
+          case "$TAG" in
+            *-*) gh release edit "$TAG" --draft=false --prerelease --latest=false ;;
+            *) gh release edit "$TAG" --draft=false --latest ;;
+          esac

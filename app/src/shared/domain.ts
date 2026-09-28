@@ -619,6 +619,62 @@ export interface SpecialistAssignment {
   questions?: DeveloperQuestion[];
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /** Where the work runs and why (A19, issue #260); absent for work that never had a choice, which runs locally. */
+  place?: AssignmentPlace | null;
+  /** The person's move of this work between local and cloud (A19); it holds for the next start or resume. */
+  placeChoice?: WorkPlace | null;
+  /** The cloud session that runs the work (A19); absent for local work. */
+  cloud?: CloudSession | null;
+}
+
+/** Where a developer's work runs (A19, ADR 0017): in a worktree on the Mac, or in a provider's cloud session. */
+export type WorkPlace = "local" | "cloud";
+
+/** The project's setting for the place of work (A19): automatic unless the person changes it. */
+export type WorkPlaceSetting = "automatic" | "local" | "cloud";
+
+/** The place Trama chose for a start of the work, with why in the person's words (A19). */
+export interface AssignmentPlace {
+  where: WorkPlace;
+  /** Who decided: the project setting, the Coordinator in automatic, or the person on the card. */
+  chosenBy: "setting" | "coordinator" | "person";
+  /** Why, in plain Italian. */
+  reason: string;
+  /** When the cloud was wanted but cannot be used: why, and the step that enables it. */
+  cloudBlocked: { reason: string; enable: string } | null;
+  at: string;
+}
+
+/**
+ * "starting": Trama is opening the session. "working": the session writes the code. "draft": the session opened its
+ * draft pull request, and Trama brings its branch to the Mac. "returned": the branch is in a local worktree and the
+ * work goes on as a candidate. "stopped": the person stopped the work in Trama. "failed": the session could not start
+ * or its result could not return.
+ */
+export type CloudSessionStatus = "starting" | "working" | "draft" | "returned" | "stopped" | "failed";
+
+/** A cloud session of Claude Code that runs a developer's work (A19, ADR 0017). */
+export interface CloudSession {
+  provider: ProviderId;
+  /** The provider's link to the session; null when it gave none. */
+  url: string | null;
+  /** The branch the session works on and pushes: the branch of the assignment. */
+  branch: string;
+  baseBranch: string;
+  status: CloudSessionStatus;
+  /** The draft pull request the session opened: it becomes the candidate. */
+  pullRequest: { number: number; url: string; draft: boolean } | null;
+  startedAt: string;
+  /** When Trama last read the state of the session on GitHub. */
+  checkedAt: string | null;
+  failure: string | null;
+  /** What Trama asked the session, in order (Q26): kept on the assignment. */
+  instructions: { text: string; at: string }[];
+  /**
+   * Trama's own run on the Mac of the publication checks the session also runs (no secrets or sensitive files,
+   * clean `git diff --check`, valid commit messages), on the snapshot it checked. A problem stops the candidate.
+   */
+  macChecks: { snapshotId: string; problems: string[]; at: string } | null;
 }
 
 /**
@@ -1422,8 +1478,8 @@ export interface ProjectDocument {
 }
 
 /**
- * What a conversation between agents is about (W07): a developer's question to the Coordinator, the technical review
- * of the developer's candidate, or a regression the guardian found on it.
+ * What a conversation between agents is about (W07): a developer's question to the Coordinator, the findings of the
+ * candidate gate's reviewers on the developer's candidate (W10), or a regression the guardian found on it.
  */
 export type AgentThreadKind = "question" | "review" | "regression";
 
@@ -1532,6 +1588,8 @@ export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssign
 export interface ProjectSettings {
   /** Developers at work at the same time (W08); absent means three. */
   parallelDevelopers?: number;
+  /** Where developers' work runs (A19); absent means automatic. */
+  workPlace?: WorkPlaceSetting;
 }
 
 /** "verifying": both axes ended and Trama rechecks the proof of each finding (F02). */
@@ -1860,6 +1918,13 @@ export interface AppSettings {
    * own starts from it; without it, the provider's catalogue decides the default.
    */
   coordinatorModels?: Partial<Record<ProviderId, { model: string; effort: string | null }>>;
+  /** Developers at work at the same time in all open projects together (issue #39); six when missing. */
+  sharedDevelopers?: number;
+  /**
+   * The Product Owner's order of the projects, by id (issue #39): a freed developer slot goes to the first one that
+   * waits. Only the person changes it; opening a project leaves it as it is.
+   */
+  projectPriority?: string[];
 }
 
 export interface LearningSettings {
@@ -1946,6 +2011,8 @@ export interface AppState {
   learning?: LearningView | null;
   /** Projects not selected whose team is still working (C07). */
   backgroundProjects: BackgroundProject[];
+  /** The developers at work in all open projects and the authorized work waiting for a free slot (issue #39). */
+  sharedCapacity: SharedCapacity;
   platform: NodeJS.Platform;
   /** The first-run guide's persisted progress (C12). */
   onboarding: import("./onboarding").OnboardingState;
@@ -1986,6 +2053,18 @@ export interface ProjectOverview {
   attention: AttentionReason | null;
   reasons: string[];
   problem: string | null;
+  /** Place in the Product Owner's order of the projects, from 1 (issue #39). */
+  priority: number;
+  /** Authorized assignments waiting for a free developer slot shared by the projects. */
+  waitingForCapacity: number;
+  /** Checks of the open pull requests from the last GitHub reading; null when the repository was not read. */
+  ci: { passing: number; failing: number; pending: number } | null;
+}
+
+export interface SharedCapacity {
+  running: number;
+  limit: number;
+  waiting: number;
 }
 
 export interface BackgroundProject {
