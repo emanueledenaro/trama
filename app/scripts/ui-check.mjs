@@ -694,7 +694,7 @@ await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Memoria/ }).first().click();
 await page.getByRole("button", { name: "Rivedi ora" }).click();
-await page.getByText("Skill 'release-flow' created").first().waitFor({ timeout: 30_000 });
+await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
@@ -758,6 +758,36 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
+// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
+// provider: no provider name and no number past the window, in light and dark.
+{
+  const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
+  const noProviderName = (text, where) => {
+    const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
+    if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
+  };
+  await composer().fill("[pieno] Quanto contesto resta?");
+  await page.keyboard.press("Enter");
+  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
+  await notice.waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
+  noProviderName(noticeText, "The threshold card");
+  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
+  await notice.scrollIntoViewIfNeeded();
+  await themeShots("04l-context-threshold-card");
+  const meter = page.getByTestId("context-meter");
+  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await meter.click();
+  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  await meterPopup.waitFor();
+  const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
+  noProviderName(meterText, "The context meter");
+  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  await themeShots("04m-context-meter");
+  await page.keyboard.press("Escape");
+  await meterPopup.waitFor({ state: "hidden" });
+}
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
 // #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover

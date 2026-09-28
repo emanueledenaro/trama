@@ -59,6 +59,8 @@ const REVIEW_INSTRUCTIONS =
 export async function runReviewSession(input: ReviewSessionInput): Promise<ReviewSessionResult> {
   const { learning } = input;
   const calls: ReviewCall[] = input.calls ?? [];
+  // A review counts its own refused memory writes from zero, apart from the Coordinator's (issue #305).
+  learning.memory.resetConsolidationFailures("backgroundReview");
   const readMarks = new Set<string>();
   const tools = learningTools(learning.settings.memory, learning.settings.userProfile).filter((t) => input.allowedTools.includes(t.name));
   let stopped: string | null = null;
@@ -118,7 +120,8 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<Revie
       model: input.model,
       effort: null,
       onEvent: (event) => {
-        if (event.type === "tokenUsage") usedTokens = event.usedTokens;
+        // The review's cost: the tokens its session processed, never its context reading (issue #305).
+        if (event.type === "tokenUsage" && typeof event.processedTokens === "number") usedTokens = event.processedTokens;
         const ownTool =
           event.type === "commandCompleted" || event.type === "fileChangeCompleted" || ((event.type === "toolCallStarted" || event.type === "toolCallCompleted") && event.server !== TOOL_SERVER_NAME);
         if (ownTool && !stopped) {
