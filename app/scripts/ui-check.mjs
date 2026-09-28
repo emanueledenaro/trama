@@ -890,8 +890,10 @@ await shot("05-map");
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
   await page.waitForTimeout(250);
-  const hovered = await look(sidebarSash);
-  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // The strip lights up after the 300ms delay and a 100ms fade: read it once the fade ends, within a second.
+  let hovered = await look(sidebarSash);
+  for (const end = Date.now() + 1_000; hovered.strip !== hovered.accent && Date.now() < end; hovered = await look(sidebarSash)) await page.waitForTimeout(25);
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After the hover delay the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
   // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
   for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
