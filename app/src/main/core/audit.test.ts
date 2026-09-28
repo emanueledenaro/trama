@@ -2,17 +2,22 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CandidateEvidence, GitHubIssue, ProjectDocument, WorkPlan } from "@shared/domain";
+import { auditFindings, findingTally, lensSummary } from "@shared/findings";
 import {
   AuditError,
   AXIS_BINDINGS,
   auditSpec,
   axisTurn,
   beginAxes,
+  beginLenses,
   closeAudit,
   CODE_REVIEW_BINDING,
   type FindingDraft,
+  failAudit,
   finishAxis,
   latestAudit,
+  LENS_BRIEFS,
+  lensTurn,
   NO_SPEC,
   openAudit,
   readAxisAnswer,
@@ -268,5 +273,95 @@ describe("the focus mode report (F01)", () => {
     const reopened = normalizeDocument(JSON.parse(JSON.stringify(document)) as ProjectDocument, "p");
     expect(reopened.audits![0]).toEqual(JSON.parse(JSON.stringify(done)));
     expect(reopened.audits![1]).toMatchObject({ status: "failed", failure: expect.stringContaining("interrotta"), standards: { status: "failed" }, spec: { status: "failed" } });
+  });
+});
+
+describe("Trama's lenses next to the axes (F05)", () => {
+  it("gives each lens Trama's own brief and the candidate as data, marked as Trama's addition and without the skill", async () => {
+    const document = project();
+    const { assignment, candidate } = candidateOf(document, true);
+    const audit = openAudit(document, candidate, at(5));
+    recordAuditCheck(audit, evidence("git_diff_check", "fail"), at(5));
+    const skillText = (await original()).toString("utf8");
+    for (const lens of ["security", "tests", "docs"] as const) {
+      const turn = lensTurn({ projectName: "ordini", audit, candidate, assignment }, lens);
+      expect(turn.skills).toEqual([]);
+      expect(turn.instructions).toContain("Trama's own addition");
+      expect(turn.instructions).toContain("it is not part of that skill");
+      expect(turn.instructions).toContain(LENS_BRIEFS[lens]);
+      expect(turn.instructions).toContain("read-only");
+      expect(turn.instructions).toContain("`fileLine`");
+      // Trama's brief never carries the skill's text: the lenses do not pass for code-review.
+      expect(`${turn.instructions}\n${turn.prompt}`).not.toContain(skillText.slice(0, 200));
+      expect(turn.prompt).toContain(`Punto fisso: ${candidate.baseSHA}`);
+      expect(turn.prompt).toContain("git_diff_check: non superata");
+      expect(turn.prompt).toContain("+++ b/NOTE.md");
+      expect(turn.outputSchema.required).toEqual(["report", "findings", "worst"]);
+    }
+    expect(lensTurn({ projectName: "ordini", audit, candidate, assignment }, "tests").prompt).toContain('lente di Trama "Qualità dei test"');
+  });
+
+  it("runs the three lenses next to the axes, lists their findings, and closes with a line of their own", () => {
+    const document = project();
+    const { candidate } = candidateOf(document, true);
+    const audit = openAudit(document, candidate, at(5));
+    beginAxes(audit, "Issue #8", "gpt-5.4-mini", at(6));
+    expect(beginLenses(audit, "gpt-5.4-mini", at(6))).toEqual(["security", "tests", "docs"]);
+    expect(audit.lenses).toMatchObject({ security: { status: "running", model: "gpt-5.4-mini" }, tests: { status: "running" }, docs: { status: "running" } });
+    finishAxis(audit, "standards", { report: "Ok.", findings: [], worst: null }, at(7));
+    finishAxis(audit, "spec", { report: "Ok.", findings: [], worst: null }, at(7));
+    finishAxis(audit, "security", { report: "Un problema.", findings: [{ ...draft("Il percorso esce dalla radice"), severity: "serious" }], worst: "Il percorso esce dalla radice." }, at(7));
+    finishAxis(audit, "tests", { report: "Nessun problema.", findings: [], worst: null }, at(7));
+    finishAxis(audit, "docs", { failure: "Sessione chiusa." }, at(7));
+    closeAudit(audit, at(8));
+    expect(audit.status).toBe("done");
+    // The skill's summary stays the axes'; the lenses have their own line.
+    expect(audit.summary).toBe("Standards: nessun rilievo. Spec: nessun rilievo.");
+    expect(lensSummary(audit)).toBe("Sicurezza: 1 rilievo, il più grave: Il percorso esce dalla radice. Qualità dei test: nessun rilievo. Documenti e codice: non riuscita.");
+    expect(audit.lenses!.security.items).toEqual([expect.objectContaining({ id: "security-1", status: "pending" })]);
+    expect(auditFindings(audit).map((f) => f.id)).toEqual(["security-1"]);
+    expect(findingTally(audit)).toBe("1 da verificare");
+  });
+
+  it("closes on a lens's report when both axes failed, and fails only when no session produced one", () => {
+    const document = project();
+    const { candidate } = candidateOf(document, true);
+    const audit = openAudit(document, candidate, at(5));
+    beginAxes(audit, null, "m", at(6));
+    beginLenses(audit, "m", at(6));
+    finishAxis(audit, "standards", { failure: "Sessione chiusa." }, at(7));
+    for (const lens of ["security", "tests"] as const) finishAxis(audit, lens, { failure: "Sessione chiusa." }, at(7));
+    finishAxis(audit, "docs", { report: "Ok.", findings: [], worst: null }, at(7));
+    closeAudit(audit, at(8));
+    expect(audit.status).toBe("done");
+    const other = openAudit(document, candidate, at(9));
+    beginAxes(other, null, "m", at(9));
+    beginLenses(other, "m", at(9));
+    for (const name of ["standards", "security", "tests", "docs"] as const) finishAxis(other, name, { failure: "Sessione chiusa." }, at(10));
+    closeAudit(other, at(10));
+    expect(other.status).toBe("failed");
+  });
+
+  it("marks running lenses as interrupted and keeps their pending findings as hypotheses", () => {
+    const document = project();
+    const { candidate } = candidateOf(document, true);
+    const audit = openAudit(document, candidate, at(5));
+    beginAxes(audit, "Issue #8", "m", at(6));
+    beginLenses(audit, "m", at(6));
+    finishAxis(audit, "security", { report: "Un rilievo.", findings: [draft("Segreto nei log")], worst: null }, at(7));
+    failAudit(audit, "Trama si è chiusa.", at(8));
+    expect(audit.lenses).toMatchObject({ security: { status: "done", items: [{ status: "hypothesis" }] }, tests: { status: "failed", failure: "Trama si è chiusa." }, docs: { status: "failed" } });
+  });
+
+  it("reads a report written before the lenses without inventing them", () => {
+    const document = project();
+    const { candidate } = candidateOf(document, true);
+    const audit = openAudit(document, candidate, at(5));
+    beginAxes(audit, null, "m", at(6));
+    finishAxis(audit, "standards", { report: "Ok.", findings: [], worst: null }, at(7));
+    closeAudit(audit, at(8));
+    const reopened = normalizeDocument(JSON.parse(JSON.stringify(document)) as ProjectDocument, "p");
+    expect(reopened.audits![0]!.lenses).toBeUndefined();
+    expect(lensSummary(reopened.audits![0]!)).toBeNull();
   });
 });

@@ -24,6 +24,7 @@ export const GLOSSARY: GlossaryTerm[] = [
   { term: "Verifiche", meaning: "I comandi di prova che Trama esegue davvero sul candidato, come i test.", insteadOf: ["check", "evidence"] },
   { term: "Revisori", meaning: "Gli agenti che leggono il candidato prima dell'unione e segnalano i problemi.", insteadOf: ["gate", "review gate"] },
   { term: "Esame approfondito", meaning: "Una lettura completa di un candidato: prima le verifiche, poi il confronto con le regole del codice e con il piano.", insteadOf: ["Focus mode", "audit"] },
+  { term: "Lenti di Trama", meaning: "I controlli in più dell'esame approfondito, aggiunti da Trama: sicurezza, qualità dei test, documenti e codice.", insteadOf: ["lens"] },
   { term: "Punti di prova", meaning: "I punti del codice da cui i test controllano un comportamento senza toccare il resto.", insteadOf: ["seam"] },
   { term: "Copia di lavoro", meaning: "Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua.", insteadOf: ["worktree"] },
   { term: "Patto Vivo", meaning: "Le decisioni che hai preso sul comportamento del prodotto, con la loro versione.", insteadOf: ["pact"] },

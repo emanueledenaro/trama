@@ -120,6 +120,20 @@ describe("focus mode on a candidate (F01)", () => {
     expect(checksEnded).toHaveLength(candidate.requiredChecks.length);
     expect(axesOpened).toHaveLength(2);
     expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...axesOpened));
+    // F05: Trama's three lenses run next to the axes, each its own read-only session, after the checks.
+    await until(() => Object.values(audit.lenses ?? {}).every((lens) => lens.threadId !== null));
+    const lensThreads = Object.values(audit.lenses!).map((lens) => lens.threadId!);
+    expect(new Set([...axisThreads, ...lensThreads]).size).toBe(5);
+    entries = await auditLog();
+    const lensesOpened = entries.flatMap((r, index) => (r.method === "thread/start" && String(r.params.developerInstructions).includes("lens of focus mode") ? [index] : []));
+    expect(lensesOpened).toHaveLength(3);
+    expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...lensesOpened));
+    for (const index of lensesOpened) {
+      const instructions = String(entries[index]!.params.developerInstructions);
+      expect(instructions).toContain("Trama's own addition");
+      expect(instructions).toContain("read-only");
+      expect(entries[index]!.params).toMatchObject({ ephemeral: true, cwd: work.workspace!.worktreeRoot });
+    }
     await writeFile(join(gates, "first"), "");
     await until(() => audit.status === "done");
 
@@ -141,8 +155,23 @@ describe("focus mode on a candidate (F01)", () => {
     const [serious, minor] = audit.spec.items!;
     expect(serious).toMatchObject({ severity: "serious", status: "confirmed", confirmation: { model: "gpt-5.5", confirmed: true } });
     expect(minor).toMatchObject({ severity: "minor", status: "hypothesis", evidence: { kind: "command", command: "make check" } });
+    // The lenses' findings go through the same verification (F05): Trama reread the security line, the stronger model
+    // confirmed the serious test finding, and the documents finding without a proof stays a hypothesis.
+    expect(audit.lenses).toMatchObject({
+      security: { status: "done", findings: 1, model: "gpt-5.5-mini", items: [expect.objectContaining({ id: "security-1", severity: "serious", status: "verified" })] },
+      tests: { status: "done", findings: 1, items: [expect.objectContaining({ id: "tests-1", status: "confirmed", confirmation: expect.objectContaining({ model: "gpt-5.5" }) })] },
+      docs: { status: "done", findings: 1, items: [expect.objectContaining({ id: "docs-1", evidence: null, status: "hypothesis" })] },
+    });
+    // The lenses carry no skill: they are Trama's own, not code-review.
+    for (const lens of Object.values(audit.lenses!)) {
+      const turn = (await auditLog()).find((r) => r.method === "turn/start" && r.params.threadId === lens.threadId)!;
+      expect((turn.params.input as { type: string }[]).filter((item) => item.type === "skill")).toEqual([]);
+    }
     const confirmations = (await auditLog()).filter((r) => r.method === "thread/start" && String(r.params.developerInstructions).includes("second reader of focus mode"));
-    expect(confirmations.map((r) => r.params)).toEqual([expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true })]);
+    expect(confirmations.map((r) => r.params)).toEqual([
+      expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true }),
+      expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true }),
+    ]);
     const requests = (await readFile(log, "utf8"))
       .slice(checksBefore)
       .trim()

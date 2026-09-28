@@ -1492,7 +1492,14 @@ export interface AuditFinding {
   confirmation: { model: string; confirmed: boolean; reason: string; at: string } | null;
 }
 
-/** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
+/**
+ * Trama's own lenses of focus mode (F05, issue #129): security, test quality and agreement between documents and code.
+ * They are not in AI Hero's skills: Trama adds them next to the two axes of code-review, each as a read-only session
+ * whose findings go through the same verification as the axes' (F02).
+ */
+export type LensName = "security" | "tests" | "docs";
+
+/** One axis of AI Hero's code-review skill, or one of Trama's lenses, run as a read-only session of its own (F01, F05). */
 export interface AuditAxis {
   /** "skipped": the skill skips the Spec sub-agent when there is no spec. */
   status: "waiting" | "running" | "done" | "skipped" | "failed";
@@ -1529,6 +1536,8 @@ export interface FocusAudit {
   specSource: string | null;
   standards: AuditAxis;
   spec: AuditAxis;
+  /** Trama's lenses (F05), run next to the axes; absent in reports written before them. */
+  lenses?: Record<LensName, AuditAxis>;
   /** The skill's closing line, per axis: total findings and the worst one within each axis. */
   summary: string | null;
   failure: string | null;
