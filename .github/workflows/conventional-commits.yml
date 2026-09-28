@@ -15,7 +15,10 @@ jobs:
           node-version: 22
       - name: Test dello script
         run: node --test scripts/conventional-commits/lib.test.mjs
+      # Dependabot names its branches dependabot/<ecosystem>/<path>/<package>, outside
+      # Conventional Branch; its commits and titles are still checked below.
       - name: Nome del branch
+        if: ${{ !startsWith(github.head_ref, 'dependabot/') }}
         env:
           BRANCH_NAME: ${{ github.head_ref }}
         run: node scripts/conventional-commits/cli.mjs branch-name "$BRANCH_NAME"
