@@ -4,6 +4,7 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconFileDiff,
+  IconGitMerge,
   IconGitPullRequest,
   IconListCheck,
   IconChevronRight,
@@ -21,6 +22,7 @@ import {
 import { readableFailure } from "@shared/providerFailure";
 import {
   type AssignmentStatus,
+  type Candidate,
   type CandidateEvidence,
   type CandidateState,
   type DeveloperQuestion,
@@ -29,6 +31,7 @@ import {
   type SpecialistAssignment,
   type TechnicalReview,
   type MandateAction,
+  type MergeRoute,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
@@ -60,6 +63,7 @@ import { DutyFields } from "./DutyFields";
 import { PlaceActions, PlaceField } from "./PlaceField";
 import { cloudWorking } from "@shared/workPlace";
 import { GateField } from "./GateField";
+import { InterfaceShotsField } from "./InterfaceShots";
 import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
@@ -1271,6 +1275,41 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
 }
 
 /**
+ * Where the candidate stands on its way to the main branch (issue #247): merged and on whose authority, waiting for
+ * the checks of its pull request, stopped, or who handles it.
+ */
+function MergeLine({ candidate, route, routeReason, open, approved }: { candidate: Candidate; route: MergeRoute; routeReason: string | null; open: boolean; approved: boolean }) {
+  const merge = candidate.merge;
+  const pull = candidate.pullRequest;
+  let text: string | null = null;
+  let tone = "text-muted-foreground";
+  if (pull?.mergedAt) {
+    text = pull.mergedBy === "coordinator" ? "Unito da Trama con il via libera del Coordinatore." : pull.mergedBy === "person" ? "Unito da Trama con il tuo ok sulle schermate." : "Unito su GitHub.";
+  } else if (merge && open && merge.status !== "merged") {
+    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.detail;
+    if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
+  } else if (open && candidate.humanRejection) {
+    text = `Hai rifiutato il candidato: ${candidate.humanRejection.note}`;
+  } else if (open && route === "coordinator") {
+    text = candidate.clearance ? "Trama lo unisce con il via libera del Coordinatore." : "Con il via libera del Coordinatore Trama lo unisce da solo.";
+  } else if (open && route === "interface") {
+    text = approved
+      ? candidate.clearance
+        ? "Hai dato l'ok: Trama lo unisce."
+        : "Hai dato l'ok: Trama lo unisce con il via libera del Coordinatore."
+      : "Cambia l'interfaccia: guarda le schermate e decidi. Trama lo unisce solo con il tuo ok.";
+  } else if (open && routeReason) {
+    text = routeReason;
+  }
+  if (!text) return null;
+  return (
+    <p className={cn("mt-2 text-ui-sm", tone)} data-testid="candidate-merge" data-route={route} data-status={pull?.mergedAt ? "merged" : (merge?.status ?? "none")}>
+      {text}
+    </p>
+  );
+}
+
+/**
  * A decision the work relies on, by what that version decided, with its version; the id on hover (issue #270). A
  * decision changed since then shows the words of the version the work used, not the current ones.
  */
@@ -1299,6 +1338,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const candidate = project.document.candidates.find((c) => c.id === candidateId);
   const report = project.candidateReports[candidateId];
   const [preview, setPreview] = useState<ActionResult<"candidate:previewPullRequest"> | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
   if (!candidate || !report) return null;
   const state = CANDIDATE_STATE[report.state];
@@ -1306,6 +1347,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const approved = candidate.humanApproval && !report.approvalInvalidated;
   const quality = report.quality ?? [];
   const publishable = quality.every((i) => i.passed);
+  // Issue #247: Trama merges with the green light; an interface candidate waits for the person's ok.
+  const route = report.mergeRoute ?? "person";
+  const merged = Boolean(candidate.pullRequest?.mergedAt);
+  const open = report.blockers.length === 0 && report.state !== "superseded" && !merged;
+  const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
@@ -1369,11 +1415,29 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       })()}
       {candidate.pullRequest?.mergedAt ? null : <CandidateOverlaps candidateId={candidate.id} />}
       {quality.length && !candidate.pullRequest ? <QualityField items={quality} /> : null}
+      {route === "interface" && report.state !== "superseded" ? (
+        <Field label="Cambia l'interfaccia">
+          <p className="break-words text-ui-sm text-muted-foreground">
+            {(report.interfaceFiles ?? []).map((path, index) => (
+              <span key={path}>
+                {index ? ", " : null}
+                <span className="font-mono text-[11.5px]">{path}</span>
+              </span>
+            ))}
+          </p>
+        </Field>
+      ) : null}
+      {route === "interface" && open ? (
+        <Field label="Schermate prima e dopo">
+          <InterfaceShotsField candidate={candidate} />
+        </Field>
+      ) : null}
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
         </p>
       ) : null}
+      <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
       {candidate.pullRequest ? (
         <button
           type="button"
@@ -1401,17 +1465,47 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         >
           <IconFocus2 /> Esame approfondito
         </Button>
-        {report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
+        {route === "person" && report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
             Approva questo candidato
           </Button>
         ) : null}
-        {approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
+        {decidable && !rejecting ? (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
+              Rifiuta
+            </Button>
+            <Button size="sm" onClick={() => void act("candidate:approve", { candidateId })}>
+              <IconGitMerge /> Approva e unisci
+            </Button>
+          </>
+        ) : null}
+        {route === "person" && approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
           </Button>
         ) : null}
       </div>
+      {decidable && rejecting ? (
+        <div className="mt-2 space-y-2">
+          <TextArea
+            value={rejection}
+            onChange={(e) => setRejection(e.target.value)}
+            placeholder="Cosa non va nelle schermate? Il motivo torna allo sviluppatore come rilievo."
+            aria-label="Motivo del rifiuto del candidato"
+            className="min-h-12"
+            autoFocus
+          />
+          <div className="cta-row">
+            <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+              Annulla
+            </Button>
+            <Button size="sm" disabled={!rejection.trim()} onClick={() => void act("candidate:reject", { candidateId, note: rejection.trim() }).then(() => setRejecting(false))}>
+              Rifiuta il candidato
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {preview && !candidate.pullRequest ? (
         <div className="mt-2 space-y-1.5 rounded-lg border border-[color:var(--color-border)] p-2.5 text-ui-sm">
           <p className="text-muted-foreground">

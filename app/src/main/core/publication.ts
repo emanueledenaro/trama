@@ -75,7 +75,7 @@ export async function publishCandidate(input: {
   /** The project's mandate now: publishing needs `openPullRequest`. */
   mandate: ProjectMandate | null;
   onPush: (record: PushRecord) => void;
-}): Promise<{ url: string; number: number; branch: string }> {
+}): Promise<{ url: string; number: number; branch: string; headSHA: string }> {
   const workspace = input.assignment.workspace;
   if (!workspace) throw new Error("L'incarico non ha un worktree da pubblicare.");
   // The fixed bans hold before the mandate and before anything is committed (issue #244).
@@ -117,10 +117,12 @@ export async function publishCandidate(input: {
     await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
   await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush, mainBranches: [input.baseBranch] });
+  // The commit Trama pushed: the only head a merge of this candidate accepts (issue #247).
+  const headSHA = (await git(["rev-parse", "HEAD"], root)).trim();
   // An open pull request of this branch now carries the candidate; a closed or merged one belongs to earlier work.
   // GitHub refuses a second pull request for the same branch, so an unreadable list is safe to skip.
   const afterPush = await findPullRequest(input.repository, workspace.branch).catch(() => null);
-  if (afterPush?.state === "open") return { url: afterPush.url, number: afterPush.number, branch: workspace.branch };
+  if (afterPush?.state === "open") return { url: afterPush.url, number: afterPush.number, branch: workspace.branch, headSHA };
   if (afterPush) {
     throw new Error(`La pull request #${afterPush.number} di questo branch è già chiusa: il nuovo candidato richiede un nuovo incarico.`);
   }
@@ -144,7 +146,7 @@ export async function publishCandidate(input: {
   );
   if (created.exitCode !== 0) throw new Error(`GitHub non ha creato la pull request: ${created.stderr.trim() || created.stdout.trim()}`);
   const json = JSON.parse(created.stdout) as { html_url: string; number: number };
-  return { url: json.html_url, number: json.number, branch: workspace.branch };
+  return { url: json.html_url, number: json.number, branch: workspace.branch, headSHA };
 }
 
 /** The pull request already opened from `branch`, if any, in any state. */
