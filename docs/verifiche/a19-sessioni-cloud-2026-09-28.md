@@ -1,15 +1,15 @@
 # A19: incarico in una sessione cloud di Claude Code, con il luogo di lavoro scelto dalla persona
 
-Data: 28 settembre 2026. Issue #260, specifica #239 (Q24, Q25, Q26, Q27, Q29, Q30, Q31), ADR 0017. Base: `origin/main` d9d1e04.
+Data: 28 settembre 2026. Issue #260, specifica #239 (Q24, Q25, Q26, Q27, Q29, Q30, Q31), ADR 0017. Base: `origin/main` d0c83ec (dopo #307, #326, #346, #353 e #355).
 
 ## Cosa è stato verificato
 
 Nessuna sessione cloud reale è stata aperta. Il trasporto verso Claude Code (`claude --cloud`) è sostituito da una fixture dichiarata (`TRAMA_CLOUD_FIXTURE`, `fixtureCloudTransport` in `app/src/main/core/cloudSession.ts`), che restituisce un link fisso e non apre nulla. Il lavoro locale gira sul Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 142 file, 1321 test superati, 3 saltati.
+- `npx vitest run`: 148 file, 1386 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 371 schermate. Passi nuovi: `31a-work-place-setting`, `31b-cloud-session-working`, `31c-cloud-session-returned`, `31d-cloud-blocked-local`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 393 schermate. Passi nuovi: `31a-work-place-setting`, `31b-cloud-session-working`, `31c-cloud-session-returned`, `31d-cloud-blocked-local`, in chiaro e in scuro.
 
 ## Comportamento
 
