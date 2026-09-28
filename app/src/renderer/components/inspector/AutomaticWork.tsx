@@ -60,7 +60,9 @@ function AutomaticWorkRow({ work, withRole }: { work: AutomaticWorkStatus; withR
         </span>
         <Badge tone={state.tone}>{state.label}</Badge>
       </div>
-      <p className="mt-0.5 text-ui-sm text-muted-foreground">{work.detail}</p>
+      <p className="mt-0.5 text-ui-sm text-muted-foreground">
+        <ReferenceText text={work.detail} />
+      </p>
       <StartNow work={work} />
     </div>
   );

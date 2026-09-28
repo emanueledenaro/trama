@@ -412,6 +412,21 @@ describe("architecture review when the team is free (W11)", () => {
     expect(nextDuty(document, context({ headSHA: "c".repeat(40) }))?.duty?.skill).toBe("improve-codebase-architecture");
   });
 
+  it("writes the result in the person's words, never the skill's English strengths (issue #392)", () => {
+    for (const [language, strongest] of [["it", "(consigliata)"], ["en", "(recommended)"]] as const) {
+      const document = project();
+      withCandidate(document);
+      const review = nextDuty(document, context())!;
+      finish(document, review);
+      concludeDuty(document, review.id, architectureAnswer(3), new Date(), language);
+      expect(review.result).toContain(`### Approfondire il modulo 3 ${strongest}`);
+      expect(review.result).not.toMatch(/Strong|Worth exploring|Speculative/);
+    }
+    // The skill's vocabulary guides the review; the texts the person reads say it in plain words.
+    expect(ARCHITECTURE_BINDING).toMatch(/Locality, Leverage/);
+    expect(ARCHITECTURE_BINDING).toMatch(/plain words/);
+  });
+
   it("puts the proposals to the person as one Pact decision card, strongest first, never as edits", () => {
     const document = project();
     withCandidate(document);

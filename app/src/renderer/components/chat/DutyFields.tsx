@@ -2,6 +2,7 @@ import type { SpecialistAssignment } from "@shared/domain";
 import { dutyOutcomeText, dutyTriggerText } from "@shared/duties";
 import { useUi } from "@/lib/store";
 import { useT } from "@/lib/i18n";
+import { ReferenceText } from "./ReferenceText";
 
 /** Why Trama started a fixed role's work, by itself or on request (issue #231), the AI Hero skill it runs and the outcome (W11). */
 export function DutyFields({ assignment }: { assignment: SpecialistAssignment }) {
@@ -14,7 +15,9 @@ export function DutyFields({ assignment }: { assignment: SpecialistAssignment })
     <div data-testid="duty-fields">
       <div className="mt-2">
         <div className="text-ui-xs text-muted-foreground/70">{duty.requestedBy ? "Avviato da Trama su richiesta" : "Avviato da Trama"}</div>
-        <div className="mt-0.5 text-ui text-foreground/90">{dutyTriggerText(t, document, duty)}</div>
+        <div className="mt-0.5 text-ui text-foreground/90">
+          <ReferenceText text={dutyTriggerText(t, document, duty)} />
+        </div>
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
           Skill <span className="font-mono text-[11px]">{duty.skill}</span> di AI Hero, con il suo testo originale
         </div>
@@ -22,7 +25,9 @@ export function DutyFields({ assignment }: { assignment: SpecialistAssignment })
       {outcome ? (
         <div className="mt-2">
           <div className="text-ui-xs text-muted-foreground/70">Esito</div>
-          <div className="mt-0.5 text-ui text-foreground/90">{outcome}</div>
+          <div className="mt-0.5 text-ui text-foreground/90">
+            <ReferenceText text={outcome} />
+          </div>
         </div>
       ) : null}
     </div>

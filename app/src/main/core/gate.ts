@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Candidate, CandidateGate, GateFinding, GateReview, GateRole, ProjectDocument, SpecialistAssignment, SuiteComparison } from "@shared/domain";
 import { GATE_ROLES, NO_SPEC, nothingToReport, blockingFindings, isGateRunning, isRegression, latestGate, suiteLine } from "@shared/gate";
 import { shortId } from "@shared/ids";
+import { plainText } from "@shared/plainLanguage";
 import { roleDuties, roleProfile } from "@shared/roster";
 import type { LoadedSkill } from "@shared/skills";
 import { CHECK_OUTPUT_IN_PROMPT } from "./audit";
@@ -286,7 +287,8 @@ export function gateSummary(document: ProjectDocument, gate: CandidateGate): str
   const secret = gate.reviews.some((r) => r.report === SECRET_NOTE);
   const lines = gate.reviews.filter((r) => r.report !== CHECKS_FAILED_NOTE && r.report !== SECRET_NOTE).map((r) => {
     const name = figureName(document, r.role);
-    if (r.status === "skipped") return `${name}: ${r.report ?? "saltato"}.`.replace(/\.\.$/, ".");
+    // The record keeps a skill's own words ("no spec available"); the summary the Coordinator repeats is Trama's (issue #392).
+    if (r.status === "skipped") return plainText(ITALIAN, `${name}: ${r.report ?? "saltato"}.`).replace(/\.\.$/, ".");
     if (r.status === "failed") return `${name}: revisione non riuscita.`;
     if (r.status !== "done") return `${name}: in corso.`;
     const blocking = blockingFindings(r);

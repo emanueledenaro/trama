@@ -68,9 +68,11 @@ const links = (text: string, ready = true) =>
 
 describe("references in messages (issue #277)", () => {
   it("links the ids, numbers, names, paths and slices that name Trama's records", () => {
+    // The author the candidate's name already says is part of its link (issue #392).
     expect(links("Il candidato C-55555555 di Luca chiude la S2 e la #13, vedi Sources/Orders/CancelPaidOrder.swift:12 e la PR #14.")).toBe(
-      "Il candidato [candidate:C-55555555] di [specialist:Luca] chiude la [slice:S2] e la [issue:#13], vedi [file:Sources/Orders/CancelPaidOrder.swift:12] e la PR [pullRequest:#14].",
+      "Il candidato [candidate:C-55555555 di Luca] chiude la [slice:S2] e la [issue:#13], vedi [file:Sources/Orders/CancelPaidOrder.swift:12] e la PR [pullRequest:#14].",
     );
+    expect(links("Luca consegna il candidato C-55555555.")).toBe("[specialist:Luca] consegna il candidato [candidate:C-55555555].");
     expect(links("Incarico A-11111111, decisione D-1, obiettivo G-66666666, piano P-22222222, modulo Sources/Orders.")).toBe(
       "Incarico [assignment:A-11111111], decisione [decision:D-1], obiettivo [goal:G-66666666], piano [plan:P-22222222], modulo [module:Sources/Orders].",
     );
@@ -122,6 +124,29 @@ describe("references in messages (issue #277)", () => {
     expect(lookupReference("C-00000001", refs)!.label).toBe("candidato di Luca, n. 1");
     expect(lookupReference("C-00000002", refs)!.label).toBe("candidato di Luca, n. 2");
     expect(lookupReference("A-00000002", refs)!.label).toBe("incarico di Luca, n. 2");
+  });
+
+  it("leaves a number that belongs to another word as the text wrote it (issue #392)", () => {
+    // "S1" and "#2" after a word that is not a noun of Trama are that word's own codes, not a slice or an issue.
+    expect(links("Le tariffe S1 e S2 valgono per l'ordine #13 e il prodotto #14.")).toBe("Le tariffe S1 e S2 valgono per l'ordine #13 e il prodotto #14.");
+    expect(unknownReferences("La taglia S9 e il passo #99", index())).toEqual([]);
+    // The noun of Trama, an article or a list of the same kind keep the reference.
+    expect(links("La fetta S1, la S2 e le issue #13 e #14.")).toBe("La fetta [slice:S1], la [slice:S2] e le issue [issue:#13] e [pullRequest:#14].");
+    expect(links("Sto verificando la S1, poi assegno la S2.")).toBe("Sto verificando la [slice:S1], poi assegno la [slice:S2].");
+  });
+
+  it("says the author of a work once (issue #392)", () => {
+    const refs = index();
+    const [before, part, after] = splitReferences("Il candidato C-55555555 di Luca è pronto.", refs);
+    expect(before).toEqual({ text: "Il candidato " });
+    expect(part).toMatchObject({ text: "C-55555555 di Luca", reference: { id: "C-55555555" } });
+    expect(after).toEqual({ text: " è pronto." });
+    const reference = (part as { reference: Parameters<typeof referenceText>[0] }).reference;
+    expect(`${before!.text}${referenceText(reference, part!.text, before!.text)}${after!.text}`).toBe(
+      "Il candidato di Luca, fetta 2, Il supporto vede gli ordini in revisione è pronto.",
+    );
+    // Another agent after the work is a different person and stays.
+    expect(links("Il candidato C-55555555 di Sicurezza")).toBe("Il candidato [candidate:C-55555555] di Sicurezza");
   });
 
   it("writes every target as a link and reads it back", () => {
