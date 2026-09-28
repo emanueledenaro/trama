@@ -1220,8 +1220,9 @@ await shot("09-mandate");
   await themeShots("34-rules-mandate-modules");
   // A module shows its files first and keeps the dependencies closed.
   await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
-  await rulesBar.getByTestId("module-files").waitFor();
-  if ((await rulesBar.getByTestId("module-dependencies").getAttribute("data-open")) !== "false") throw new Error("The module's dependencies are not closed");
+  // Issue #336: the module opens in its editor tab.
+  await detailPane().getByTestId("module-files").waitFor();
+  if ((await detailPane().getByTestId("module-dependencies").getAttribute("data-open")) !== "false") throw new Error("The module's dependencies are not closed");
   await themeShots("34-rules-module");
   await setLookTo(rulesLook.provider, rulesLook.dark);
 }
@@ -2723,6 +2724,10 @@ await closePanels();
     await setLookTo(editorLook.provider, editorLook.dark);
   };
   const editorArea = page.getByTestId("editor-area");
+  // Tabs the steps above left open (Impostazioni after "Apri in Regole") close first: then the conversation is alone.
+  for (let tab = page.locator('[data-testid="editor-tab"]:not([data-tab="conversation"])').first(); await tab.count(); ) {
+    await tab.getByRole("button", { name: /^Chiudi / }).click();
+  }
   if (await page.getByTestId("editor-tabs").count()) throw new Error("The tab bar shows with the conversation alone");
   for (const [width, height] of [[1280, 800], [1680, 1050]]) {
     const size = `${width}x${height}`;
