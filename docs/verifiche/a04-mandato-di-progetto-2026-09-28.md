@@ -9,7 +9,7 @@ Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessun
 - `npx tsc --noEmit -p .`: nessun errore.
 - `npx vitest run`: 119 file, 1139 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: vedi la pull request per l'esito dell'ultima corsa. Passi nuovi: `26a-project-mandate`, `26b-mandate-restrict`, `26c-mandate-restricted`, `26d-fixed-ban`, ognuno con Codex e Claude, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 292 schermate. Passi nuovi: `26a-project-mandate`, `26b-mandate-restrict`, `26c-mandate-restricted`, `26d-fixed-ban`, ognuno con Codex e Claude, in chiaro e in scuro.
 
 ## Comportamento
 
@@ -44,3 +44,4 @@ Prima (`origin/main` f18bb07) e dopo, con Codex, in chiaro e in scuro: `a04-mand
 - OpenCode, Pi e Antigravity non eseguono comandi in Trama. Per le letture OpenCode blocca i file `.env`; gli altri file di segreti su questi provider restano coperti solo dal perimetro di lettura.
 - Il riconoscimento dei comandi è per regole: un comando scritto in modo insolito, per esempio dentro uno script eseguito dopo, non viene riconosciuto.
 - Una restrizione non ferma i turni in corso: finiscono come sono, e il lavoro fuori dal mandato ristretto non riparte.
+- Nelle schermate `26d-fixed-ban` di `ui-check` la riga di stato "Niente in corso." compare due volte. Riprodotto a parte, con lo stesso messaggio e "Aspetta te" aperto, la riga è una sola: la causa non è ancora chiara.
