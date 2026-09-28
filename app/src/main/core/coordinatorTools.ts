@@ -61,6 +61,7 @@ import { NEXT_MOVES, workRequests, workState } from "./workPhase";
 import { ASK_TRAMA_BINDING, proposeRoute, RouteError, routeReport } from "./askTrama";
 import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
+import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 
 export interface TicketUpdate {
@@ -1106,6 +1107,15 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const authorization = authorize(document.mandate, "executeInWorktree", moduleIds, kind);
         if (authorization !== "authorized") {
           return refused(authorization, "executeInWorktree", moduleIds.filter((id) => !document.mandate?.scopeModuleIds.includes(id)));
+        }
+        // Work that builds on work the mandate leaves out would bring it back through its dependency (C06).
+        const leftOut = workLeftOut(document, activeTerms(document.mandate));
+        const outsideDependencies = strings(args.dependencies).filter((id) => leftOut.has(id));
+        if (outsideDependencies.length) {
+          return toolFailure(
+            "dependency_outside_mandate",
+            `These dependencies are work the mandate no longer covers: ${outsideDependencies.join(", ")}. Plan the work again within the mandate.`,
+          );
         }
         const checks = strings(args.requiredChecks);
         const invalidChecks = checks.filter((c) => !ALL_CHECKS.includes(c as ReadOnlyCheck));

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
-import { activeTerms, workStoppedBy } from "@shared/mandate";
+import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
 import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -3697,15 +3697,17 @@ export class TramaController {
   }
 
   /**
-   * Narrows the mandate in force without revoking it (issue #244). Running turns end as they are; from the next turn
-   * the Coordinator reads the new version, and work outside it does not start again.
+   * Narrows the mandate in force without revoking it (issue #244). The work it no longer covers, and the work that
+   * depends on it, stops now with its worktree kept (C06); the rest goes on. From the next turn the Coordinator reads
+   * the new version.
    */
   async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
     const project = this.requireProject();
     const mandate = restrictMandate(project.document, input);
+    const stopped = this.stopWorkOutsideMandate("Il mandato ristretto non copre più questo lavoro. Il worktree resta com'è.");
     this.changed();
     const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
-    await this.send(restrictionMessage(mandate, moduleName), null, null, null, [], null, null, false);
+    await this.send(restrictionMessage(mandate, moduleName, stopped), null, null, null, [], null, null, false);
   }
 
   /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
@@ -4532,15 +4534,21 @@ export class TramaController {
   }
 
   /** Stops running work the mandate no longer covers, after a correction or a revocation. */
-  private stopWorkOutsideMandate(reason: string): void {
+  /**
+   * Stops the work the mandate in force no longer covers and the work that depends on it (C06). The stop keeps each
+   * worktree as it is, so the diff already written stays for the resume or for a new assignment.
+   */
+  private stopWorkOutsideMandate(reason: string): StoppedWork[] {
     const project = this.state.project;
-    if (!project) return;
+    if (!project) return [];
     const document = project.document;
-    for (const { specialist, assignment } of workStoppedBy(document, activeTerms(document.mandate))) {
-      requestStop(document, specialist.id, "Trama", reason);
+    const stopped = workStoppedBy(document, activeTerms(document.mandate));
+    for (const { specialist, assignment, dependsOn } of stopped) {
+      requestStop(document, specialist.id, "Trama", dependsOn ? `Dipende da ${dependsOn.id}. ${reason}` : reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
     this.changed();
+    return stopped;
   }
 
   private async runCheck(check: ReadOnlyCheck, root: string, requestId: string | null) {

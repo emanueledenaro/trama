@@ -13,7 +13,7 @@ import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
-import { developers } from "./core/team";
+import { assign, confirmTeam, developers, proposeTeam } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -1131,6 +1131,41 @@ describe("TramaController", () => {
     expect(document.mandate!.history.map((h) => h.version)).toEqual([1]);
     const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
     expect(message).toMatchObject({ text: expect.stringContaining("Ho ristretto il mandato") });
+  });
+
+  it("stops only the work a narrower perimeter leaves out and its dependents, keeping their worktree (C06)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    const proposal = proposeTeam(document, {
+      requestId: null,
+      summary: null,
+      members: ["Ada", "Bea", "Cy"].map((name) => ({ name, competence: "Swift", reason: "r", moduleIds: [] })),
+    });
+    confirmTeam(document, proposal.id, null, null);
+    const order = { kind: "agreedTicket" as const, objective: "o", issueNumber: null, exercise: null, dependencies: [], model: "m", tools: ["edits" as const], requiredChecks: [], instructions: "i" };
+    const base = assign(document, { ...order, specialist: "Ada", objective: "Base degli ordini", moduleIds: ["Sources/Orders"] }, 1, null);
+    base.status = "completed";
+    const orders = assign(document, { ...order, specialist: "Ada", objective: "Annullamento degli ordini", moduleIds: ["Sources/Orders"] }, 1, null);
+    const workspace = { worktreeRoot: "/tmp/trama-worktree-orders", branch: "trama/orders", baseSHA: "abc" } as never;
+    orders.workspace = workspace;
+    const payments = assign(document, { ...order, specialist: "Bea", objective: "Rimborsi sugli ordini", moduleIds: ["Sources/Payments"], dependencies: [base.id] }, 1, null);
+    const users = assign(document, { ...order, specialist: "Cy", objective: "Profilo utente", moduleIds: ["Sources/Users"] }, 1, null);
+
+    await controller!.restrictMandate({ scopeModuleIds: request!.scopeModuleIds.filter((id) => id !== "Sources/Orders"), authorizedActions: request!.authorizedActions });
+    // The work on Orders and the work that builds on it stop; the work on Users goes on.
+    expect(orders.status).toBe("stopped");
+    expect(orders.stops.at(-1)).toMatchObject({ requestedBy: "Trama", reason: expect.stringContaining("mandato ristretto") });
+    expect(orders.workspace).toBe(workspace);
+    expect(payments.status).toBe("stopped");
+    expect(payments.stops.at(-1)).toMatchObject({ reason: expect.stringContaining(`Dipende da ${base.id}`) });
+    expect(users.status).toBe("preparing");
+    const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
+    expect(message).toMatchObject({ text: expect.stringContaining(`Ho fermato ${orders.id}, ${payments.id} (dipende da ${base.id})`) });
+    // Neither resumes while the perimeter leaves out the work they rely on.
+    await expect(controller!.resumeSpecialistWork(orders.id)).rejects.toThrow(/mandato/);
+    await expect(controller!.resumeSpecialistWork(payments.id)).rejects.toThrow(/mandato/);
   });
 
   it("stops a command a fixed ban covers, whatever the mandate, and puts it in Aspetta te (issue #244)", async () => {

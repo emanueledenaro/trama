@@ -240,11 +240,12 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
           <div className="text-ui-xs text-muted-foreground/70">Lavori che si fermerebbero</div>
           {diff.stoppedWork.length ? (
             <ul className="list-disc space-y-0.5 pl-4 text-ui-sm">
-              {diff.stoppedWork.map(({ specialist, assignment }) => (
+              {diff.stoppedWork.map(({ specialist, assignment, dependsOn }) => (
                 <li key={assignment.id} className="break-words">
                   <AgentName agent={specialist} />
                   <Sep />
                   {assignment.objective}
+                  {dependsOn ? <span className="text-muted-foreground"> (dipende da «{dependsOn.objective}»)</span> : null}
                 </li>
               ))}
             </ul>

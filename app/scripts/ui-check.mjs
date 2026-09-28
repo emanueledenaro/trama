@@ -3302,12 +3302,15 @@ await page.getByRole("button", { name: "Restringi", exact: true }).click();
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
+// Before it takes effect the form says which work stops (C06): here nothing runs, so nothing stops.
+await restrict.getByText(/si ferma subito; il resto continua\. Nessun lavoro in corso si ferma\./).waitFor();
 await mandateShots("26b-mandate-restrict");
 await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
 await mandateShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
 await page.getByRole("button", { name: "Correggi", exact: true }).click();

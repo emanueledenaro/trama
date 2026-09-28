@@ -621,6 +621,32 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     expect(document.team.specialists.find((s) => s.id === created.specialistID)).toMatchObject({ origin: "coordinator", reason: "Serve per i rimborsi", moduleIds: ["Sources/Payments"] });
   });
 
+  it("assign_task refuses work that builds on work the mandate no longer covers (C06)", async () => {
+    const document = emptyDocument("p");
+    const { context, started } = mandateContext(document);
+    confirmTeam(
+      document,
+      proposeTeam(document, {
+        requestId: null,
+        summary: null,
+        members: [
+          { name: "Ada", competence: "Swift", reason: "r", moduleIds: [] },
+          { name: "Bea", competence: "Swift", reason: "r", moduleIds: [] },
+        ],
+      }).id,
+      null,
+      null,
+    );
+    grant(document, ["executeInWorktree"], ["Sources/Orders", "Sources/Payments"]);
+    const base = assign(document, { ...order, moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    base.status = "completed";
+    grant(document, ["executeInWorktree"], ["Sources/Payments"]);
+    const refused = await refusal("assign_task", { ...order, specialist: "Bea", moduleIDs: ["Sources/Payments"], dependencies: [base.id] }, context);
+    expect(refused).toContain("dependency_outside_mandate");
+    expect(refused).toContain(base.id);
+    expect(started).toEqual([]);
+  });
+
   it("declare_candidate answers to the mandate and binds the candidate to base, decisions and required checks; clear_candidate needs integrateCandidate", async () => {
     const document = emptyDocument("p");
     const { context } = mandateContext(document);
