@@ -86,7 +86,9 @@ const ENVIRONMENT_FAILURES: RegExp[] = [
   /\bno space left on device\b/i,
   /^bwrap: /m,
   /^sandbox-exec: /m,
-  /\bcommand not found\b/,
+  /\bcommand not found\b/i,
+  // The checks start their command through /usr/bin/env, which says so when the machine lacks it.
+  /^env: .+: No such file or directory$/m,
 ];
 
 /** Whether a check failed because of the sandbox or the machine rather than the code. */
@@ -156,8 +158,9 @@ export function recordCheckOutcome(document: ProjectDocument, outcome: CheckOutc
     regression = (base?.passed === true && base.headSHA === candidate.baseSHA) || earlier;
   }
   if (outcome.passed || !outcome.ran || environment || !DIAGNOSABLE_CHECKS.includes(outcome.check)) return null;
+  // An older failure of the environment does not hide a failure of the code on the same version.
   const known = ledger.failures.some(
-    (f) => f.check === outcome.check && f.target === outcome.target.kind && f.candidateId === candidateId && f.version === version,
+    (f) => !environmentFailure(f.output) && f.check === outcome.check && f.target === outcome.target.kind && f.candidateId === candidateId && f.version === version,
   );
   if (known) return null;
   const failure: CheckFailure = {

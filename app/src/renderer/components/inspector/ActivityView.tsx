@@ -286,7 +286,11 @@ function TechnicalWork({ focusWork }: { focusWork?: string }) {
   const project = useUi((s) => s.app?.project);
   const document = project?.document;
   const running = project?.runningWork;
-  const turns = useMemo(() => (document ? workTurns(document.events, document.requests, running ?? []) : []), [document, running]);
+  // A turn with only empty notes has no entry: it is left out before the page is counted.
+  const turns = useMemo(
+    () => (document ? workTurns(document.events, document.requests, running ?? []).filter((t) => t.running || compactSteps(t.activities).length) : []),
+    [document, running],
+  );
   const titles = useMemo(() => new Map((document ? projectGoals(document) : []).map((g) => [g.id, g.title])), [document]);
   const focusIndex = focusWork ? turns.findIndex((t) => t.id === focusWork) : -1;
   const [shown, setShown] = useState(TURNS_SHOWN);

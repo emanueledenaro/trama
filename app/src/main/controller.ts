@@ -363,6 +363,7 @@ import {
   dutySession,
   nextDuty,
   observeIssues,
+  environmentFailure,
   recordCheckOutcome,
   startDomainWriting,
   startDutyOnRequest,
@@ -4610,6 +4611,24 @@ export class TramaController {
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
     const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check);
+    // A failure of the sandbox or the machine says nothing about the candidate: its evidence and the person's
+    // approval stay as they were, and nothing is diagnosed (issue #271).
+    const environment = result.exitCode !== 0 && environmentFailure(result.output);
+    if (environment) {
+      appendEvent(
+        document,
+        "trama",
+        {
+          type: "activity",
+          title: `Verifica ${CHECKS[check].title} su ${candidateId}: non riuscita per la sandbox o la macchina, le evidenze restano quelle di prima`,
+          detail: result.output.slice(-4_000) || null,
+          tone: "error",
+        },
+        requestId,
+      );
+      this.changedIn(project);
+      return result;
+    }
     recordEvidence(document, candidateId, {
       check,
       passed: result.exitCode === 0,
