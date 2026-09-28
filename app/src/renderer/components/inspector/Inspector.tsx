@@ -1,6 +1,5 @@
 import { DisclosureChevron } from "@/components/chat/WorkSteps";
 import { useUi } from "@/lib/store";
-import { ActivityView } from "./ActivityView";
 import { AgentThreadView } from "./AgentThreadView";
 import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
@@ -36,7 +35,6 @@ export const TITLES = {
   audit: "Esame approfondito",
   group: "Lavoro",
   work: "Lavoro",
-  activity: "Attività",
   issues: "Lavoro",
   issue: "Issue",
   pullRequest: "Pull request",
@@ -109,8 +107,7 @@ export function InspectorBody({ target }: { target: InspectorTarget }) {
       {/* Lavoro is one view (issue #332): goals, branches and issues are its sections, opened and brought into view. */}
       {target.kind === "work" ? <WorkOverview /> : null}
       {target.kind === "group" ? <WorkOverview focus="branches" /> : null}
-      {target.kind === "activity" ? <ActivityView focusWork={target.work} /> : null}
-      {target.kind === "issues" ? <WorkOverview focus="issues" /> : null}
+      {target.kind === "issues" ? <WorkOverview key={target.backlog ? "backlog" : "issues"} focus="issues" backlog={target.backlog} /> : null}
       {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
       {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}
       {target.kind === "commit" ? <CommitView sha={target.sha} /> : null}

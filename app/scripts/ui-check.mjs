@@ -490,6 +490,43 @@ await shot("02-demo-study");
   // One badge in the activity bar, the count of Aspetta te.
   const badges = await activityBar().getByTestId("activity-badge").allInnerTexts();
   if (badges.join() !== "1") throw new Error(`The activity bar's badges: ${badges.join(", ")}`);
+  // The Projects icon is stacked folders and the Coordinator's conversation is Trama's mark in one tint, both drawn in
+  // the button's own color (currentColor) at the size of the other icons: grey when off, the active color when open.
+  {
+    const iconOf = (name) =>
+      activityBar()
+        .getByRole("button", { name, exact: true })
+        .evaluate((button) => {
+          const svg = button.querySelector("svg");
+          const box = svg.getBoundingClientRect();
+          const painted = svg.querySelector("path");
+          const style = getComputedStyle(painted);
+          return {
+            tabler: svg.classList.contains("tabler-icon-folders"),
+            mark: svg.dataset.tramaMark ?? null,
+            size: [Math.round(box.width), Math.round(box.height)],
+            paint: painted.getAttribute("fill") === "currentColor" ? style.fill : style.stroke,
+            color: getComputedStyle(button).color,
+          };
+        });
+    const projects = await iconOf("Progetti");
+    const coordinator = await iconOf("Coordinatore");
+    const other = await iconOf("Memoria");
+    if (!projects.tabler || projects.size.join() !== other.size.join()) throw new Error(`The Projects icon is not the stacked folders at the icons' size: ${JSON.stringify(projects)}`);
+    if (coordinator.mark !== "mono" || coordinator.size.join() !== other.size.join() || coordinator.paint !== coordinator.color) {
+      throw new Error(`The Coordinator's icon is not Trama's mark in the button's color: ${JSON.stringify(coordinator)}`);
+    }
+    if ((await activityBar().getByRole("button", { name: "Coordinatore", exact: true }).getAttribute("aria-pressed")) !== "true") throw new Error("The Coordinator's icon is not on with the conversation open");
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await page.waitForTimeout(200);
+        await capture({ path: join(out, `30-activity-bar-${provider}-${dark ? "dark" : "light"}.png`), clip: { x: 0, y: 0, width: 240, height: 440 } });
+        console.log("saved", `30-activity-bar-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(windowLook.provider, windowLook.dark);
+  }
   for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(300);
@@ -631,11 +668,125 @@ await shot("03c-decision-answered");
 await answeredLine.getByRole("button", { name: /^Apri: / }).click();
 await answeredLine.getByText("Apri nel Patto").waitFor();
 await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
-// The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there.
+// The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there, in the bottom
+// panel under the conversation (issue #337).
 await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
-await page.getByTestId("side-bar").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
+await page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
 await shot("04-work-expanded");
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+// Issue #337: Activity in the bottom panel, attached under the editor with a horizontal sash as in VS Code. It never
+// covers the status bar, it leaves the conversation at least 380 px at 1280x800 and it follows the provider's theme.
+{
+  const panel = page.getByTestId("bottom-panel");
+  const panelLook = await lookOf();
+  const conversationHeight = () =>
+    page.evaluate(() => {
+      const timeline = document.querySelector(".chat-timeline-scroll").getBoundingClientRect();
+      const dock = document.querySelector(".chat-composer-dock").getBoundingClientRect();
+      return Math.round(dock.top - timeline.top);
+    });
+  const edges = () =>
+    page.evaluate(() => {
+      const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+      const [panelBox, status, main] = [box('[data-testid="bottom-panel"]'), box('[data-testid="status-bar"]'), box("main")];
+      return { top: panelBox.top, bottom: panelBox.bottom, left: panelBox.left, right: panelBox.right, height: panelBox.height, status: status.top, main };
+    });
+  for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(400);
+    const box = await edges();
+    if (box.height !== (width >= 1500 ? 260 : 200)) throw new Error(`The bottom panel is ${box.height}px high at ${size}`);
+    if (box.bottom > box.status + 0.5) throw new Error(`The bottom panel covers the status bar at ${size}`);
+    if (Math.abs(box.top - box.main.bottom) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
+      throw new Error(`The bottom panel is not attached under the editor at ${size}`);
+    if (size === "1280x800") {
+      const room = await conversationHeight();
+      if (room < 380) throw new Error(`The conversation has ${room}px at 1280x800 with the bottom panel open, under 380`);
+      console.log(`conversation at 1280x800 with the bottom panel: ${room}px`);
+    }
+    await noHorizontalScroll(`bottom panel ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`37a-activity-panel-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(panelLook.provider, panelLook.dark);
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForTimeout(300);
+  // One line per row: time, bot or avatar, text, state; the summary says what runs now and the last thing gone wrong.
+  await panel.getByTestId("activity-summary-now").waitFor();
+  await panel.getByTestId("activity-summary-problem").waitFor();
+  const turnRow = panel.locator('[data-testid="work-turn"]').first();
+  const rowHeight = await turnRow.locator("> div").first().evaluate((row) => row.getBoundingClientRect().height);
+  if (rowHeight > 32) throw new Error(`An Activity row is ${rowHeight}px high, not one line`);
+  if (/\b[ACGRS]-[0-9A-F]{8}\b/.test(await panel.getByTestId("activity-log").innerText())) throw new Error("An id shows in Activity outside the hover");
+  // The row's secondary actions are icons with their name.
+  const showInChat = turnRow.getByRole("button", { name: "Mostra nella chat", exact: true });
+  if ((await showInChat.innerText()).trim()) throw new Error("Mostra nella chat is not an icon");
+  // The filter by type keeps the turns of work only; the filter by who keeps the Coordinator's rows.
+  await panel.getByRole("button", { name: /^Tipo: / }).click();
+  await page.getByRole("option", { name: "Turni di lavoro" }).click();
+  await panel.locator('[data-testid="work-turn"]').first().waitFor();
+  if (await panel.getByTestId("activity-log").locator('> li:not([data-testid="work-turn"])').count()) throw new Error("The type filter keeps other rows");
+  await shot("37b-activity-panel-filter");
+  await panel.getByRole("button", { name: /^Tipo: / }).click();
+  await page.getByRole("option", { name: "Tutto" }).click();
+  await panel.getByRole("button", { name: /^Chi: / }).click();
+  await page.getByRole("option", { name: "Coordinatore" }).click();
+  await panel.getByRole("button", { name: /^Chi: Coordinatore/ }).waitFor();
+  await panel.getByRole("button", { name: /^Chi: / }).click();
+  await page.getByRole("option", { name: "Tutti" }).click();
+  // "Mostra nella chat" brings the turn's line of the chat into view.
+  const turnId = await turnRow.getAttribute("data-work");
+  await showInChat.click();
+  const chatLine = page.locator(`[data-testid="work-line"][data-work="${turnId}"]`);
+  await chatLine.and(page.locator('[data-highlight="true"]')).waitFor({ timeout: 5_000 });
+  const lineBox = await chatLine.boundingBox();
+  const mainBox = await page.getByRole("main").boundingBox();
+  if (!lineBox || !mainBox || lineBox.y < mainBox.y || lineBox.y + lineBox.height > mainBox.y + mainBox.height) throw new Error("Mostra nella chat did not bring the line into view");
+  // The horizontal sash: dragged down it lowers the panel, dragged up it raises it as far as the conversation keeps its
+  // 380 px, the keys step it, Home resets it.
+  const panelSash = page.getByRole("separator", { name: "Altezza del pannello Attività" });
+  if ((await panelSash.getAttribute("aria-orientation")) !== "horizontal") throw new Error("The panel's sash is not horizontal");
+  const dragSash = async (by, name) => {
+    // The panel eases to its new height: the grip is measured once it has settled.
+    await page.waitForTimeout(400);
+    const sashBox = await panelSash.boundingBox();
+    await page.mouse.move(640, sashBox.y + sashBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(640, sashBox.y + sashBox.height / 2 + by, { steps: 6 });
+    await page.waitForTimeout(200);
+    if (name) await shot(name);
+    await page.mouse.up();
+    await page.mouse.move(640, 300);
+  };
+  await dragSash(40, "37c-activity-panel-sash-drag");
+  if (Number(await panelSash.getAttribute("aria-valuenow")) !== 160) throw new Error("Dragging the sash down does not lower the bottom panel to 160 px");
+  await panelSash.focus();
+  await page.keyboard.press("ArrowUp");
+  if (Number(await panelSash.getAttribute("aria-valuenow")) !== 176) throw new Error("ArrowUp does not raise the bottom panel by 16px");
+  await dragSash(-200);
+  await page.waitForTimeout(300);
+  const highest = Number(await panelSash.getAttribute("aria-valuenow"));
+  if (highest !== Number(await panelSash.getAttribute("aria-valuemax"))) throw new Error(`Dragging the sash up stops at ${highest} px, before the panel's highest`);
+  if ((await conversationHeight()) < 380) throw new Error("The bottom panel at its highest leaves the conversation under 380 px");
+  await panelSash.focus();
+  await page.keyboard.press("Home");
+  await page.waitForFunction(() => document.querySelector('[role="separator"][aria-label="Altezza del pannello Attività"]')?.getAttribute("aria-valuenow") === "200");
+  // The title bar's toggle closes and opens it; the X closes it; the status bar's icon opens it.
+  await page.getByRole("button", { name: "Pannello Attività" }).click();
+  await panel.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "Pannello Attività" }).click();
+  await panel.waitFor();
+  if ((await page.getByRole("button", { name: "Pannello Attività" }).getAttribute("aria-pressed")) !== "true") throw new Error("The panel's toggle is not pressed");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await panel.waitFor({ state: "detached" });
+  await page.getByTestId("status-bar").getByRole("button", { name: "Attività", exact: true }).click();
+  await panel.waitFor();
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("[proponi-team]");
 await page.keyboard.press("Enter");
 const teamItem = await openWaiting("team");
@@ -1588,7 +1739,7 @@ const correctActions = await understandingStep.locator(".cta-row").last().locato
 if (correctActions.join("|") !== "Annulla|Invia la correzione") throw new Error(`Correction buttons out of order: ${correctActions.join(", ")}`);
 await themeShots("15b1-activity-step-correct");
 await understandingStep.getByRole("button", { name: "Annulla" }).click();
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 // A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
 // of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
 await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
@@ -2133,7 +2284,7 @@ await stoppedTurn.click();
 await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
 await stoppedTurn.scrollIntoViewIfNeeded();
 await shot("18a-specialist-stopped");
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
@@ -2172,7 +2323,10 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 if (await page.getByText(/is an assignment, not a candidate/).count()) throw new Error("A tool error reached the chat");
 await page.getByText(/uno strumento di Trama ha rifiutato la richiesta/).last().waitFor();
 await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
-const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
+// Issue #337: the row is one line; its detail, with the tools that failed, opens on click.
+const stalledEntry = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first();
+await stalledEntry.getByTestId("activity-row-toggle").click();
+const toolErrors = stalledEntry.getByTestId("activity-tool-errors");
 await toolErrors.locator("summary").click();
 await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
 // The activity's labels, details and steps name the records (issue #392); the tool's own error text stays as written.
@@ -2187,7 +2341,7 @@ for (const dark of [false, true]) {
   await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 // The person takes the move again: it reaches the Coordinator as the person's message, and the button goes away.
 await retryButton.click();
 await page.getByText("Esegui le verifiche del lavoro.").last().waitFor({ timeout: 20_000 });
@@ -2332,6 +2486,7 @@ await shot("24c-gate-finding-to-developer");
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("24d-gate-finding-to-developer-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 
 // Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
 // evidence and the reviewer's findings, with file and line, as judgement; in the light and the dark theme.
@@ -2641,6 +2796,9 @@ if (leftActions.join("|") !== "È un compromesso") throw new Error(`A finding of
 if (await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).count()) throw new Error("A finding offers the same Pact card twice");
 await verifiedFinding.scrollIntoViewIfNeeded();
 await themeShots("20h-finding-work");
+// Issue #337: the backlog left Activity; the finding's link opens it in Lavoro, Issue, on the "Nel backlog" filter.
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByRole("button", { name: "backlog di Trama" }).click();
+await page.locator('[data-testid="side-bar"][data-view="work"]').getByTestId("problem-backlog").getByTestId("problem-backlog-item").first().waitFor({ timeout: 10_000 });
 // The correction is Ada's new assignment in the work's dialog; it ends before the next step gives her work.
 const correctionWork = assignmentCards.nth(6);
 await waitInCard(correctionWork, (card) => card.getByText(/Correggere il rilievo: Possibile Mysterious Name/), "finding correction");
@@ -3996,7 +4154,7 @@ await timelineConflict.getByRole("button", { name: "Mostra tutti i 18 file" }).c
 await timelineConflict.getByText("vercel.json").waitFor();
 // Luca's line opens its turn in Activity: the empty notes are gone, the same command three times is one entry.
 await workLines.filter({ hasText: "Luca" }).getByRole("button").click();
-const focusedTurn = page.getByTestId("side-bar").locator('[data-testid="work-turn"][data-focused]');
+const focusedTurn = page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused]');
 await focusedTurn.getByTestId("technical-steps").waitFor();
 const lucaSteps = await focusedTurn.getByTestId("technical-step").allInnerTexts();
 if (lucaSteps.some((text) => text.includes("Nota dello specialista"))) throw new Error(`Compact timeline: empty notes in Activity: ${lucaSteps}`);
@@ -4010,9 +4168,9 @@ for (const dark of [false, true]) {
   await shot(`29b-activity-steps-${dark ? "dark" : "light"}`);
 }
 // The Coordinator's seven read_issues in a row are one entry.
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await workLines.filter({ hasNotText: "Luca" }).last().getByRole("button").click();
-await page.getByTestId("side-bar").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"][data-count="7"]').filter({ hasText: "read_issues" }).waitFor();
+await page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"][data-count="7"]').filter({ hasText: "read_issues" }).waitFor();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
@@ -4235,7 +4393,7 @@ if (!labelled(problemCalls)) throw new Error("Trama did not apply the triage lab
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
 await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await composer().fill("/riep");
 await page.getByRole("option", { name: /^\/riepilogo/ }).first().waitFor();
 await page.keyboard.press("Enter");
@@ -4250,11 +4408,14 @@ await app.close();
 ({ app, page } = await launch());
 await redCheckWithMandate(await problemProject("problemi-locali", null), "trama-ui-problemi-locali");
 await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]').filter({ hasText: "Nel backlog di Trama" }).waitFor({ timeout: 90_000 });
-// Issue #332: the backlog left Activity; it is the "Nel backlog" filter of the issues in Lavoro.
+// Issue #337: the backlog of the found problems left Activity; it is the "Nel backlog" filter of the issues, in Lavoro.
+if (await page.getByTestId("bottom-panel").getByTestId("problem-backlog").count()) throw new Error("The backlog is still in Activity");
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+// Issue #332: Lavoro is one view; the backlog is the "Nel backlog" filter of its Issue section.
 await openView("Lavoro");
 await page.getByTestId("work-section-issues").getByRole("radio", { name: /^Nel backlog/ }).click();
-const localBacklog = page.getByTestId("problem-backlog");
-await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 90_000 });
+const localBacklog = page.getByTestId("side-bar").getByTestId("problem-backlog");
+await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 30_000 });
 if (await page.getByTestId("activity-log").count()) throw new Error("Activity is still open under the backlog");
 await localBacklog.scrollIntoViewIfNeeded();
 await lookShots("27c-found-problem-local-backlog");
@@ -4293,7 +4454,7 @@ const askTicket = async (text, reply) => {
 // Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
 const ticketSteps = async (reply) => {
   await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
-  const steps = page.getByTestId("side-bar").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
+  const steps = page.getByTestId("bottom-panel").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
   const step = steps.filter({ hasText: reply }).first();
   await step.waitFor({ timeout: 10_000 });
   if ((await step.locator("button + *").count()) === 0) await step.getByRole("button").click();
@@ -4307,7 +4468,7 @@ let ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
 if (ticketState.state !== "open" || ticketState.comments.length !== 1 || ticketState.body !== ticketIssue.body) throw new Error("The partial report closed the issue or ticked a criterion");
 await partialStep.scrollIntoViewIfNeeded();
 await lookShots("30a-ticket-partial");
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await writeFile(ticketFile, JSON.stringify({ ...ticketState, failComment: true }));
 await askTicket("[ticket:errore] Aggiorna ancora la issue 42", /Non sono riuscito ad aggiornare la issue #42/);
 const failedStep = await ticketSteps("aggiornamento non riuscito");
@@ -4396,7 +4557,7 @@ if ((await page.getByText("[attesa] Controlla i test dei resi", { exact: true })
 // The turn's steps are in Activity (issue #271): once the turn ends, its line opens them there. The newest line
 // that holds Trama's line is the resumed turn; on a slow runner the reply comes before the turn is closed.
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
-const reopenedRow = page.getByTestId("side-bar").getByText("Turno ripreso alla riapertura", { exact: true }).last();
+const reopenedRow = page.getByTestId("bottom-panel").getByText("Turno ripreso alla riapertura", { exact: true }).last();
 const turnLines = page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ });
 for (let index = (await turnLines.count()) - 1; index >= 0 && !(await reopenedRow.isVisible()); index -= 1) {
   await turnLines.nth(index).click();
@@ -4906,7 +5067,7 @@ await mergedEntry.waitFor({ timeout: 20_000 });
 await mergedEntry.getByRole("button", { name: "Apri la pull request" }).waitFor();
 if (/[–—]/.test(await mergedEntry.innerText())) throw new Error("A dash in the merge entry");
 await themeShots("30a-merge-activity");
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 
 // An interface change waits for the person with the screenshots before and after, in light and dark.
 await send("[assegna] [interfaccia]");
@@ -4959,7 +5120,7 @@ if (await page.getByRole("button", { name: "Chiudi la barra laterale" }).count()
 await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 
 // Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
 // green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"

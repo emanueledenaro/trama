@@ -1,6 +1,7 @@
 // The window laid out as in VS Code (ADR 0018, issue #330): an activity bar picks the view, the side bar shows it,
 // the chat is the editor area and the status bar says what happens now. Until the slices B02-B08 build the new
 // views, every panel of the old inspector opens in the side bar under the closest view, one tab per old panel.
+// Activity is not one of them: it opens in the bottom panel under the editor (issue #337).
 import type { MessageKey } from "@shared/i18n";
 import type { InspectorTarget } from "@/lib/store";
 
@@ -35,7 +36,6 @@ export const VIEW_OF: Record<TargetKind, Exclude<SideBarView, "projects">> = {
   branch: "work",
   issues: "work",
   issue: "work",
-  activity: "work",
   team: "teams",
   specialist: "teams",
   agentThread: "teams",
@@ -52,7 +52,7 @@ export const VIEW_OF: Record<TargetKind, Exclude<SideBarView, "projects">> = {
 /** The panels a view lists as tabs, in order; the first is what the view shows when it opens. */
 export const VIEW_TABS: Record<Exclude<SideBarView, "projects">, TargetKind[]> = {
   waiting: ["waiting"],
-  // Lavoro is one view with sections (issue #332); Activity opens under it until the bottom panel (B08).
+  // Lavoro is one view with sections (issue #332).
   work: ["work"],
   teams: ["team"],
   rules: ["mandate", "pact", "standard"],
@@ -77,7 +77,6 @@ const TAB_OF: Partial<Record<TargetKind, TargetKind>> = {
   branch: "work",
   issues: "work",
   issue: "work",
-  activity: "work",
   specialist: "team",
   agentThread: "team",
   decision: "pact",
@@ -123,3 +122,19 @@ export const sideBarDefaultWidth = (viewport: number) => (viewport >= 1500 ? 340
 
 /** The widest the side bar gets: the conversation keeps CHAT_MIN_WIDTH beside it. */
 export const sideBarMaxWidth = (viewport: number) => Math.max(SIDE_BAR_MIN_WIDTH, Math.min(720, viewport - ACTIVITY_BAR_WIDTH - CHAT_MIN_WIDTH));
+
+/** The title bar and the status bar: the editor and the bottom panel share the height left between them. */
+export const WINDOW_BARS_HEIGHT = 46 + 24;
+/** The lowest the bottom panel gets: its header and a few rows. */
+export const PANEL_MIN_HEIGHT = 120;
+/**
+ * The height the editor keeps above the bottom panel: the conversation stays at least 380 px high over the composer's
+ * dock, which takes 146 px with an empty composer (issue #337). At 1280x800 the default 200 px is also the highest.
+ */
+export const EDITOR_MIN_HEIGHT = 526;
+
+/** The bottom panel's default height: 200 px, 260 from a 1500 px wide window (issue #337). */
+export const panelDefaultHeight = (viewportWidth: number) => (viewportWidth >= 1500 ? 260 : 200);
+
+/** The highest the bottom panel gets: the editor keeps EDITOR_MIN_HEIGHT above it. */
+export const panelMaxHeight = (viewportHeight: number) => Math.max(PANEL_MIN_HEIGHT, viewportHeight - WINDOW_BARS_HEIGHT - EDITOR_MIN_HEIGHT);

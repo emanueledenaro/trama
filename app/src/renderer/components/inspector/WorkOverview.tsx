@@ -455,7 +455,10 @@ function Branches() {
   );
 }
 
-/** The backlog items the found problems became (A08): with their issue, or kept in Trama without GitHub. */
+/**
+ * The backlog items the found problems became (A08): with their issue, or kept in Trama without GitHub. It left
+ * Activity when Activity moved to the bottom panel (issue #337); it is the "Nel backlog" filter of the issues.
+ */
 function ProblemBacklog() {
   const t = useT();
   const document = useUi((s) => s.app!.project!.document);
@@ -468,19 +471,27 @@ function ProblemBacklog() {
     );
   }
   return (
-    <ul className="flex flex-col divide-y divide-[color:var(--app-surface-divider)] px-2" data-testid="problem-backlog">
+    <ul aria-label={t("issues.backlog.label")} className="flex flex-col divide-y divide-[color:var(--app-surface-divider)] px-2" data-testid="problem-backlog">
       {items.map((problem) => (
         <li key={problem.id} className="py-2" data-testid="problem-backlog-item">
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+            <span className="min-w-0 flex-1 truncate text-ui text-foreground" title={problem.id}>
               <ReferenceText text={problem.title} links={false} />
             </span>
-            <Badge tone="secondary">{problem.issue ? `#${problem.issue.number}` : t("work.issues.onlyTrama")}</Badge>
             {problem.issue ? (
-              <IconAction label={t("work.issues.openIssue")} onClick={() => void act("shell:openExternal", { url: problem.issue!.url })}>
-                <IconExternalLink className="size-3.5" stroke={1.8} />
-              </IconAction>
-            ) : null}
+              <Tooltip label={t("issues.backlog.openIssue", { number: problem.issue.number })}>
+                <button
+                  type="button"
+                  aria-label={t("issues.backlog.openIssue", { number: problem.issue.number })}
+                  className="sidebar-icon-button h-6 shrink-0 gap-1 rounded-md px-1.5 text-ui-xs"
+                  onClick={() => void act("shell:openExternal", { url: problem.issue!.url })}
+                >
+                  <IconCircleDot className="size-3.5" stroke={1.8} />#{problem.issue.number}
+                </button>
+              </Tooltip>
+            ) : (
+              <Badge tone="secondary">{t("issues.backlog.onlyTrama")}</Badge>
+            )}
           </div>
           <p className="mt-0.5 text-ui-xs text-muted-foreground">{problem.evidence.label}</p>
           {problem.placement ? (
@@ -526,7 +537,7 @@ function IssueForm({ onDone }: { onDone: () => void }) {
 }
 
 /** The issues with what Trama does with each; "Nel backlog" lists the problems Trama found and kept for later. */
-function Issues({ creating, onCreated, filter, onFilter }: { creating: boolean; onCreated: () => void; filter: IssueFilter; onFilter: (f: IssueFilter) => void }) {
+function Issues({ creating, onCreated, filter: chosen, onFilter }: { creating: boolean; onCreated: () => void; filter: IssueFilter; onFilter: (f: IssueFilter) => void }) {
   const t = useT();
   const project = useUi((s) => s.app!.project!);
   const setInspector = useUi((s) => s.setInspector);
@@ -535,36 +546,39 @@ function Issues({ creating, onCreated, filter, onFilter }: { creating: boolean; 
   const open = github.issues.filter((i) => i.state === "open");
   const closed = github.issues.filter((i) => i.state === "closed");
   const backlog = problemBacklog(project.document).length;
-  const list = filter === "open" ? open : filter === "closed" ? closed : [];
+  // Without GitHub the backlog is the only list; an empty backlog falls back to the open issues (issue #337).
+  const shownFilter: IssueFilter = github.status !== "ready" && backlog ? "backlog" : chosen === "backlog" && !backlog ? "open" : chosen;
+  const filters: IssueFilter[] = [...(github.status === "ready" ? (["open", "closed"] as const) : []), ...(backlog ? (["backlog"] as const) : [])];
+  const list = shownFilter === "open" ? open : shownFilter === "closed" ? closed : [];
   const shown = all ? list : list.slice(0, ISSUES_SHOWN);
   const WORK_KEY = { slice: "work.issues.work.slice", plan: "work.issues.work.plan", triage: "work.issues.work.triage", backlog: "work.issues.work.backlog", none: "work.issues.work.none" } as const;
   return (
     <div className="flex flex-col gap-1">
       {creating ? <IssueForm onDone={onCreated} /> : null}
-      <div role="radiogroup" aria-label={t("work.issues.filter")} className="mx-2 inline-flex self-start rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
-        {(
-          [
-            ["open", t("work.issues.open", { count: open.length })],
-            ["backlog", t("work.issues.backlog", { count: backlog })],
-            ["closed", t("work.issues.closed", { count: closed.length })],
-          ] as [IssueFilter, string][]
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={filter === value}
-            onClick={() => onFilter(value)}
-            className={cn(
-              "rounded-md px-2 py-0.5 text-ui-xs transition-colors",
-              filter === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {filter === "backlog" ? (
+      {filters.length ? (
+        <div role="radiogroup" aria-label={t("work.issues.filter")} className="mx-2 inline-flex self-start rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
+          {filters.map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={shownFilter === value}
+              onClick={() => onFilter(value)}
+              className={cn(
+                "rounded-md px-2 py-0.5 text-ui-xs transition-colors",
+                shownFilter === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {value === "open"
+                ? t("work.issues.open", { count: open.length })
+                : value === "closed"
+                  ? t("work.issues.closed", { count: closed.length })
+                  : t("work.issues.backlog", { count: backlog })}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {shownFilter === "backlog" ? (
         <ProblemBacklog />
       ) : github.status === "unavailable" ? (
         <div className="px-2">
@@ -620,14 +634,15 @@ function Issues({ creating, onCreated, filter, onFilter }: { creating: boolean; 
  * The Lavoro view (issue #332, ADR 0018): the goal in a summary, then goals, slices, candidates and plans, branches
  * and pull requests with the conflict against the default branch, and the issues with their backlog. It takes the
  * place of the old Obiettivi, Lavoro, Issue and the GitHub part of Gruppo; a row opens its detail in the side bar.
+ * `backlog` opens the issues on the backlog of the found problems, as Activity's rows do (issue #337).
  */
-export function WorkOverview({ focus }: { focus?: WorkSection }) {
+export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; backlog?: boolean }) {
   const t = useT();
   const project = useUi((s) => s.app!.project!);
   const setInspector = useUi((s) => s.setInspector);
   const [closed, setClosed] = useState<Set<WorkSection>>(() => new Set());
   const [creatingIssue, setCreatingIssue] = useState(false);
-  const [issueFilter, setIssueFilter] = useState<IssueFilter>("open");
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>(backlog ? "backlog" : "open");
   const root = useRef<HTMLDivElement>(null);
   const slices = sliceRows(project.document, project.sliceViews);
   const firstPlan = slices.length ? project.document.plans.find((p) => p.id === slices[0]!.planId) : null;
