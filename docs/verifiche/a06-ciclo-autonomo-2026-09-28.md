@@ -1,15 +1,15 @@
 # A06: il Coordinatore fa da solo il ciclo dentro il mandato e risolve i blocchi tecnici
 
-Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017.
+Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` 7763d2d.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: tutti i file superati (numeri nella pull request).
+- `npx vitest run`: 123 file, 1199 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0. Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 312 schermate. Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
 
 ## Comportamento
 
@@ -35,7 +35,12 @@ Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessun
 
 ## Schermate
 
-Prima (`origin/main` e1ca179) e dopo, in chiaro e in scuro: `a06-ciclo-autonomo/`.
+Prima e dopo, in chiaro e in scuro, in `a06-ciclo-autonomo/`. Le schermate "prima" vengono da `origin/main` e1ca179, con la ui-check di main a cui sono state aggiunte, solo per questa prova e senza pubblicarle, le stesse inquadrature in chiaro e in scuro.
+
+- 01-04: il lavoro è bloccato dal conflitto di Bea con il branch principale. Prima la riga di stato dice "assegno il lavoro" ma non parte niente; dopo il Coordinatore avvia "Risolvi il conflitto" e la riga dice "Sto risolvendo il conflitto", con Ferma a destra.
+- 05-08: prima le fette dicono "Confermate da te"; dopo la Pausa e Riprendi le conferma il Coordinatore dentro il mandato.
+- 09-12: Attività prima e dopo; dopo compaiono "Comprensione confermata dal Coordinatore" e "Fette confermate dal Coordinatore" con Correggi, e "Risolvi il conflitto".
+- 13-14: la correzione di un passo, con Annulla e Invia la correzione a destra.
 
 ## Limiti
 
