@@ -3,6 +3,7 @@ import { useState } from "react";
 import { divergenceQuestion, divergenceSummary } from "@shared/conflictScope";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 
 /**
@@ -14,10 +15,11 @@ export function BranchDivergenceNotice() {
   const divergence = useUi((s) => s.app?.project?.document.branchDivergence ?? null);
   const askCoordinator = useUi((s) => s.askCoordinator);
   const [open, setOpen] = useState(false);
+  const t = useT();
   if (!divergence) return null;
   const files = divergence.conflictingFiles;
   return (
-    <section aria-label="Avviso sul branch del progetto" className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="branch-divergence">
+    <section aria-label={t("chat.divergence.label")} className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="branch-divergence">
       <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col px-1 py-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <div className="flex min-w-[12rem] flex-1 items-start gap-2">
@@ -28,11 +30,11 @@ export function BranchDivergenceNotice() {
           </div>
           <div className="cta-row ml-auto">
             <Button size="xs" variant="ghost" aria-expanded={open} aria-controls="branch-divergence-files" onClick={() => setOpen(!open)}>
-              {files.length === 1 ? "Mostra il file" : `Mostra i ${files.length} file`}
+              {t("chat.divergence.showFiles", { count: files.length })}
               <IconChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
             </Button>
             <Button size="xs" onClick={() => askCoordinator(divergenceQuestion(divergence))}>
-              Chiedi al Coordinatore come riallineare
+              {t("chat.divergence.ask")}
             </Button>
           </div>
         </div>

@@ -14,12 +14,14 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { FocusTask, StatusLineAction, StatusLineView } from "@shared/domain";
+import type { Translate } from "@shared/i18n";
 import { type OverlapItem, overlapSummary, strongest } from "@shared/overlap";
 import { OverlapBadge, OverlapRow } from "@/components/OverlapNotice";
 import { useSeam } from "@/components/Seam";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
@@ -48,8 +50,8 @@ function PhaseChip({ task }: { task: FocusTask }) {
 }
 
 /** What holds the task: the person's move first, since it is often what unblocks the work, then the blocker. */
-function holdText(task: FocusTask): string | null {
-  return [task.waitingFor ? `Aspetta te: ${task.waitingFor}` : null, task.blocker].filter(Boolean).join(". ") || null;
+function holdText(task: FocusTask, t: Translate): string | null {
+  return [task.waitingFor ? t("chat.focus.waitingFor", { what: task.waitingFor }) : null, task.blocker].filter(Boolean).join(". ") || null;
 }
 
 const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
@@ -79,6 +81,7 @@ function StatusLine({ line }: { line: StatusLineView }) {
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
+  const t = useT();
   const take = (action: StatusLineAction) => {
     if (action.goalId === dialogGoalId) return runNextStep(action, action.requestId);
     // The move's card is in the task's dialog: Trama opens it first, then brings the card into view.
@@ -116,7 +119,7 @@ function StatusLine({ line }: { line: StatusLineView }) {
       </div>
       <div className="cta-row ml-auto">
         <Button size="xs" variant="ghost" onClick={() => setInspector({ kind: "activity" })}>
-          Attività
+          {t("chat.focus.activity")}
         </Button>
         {line.paused ? (
           <Button
@@ -126,23 +129,23 @@ function StatusLine({ line }: { line: StatusLineView }) {
             onClick={() => void act("coordinator:pause", { paused: false })}
           >
             <IconPlayerPlay className="size-3.5" stroke={1.8} />
-            <ShortName full={COORDINATOR_PAUSE.resume} short="Riprendi" />
+            <ShortName full={COORDINATOR_PAUSE.resume} short={t("chat.focus.resumeShort")} />
           </Button>
         ) : (
           <Button
             size="xs"
             variant="ghost"
-            title="Ferma mosse automatiche, giri e lavoro automatico del progetto"
+            title={t("chat.focus.pauseHint")}
             aria-label={COORDINATOR_PAUSE.pause}
             onClick={() => void act("coordinator:pause", { paused: true })}
           >
             <IconPlayerPause className="size-3.5" stroke={1.8} />
-            <ShortName full={COORDINATOR_PAUSE.pause} short="Pausa" />
+            <ShortName full={COORDINATOR_PAUSE.pause} short={t("chat.focus.pauseShort")} />
           </Button>
         )}
         {line.runningMove ? (
-          <Button size="xs" variant="outline" aria-label={`Ferma: ${line.runningMove.label}`} onClick={() => void act("coordinator:interrupt", undefined)}>
-            Ferma
+          <Button size="xs" variant="outline" aria-label={t("chat.focus.stopMove", { move: line.runningMove.label })} onClick={() => void act("coordinator:interrupt", undefined)}>
+            {t("chat.focus.stop")}
           </Button>
         ) : null}
         {line.action ? (
@@ -165,6 +168,7 @@ function change(action: "focus" | "pause" | "resume", taskId: string) {
  */
 function OverlapLine({ items }: { items: OverlapItem[] }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   const top = strongest(items);
   if (!top) return null;
   return (
@@ -175,7 +179,7 @@ function OverlapLine({ items }: { items: OverlapItem[] }) {
         <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground/85">{overlapSummary(top)}</span>
         <div className="cta-row ml-auto">
           <Button size="xs" variant="ghost" aria-expanded={open} aria-controls="focus-overlaps" onClick={() => setOpen(!open)}>
-            {items.length === 1 ? "Dettagli" : `Dettagli (${items.length})`}
+            {t("chat.focus.details", { count: items.length })}
             <IconChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
           </Button>
         </div>
@@ -202,7 +206,8 @@ function focusOverlaps(overlaps: { items: OverlapItem[]; tasks: Record<string, O
 function QueueRow({ task }: { task: FocusTask }) {
   const openDialog = useUi((s) => s.openDialog);
   const overlap = useUi((s) => strongest(s.app?.project?.overlaps?.tasks[task.id] ?? []));
-  const hold = holdText(task);
+  const t = useT();
+  const hold = holdText(task, t);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2" data-testid="focus-queue-item" data-status={task.status}>
       <div className="flex min-w-[12rem] flex-1 flex-col gap-0.5">
@@ -227,7 +232,7 @@ function QueueRow({ task }: { task: FocusTask }) {
       </div>
       <div className="cta-row ml-auto">
         <Button size="xs" variant="ghost" onClick={() => openDialog(task.goalId)}>
-          Apri
+          {t("chat.focus.open")}
         </Button>
         {task.status === "paused" ? (
           <Button size="xs" variant="outline" onClick={() => void change("resume", task.id)}>
@@ -235,7 +240,7 @@ function QueueRow({ task }: { task: FocusTask }) {
           </Button>
         ) : null}
         <Button size="xs" onClick={() => void change("focus", task.id).then(() => openDialog(task.goalId))}>
-          Metti in primo piano
+          {t("chat.focus.putInFocus")}
         </Button>
       </div>
     </li>
@@ -249,6 +254,7 @@ export function FocusBar() {
   const openDialog = useUi((s) => s.openDialog);
   const overlaps = useUi((s) => s.app?.project?.overlaps);
   const [queueOpen, setQueueOpen] = useState(false);
+  const t = useT();
   // The work going on now (W17): the task in focus is stitched.
   const seam = useSeam("focus", { active: Boolean(view?.focus), radius: "10px" });
   const overlapItems = focusOverlaps(overlaps, view?.focus?.id ?? null);
@@ -256,10 +262,10 @@ export function FocusBar() {
   const focus = view.focus;
   const queued = view.queue.filter((t) => t.status === "queued").length;
   const paused = view.queue.length - queued;
-  const queueLabel = paused ? `In coda ${queued}, ${paused === 1 ? "1 sospeso" : `${paused} sospesi`}` : `In coda ${queued}`;
+  const queueLabel = t("chat.focus.queue", { queued }) + (paused ? t("chat.focus.queuePaused", { count: paused }) : "");
   const elsewhere = focus !== null && (focus.goalId ?? null) !== dialogGoalId;
   return (
-    <section aria-label="Lavoro in primo piano" className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="focus-bar">
+    <section aria-label={t("chat.focus.label")} className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="focus-bar">
       <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col gap-1.5 px-1 py-2">
         {focus || view.queue.length ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -268,14 +274,14 @@ export function FocusBar() {
               <IconFocus2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
               {focus ? (
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="hidden shrink-0 text-ui-xs text-muted-foreground @min-[520px]/chat:inline">In primo piano</span>
+                  <span className="hidden shrink-0 text-ui-xs text-muted-foreground @min-[520px]/chat:inline">{t("chat.focus.inFocus")}</span>
                   <span className="min-w-0 truncate text-ui font-medium text-foreground" data-testid="focus-title">
                     <ReferenceText text={focus.title} />
                   </span>
                   <PhaseChip task={focus} />
                 </div>
               ) : (
-                <span className="min-w-0 text-ui text-muted-foreground">Nessun lavoro in primo piano: sono tutti sospesi.</span>
+                <span className="min-w-0 text-ui text-muted-foreground">{t("chat.focus.none")}</span>
               )}
             </div>
             <div className="cta-row ml-auto">
@@ -286,13 +292,13 @@ export function FocusBar() {
                 </Button>
               ) : null}
               {focus ? (
-                <Button size="xs" variant="outline" title="Toglie questo lavoro dal primo piano: passa al prossimo in coda" onClick={() => void change("pause", focus.id)}>
+                <Button size="xs" variant="outline" title={t("chat.focus.suspendHint")} onClick={() => void change("pause", focus.id)}>
                   {TASK_SUSPEND.suspend}
                 </Button>
               ) : null}
               {focus && elsewhere ? (
                 <Button size="xs" onClick={() => openDialog(focus.goalId)}>
-                  Vai al lavoro
+                  {t("chat.focus.goToWork")}
                 </Button>
               ) : null}
             </div>
@@ -303,7 +309,7 @@ export function FocusBar() {
         {queueOpen && view.queue.length ? (
           <ul
             id="focus-queue"
-            aria-label="Lavori in coda"
+            aria-label={t("chat.focus.queueLabel")}
             className="max-h-[40vh] divide-y divide-[color:var(--app-surface-divider)] overflow-y-auto pl-6"
             data-testid="focus-queue"
           >

@@ -1,4 +1,5 @@
 // The English catalog (issue #301): the same keys and placeholders as `it.ts`, in plain English.
+import { chatEn } from "./chat.en";
 import type { it } from "./it";
 
 export const en: Record<keyof typeof it, string> = {
@@ -273,4 +274,6 @@ export const en: Record<keyof typeof it, string> = {
   "mandate.stoppedWork.some": "This work stops; its worktree stays as it is:",
   "mandate.stoppedWork.none": "No work in progress stops.",
   "mandate.stoppedWork.dependsOn": "(depends on «{objective}»)",
+
+  ...chatEn,
 };

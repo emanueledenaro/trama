@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { useWaiting } from "@/components/WaitingView";
 import { formatTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 import { CardFrame, Field } from "./Cards";
 import { ReferenceText } from "./ReferenceText";
@@ -43,6 +44,7 @@ function FactLine({ fact }: { fact: RecapFact }) {
 }
 
 function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   return (
     <li className="cta-row py-1" data-testid="recap-need" data-waiting={waiting ? "true" : "false"}>
@@ -58,22 +60,23 @@ function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
       </span>
       {waiting ? (
         <Button size="xs" variant="outline" onClick={() => setInspector({ kind: "waiting", key: need.key })}>
-          Apri in Aspetta te
+          {t("chat.recap.openWaiting")}
         </Button>
       ) : (
-        <Badge tone="secondary">Non aspetta più</Badge>
+        <Badge tone="secondary">{t("chat.recap.notWaiting")}</Badge>
       )}
     </li>
   );
 }
 
 export function RecapCard({ recapId, title }: { recapId: string; title: string }) {
+  const t = useT();
   const recap = useUi((s) => s.app?.project?.document.recap?.recaps.find((r) => r.id === recapId) ?? null);
   const waiting = useWaiting();
   if (!recap) {
     return (
       <CardFrame icon={<IconListDetails stroke={1.8} />} title={title}>
-        <p className="text-ui text-muted-foreground">Questo riepilogo non è più conservato. Le mosse restano in Attività.</p>
+        <p className="text-ui text-muted-foreground">{t("chat.recap.gone")}</p>
       </CardFrame>
     );
   }
@@ -87,7 +90,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
     >
       <div data-testid="recap-card" data-reason={recap.reason}>
         {recap.milestones.length ? (
-          <Field label={recap.milestones.length === 1 ? "Traguardo" : "Traguardi"}>
+          <Field label={t("chat.recap.milestones", { count: recap.milestones.length })}>
             <ul className="list-disc space-y-0.5 pl-4" data-testid="recap-milestones">
               {recap.milestones.map((text) => (
                 <li key={text} className="break-words">
@@ -97,7 +100,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </ul>
           </Field>
         ) : null}
-        <Field label="Cosa ho fatto">
+        <Field label={t("chat.recap.done")}>
           {recap.done.length ? (
             <ul className="list-disc space-y-0.5 pl-4" data-testid="recap-done">
               {recap.done.map((fact, index) => (
@@ -106,16 +109,16 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </ul>
           ) : (
             <p className="text-muted-foreground" data-testid="recap-done">
-              Niente di nuovo dall'ultimo riepilogo.
+              {t("chat.recap.nothingNew")}
             </p>
           )}
         </Field>
-        <Field label="Cosa faccio">
+        <Field label={t("chat.recap.doing")}>
           <p data-testid="recap-doing">
             <ReferenceText text={recap.doing} />
           </p>
         </Field>
-        <Field label="Cosa mi serve da te">
+        <Field label={t("chat.recap.needs")}>
           {recap.needs.length ? (
             <ul className="divide-y divide-[color:var(--app-surface-divider)]" data-testid="recap-needs">
               {recap.needs.map((need) => (
@@ -124,7 +127,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </ul>
           ) : (
             <p className="text-muted-foreground" data-testid="recap-needs">
-              Niente: per ora vado avanti da solo.
+              {t("chat.recap.noNeeds")}
             </p>
           )}
         </Field>

@@ -1,8 +1,10 @@
 import type { SpecSections, WorkPlan } from "@shared/domain";
+import type { MessageKey } from "@shared/i18n";
 import { useState } from "react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, TextArea } from "@/components/ui/field";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { PlanSlices } from "./PlanSlices";
 
@@ -14,10 +16,10 @@ import { PlanSlices } from "./PlanSlices";
 type ListKey = "userStories" | "implementationDecisions" | "testingDecisions";
 type Draft = Omit<SpecSections, ListKey> & Record<ListKey, string>;
 
-const LIST_LABELS: Record<ListKey, string> = {
-  userStories: "Storie utente",
-  implementationDecisions: "Decisioni di implementazione",
-  testingDecisions: "Decisioni sui test",
+const LIST_LABELS: Record<ListKey, MessageKey> = {
+  userStories: "chat.plan.userStories",
+  implementationDecisions: "chat.plan.implementationDecisions",
+  testingDecisions: "chat.plan.testingDecisions",
 };
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -30,7 +32,8 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 }
 
 function List({ items, numbered }: { items: string[]; numbered?: boolean }) {
-  if (!items.length) return <span className="text-muted-foreground">Nessuna.</span>;
+  const t = useT();
+  if (!items.length) return <span className="text-muted-foreground">{t("chat.plan.noneFeminine")}</span>;
   const Tag = numbered ? "ol" : "ul";
   return (
     <Tag className={numbered ? "list-decimal space-y-0.5 pl-4" : "list-disc space-y-0.5 pl-4"}>
@@ -56,6 +59,7 @@ const fromDraft = (draft: Draft): SpecSections => ({
 });
 
 function SpecEditor({ plan, sections, onClose }: { plan: WorkPlan; sections: SpecSections; onClose: () => void }) {
+  const t = useT();
   const [draft, setDraft] = useState<Draft>(() => toDraft(sections));
   const field = (key: keyof Draft, label: string, hint?: string) => (
     <label className="block text-ui-xs text-muted-foreground">
@@ -67,22 +71,22 @@ function SpecEditor({ plan, sections, onClose }: { plan: WorkPlan; sections: Spe
   return (
     <div className="mt-2 space-y-2">
       <label className="block text-ui-xs text-muted-foreground">
-        Titolo
+        {t("chat.plan.title")}
         <Input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} className="mt-1" />
       </label>
-      {field("problemStatement", "Problema")}
-      {field("solution", "Soluzione")}
+      {field("problemStatement", t("chat.plan.problem"))}
+      {field("solution", t("chat.plan.solution"))}
       {(Object.keys(LIST_LABELS) as ListKey[]).map((key) => (
-        <div key={key}>{field(key, LIST_LABELS[key], "una per riga")}</div>
+        <div key={key}>{field(key, t(LIST_LABELS[key]), t("chat.plan.onePerLine"))}</div>
       ))}
-      {field("outOfScope", "Fuori perimetro")}
-      {field("furtherNotes", "Altre note")}
+      {field("outOfScope", t("chat.plan.outOfScope"))}
+      {field("furtherNotes", t("chat.plan.furtherNotes"))}
       <div className="cta-row">
         <Button size="sm" variant="ghost" onClick={onClose}>
-          Annulla
+          {t("chat.plan.cancel")}
         </Button>
         <Button size="sm" onClick={() => void act("plan:edit", { planId: plan.id, sections: fromDraft(draft) }).then(onClose)}>
-          Salva la spec
+          {t("chat.plan.saveSpec")}
         </Button>
       </div>
     </div>
@@ -90,6 +94,7 @@ function SpecEditor({ plan, sections, onClose }: { plan: WorkPlan; sections: Spe
 }
 
 export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [correction, setCorrection] = useState<string | null>(null);
@@ -107,39 +112,39 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
       {sections ? (
         <>
           <p className="mt-2 text-ui font-medium text-foreground">{sections.title}</p>
-          {plan.editedAt ? <p className="text-ui-xs text-muted-foreground">Corretta da te</p> : null}
-          <Section label="Problema">{sections.problemStatement}</Section>
-          <Section label="Soluzione">{sections.solution}</Section>
+          {plan.editedAt ? <p className="text-ui-xs text-muted-foreground">{t("chat.plan.editedByYou")}</p> : null}
+          <Section label={t("chat.plan.problem")}>{sections.problemStatement}</Section>
+          <Section label={t("chat.plan.solution")}>{sections.solution}</Section>
         </>
       ) : plan.status === "seams" ? (
-        <p className="mt-2 text-ui text-foreground/90">Prima di scrivere la spec, il pianificatore propone dove testare il lavoro. Vanno bene?</p>
+        <p className="mt-2 text-ui text-foreground/90">{t("chat.plan.seamsIntro")}</p>
       ) : null}
 
-      <Section label="Punti di prova da testare">
+      <Section label={t("chat.plan.seams")}>
         <div className="space-y-1.5">
           {spec.seams.map((seam) => (
             <div key={seam.seam} data-testid="plan-seam" className="rounded-lg border border-[color:var(--color-border)] px-3 py-2">
               <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 text-ui text-foreground">{seam.seam}</span>
-                <Badge tone={seam.existing ? "success" : "info"}>{seam.existing ? "Esistente" : "Nuovo"}</Badge>
+                <Badge tone={seam.existing ? "success" : "info"}>{seam.existing ? t("chat.plan.seamExisting") : t("chat.plan.seamNew")}</Badge>
               </div>
-              <div className="mt-0.5 text-ui-sm text-muted-foreground">Si verifica: {seam.tests}</div>
+              <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.plan.seamTests", { tests: seam.tests })}</div>
             </div>
           ))}
         </div>
       </Section>
       {answer ? (
-        <p className="mt-1 text-ui-xs text-muted-foreground">{answer.confirmed ? (answer.by === "coordinator" ? "Confermati dal Coordinatore dentro il mandato. Puoi correggerli da Attività." : "Confermati da te.") : `Corretti da te: «${answer.note ?? ""}»`}</p>
+        <p className="mt-1 text-ui-xs text-muted-foreground">{answer.confirmed ? (answer.by === "coordinator" ? t("chat.plan.seamsConfirmedByCoordinator") : t("chat.plan.seamsConfirmedByYou")) : t("chat.plan.seamsCorrected", { note: answer.note ?? "" })}</p>
       ) : null}
 
       {plan.status === "seams" ? (
         correction === null ? (
           <div className="cta-row mt-3">
             <Button size="sm" variant="ghost" onClick={() => setCorrection("")}>
-              Correggi i punti di prova
+              {t("chat.plan.correctSeams")}
             </Button>
             <Button size="sm" onClick={() => void act("plan:answerSeams", { planId: plan.id, confirmed: true, note: null })}>
-              Conferma i punti di prova
+              {t("chat.plan.confirmSeams")}
             </Button>
           </div>
         ) : (
@@ -147,20 +152,20 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
             <TextArea
               value={correction}
               onChange={(e) => setCorrection(e.target.value)}
-              placeholder="Cosa cambieresti? Per esempio un punto di prova da aggiungere o da spostare"
-              aria-label="Correzione dei punti di prova"
+              placeholder={t("chat.plan.seamsCorrectionPlaceholder")}
+              aria-label={t("chat.plan.seamsCorrectionLabel")}
               className="min-h-12"
             />
             <div className="cta-row">
               <Button size="sm" variant="ghost" onClick={() => setCorrection(null)}>
-                Annulla
+                {t("chat.plan.cancel")}
               </Button>
               <Button
                 size="sm"
                 disabled={!correction.trim()}
                 onClick={() => void act("plan:answerSeams", { planId: plan.id, confirmed: false, note: correction.trim() }).then(() => setCorrection(null))}
               >
-                Invia la correzione
+                {t("chat.plan.sendCorrection")}
               </Button>
             </div>
           </div>
@@ -172,14 +177,14 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
           {expanded ? (
             <>
               {(Object.keys(LIST_LABELS) as ListKey[]).map((key) => (
-                <Section key={key} label={LIST_LABELS[key]}>
+                <Section key={key} label={t(LIST_LABELS[key])}>
                   <List items={sections[key]} numbered={key === "userStories"} />
                 </Section>
               ))}
-              <Section label="Fuori perimetro">{sections.outOfScope || "Nessuno."}</Section>
-              <Section label="Altre note">{sections.furtherNotes || "Nessuna."}</Section>
-              {spec.affectedModuleIDs.length ? <Section label="Moduli">{spec.affectedModuleIDs.map(moduleName).join(", ")}</Section> : null}
-              {spec.requiredDecisionIDs.length ? <Section label="Decisioni da rispettare">{spec.requiredDecisionIDs.join(", ")}</Section> : null}
+              <Section label={t("chat.plan.outOfScope")}>{sections.outOfScope || t("chat.plan.noneMasculine")}</Section>
+              <Section label={t("chat.plan.furtherNotes")}>{sections.furtherNotes || t("chat.plan.noneFeminine")}</Section>
+              {spec.affectedModuleIDs.length ? <Section label={t("chat.plan.modules")}>{spec.affectedModuleIDs.map(moduleName).join(", ")}</Section> : null}
+              {spec.requiredDecisionIDs.length ? <Section label={t("chat.plan.requiredDecisions")}>{spec.requiredDecisionIDs.join(", ")}</Section> : null}
               {spec.references.length ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {spec.references.slice(0, 10).map((path) => (
@@ -197,21 +202,21 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
             </>
           ) : null}
           <button type="button" className="mt-2 text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setExpanded(!expanded)}>
-            {expanded ? "Mostra meno" : `Mostra tutta la spec (${sections.userStories.length} storie utente)`}
+            {expanded ? t("chat.plan.showLess") : t("chat.plan.showAll", { count: sections.userStories.length })}
           </button>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-sm text-muted-foreground" data-testid="plan-spec-publication">
             {spec.issue ? (
               <>
-                <span>Pubblicata su GitHub come issue #{spec.issue.number}.</span>
+                <span>{t("chat.plan.publishedAs", { number: String(spec.issue.number) })}</span>
                 <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => void act("shell:openExternal", { url: spec.issue!.url })}>
-                  Apri la issue
+                  {t("chat.plan.openIssue")}
                 </button>
               </>
             ) : connected ? (
-              <span>Non ancora pubblicata su GitHub.</span>
+              <span>{t("chat.plan.notPublished")}</span>
             ) : (
-              <span>Resta in Trama: il progetto non ha GitHub collegato.</span>
+              <span>{t("chat.plan.notConnected")}</span>
             )}
             {spec.publishFailure ? <span className="text-warning">{spec.publishFailure}</span> : null}
           </div>
@@ -221,17 +226,17 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
           ) : plan.status === "ready" || plan.status === "stale" ? (
             <div className="cta-row mt-3">
               <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-                Correggi la spec
+                {t("chat.plan.correctSpec")}
               </Button>
               {connected && !spec.issue && plan.status === "ready" ? (
                 <Button size="sm" variant="outline" onClick={() => void act("plan:publish", { planId: plan.id })}>
-                  Pubblica su GitHub
+                  {t("chat.plan.publish")}
                 </Button>
               ) : null}
               {/* A spec written before M05 has no slices yet: the person can have it split, or approve it as a whole. */}
               {!plan.slicing && plan.status === "ready" ? (
                 <Button size="sm" variant="outline" onClick={() => void act("plan:slice", { planId: plan.id })}>
-                  Dividi in fette
+                  {t("chat.plan.slice")}
                 </Button>
               ) : null}
               {!plan.slicing ? (
@@ -240,14 +245,14 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
                   disabled={plan.status === "stale"}
                   onClick={() =>
                     void act("coordinator:send", {
-                      text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,
+                      text: t("chat.plan.approveMessage", { id: plan.id }),
                       moduleId: null,
                       model: null,
                       effort: null,
                     })
                   }
                 >
-                  Approva il piano e chiedi di realizzarlo
+                  {t("chat.plan.approve")}
                 </Button>
               ) : null}
             </div>

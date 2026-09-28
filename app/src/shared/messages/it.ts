@@ -1,5 +1,7 @@
 // The Italian catalog (issue #301). Italian is the source: every key exists here first, and `en.ts` must
 // translate each one. A key ending in `.one` is the singular that `translate` picks when `count` is 1.
+import { chatIt } from "./chat.it";
+
 export const it = {
   // Time
   "time.now": "ora",
@@ -275,6 +277,8 @@ export const it = {
   "mandate.stoppedWork.some": "Si fermano questi lavori; il loro worktree resta com'è:",
   "mandate.stoppedWork.none": "Nessun lavoro in corso si ferma.",
   "mandate.stoppedWork.dependsOn": "(dipende da «{objective}»)",
+
+  ...chatIt,
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

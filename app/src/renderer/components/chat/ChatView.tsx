@@ -40,6 +40,7 @@ import { BranchDivergenceNotice } from "./BranchDivergenceNotice";
 import { FocusBar } from "./FocusBar";
 import { useWaiting, WaitingSummary } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
+import { useT } from "@/lib/i18n";
 
 const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
@@ -56,13 +57,14 @@ interface HeaderPanel {
 function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
   const inspector = useUi((s) => s.inspector);
   const toggle = useUi((s) => s.toggleInspector);
+  const t = useT();
   // Everything that waits for the person is in Aspetta te (issue #240): the button shows its count, never a sum of the panels.
   const waiting = panels.find((panel) => panel.target.kind === "waiting")?.count ?? 0;
   return (
     <Menu>
-      <MenuTrigger aria-label="Pannelli" className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
+      <MenuTrigger aria-label={t("chat.view.panels")} className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
         <IconLayoutSidebarRight className="size-3.5 opacity-70" stroke={1.8} />
-        <span>Pannelli</span>
+        <span>{t("chat.view.panels")}</span>
         {waiting ? <span className="text-ui-xs text-[var(--color-text-accent)]">{waiting}</span> : null}
       </MenuTrigger>
       <MenuPopup align="end">
@@ -82,21 +84,23 @@ function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
 function ExercisesChip() {
   const exercise = useUi((s) => s.exercise);
   const setExercise = useUi((s) => s.setExercise);
+  const t = useT();
   return (
     <button
       type="button"
-      aria-label="Esercizi"
+      aria-label={t("chat.view.exercises")}
       aria-pressed={Boolean(exercise)}
       className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
       onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
     >
       <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
-      <span className="hidden @min-[640px]/chat:inline">Esercizi</span>
+      <span className="hidden @min-[640px]/chat:inline">{t("chat.view.exercises")}</span>
     </button>
   );
 }
 
 function ChatHeader({ isMac }: { isMac: boolean }) {
+  const t = useT();
   const app = useUi((s) => s.app)!;
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
@@ -113,16 +117,16 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const waiting = useWaiting().length;
   const memoryProposals = app.learning?.proposals.length ?? 0;
   const panels: HeaderPanel[] = [
-    { target: { kind: "waiting" }, label: "Aspetta te", icon: <IconHourglass stroke={1.8} />, count: waiting },
-    { target: { kind: "goals" }, label: "Obiettivi", icon: <IconTarget stroke={1.8} />, count: proposedGoals },
-    { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
-    { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
-    { target: { kind: "mandate" }, label: "Mandato", icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
-    { target: { kind: "team" }, label: "Team", icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
-    { target: { kind: "work" }, label: "Lavoro", icon: <IconFileDiff stroke={1.8} /> },
-    { target: { kind: "group" }, label: "Gruppo", icon: <IconGitPullRequest stroke={1.8} /> },
-    { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },
-    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} />, count: memoryProposals },
+    { target: { kind: "waiting" }, label: t("chat.view.panel.waiting"), icon: <IconHourglass stroke={1.8} />, count: waiting },
+    { target: { kind: "goals" }, label: t("chat.view.panel.goals"), icon: <IconTarget stroke={1.8} />, count: proposedGoals },
+    { target: { kind: "map" }, label: t("chat.view.panel.map"), icon: <IconSitemap stroke={1.8} /> },
+    { target: { kind: "pact" }, label: t("chat.view.panel.pact"), icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
+    { target: { kind: "mandate" }, label: t("chat.view.panel.mandate"), icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
+    { target: { kind: "team" }, label: t("chat.view.panel.team"), icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
+    { target: { kind: "work" }, label: t("chat.view.panel.work"), icon: <IconFileDiff stroke={1.8} /> },
+    { target: { kind: "group" }, label: t("chat.view.panel.group"), icon: <IconGitPullRequest stroke={1.8} /> },
+    { target: { kind: "issues" }, label: t("chat.view.panel.issues"), icon: <IconCircleDot stroke={1.8} />, count: openIssues },
+    { target: { kind: "memory" }, label: t("chat.view.panel.memory"), icon: <IconBrain stroke={1.8} />, count: memoryProposals },
   ];
 
   return (
@@ -140,9 +144,9 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
       ) : null}
       <div className="flex min-w-[7rem] flex-1 items-center gap-2">
         {mainView === "overview" ? (
-          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Panoramica dei progetti</h2>
+          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">{t("chat.view.overview")}</h2>
         ) : mainView === "settings" ? (
-          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Impostazioni</h2>
+          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">{t("chat.view.settings")}</h2>
         ) : project ? (
           <>
             <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
@@ -154,14 +158,14 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
                 type="button"
                 className="no-drag max-w-[14rem] truncate font-system-ui text-ui font-normal text-muted-foreground hover:text-foreground"
                 onClick={() => openDialog(null)}
-                title="Mostra tutta la chat"
+                title={t("chat.view.showWholeChat")}
               >
-                {project.isDemo ? "Progetto di esempio" : project.name}
+                {project.isDemo ? t("chat.view.demoProject") : project.name}
               </button>
             ) : null}
             {goal ? <span className="text-muted-foreground/60">›</span> : null}
             <h2 className="max-w-[clamp(12rem,42vw,36rem)] truncate font-system-ui text-ui font-normal text-foreground" data-testid="dialog-title">
-              {goal ? goal.title : project.isDemo ? "Progetto di esempio" : project.name}
+              {goal ? goal.title : project.isDemo ? t("chat.view.demoProject") : project.name}
             </h2>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden text-ui-sm text-muted-foreground/55">
               {project.snapshot.branch ? <span className="truncate">{project.snapshot.branch}</span> : null}
@@ -182,15 +186,15 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
       {project && mainView === "dialog" ? (
         // Refresh and the inspector toggle never scroll away.
         <div className="no-drag flex shrink-0 items-center gap-1">
-          <Tooltip label="Aggiorna progetto">
-            <button type="button" className={HEADER_CHIP} aria-label="Aggiorna progetto" onClick={() => void refreshProject()}>
+          <Tooltip label={t("chat.view.refresh")}>
+            <button type="button" className={HEADER_CHIP} aria-label={t("chat.view.refresh")} onClick={() => void refreshProject()}>
               <IconRefresh className="size-3.5 opacity-70" stroke={1.8} />
             </button>
           </Tooltip>
-          <Tooltip label={inspector ? "Chiudi l'ispettore" : "Mostra dettagli"}>
+          <Tooltip label={inspector ? t("chat.view.closeInspector") : t("chat.view.showDetails")}>
             <button
               type="button"
-              aria-label="Mostra o nascondi i dettagli"
+              aria-label={t("chat.view.toggleDetails")}
               className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}
               onClick={() => setInspector(inspector ? null : { kind: "map" })}
             >
@@ -210,6 +214,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
 function GoalFilterMenu() {
   const project = useUi((s) => s.app?.project)!;
   const filter = useUi((s) => s.dialogGoalId);
+  const t = useT();
   const openDialog = useUi((s) => s.openDialog);
   const goals = workingGoals(project.document);
   const current = findGoal(project.document, filter);
@@ -218,15 +223,15 @@ function GoalFilterMenu() {
   if (!options.length) return null;
   return (
     <Menu>
-      <MenuTrigger aria-label="Filtra la chat per obiettivo" data-testid="chat-filter" className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE)}>
+      <MenuTrigger aria-label={t("chat.view.filterByGoal")} data-testid="chat-filter" className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE)}>
         <IconTarget className="size-3.5 opacity-70" stroke={1.8} />
-        <span className="hidden max-w-[12rem] truncate @min-[520px]/chat:inline">{current ? current.title : "Tutta la chat"}</span>
+        <span className="hidden max-w-[12rem] truncate @min-[520px]/chat:inline">{current ? current.title : t("chat.view.wholeChat")}</span>
         <IconChevronDown className="size-3 opacity-60" stroke={1.8} />
       </MenuTrigger>
       <MenuPopup align="end">
         <MenuItem onClick={() => openDialog(null)}>
           <span className="flex size-4 items-center justify-center">{current ? null : <IconCheck className="size-3.5" stroke={1.8} />}</span>
-          <span className="flex-1">Tutta la chat</span>
+          <span className="flex-1">{t("chat.view.wholeChat")}</span>
         </MenuItem>
         {options.map((goal) => (
           <MenuItem key={goal.id} onClick={() => openDialog(goal.id)}>
@@ -244,17 +249,18 @@ function GoalTag({ goalId }: { goalId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const openDialog = useUi((s) => s.openDialog);
   const goal = findGoal(project.document, goalId);
+  const t = useT();
   return (
     <div className="flex justify-center pt-3 pb-1">
       <button
         type="button"
         data-testid="chat-goal-tag"
         onClick={() => openDialog(goalId)}
-        title="Mostra solo questo obiettivo"
+        title={t("chat.view.onlyThisGoal")}
         className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-ui-xs text-muted-foreground hover:bg-[var(--color-background-button-secondary)] hover:text-foreground"
       >
         <IconTarget className="size-3 shrink-0" stroke={1.8} />
-        <span className="truncate">Obiettivo: {goal?.title ?? goalId}</span>
+        <span className="truncate">{t("chat.view.goalTag", { title: goal?.title ?? goalId })}</span>
       </button>
     </div>
   );
@@ -263,27 +269,28 @@ function GoalTag({ goalId }: { goalId: string }) {
 function ProjectIntro() {
   const project = useUi((s) => s.app?.project)!;
   const phase = project.phase;
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-3 px-6 pt-[18vh] pb-8 text-center select-none">
       <TramaMark size={44} />
       <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95">
-        {project.isDemo ? "Progetto di esempio" : project.name}
+        {project.isDemo ? t("chat.view.demoProject") : project.name}
       </h2>
       <p className="max-w-md text-ui text-muted-foreground">
         {phase.kind === "unavailable"
           ? phase.message
           : phase.kind === "opening"
-            ? "Il Coordinatore si sta collegando al progetto."
-            : `${project.snapshot.totalFileCount} file in ${project.snapshot.modules.length} moduli. Scrivi al Coordinatore per iniziare.`}
+            ? t("chat.view.connecting")
+            : t("chat.view.intro", { files: project.snapshot.totalFileCount, count: project.snapshot.modules.length })}
       </p>
       {phase.kind === "unavailable" ? (
         <Button variant="outline" size="sm" onClick={() => void act("coordinator:retry", undefined)}>
-          Riprova
+          {t("chat.view.retry")}
         </Button>
       ) : null}
       {!hasConfirmedGoal(project.document.goals) ? (
         <Button variant="outline" size="sm" onClick={() => useUi.getState().setInspector({ kind: "goals", create: true })}>
-          <IconTarget /> Formula il primo obiettivo
+          <IconTarget /> {t("chat.view.firstGoal")}
         </Button>
       ) : null}
     </div>
@@ -293,6 +300,7 @@ function ProjectIntro() {
 /** Offered in the chat while the project has no goal the person confirmed (UX07). */
 function FirstGoalPrompt() {
   const setInspector = useUi((s) => s.setInspector);
+  const t = useT();
   // A place to fill (W17): the seam when no other use on the screen holds it, the dashed border otherwise.
   const seam = useSeam("firstGoal", { radius: "calc(var(--radius) * 1.4)" });
   return (
@@ -306,10 +314,10 @@ function FirstGoalPrompt() {
       {seam.stitch}
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
       <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
-        Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te in questa chat, filtrata sull'obiettivo. Non concede un mandato.
+        {t("chat.view.firstGoalHint")}
       </p>
       <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goals", create: true })}>
-        Formula il primo obiettivo
+        {t("chat.view.firstGoal")}
       </Button>
     </div>
   );
@@ -323,12 +331,13 @@ const hasConfirmedGoal = (goals: { status: string }[] | undefined) => (goals ?? 
  */
 function QueuedMessageRow({ message }: { message: QueuedMessage }) {
   const [confirming, setConfirming] = useState(false);
+  const t = useT();
   return (
     <div className="flex w-full justify-end py-2" data-testid="queued-message">
       <div className="flex max-w-[80%] flex-col items-end gap-1">
         <div className="pr-1 text-ui-xs text-muted-foreground/70">
-          In coda: parte quando il Coordinatore finisce
-          {message.imageCount ? `, ${message.imageCount === 1 ? "1 immagine" : `${message.imageCount} immagini`}` : ""}
+          {t("chat.view.queued")}
+          {message.imageCount ? t("chat.view.queuedImages", { count: message.imageCount }) : ""}
         </div>
         <div className="w-max max-w-full min-w-0 rounded-[var(--radius-user-message)] border border-dashed border-[color:var(--color-border)] px-3.5 py-2.5 content-text whitespace-pre-wrap text-foreground/75">
           <span className="line-clamp-6">{message.text}</span>
@@ -336,21 +345,21 @@ function QueuedMessageRow({ message }: { message: QueuedMessage }) {
         {message.removable ? (
           confirming ? (
             <div className="cta-row">
-              <span className="text-ui-xs text-muted-foreground">Il messaggio non arriverà al Coordinatore.</span>
+              <span className="text-ui-xs text-muted-foreground">{t("chat.view.queuedWontArrive")}</span>
               <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
-                Annulla
+                {t("chat.view.cancel")}
               </Button>
               <Button size="xs" variant="destructive" onClick={() => void act("coordinator:deleteQueued", { id: message.id })}>
-                Elimina il messaggio
+                {t("chat.view.deleteMessage")}
               </Button>
             </div>
           ) : (
-            <Button size="xs" variant="ghost" aria-label="Elimina il messaggio in coda" onClick={() => setConfirming(true)}>
-              <IconTrash /> Elimina
+            <Button size="xs" variant="ghost" aria-label={t("chat.view.deleteQueued")} onClick={() => setConfirming(true)}>
+              <IconTrash /> {t("chat.view.delete")}
             </Button>
           )
         ) : (
-          <span className="pr-1 text-ui-xs text-muted-foreground/70">Riferisce una scelta già registrata: parte comunque.</span>
+          <span className="pr-1 text-ui-xs text-muted-foreground/70">{t("chat.view.queuedFixed")}</span>
         )}
       </div>
     </div>
@@ -359,6 +368,7 @@ function QueuedMessageRow({ message }: { message: QueuedMessage }) {
 
 function Timeline() {
   const project = useUi((s) => s.app?.project)!;
+  const t = useT();
   // The goal filter of the one chat (U01); null shows everything.
   const goalId = useUi((s) => s.dialogGoalId);
   const { requests: allRequests, events: allEvents } = project.document;
@@ -439,7 +449,7 @@ function Timeline() {
                   origin: "coordinator",
                   requestId: null,
                   createdAt: new Date().toISOString(),
-                  content: { type: "card", kind: "study", title: "Studio del progetto", detail: project.streaming?.text ?? "", referenceId: null },
+                  content: { type: "card", kind: "study", title: t("chat.view.studyTitle"), detail: project.streaming?.text ?? "", referenceId: null },
                 },
               }}
               streaming

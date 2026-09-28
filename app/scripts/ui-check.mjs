@@ -1312,6 +1312,39 @@ const stopBox = await stopMove.boundingBox();
 const lineBox = await statusLine.boundingBox();
 if (!stopBox || !lineBox || lineBox.x + lineBox.width - (stopBox.x + stopBox.width) > 2) throw new Error("The stop of the automatic move is not on the right");
 await themeShots("15a-status-line-move");
+// Issue #301, the chat in English: the focus bar, the status line, the cards and the composer change at once, and the
+// longer or shorter texts keep the layout: nothing scrolls sideways, no button cuts its label, the actions stay on the right.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.getByRole("region", { name: "Work in focus" }).waitFor({ timeout: 20_000 });
+await statusLine.getByRole("button", { name: "Activity", exact: true }).waitFor();
+await page.getByRole("textbox", { name: "Message to the Coordinator" }).waitFor();
+if ((await page.evaluate(() => document.documentElement.lang)) !== "en") throw new Error("The chat's page language did not follow the choice");
+const chatEnglishLayout = async (where) => {
+  await noHorizontalScroll(where);
+  const cut = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="focus-bar"] button, .chat-card button, .chat-composer-shell button, [data-testid="next-step"] button')]
+      .filter((button) => button.offsetParent !== null && button.textContent.trim() && button.scrollWidth > button.clientWidth + 1)
+      .map((button) => button.textContent.trim()),
+  );
+  if (cut.length) throw new Error(`English labels cut in the chat (${where}): ${cut.join(", ")}`);
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="focus-bar"] .cta-row, .chat-card .cta-row')]
+      .filter((row) => row.offsetParent !== null)
+      .flatMap((row) => {
+        const box = row.getBoundingClientRect();
+        return [...row.children].filter((child) => child.getBoundingClientRect().right > box.right + 1).map((child) => child.textContent.trim());
+      }),
+  );
+  if (outside.length) throw new Error(`English actions past their row in the chat (${where}): ${outside.join(", ")}`);
+};
+await chatEnglishLayout("wide");
+await themeShots("chat-en");
+await page.setViewportSize({ width: 720, height: 640 });
+await page.waitForTimeout(300);
+await chatEnglishLayout("narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.getByRole("region", { name: "Lavoro in primo piano" }).waitFor({ timeout: 20_000 });
 await stopMove.click();
 await stopMove.waitFor({ state: "detached", timeout: 20_000 });
 await page.waitForTimeout(500);

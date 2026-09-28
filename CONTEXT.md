@@ -14,6 +14,45 @@ Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, i
 
 Nei testi per la persona Trama usa l'italiano semplice del glossario dell'interfaccia (`docs/glossario.md`): nomi al posto degli id, che restano al passaggio del mouse, e parole comuni al posto del gergo. Nell'interfaccia il task in focus si chiama lavoro in primo piano, la focus mode esame approfondito, i seam punti di prova e il worktree copia di lavoro.
 
+Con l'interfaccia in inglese (issue #301) Trama usa questi termini, in un inglese semplice:
+
+| Italiano | Inglese |
+| --- | --- |
+| Coordinatore | Coordinator |
+| Sviluppatore | Developer |
+| Specialista | Specialist |
+| Ruolo fisso | Fixed role |
+| Squadre | Squads |
+| Obiettivo | Goal |
+| Piano | Plan |
+| Fetta | Slice |
+| Incarico | Assignment |
+| Candidato | Candidate |
+| Verifiche | Checks |
+| Revisori | Reviewers |
+| Rilievo | Finding |
+| Esame approfondito | Deep review |
+| Punti di prova | Test points |
+| Copia di lavoro | Working copy |
+| Patto Vivo, Patto | Living Pact, Pact |
+| Decisione | Decision |
+| Chiarimento | Clarification |
+| Mandato, mandato di progetto | Mandate, project mandate |
+| Perimetro | Scope |
+| Divieto fisso | Fixed ban |
+| Aspetta te | Waiting for you |
+| Attività | Activity |
+| Riepilogo | Recap |
+| Memoria | Memory |
+| Lavoro in primo piano | Work in focus |
+| Prossimo passo | Next step |
+| Pausa | Pause |
+| Unire | Merge |
+| Via libera | Green light |
+| Standard di pubblicazione | Publishing standard |
+| Sforzo (del modello) | Effort |
+| Finestra di contesto | Context window |
+
 ## Ruoli e coordinamento
 
 Product Owner: la persona che decide obiettivi, priorità, comportamenti del prodotto e compromessi. La responsabilità di queste decisioni resta umana.

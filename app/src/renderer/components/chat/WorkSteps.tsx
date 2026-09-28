@@ -15,6 +15,7 @@ import { readableFailure } from "@shared/providerFailure";
 import { formatDuration } from "@shared/timeline";
 import type { TechnicalStep, WorkRow } from "@shared/technicalSteps";
 import { cn } from "@/lib/cn";
+import { useT, withNodes } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 import { AgentName } from "@/components/AgentIdentity";
 import { ReferenceText } from "./ReferenceText";
@@ -96,15 +97,18 @@ export function useWorkSpecialist(row: WorkRow) {
 
 /** Who worked and for how long, as the chat line and Activity both say it. */
 export function WorkLabel({ row }: { row: WorkRow }) {
+  const t = useT();
   const specialist = useWorkSpecialist(row);
   // The specialist's identity leads the label (W15): avatar, name and tag in its color.
   const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
   const label = row.running
-    ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
+    ? specialist ? <>{withNodes(t("chat.workSteps.specialistRunning"), { who })}</> : t("chat.workSteps.coordinatorRunning")
     : row.durationMs !== null
-      ? specialist ? <>{who}ha lavorato per {formatDuration(row.durationMs)}</> : `Ha lavorato per ${formatDuration(row.durationMs)}`
+      ? specialist
+        ? <>{withNodes(t("chat.workSteps.specialistWorked", { duration: formatDuration(row.durationMs) }), { who })}</>
+        : t("chat.workSteps.worked", { duration: formatDuration(row.durationMs) })
       : specialist
-        ? <>{who}attività</>
-        : "Attività";
+        ? <>{withNodes(t("chat.workSteps.specialistActivity"), { who })}</>
+        : t("chat.workSteps.activity");
   return <span className={cn(row.running && "shimmer-text")}>{label}</span>;
 }

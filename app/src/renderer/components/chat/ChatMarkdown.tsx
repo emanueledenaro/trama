@@ -7,6 +7,7 @@ import { remarkCallouts } from "@/lib/remarkCallouts";
 import { remarkPlainText, remarkReferences } from "@/lib/remarkReferences";
 import { projectFileLink } from "@/lib/chatLinks";
 import { openReference, useReferenceIndex } from "@/lib/references";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { ChatBlockquote, ChatTable } from "./ChatBlocks";
 
@@ -19,6 +20,7 @@ const urlTransform = (url: string) => (url.startsWith("trama:ref/") ? url : defa
  * instead of a link that does nothing (W12).
  */
 function ChatLink({ href, children, title, ...rest }: ComponentProps<"a">) {
+  const t = useT();
   const reference = href ? parseReferenceHref(href) : null;
   const file = useUi((s) => (href && !reference && !href.startsWith("https://") ? projectFileLink(href, s.app?.project) : null));
   if (reference) {
@@ -42,7 +44,7 @@ function ChatLink({ href, children, title, ...rest }: ComponentProps<"a">) {
   return (
     <a
       href={href}
-      title={file ? `Apri ${file} nell'ispettore` : undefined}
+      title={file ? t("chat.markdown.openFile", { file }) : undefined}
       onClick={(event) => {
         event.preventDefault();
         if (file) useUi.getState().setInspector({ kind: "file", path: file });

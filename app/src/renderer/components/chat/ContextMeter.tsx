@@ -1,5 +1,6 @@
 import { Popover } from "@base-ui/react/popover";
 import { contextMeterLines, contextReading } from "@shared/contextReading";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { PickerSelect } from "@/components/ui/picker";
 
@@ -10,6 +11,7 @@ import { PickerSelect } from "@/components/ui/picker";
 export function ContextMeter() {
   const usage = useUi((s) => s.app?.project?.contextUsage ?? null);
   const threshold = useUi((s) => s.app?.project?.document.coordinator.contextThreshold ?? 80);
+  const t = useT();
   if (!usage) return null;
   const reading = contextReading(usage, threshold);
   const known = reading.percent !== null;
@@ -23,7 +25,7 @@ export function ContextMeter() {
     <Popover.Root>
       <Popover.Trigger
         className="inline-flex h-7 items-center gap-1 rounded-lg px-1.5 text-ui-xs text-muted-foreground transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground"
-        aria-label={known ? `Finestra di contesto: ${reading.percent}%, soglia di avviso ${threshold}%` : `Finestra di contesto: misura non disponibile, soglia di avviso ${threshold}%`}
+        aria-label={known ? t("chat.context.meterLabel", { percent: reading.percent ?? 0, threshold }) : t("chat.context.meterUnknown", { threshold })}
         data-testid="context-meter"
       >
         <svg viewBox="0 0 16 16" className="size-3.5 -rotate-90">
@@ -40,23 +42,23 @@ export function ContextMeter() {
             strokeLinecap="round"
           />
         </svg>
-        {known ? `${reading.percent}%` : null}
+        {known ? t("chat.context.percent", { percent: reading.percent ?? 0 }) : null}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
           <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
-            <div className="font-medium text-foreground">Finestra di contesto</div>
+            <div className="font-medium text-foreground">{t("chat.context.title")}</div>
             <p className="mt-1 text-ui-sm text-muted-foreground">{lines.usage}</p>
             <p className="text-ui-sm text-muted-foreground">{lines.behaviour}</p>
             <div className="my-3 h-px bg-border" />
             <label className="flex items-center justify-between gap-2 text-ui-sm">
-              <span>Avviso sopra</span>
+              <span>{t("chat.context.warnAbove")}</span>
               <PickerSelect
-                label="Soglia di avviso"
+                label={t("chat.context.threshold")}
                 value={String(threshold)}
-                options={Array.from({ length: 19 }, (_, i) => String(5 + i * 5)).map((value) => ({ value, title: `${value}%` }))}
+                options={Array.from({ length: 19 }, (_, i) => String(5 + i * 5)).map((value) => ({ value, title: t("chat.context.percent", { percent: Number(value) }) }))}
                 onChange={(value) => void act("coordinator:setContextThreshold", { percent: Number(value) })}
-                meta="Per questo progetto"
+                meta={t("chat.context.forProject")}
                 side="top"
                 className="w-24"
               />
