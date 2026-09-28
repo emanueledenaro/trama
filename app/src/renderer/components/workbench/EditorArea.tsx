@@ -172,7 +172,7 @@ function TabStrip({ tabs, conversation, selected, label }: { tabs: EditorTab[]; 
         <TabButton
           tabKey={CONVERSATION_TAB}
           icon={<IconMessageCircle className={ICON} stroke={1.7} />}
-          label={t("workbench.view.conversation")}
+          label={t("workbench.editor.conversation")}
           selected={selected === CONVERSATION_TAB}
           closable={false}
         />
