@@ -1,5 +1,6 @@
 import { IconFocus2, IconFolder, IconFolders } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import type { RepositoryModule } from "@shared/repository";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/field";
@@ -9,6 +10,9 @@ import { errorText, type FocusStartTarget, useUi } from "@/lib/store";
 
 const OPTION =
   "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)] aria-checked:bg-[var(--sidebar-accent)] aria-checked:text-foreground";
+
+// A stable empty list: a new one at each read would make the store selector update forever.
+const NO_MODULES: RepositoryModule[] = [];
 
 const sameTarget = (a: FocusStartTarget, b: FocusStartTarget) => a.kind === b.kind && (a.kind === "project" || (b.kind === "module" && a.moduleId === b.moduleId));
 
@@ -21,7 +25,7 @@ export function FocusStartDialog() {
   const open = useUi((s) => s.dialog === "focusMode");
   const initial = useUi((s) => s.focusStart);
   const setDialog = useUi((s) => s.setDialog);
-  const modules = useUi((s) => s.app?.project?.snapshot.modules ?? []);
+  const modules = useUi((s) => s.app?.project?.snapshot.modules ?? NO_MODULES);
   const [target, setTarget] = useState<FocusStartTarget>(initial);
   const [fixedPoint, setFixedPoint] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
