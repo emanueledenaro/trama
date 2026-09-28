@@ -1,0 +1,974 @@
+{
+  "a": {
+    "principale": {
+      "base": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 1040
+        },
+        "pulsanti": 14,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 442,
+          "larghezza": 826
+        },
+        "pulsanti": 14,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 826,
+          "larghezza": 1424
+        },
+        "pulsanti": 14,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "aspetta": {
+      "base": {
+        "conversazione": {
+          "altezza": 624,
+          "larghezza": 640
+        },
+        "pulsanti": 20,
+        "testo": 6,
+        "iconaTesto": 1,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 490,
+          "larghezza": 426
+        },
+        "pulsanti": 20,
+        "testo": 6,
+        "iconaTesto": 1,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 874,
+          "larghezza": 944
+        },
+        "pulsanti": 20,
+        "testo": 6,
+        "iconaTesto": 1,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "squadre": {
+      "base": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 640
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 3,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 442,
+          "larghezza": 426
+        },
+        "pulsanti": 17,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 826,
+          "larghezza": 944
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 3,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "specialista": {
+      "base": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 640
+        },
+        "pulsanti": 20,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 442,
+          "larghezza": 426
+        },
+        "pulsanti": 20,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 826,
+          "larghezza": 944
+        },
+        "pulsanti": 20,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "lavoro": {
+      "base": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 640
+        },
+        "pulsanti": 20,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 442,
+          "larghezza": 426
+        },
+        "pulsanti": 20,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 826,
+          "larghezza": 944
+        },
+        "pulsanti": 20,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "regole": {
+      "base": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 640
+        },
+        "pulsanti": 17,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 442,
+          "larghezza": 426
+        },
+        "pulsanti": 17,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 826,
+          "larghezza": 944
+        },
+        "pulsanti": 17,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "memoria": {
+      "base": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 640
+        },
+        "pulsanti": 27,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 24,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 442,
+          "larghezza": 426
+        },
+        "pulsanti": 27,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 24,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 826,
+          "larghezza": 944
+        },
+        "pulsanti": 27,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 24,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "panoramica": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 5,
+        "testo": 0,
+        "iconaTesto": 0,
+        "icona": 5,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 5,
+        "testo": 0,
+        "iconaTesto": 0,
+        "icona": 5,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": null,
+        "pulsanti": 5,
+        "testo": 0,
+        "iconaTesto": 0,
+        "icona": 5,
+        "pieni": 0,
+        "urgenti": 0
+      }
+    },
+    "impostazioni": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 26,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 23,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 26,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 23,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": null,
+        "pulsanti": 26,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 23,
+        "pieni": 0,
+        "urgenti": 0
+      }
+    }
+  },
+  "b": {
+    "principale": {
+      "base": {
+        "conversazione": {
+          "altezza": 586,
+          "larghezza": 1232
+        },
+        "pulsanti": 19,
+        "testo": 4,
+        "iconaTesto": 2,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 452,
+          "larghezza": 1018
+        },
+        "pulsanti": 19,
+        "testo": 4,
+        "iconaTesto": 2,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 836,
+          "larghezza": 1632
+        },
+        "pulsanti": 19,
+        "testo": 4,
+        "iconaTesto": 2,
+        "icona": 13,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "aspetta": {
+      "base": {
+        "conversazione": {
+          "altezza": 634,
+          "larghezza": 932
+        },
+        "pulsanti": 24,
+        "testo": 8,
+        "iconaTesto": 2,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 500,
+          "larghezza": 718
+        },
+        "pulsanti": 22,
+        "testo": 6,
+        "iconaTesto": 2,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 884,
+          "larghezza": 1292
+        },
+        "pulsanti": 24,
+        "testo": 8,
+        "iconaTesto": 2,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "squadre": {
+      "base": {
+        "conversazione": {
+          "altezza": 386,
+          "larghezza": 932
+        },
+        "pulsanti": 30,
+        "testo": 5,
+        "iconaTesto": 4,
+        "icona": 21,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 252,
+          "larghezza": 718
+        },
+        "pulsanti": 28,
+        "testo": 5,
+        "iconaTesto": 2,
+        "icona": 21,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 576,
+          "larghezza": 1292
+        },
+        "pulsanti": 30,
+        "testo": 5,
+        "iconaTesto": 4,
+        "icona": 21,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "specialista": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 23,
+        "testo": 2,
+        "iconaTesto": 6,
+        "icona": 15,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 21,
+        "testo": 2,
+        "iconaTesto": 4,
+        "icona": 15,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 801,
+          "larghezza": 852
+        },
+        "pulsanti": 28,
+        "testo": 4,
+        "iconaTesto": 7,
+        "icona": 17,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "lavoro": {
+      "base": {
+        "conversazione": {
+          "altezza": 586,
+          "larghezza": 932
+        },
+        "pulsanti": 24,
+        "testo": 4,
+        "iconaTesto": 3,
+        "icona": 17,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 452,
+          "larghezza": 718
+        },
+        "pulsanti": 24,
+        "testo": 4,
+        "iconaTesto": 3,
+        "icona": 17,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 836,
+          "larghezza": 1292
+        },
+        "pulsanti": 24,
+        "testo": 4,
+        "iconaTesto": 3,
+        "icona": 17,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "regole": {
+      "base": {
+        "conversazione": {
+          "altezza": 586,
+          "larghezza": 932
+        },
+        "pulsanti": 23,
+        "testo": 7,
+        "iconaTesto": 2,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 452,
+          "larghezza": 718
+        },
+        "pulsanti": 23,
+        "testo": 7,
+        "iconaTesto": 2,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 836,
+          "larghezza": 1292
+        },
+        "pulsanti": 23,
+        "testo": 7,
+        "iconaTesto": 2,
+        "icona": 14,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "memoria": {
+      "base": {
+        "conversazione": {
+          "altezza": 586,
+          "larghezza": 932
+        },
+        "pulsanti": 31,
+        "testo": 4,
+        "iconaTesto": 2,
+        "icona": 25,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 452,
+          "larghezza": 718
+        },
+        "pulsanti": 30,
+        "testo": 4,
+        "iconaTesto": 2,
+        "icona": 24,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 836,
+          "larghezza": 1292
+        },
+        "pulsanti": 31,
+        "testo": 4,
+        "iconaTesto": 2,
+        "icona": 25,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "panoramica": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 16,
+        "testo": 2,
+        "iconaTesto": 3,
+        "icona": 11,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 16,
+        "testo": 2,
+        "iconaTesto": 3,
+        "icona": 11,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": null,
+        "pulsanti": 16,
+        "testo": 2,
+        "iconaTesto": 3,
+        "icona": 11,
+        "pieni": 0,
+        "urgenti": 0
+      }
+    },
+    "impostazioni": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 37,
+        "testo": 4,
+        "iconaTesto": 4,
+        "icona": 29,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 37,
+        "testo": 4,
+        "iconaTesto": 4,
+        "icona": 29,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": null,
+        "pulsanti": 37,
+        "testo": 4,
+        "iconaTesto": 4,
+        "icona": 29,
+        "pieni": 0,
+        "urgenti": 0
+      }
+    }
+  },
+  "c": {
+    "principale": {
+      "base": {
+        "conversazione": {
+          "altezza": 610,
+          "larghezza": 1280
+        },
+        "pulsanti": 9,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 5,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 476,
+          "larghezza": 1066
+        },
+        "pulsanti": 9,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 5,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 860,
+          "larghezza": 1680
+        },
+        "pulsanti": 9,
+        "testo": 2,
+        "iconaTesto": 2,
+        "icona": 5,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "aspetta": {
+      "base": {
+        "conversazione": {
+          "altezza": 658,
+          "larghezza": 840
+        },
+        "pulsanti": 18,
+        "testo": 6,
+        "iconaTesto": 3,
+        "icona": 9,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 524,
+          "larghezza": 626
+        },
+        "pulsanti": 18,
+        "testo": 6,
+        "iconaTesto": 3,
+        "icona": 9,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 908,
+          "larghezza": 1160
+        },
+        "pulsanti": 18,
+        "testo": 6,
+        "iconaTesto": 7,
+        "icona": 5,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "squadre": {
+      "base": {
+        "conversazione": {
+          "altezza": 610,
+          "larghezza": 840
+        },
+        "pulsanti": 16,
+        "testo": 2,
+        "iconaTesto": 6,
+        "icona": 8,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 476,
+          "larghezza": 626
+        },
+        "pulsanti": 15,
+        "testo": 2,
+        "iconaTesto": 5,
+        "icona": 8,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 860,
+          "larghezza": 1160
+        },
+        "pulsanti": 16,
+        "testo": 2,
+        "iconaTesto": 9,
+        "icona": 5,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "specialista": {
+      "base": {
+        "conversazione": {
+          "altezza": 610,
+          "larghezza": 840
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 5,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 476,
+          "larghezza": 626
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 5,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 860,
+          "larghezza": 1160
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 8,
+        "icona": 8,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "lavoro": {
+      "base": {
+        "conversazione": {
+          "altezza": 610,
+          "larghezza": 840
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 5,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 476,
+          "larghezza": 626
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 5,
+        "icona": 11,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 860,
+          "larghezza": 1160
+        },
+        "pulsanti": 18,
+        "testo": 2,
+        "iconaTesto": 8,
+        "icona": 8,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "regole": {
+      "base": {
+        "conversazione": {
+          "altezza": 610,
+          "larghezza": 840
+        },
+        "pulsanti": 15,
+        "testo": 2,
+        "iconaTesto": 4,
+        "icona": 9,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 476,
+          "larghezza": 626
+        },
+        "pulsanti": 15,
+        "testo": 2,
+        "iconaTesto": 4,
+        "icona": 9,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 860,
+          "larghezza": 1160
+        },
+        "pulsanti": 15,
+        "testo": 2,
+        "iconaTesto": 7,
+        "icona": 6,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "memoria": {
+      "base": {
+        "conversazione": {
+          "altezza": 610,
+          "larghezza": 840
+        },
+        "pulsanti": 25,
+        "testo": 2,
+        "iconaTesto": 4,
+        "icona": 19,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "zoom": {
+        "conversazione": {
+          "altezza": 476,
+          "larghezza": 626
+        },
+        "pulsanti": 25,
+        "testo": 2,
+        "iconaTesto": 4,
+        "icona": 19,
+        "pieni": 1,
+        "urgenti": 1
+      },
+      "larga": {
+        "conversazione": {
+          "altezza": 860,
+          "larghezza": 1160
+        },
+        "pulsanti": 25,
+        "testo": 2,
+        "iconaTesto": 7,
+        "icona": 16,
+        "pieni": 1,
+        "urgenti": 1
+      }
+    },
+    "panoramica": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 3,
+        "testo": 0,
+        "iconaTesto": 0,
+        "icona": 3,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 3,
+        "testo": 0,
+        "iconaTesto": 0,
+        "icona": 3,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": null,
+        "pulsanti": 3,
+        "testo": 0,
+        "iconaTesto": 0,
+        "icona": 3,
+        "pieni": 0,
+        "urgenti": 0
+      }
+    },
+    "impostazioni": {
+      "base": {
+        "conversazione": null,
+        "pulsanti": 23,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 20,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "zoom": {
+        "conversazione": null,
+        "pulsanti": 23,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 20,
+        "pieni": 0,
+        "urgenti": 0
+      },
+      "larga": {
+        "conversazione": null,
+        "pulsanti": 23,
+        "testo": 2,
+        "iconaTesto": 1,
+        "icona": 20,
+        "pieni": 0,
+        "urgenti": 0
+      }
+    }
+  }
+}

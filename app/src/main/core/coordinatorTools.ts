@@ -63,6 +63,7 @@ import { NEXT_MOVES, workRequests, workState } from "./workPhase";
 import { ASK_TRAMA_BINDING, proposeRoute, RouteError, routeReport } from "./askTrama";
 import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
+import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 
 export interface TicketUpdate {
@@ -699,10 +700,12 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
   const learning = context.learning;
   if (!learning) return toolFailure("learning_unavailable", "Learning is not available for this project.");
   const skillContext = { origin: "foreground" as const };
-  // Only a write that succeeded resets its review counter: a refused one saved nothing.
-  const wrote = (result: Record<string, unknown>) => {
+  // Only a write that succeeded resets its review counter: a refused one saved nothing. A refused write is a tool
+  // error (issue #305), and the model still reads the store's whole answer.
+  const wrote = (result: Record<string, unknown>): ToolResult => {
     if (result.success === true) context.learningToolUsed?.(name);
-    return toolSuccess(result as JsonObject);
+    const answer = toolSuccess(result as JsonObject);
+    return result.success === false ? { ...answer, isError: true } : answer;
   };
   switch (name) {
     case "memory":
@@ -1117,6 +1120,15 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const authorization = authorize(document.mandate, "executeInWorktree", moduleIds, kind);
         if (authorization !== "authorized") {
           return refused(authorization, "executeInWorktree", moduleIds.filter((id) => !document.mandate?.scopeModuleIds.includes(id)));
+        }
+        // Work that builds on work the mandate leaves out would bring it back through its dependency (C06).
+        const leftOut = workLeftOut(document, activeTerms(document.mandate));
+        const outsideDependencies = strings(args.dependencies).filter((id) => leftOut.has(id));
+        if (outsideDependencies.length) {
+          return toolFailure(
+            "dependency_outside_mandate",
+            `These dependencies are work the mandate no longer covers: ${outsideDependencies.join(", ")}. Plan the work again within the mandate.`,
+          );
         }
         const checks = strings(args.requiredChecks);
         const invalidChecks = checks.filter((c) => !ALL_CHECKS.includes(c as ReadOnlyCheck));

@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -41,7 +41,8 @@ describe("agents stay in the project (issue #206)", () => {
     process.env.FAKE_CODEX_LOG = log;
     process.env.FAKE_CODEX_MEMORY_PROBE = "1";
 
-    const repo = await mkdtemp(join(tmpdir(), "trama-scope-"));
+    // The real path, as git reports it: on macOS the temporary folder /var is a link to /private/var.
+    const repo = await realpath(await mkdtemp(join(tmpdir(), "trama-scope-")));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
     await writeFile(join(repo, "package.json"), JSON.stringify({ name: "demo", private: true, scripts: { test: "node -e \"process.exit(1)\"" } }));
     await git(["init", "-b", "main"], repo, false);

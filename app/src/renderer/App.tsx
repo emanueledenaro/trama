@@ -57,6 +57,11 @@ export function App() {
     const offMenu = window.trama.onMenu((command) => {
       const ui = useUi.getState();
       if (command === "settings") ui.openSettings("general");
+      else if (command === "about") {
+        // Informazioni su Trama on Windows and Linux: the last group of the general settings, brought into view.
+        ui.openSettings("general");
+        requestAnimationFrame(() => document.querySelector('[data-testid="about-trama"]')?.scrollIntoView({ block: "center" }));
+      }
       else if (command === "createProject") ui.setDialog("createProject");
       else if (command === "guide") ui.setDialog("guide");
       else if (command === "welcome") ui.setWelcome("hello");
@@ -125,7 +130,7 @@ export function App() {
         >
           <div
             className={cn(
-              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col border-r border-[color:var(--app-panel-border)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !sidebarOpen && "-translate-x-full",
             )}
             style={{ width: sidebar.width }}

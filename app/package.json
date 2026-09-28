@@ -20,7 +20,9 @@
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
     "@tabler/icons-react": "^3.48.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.4",
@@ -41,12 +43,13 @@
     "tailwindcss": "^4.3.3",
     "typescript": "5.9",
     "vite": "^8.3.1",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.2",
     "zustand": "^5.0.15"
   },
   "build": {
     "appId": "dev.trama.app",
     "productName": "Trama",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -66,6 +69,14 @@
         "to": "AIHero"
       },
       {
+        "from": "resources/icons",
+        "to": "icons",
+        "filter": [
+          "icon.ico",
+          "png/512x512.png"
+        ]
+      },
+      {
         "from": "../THIRD_PARTY_NOTICES.md",
         "to": "THIRD_PARTY_NOTICES.md"
       },
@@ -78,8 +89,20 @@
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/icon.icns",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "hardenedRuntime": true,
       "notarize": false
@@ -87,15 +110,28 @@
     "linux": {
       "icon": "resources/icons/png",
       "target": [
-        "AppImage"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Development"
     },
     "win": {
       "icon": "resources/icons/icon.ico",
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "publish": null,
     "asarUnpack": [

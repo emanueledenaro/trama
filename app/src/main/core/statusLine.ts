@@ -14,7 +14,7 @@ import { type ProviderWait, providerWaitLine } from "./resumeWork";
 export const NOTHING_GOING_ON = "Niente in corso.";
 
 /** The sentence of a paused project (A05): what runs ends, and nothing new starts until the person resumes. */
-export const PAUSED_SENTENCE = "In pausa: i turni in corso finiscono, poi non parte niente finché non riprendi.";
+export const PAUSED_SENTENCE = "Coordinatore in pausa: i turni in corso finiscono, poi non parte niente finché non lo riprendi.";
 
 const isCoordinatorMove = (move: NextMove | undefined): move is CoordinatorMove => move !== undefined && move in COORDINATOR_MOVES;
 

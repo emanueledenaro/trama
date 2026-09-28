@@ -19,8 +19,9 @@ import {
   parseAntigravityPrintResult,
   resolveAntigravityCliModelLabel,
   ANTIGRAVITY_KNOWN_MODELS,
-  antigravityHelpOffersEffort,
+  antigravityContextWindow,
   antigravityModelArgs,
+  antigravityStepNeedsHook,
 } from "./antigravity";
 import { mcpProxyScriptSource } from "./hostToolProxy";
 import { clearUsageLimitsForTests, parseUsageLimit } from "./providerSupport";
@@ -41,7 +42,20 @@ const REAL_MODELS = [
   // A model newer than Trama's built-in list, to test the levels agy models reports.
   ...(process.env.FAKE_AGY_EXTRA_MODEL ? [process.env.FAKE_AGY_EXTRA_MODEL] : []),
 ];
-if (args[0] === "--version") { console.log("agy " + (process.env.FAKE_AGY_VERSION || "1.2.0")); process.exit(0); }
+// After agy update the new version is in a file next to the log.
+const versionFile = require("node:path").join(require("node:path").dirname(process.env.FAKE_AGY_LOG), "agy-version");
+if (args[0] === "--version") {
+  const updated = fs.existsSync(versionFile) ? fs.readFileSync(versionFile, "utf8").trim() : "";
+  console.log("agy " + (updated || process.env.FAKE_AGY_VERSION || "1.2.0"));
+  process.exit(0);
+}
+if (args[0] === "update") {
+  fs.appendFileSync(process.env.FAKE_AGY_LOG, "update\n");
+  if (process.env.FAKE_AGY_UPDATE === "fail") { console.error("agy: update failed: checksum mismatch"); process.exit(1); }
+  fs.writeFileSync(versionFile, "1.2.12");
+  console.log("Updated to 1.2.12");
+  process.exit(0);
+}
 if (args[0] === "--help") {
   console.log(
     "Usage: agy [options]\n  -p, --print <prompt>  Print mode" +
@@ -60,6 +74,9 @@ if (args[0] === "plugin") {
   fs.appendFileSync(process.env.FAKE_AGY_LOG, "plugin " + args.slice(1).join(" ") + "\n");
   // A CLI whose hook does not start: the command fails like a missing interpreter.
   if (scenario === "brokenplugin") fs.writeFileSync(require("node:path").join(args[2], "capture.cjs"), "process.exit(3);\n");
+  // Like agy 1.2.12, install copies the plugin to ~/.gemini/config/plugins/<name>, where the CLI reads it.
+  const path = require("node:path");
+  if (args[1] === "install") fs.cpSync(args[2], path.join(args[2], "..", "..", "..", "config", "plugins", path.basename(args[2])), { recursive: true });
   process.exit(0);
 }
 fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ args, cwd: process.cwd(), env: {
@@ -68,18 +85,20 @@ fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ args, cwd: process.
   profile: process.env.TRAMA_ANTIGRAVITY_PROFILE,
   tokenFile: process.env.TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE, hostTools: process.env.TRAMA_ANTIGRAVITY_HOST_TOOLS,
   leaked: process.env.TRAMA_SECRET } }) + "\n");
-// Like agy 1.2.11, a strict run joins --model and --effort into one label and refuses any label outside
-// the list, a bare name included. This pairing is inferred from the error text in issue #209.
+// Like agy 1.2.12 (checked on the Mac on 28 September): --model takes the full label with its level, as agy
+// models lists it; a bare name is not a known model, and --effort is refused for a model whose levels are in
+// its labels, with the error text agy prints.
 if (process.env.FAKE_AGY_STRICT_MODELS) {
   const flag = (name) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : "");
   const model = flag("--model");
   const effort = flag("--effort");
-  const label = effort ? model + " (" + effort.charAt(0).toUpperCase() + effort.slice(1) + ")" : model;
-  if (!REAL_MODELS.includes(label) || (effort && !["low", "medium", "high"].includes(effort))) {
-    const error = "invalid model selection (--model \"" + model + "\" --effort \"" + effort + "\"): model " + model + " is not recognized as a known model or custom model in settings";
+  const fail = (reason) => {
+    const error = "invalid model selection (--model \"" + model + "\"" + (effort ? " --effort \"" + effort + "\"" : "") + "): " + reason;
     process.stdout.write(JSON.stringify({ event: "error", message: error }) + "\n");
     process.exit(1);
-  }
+  };
+  if (effort && REAL_MODELS.some((label) => label.startsWith(model + " ("))) fail("--effort is not supported for model \"" + model + "\"");
+  if (!REAL_MODELS.includes(model)) fail("model " + model + " is not recognized as a known model or custom model in settings");
 }
 // Like the real CLI, every hook runs the installed capture script and honors its decision.
 const capture = require("node:path").join(process.env.FAKE_AGY_PLUGIN, "capture.cjs");
@@ -98,6 +117,10 @@ const out = (value) => process.stdout.write(JSON.stringify(value) + "\n");
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 (async () => {
   out({ event: "init", session_id: "s" });
+  // Like agy 1.2.12 (checked on the Mac on 28 September): the person's message streams as a step before
+  // the CLI calls PreInvocation. The delay makes the order certain in a test.
+  out({ event: "step_update", step_update: { step_index: 0, step_type: "user_input", state: "DONE" } });
+  await wait(Number(process.env.FAKE_AGY_HOOK_DELAY_MS || 0));
   if (scenario === "hang") { await wait(60000); return; }
   if (scenario === "nohook") {
     // A CLI that ignores the plugin: steps stream, no hook runs, and a tool would run unguarded.
@@ -136,6 +159,19 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     hook("stop", {});
     await wait(60000);
     return;
+  }
+  if (scenario === "stopthenresult") {
+    // Like agy 1.2.12 (checked on the Mac on 28 September): the stop hook runs just before the result, and a
+    // SIGTERM in between turns the finished turn into an ERROR "interrupted" with exit code 1.
+    process.on("SIGTERM", () => {
+      console.error("error: interrupted");
+      out({ event: "result", result: { status: "ERROR", response: "{\"ok\":true}", error: "interrupted" } });
+      process.exit(1);
+    });
+    hook("stop", {});
+    await wait(300);
+    out({ event: "result", result: { status: "SUCCESS", response: "{\"ok\":true}" } });
+    process.exit(0);
   }
   out({ event: "result", result: { status: "SUCCESS", response: "{\"ok\":true}" } });
   process.exit(0);
@@ -196,7 +232,7 @@ beforeEach(async () => {
 afterEach(async () => {
   runtime?.stop();
   runtime = null;
-  for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "FAKE_AGY_HELP_SANDBOX", "FAKE_AGY_STRICT_MODELS", "FAKE_AGY_EXTRA_MODEL", "TRAMA_SECRET"]) delete process.env[key];
+  for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "FAKE_AGY_HELP_SANDBOX", "FAKE_AGY_STRICT_MODELS", "FAKE_AGY_EXTRA_MODEL", "FAKE_AGY_HOOK_DELAY_MS", "FAKE_AGY_UPDATE", "TRAMA_SECRET"]) delete process.env[key];
   clearUsageLimitsForTests();
   await rm(root, { recursive: true, force: true });
 });
@@ -256,6 +292,12 @@ describe("Antigravity models and health", () => {
     expect(resolveAntigravityCliModelLabel("slug\tGemini 3.1 Pro")).toBe("Gemini 3.1 Pro (Low)");
   });
 
+  it("knows the context window of every model in its list, and none of an unknown one (issue #305)", () => {
+    for (const model of Object.keys(ANTIGRAVITY_KNOWN_MODELS)) expect(antigravityContextWindow(`${model} (High)`)).toBeGreaterThan(0);
+    expect(antigravityContextWindow("Gemini 3.8 Flash (High)")).toBe(1_048_576);
+    expect(antigravityContextWindow("Gemini 9 Ultra")).toBeNull();
+  });
+
   it("builds a label agy 1.2.11 accepts for every model and effort in its list", async () => {
     process.env.FAKE_AGY_MODELS = "real";
     runtime = make();
@@ -303,11 +345,33 @@ describe("Antigravity models and health", () => {
   it("reads the account from the version and model probes", async () => {
     runtime = make();
     expect(await runtime.readAccount()).toEqual({ kind: "authenticated", label: "Antigravity CLI 1.2.0" });
-    process.env.FAKE_AGY_VERSION = "1.0.11";
-    expect(await runtime.readAccount()).toMatchObject({ kind: "unavailable", message: expect.stringMatching(/1\.0\.12/) });
-    process.env.FAKE_AGY_VERSION = "1.2.0";
     process.env.FAKE_AGY_MODELS = "signedout";
     expect(await runtime.readAccount()).toEqual({ kind: "signedOut" });
+  });
+
+  it("updates a CLI older than Trama needs by itself before reporting it", async () => {
+    process.env.FAKE_AGY_VERSION = "1.0.11";
+    runtime = make();
+    expect(await runtime.readAccount()).toEqual({ kind: "authenticated", label: "Antigravity CLI 1.2.12" });
+    expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/^update$/gm)).toHaveLength(1);
+  });
+
+  it("names the one thing left when the update Trama ran does not work, and does not repeat it", async () => {
+    process.env.FAKE_AGY_VERSION = "1.0.11";
+    process.env.FAKE_AGY_UPDATE = "fail";
+    runtime = make();
+    expect(await runtime.readAccount()).toEqual({
+      kind: "unavailable",
+      message:
+        "Antigravity CLI 1.0.11 è troppo vecchio per Trama, che ha provato ad aggiornarlo da solo. agy update non è riuscito: agy: update failed: checksum mismatch. " +
+        "Resta una cosa da fare: aggiornalo da un terminale con agy update alla versione 1.0.12 o successiva.",
+    });
+    const english = new AntigravityRuntime({ executable: join(root, "agy"), language: () => "en" }, { homeDir: join(root, "home") });
+    expect(await english.readAccount()).toMatchObject({
+      kind: "unavailable",
+      message: expect.stringMatching(/^Antigravity CLI 1\.0\.11 is too old for Trama, which tried to update it by itself\. agy update did not work: .* update it from a terminal with agy update to version 1\.0\.12 or later\.$/),
+    });
+    expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/^update$/gm)).toHaveLength(1);
   });
 
   it("reports a missing CLI and classifies model probe failures", async () => {
@@ -345,27 +409,36 @@ describe("Antigravity sandbox", () => {
     expect(opened.threadId).toMatch(/^antigravity-/);
     // The check runs the hook command from the installed hooks.json, as the CLI does.
     await expect(checkReadOnlyHook(join(root, "home"), root)).resolves.toBeUndefined();
+    // agy reads the copy it installed: a copy that points at a Trama build that is gone fails the check.
+    const copy = join(root, "home", ".gemini", "config", "plugins", "trama-capture", "hooks.json");
+    await writeFile(copy, (await readFile(copy, "utf8")).replaceAll(process.execPath, join(root, "gone", "Trama")));
+    await expect(checkReadOnlyHook(join(root, "home"), root)).rejects.toThrow();
   });
 
-  it("refuses a read-only thread with a clear action when the hook does not load", async () => {
+  it("repairs first, then refuses a read-only thread with what it tried when the hook still does not load", async () => {
     process.env.FAKE_AGY_SCENARIO = "brokenplugin";
     runtime = make();
     await expect(
       runtime.openThread({ model: "Gemini 3.5 Flash", cwd: root, developerInstructions: "", sandbox: "read-only" }),
-    ).rejects.toMatchObject({ code: "unsupportedSandbox", message: expect.stringMatching(/hook di Trama.*sola lettura.*agy update o reinstallalo/s) });
+    ).rejects.toMatchObject({
+      code: "unsupportedSandbox",
+      message:
+        "Il plugin di Trama per Antigravity CLI non è pronto, e senza il suo hook Trama non controlla cosa fa l'agente. Trama ha provato a ripararlo da solo. " +
+        "Versione 1.2.0: non serve aggiornarla. Plugin di Trama reinstallato con agy plugin install. L'hook di Trama non risponde come deve: the hook exited with code 3. " +
+        "Senza l'hook Trama non fa partire il turno. Resta una cosa da fare: reinstalla Antigravity CLI, poi riprova.",
+    });
+    // The plugin was installed twice: once for the session, once by the repair.
+    expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/^plugin install /gm)).toHaveLength(2);
     // The specialist profile is unchanged: it does not run the read-only check.
     await expect(
       runtime.openThread({ model: "Gemini 3.5 Flash", cwd: join(root, "worktree"), developerInstructions: "", sandbox: "workspace-write" }),
     ).resolves.toMatchObject({ replaced: false });
   });
 
-  it("splits the level into --effort only when the CLI lists it and documents the level", () => {
-    expect(antigravityHelpOffersEffort("  --effort <level>      Reasoning effort (low|medium|high)")).toBe(true);
-    expect(antigravityHelpOffersEffort("  --efforts <x>\n  --model <m>")).toBe(false);
-    expect(antigravityModelArgs("Gemini 3.8 Flash (High)", true)).toEqual(["--model", "Gemini 3.8 Flash", "--effort", "high"]);
-    expect(antigravityModelArgs("Claude Sonnet 4.6 (Thinking)", true)).toEqual(["--model", "Claude Sonnet 4.6 (Thinking)"]);
-    expect(antigravityModelArgs("Gemini 3.8 Flash (High)", false)).toEqual(["--model", "Gemini 3.8 Flash (High)"]);
-    expect(antigravityModelArgs("My Custom Model", true)).toEqual(["--model", "My Custom Model"]);
+  it("passes the full label with its level to --model and never a separate --effort, which agy 1.2.12 refuses", () => {
+    expect(antigravityModelArgs("Gemini 3.8 Flash (High)")).toEqual(["--model", "Gemini 3.8 Flash (High)"]);
+    expect(antigravityModelArgs("Claude Sonnet 4.6 (Thinking)")).toEqual(["--model", "Claude Sonnet 4.6 (Thinking)"]);
+    expect(antigravityModelArgs("My Custom Model")).toEqual(["--model", "My Custom Model"]);
   });
 
   it("reads the --sandbox switch from the CLI help", () => {
@@ -555,10 +628,10 @@ describe("Antigravity turns", () => {
     await expect(run("Claude Opus 4.6", null)).resolves.toBe('{"ok":true}');
     const sent = (await logLines()).map((line) => {
       const args = line.args as string[];
-      const at = args.indexOf("--model");
-      return args[at + 2] === "--effort" ? [args[at + 1], args[at + 3]] : [args[at + 1]];
+      expect(args).not.toContain("--effort");
+      return args[args.indexOf("--model") + 1];
     });
-    expect(sent).toEqual([["Gemini 3.8 Flash", "high"], ["Gemini 3.1 Pro", "low"], ["Claude Opus 4.6 (Thinking)"]]);
+    expect(sent).toEqual(["Gemini 3.8 Flash (High)", "Gemini 3.1 Pro (Low)", "Claude Opus 4.6 (Thinking)"]);
   });
 
   it("uses the levels one runtime discovered in another runtime's turn", async () => {
@@ -576,7 +649,8 @@ describe("Antigravity turns", () => {
       runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 3.9 Flash", writableRoot: worktree, onEvent: () => undefined }),
     ).resolves.toBe('{"ok":true}');
     const args = (await logLines()).at(-1)!.args as string[];
-    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 4)).toEqual(["--model", "Gemini 3.9 Flash", "--effort", "medium"]);
+    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2)).toEqual(["--model", "Gemini 3.9 Flash (Medium)"]);
+    expect(args).not.toContain("--effort");
   });
 
   it("asks agy models for the levels of a model Trama does not know yet", async () => {
@@ -590,7 +664,8 @@ describe("Antigravity turns", () => {
       runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 4.0 Flash", writableRoot: worktree, onEvent: () => undefined }),
     ).resolves.toBe('{"ok":true}');
     const args = (await logLines()).at(-1)!.args as string[];
-    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 4)).toEqual(["--model", "Gemini 4.0 Flash", "--effort", "low"]);
+    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2)).toEqual(["--model", "Gemini 4.0 Flash (Low)"]);
+    expect(args).not.toContain("--effort");
   });
 
   it("reports an unknown model as unavailable with a change-model hint, not as raw JSON", async () => {
@@ -656,7 +731,8 @@ describe("Antigravity turns", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "fileChangeCompleted", paths: [join(worktree, "a.txt")], succeeded: true }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallStarted", tool: "view_file" }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", tool: "view_file", succeeded: false, error: "boom" }));
-    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 110, contextWindow: null });
+    // The window comes from the catalog of the model (issue #305).
+    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 110, contextWindow: 1_048_576 });
     expect(events.filter((event) => event.type === "textDelta").map((event) => (event as { delta: string }).delta).join("")).toBe(
       '{"ok":true}',
     );
@@ -750,6 +826,25 @@ describe("Antigravity turns", () => {
     expect(call.env.root).toBeUndefined();
   });
 
+  it("runs a read-only turn when agy streams the person's message before it calls the hook, as 1.2.12 does", async () => {
+    // The Coordinator stopped at every message: the user_input step arrived before the PreInvocation record.
+    process.env.FAKE_AGY_HOOK_DELAY_MS = "400";
+    runtime = make(true);
+    const { threadId } = await runtime.openThread({ model: "Gemini 3.8 Flash", cwd: root, developerInstructions: "Sei il Coordinatore.", sandbox: "read-only" });
+    const events: TurnEvent[] = [];
+    await expect(runtime.runTurn({ threadId, prompt: "ciao", cwd: root, model: "Gemini 3.8 Flash", onEvent: (e) => events.push(e) })).resolves.toBe('{"ok":true}');
+    expect(events.at(-1)?.type).toBe("completed");
+    expect(events.filter((event) => event.type === "turnStarted")).toHaveLength(1);
+    // No repair was needed: agy ran once, under the read-only profile, and the hook still denied every change.
+    const calls = await logLines();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ env: { profile: "read-only" } });
+    expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/denied /g)).toHaveLength(6);
+    // Only the person's own message may come before the hook; every step of the model needs it.
+    expect(antigravityStepNeedsHook("user_input")).toBe(false);
+    for (const step of ["planner_response", "agent_response", "tool_call", "a_step_from_a_newer_cli", undefined]) expect(antigravityStepNeedsHook(step)).toBe(true);
+  });
+
   it("runs a turn without a writable root read-only, without --sandbox when the CLI lacks it", async () => {
     runtime = make();
     const worktree = join(root, "worktree");
@@ -761,18 +856,88 @@ describe("Antigravity turns", () => {
     expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/denied write_to_file/g)).toHaveLength(2);
   });
 
-  it("stops a read-only turn whose CLI never calls the hook", async () => {
+  it("stops a read-only turn whose CLI never calls the hook, repairs, and gives up after one more try", async () => {
     process.env.FAKE_AGY_SCENARIO = "nohook";
     runtime = make();
     const { threadId } = await runtime.openThread({ model: "m", cwd: root, developerInstructions: "", sandbox: "read-only" });
     const events: TurnEvent[] = [];
+    const message =
+      "Antigravity CLI non ha chiamato l'hook di Trama, il controllo che tiene il turno in sola lettura. Trama ha provato a ripararlo da solo. " +
+      "Versione 1.2.0: non serve aggiornarla. Plugin di Trama reinstallato con agy plugin install. L'hook di Trama risponde come deve. " +
+      "Senza l'hook Trama non fa partire il turno. Resta una cosa da fare: reinstalla Antigravity CLI, poi riprova.";
     await expect(runtime.runTurn({ threadId, prompt: "x", cwd: root, model: "m", onEvent: (e) => events.push(e) })).rejects.toMatchObject({
       code: "unsupportedSandbox",
-      message: expect.stringMatching(/non ha chiamato l'hook.*agy update o reinstallalo/s),
+      message,
     });
-    expect(events.at(-1)).toMatchObject({ type: "failed" });
+    expect(events.filter((event) => event.type === "turnStarted")).toHaveLength(1);
+    expect(events).toContainEqual({
+      type: "providerRepaired",
+      provider: "antigravity",
+      steps: [
+        { action: "updateCli", outcome: "notNeeded", detail: "1.2.0" },
+        { action: "reinstallPlugin", outcome: "done", detail: null },
+        { action: "checkHook", outcome: "done", detail: null },
+      ],
+      repaired: true,
+      retrying: true,
+    });
+    expect(events.at(-1)).toEqual({ type: "failed", message });
+    // Two runs of agy, and neither reached its unguarded write.
+    expect(await logLines()).toHaveLength(2);
     await new Promise((resolve) => setTimeout(resolve, 1_800));
     expect(await readFile(join(root, "log.ndjson"), "utf8")).not.toContain("unguarded write");
+  });
+
+  it("repairs a hook that stopped starting and runs the turn once more", async () => {
+    runtime = make(true);
+    const { threadId } = await runtime.openThread({ model: "m", cwd: root, developerInstructions: "Sei il Coordinatore.", sandbox: "read-only" });
+    // Another Trama build rewrote the plugin and went away: the hook no longer starts.
+    await writeFile(join(root, "home", ".gemini", "antigravity-cli", "plugins", "trama-capture", "capture.cjs"), "process.exit(3);\n");
+    const events: TurnEvent[] = [];
+    await expect(runtime.runTurn({ threadId, prompt: "ciao", cwd: root, model: "m", onEvent: (e) => events.push(e) })).resolves.toBe('{"ok":true}');
+    expect(events.filter((event) => event.type === "turnStarted")).toHaveLength(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: "providerRepaired", repaired: true, retrying: true }));
+    expect(events.at(-1)?.type).toBe("completed");
+    const calls = (await logLines()) as { args: string[]; env: Record<string, string> }[];
+    expect(calls).toHaveLength(2);
+    // The first run never reached the model: the second starts a new conversation with the instructions again.
+    expect(calls[1]!.args.slice(0, 1)).toEqual(["--new-project"]);
+    expect(calls[1]!.args.at(-1)).toMatch(/^Sei il Coordinatore\.\n\nciao$/);
+    expect(calls[1]!.env.profile).toBe("read-only");
+    // The repaired hook denied every change in the second run.
+    expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/denied /g)).toHaveLength(6);
+  });
+
+  it("does not run the turn again when the update the repair needs fails, and names that update", async () => {
+    process.env.FAKE_AGY_SCENARIO = "nohook";
+    runtime = make();
+    const { threadId } = await runtime.openThread({ model: "m", cwd: root, developerInstructions: "", sandbox: "read-only" });
+    // The CLI grew old after the session opened, and its update fails.
+    process.env.FAKE_AGY_VERSION = "1.0.11";
+    process.env.FAKE_AGY_UPDATE = "fail";
+    const events: TurnEvent[] = [];
+    const english = new AntigravityRuntime({ executable: join(root, "agy"), language: () => "en" }, { homeDir: join(root, "home") });
+    const opened = await english.openThread({ model: "m", cwd: root, developerInstructions: "", sandbox: "read-only" });
+    await expect(english.runTurn({ threadId: opened.threadId, prompt: "x", cwd: root, model: "m", onEvent: (e) => events.push(e) })).rejects.toMatchObject({
+      code: "unsupportedSandbox",
+      message: expect.stringMatching(/^Antigravity CLI did not call Trama's hook.*agy update did not work: agy: update failed: checksum mismatch\..*One thing is left for you: update Antigravity CLI from a terminal with agy update, then try again\.$/s),
+    });
+    expect(events).toContainEqual(expect.objectContaining({ type: "providerRepaired", repaired: false, retrying: false }));
+    expect(await logLines()).toHaveLength(1);
+    // The Italian runtime asks for the same thing, without running a second update.
+    await expect(runtime.runTurn({ threadId, prompt: "x", cwd: root, model: "m", onEvent: () => undefined })).rejects.toMatchObject({
+      message: expect.stringMatching(/Resta una cosa da fare: aggiorna Antigravity CLI da un terminale con agy update, poi riprova\.$/),
+    });
+    expect((await readFile(join(root, "log.ndjson"), "utf8")).match(/^update$/gm)).toHaveLength(1);
+  });
+
+  it("lets agy print its result after the stop hook instead of interrupting a finished turn", async () => {
+    process.env.FAKE_AGY_SCENARIO = "stopthenresult";
+    runtime = make();
+    const { threadId } = await runtime.openThread({ model: "m", cwd: root, developerInstructions: "", sandbox: "read-only" });
+    const events: TurnEvent[] = [];
+    await expect(runtime.runTurn({ threadId, prompt: "ciao", cwd: root, model: "m", onEvent: (e) => events.push(e) })).resolves.toBe('{"ok":true}');
+    expect(events.at(-1)).toEqual({ type: "completed", text: '{"ok":true}' });
   });
 
   it("tears down a CLI that lingers after the stop hook and completes", async () => {

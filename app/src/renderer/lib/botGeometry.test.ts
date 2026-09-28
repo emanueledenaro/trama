@@ -11,7 +11,6 @@ const input = (over: Partial<PoseInput> = {}): PoseInput => ({
   expression: "neutral",
   t: 0,
   seed: 1.3,
-  look: null,
   detail: "high",
   moving: false,
   ...over,
@@ -87,12 +86,19 @@ describe("bot geometry (W16)", () => {
     expect(wide.h).toBeGreaterThan(botPose(input()).eyes[0].h);
   });
 
-  it("stays still with reduced motion and moves otherwise; the eyes follow the cursor", () => {
+  it("stays still with reduced motion and moves otherwise", () => {
     expect(botPose(input({ t: 0 }))).toEqual(botPose(input({ t: 5 })));
     expect(botPose(input({ t: 0.3, moving: true }))).not.toEqual(botPose(input({ t: 2.1, moving: true })));
-    const right = botPose(input({ look: { x: 1, y: 0 } })).eyes[0];
-    const left = botPose(input({ look: { x: -1, y: 0 } })).eyes[0];
-    expect(right.x).toBeGreaterThan(left.x);
+  });
+
+  it("does not depend on the pointer: the stitches keep their glance up and to the right", () => {
+    expect(Object.keys(input())).not.toContain("look");
+    // A pointer position passed by mistake changes nothing: the pose has no input for it.
+    const withPointer = { ...input(), look: { x: -1, y: 1 }, pointer: { x: 0, y: 0 } } as PoseInput;
+    expect(botPose(withPointer)).toEqual(botPose(input()));
+    const [left, right] = botPose(input()).eyes;
+    expect(left.x + right.x).toBeGreaterThan(0);
+    expect(left.y).toBeLessThan(-0.12);
   });
 
   it("keeps the white stitches readable on the woven clay of every palette color", () => {

@@ -18,6 +18,10 @@
  * from another conversation) are denied too. A read-only turn also passes `--sandbox` when the
  * installed CLI offers it, and never runs without the hook: Trama tests the installed hook before the
  * session and stops a turn whose CLI does not call it (ADR 0012).
+ *
+ * When the plugin or its hook does not work, Trama repairs by itself before asking the person: it runs
+ * `agy update` when the CLI is older than Trama needs, reinstalls the plugin, checks the hook again and
+ * runs the turn once more. Only a failed repair reaches the person, with what Trama tried.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -25,6 +29,9 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import type { ProviderRepairStep } from "@shared/codex";
+import { DEFAULT_LANGUAGE, type Language } from "@shared/i18n";
+import { REPAIRABLE_CLIS, repairGaveUpMessage, repairOutdatedMessage } from "@shared/providerRepair";
 import { expandHome, isReadable, readableRoots } from "../readScope";
 import {
   type AgentRuntime,
@@ -61,12 +68,16 @@ import { ToolRefusals } from "./toolRefusal";
 const DEFAULT_MODEL = "Gemini 3.8 Flash";
 const PRINT_TIMEOUT = "30m";
 const POLL_INTERVAL_MS = 75;
+/** After the stop hook agy 1.2.12 prints the result and exits within about 300 ms; a longer wait means it lingers. */
+const STOP_LINGER_MS = 3_000;
 const VERSION_TIMEOUT_MS = 4_000;
 const HEALTH_MODELS_TIMEOUT_MS = 20_000;
 const MODEL_DISCOVERY_TIMEOUT_MS = 30_000;
 const PLUGIN_INSTALL_TIMEOUT_MS = 45_000;
+const UPDATE_TIMEOUT_MS = 5 * 60_000;
 const WINDOWS_PROMPT_MAX_CHARS = 24_000;
 export const MINIMUM_ANTIGRAVITY_CLI_VERSION = "1.0.12";
+const CLI = REPAIRABLE_CLIS.antigravity!;
 const PLUGIN_NAME = "trama-capture";
 const MCP_SERVER_NAME = "trama";
 
@@ -135,9 +146,29 @@ export function isAllowedAntigravityToolIn(profile: AntigravityProfile, name: st
   return isAllowedAntigravityTool(name, hostTools);
 }
 
-const HOOK_ACTION = "Aggiorna Antigravity CLI con agy update o reinstallalo, poi riprova.";
-const HOOK_NOT_CALLED = `Antigravity CLI non ha chiamato l'hook di Trama, quindi la sola lettura non era garantita e Trama ha fermato il turno. ${HOOK_ACTION}`;
 const NOT_FOUND = "Antigravity CLI (agy) non è installato o non è nel PATH.";
+
+/**
+ * Steps agy streams before it calls PreInvocation. agy 1.2.12 echoes the person's message as a `user_input`
+ * step and only then runs the hook (seen on the Mac on 28 September 2026: the step arrived about 70 ms before
+ * the hook's record). Every other step comes from the model, which runs only after PreInvocation.
+ */
+const STEPS_BEFORE_INVOCATION: ReadonlySet<string> = new Set(["user_input"]);
+
+/** True when a streamed step proves the hook should have run already: it came from the model. */
+export function antigravityStepNeedsHook(stepType: unknown): boolean {
+  return !(typeof stepType === "string" && STEPS_BEFORE_INVOCATION.has(stepType));
+}
+
+/** The capture plugin or its hook does not work: Trama repairs once before it gives up. */
+class CaptureNotReady extends Error {
+  constructor(
+    readonly problem: "notCalled" | "notReady",
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 // ── stream-json print output (antigravityPrintResult.ts) ─────────────────
 
@@ -308,6 +339,27 @@ export const ANTIGRAVITY_KNOWN_MODELS: Readonly<Record<string, readonly string[]
   "GPT-OSS 120B": ["medium"],
 };
 
+/**
+ * The context window of each model Antigravity offers, from the model makers' catalogs: `agy models` prints only
+ * names and levels (issue #305). A model missing here gives no context reading, so the meter never guesses.
+ */
+export const ANTIGRAVITY_CONTEXT_WINDOWS: Readonly<Record<string, number>> = {
+  "Gemini 3.8 Flash": 1_048_576,
+  "Gemini 3.7 Flash": 1_048_576,
+  "Gemini 3.6 Flash": 1_048_576,
+  "Gemini 3.5 Flash": 1_048_576,
+  "Gemini 3.1 Pro": 1_048_576,
+  "Claude Sonnet 4.6": 200_000,
+  "Claude Opus 4.6": 200_000,
+  "GPT-OSS 120B": 131_072,
+};
+
+/** The window of a model label such as `Gemini 3.8 Flash (High)`, or null when the catalog does not know it. */
+export function antigravityContextWindow(label: string): number | null {
+  const name = parseAntigravityCliModelLabel(label)?.model ?? label.trim();
+  return Object.hasOwn(ANTIGRAVITY_CONTEXT_WINDOWS, name) ? ANTIGRAVITY_CONTEXT_WINDOWS[name]! : null;
+}
+
 const DEFAULT_EFFORT_BY_MODEL: Readonly<Record<string, string>> = {
   "Gemini 3.8 Flash": "high",
   "Gemini 3.7 Flash": "high",
@@ -397,19 +449,13 @@ export function resolveAntigravityCliModelLabel(
   return chosen ? `${parsed.model} (${effortLabel(chosen)})` : parsed.model;
 }
 
-/** The values `agy --effort` documents. */
-const EFFORT_FLAG_VALUES = ["low", "medium", "high"];
-
 /**
- * `--model` and `--effort` for a resolved label. With `--effort` (agy 1.1.5 and later) the name and the
- * level travel apart, as agy reports them: `--model "Gemini 3.8 Flash" --effort "high"`. A level the flag
- * does not document, such as Thinking, stays in the label, and so does every level on an older CLI.
+ * `--model` for a resolved label: the full name with its level, as `agy models` lists it
+ * (`--model "Gemini 3.8 Flash (High)"`). The level never travels apart in `--effort`: agy 1.2.12 refuses
+ * `--model "Gemini 3.8 Flash" --effort "high"` with "--effort is not supported for model", while the full
+ * label works on every CLI version Trama supports.
  */
-export function antigravityModelArgs(label: string, effortFlag: boolean): string[] {
-  const parsed = parseAntigravityCliModelLabel(label);
-  if (effortFlag && parsed?.effort && EFFORT_FLAG_VALUES.includes(parsed.effort)) {
-    return ["--model", parsed.model, "--effort", parsed.effort];
-  }
+export function antigravityModelArgs(label: string): string[] {
   return ["--model", label];
 }
 
@@ -729,13 +775,22 @@ function runShellHook(command: string, input: string, env: NodeJS.ProcessEnv, ti
 }
 
 /**
+ * The hooks.json the CLI runs. agy 1.2.12 copies an installed plugin to `~/.gemini/config/plugins/<name>` and
+ * reads the hooks from that copy (seen on the Mac on 28 September 2026), so a copy another Trama build installed
+ * wins over the folder Trama writes. Without a copy, the folder Trama writes.
+ */
+function installedHooksFile(home: string): string {
+  const copy = join(home, ".gemini", "config", "plugins", PLUGIN_NAME, "hooks.json");
+  return existsSync(copy) ? copy : join(home, ".gemini", "antigravity-cli", "plugins", PLUGIN_NAME, "hooks.json");
+}
+
+/**
  * Runs the installed PreToolUse hook exactly as the CLI would, in the read-only profile, and checks
  * that it denies an edit, a shell command and a read outside the project, and allows a read inside it. Throws when the hook is missing,
  * does not start or answers otherwise.
  */
 export async function checkReadOnlyHook(home: string, cwd: string): Promise<void> {
-  const pluginDir = join(home, ".gemini", "antigravity-cli", "plugins", PLUGIN_NAME);
-  const config = record(record(JSON.parse(await readFile(join(pluginDir, "hooks.json"), "utf8")))?.[PLUGIN_NAME]);
+  const config = record(record(JSON.parse(await readFile(installedHooksFile(home), "utf8")))?.[PLUGIN_NAME]);
   const preTool = Array.isArray(config?.PreToolUse) ? record(config.PreToolUse[0]) : undefined;
   const hook = Array.isArray(preTool?.hooks) ? record(preTool.hooks[0]) : undefined;
   if (typeof hook?.command !== "string") throw new Error("hooks.json has no PreToolUse command");
@@ -779,6 +834,69 @@ function ensureReadOnlyHook(binary: string, home: string, cwd: string): Promise<
   return check;
 }
 
+/**
+ * Forgets that the plugin was installed and its hook checked in this process, so the next install and check run
+ * again. Another Trama build on the same Mac rewrites the plugin with its own executable; when that build goes
+ * away, the hook no longer starts, and only a new install brings it back.
+ */
+function forgetCapture(binary: string, home: string): void {
+  const key = `${binary}\0${home}`;
+  pluginInstallations.delete(key);
+  hookChecks.delete(key);
+}
+
+/** The installed CLI's version, or null when it does not answer with one. */
+async function antigravityVersion(binary: string): Promise<string | null> {
+  try {
+    const result = await runHelper(binary, ["--version"], { timeoutMs: VERSION_TIMEOUT_MS });
+    return result.timedOut || result.code !== 0 ? null : parseCliVersion(`${result.stdout}\n${result.stderr}`);
+  } catch {
+    return null;
+  }
+}
+
+const lastLine = (text: string): string =>
+  text
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .at(-1) ?? "";
+
+const cliUpdates = new Map<string, Promise<ProviderRepairStep>>();
+
+/**
+ * Runs `agy update` when `current` is older than Trama needs, at most once per binary in this process: a failed
+ * update is not repeated at every turn.
+ */
+export function updateOutdatedAntigravity(binary: string, current: string): Promise<ProviderRepairStep> {
+  if (compareVersions(current, MINIMUM_ANTIGRAVITY_CLI_VERSION) >= 0) {
+    return Promise.resolve({ action: "updateCli", outcome: "notNeeded", detail: current });
+  }
+  let update = cliUpdates.get(binary);
+  if (!update) {
+    update = runAntigravityUpdate(binary);
+    cliUpdates.set(binary, update);
+  }
+  return update;
+}
+
+async function runAntigravityUpdate(binary: string): Promise<ProviderRepairStep> {
+  const failed = (detail: string): ProviderRepairStep => ({ action: "updateCli", outcome: "failed", detail });
+  let result;
+  try {
+    result = await runHelper(binary, ["update"], { timeoutMs: UPDATE_TIMEOUT_MS });
+  } catch (error) {
+    return failed((error as Error).message);
+  }
+  if (result.timedOut) return failed(`no answer within ${UPDATE_TIMEOUT_MS / 60_000} minutes`);
+  if (result.code !== 0) return failed(lastLine(`${result.stdout}\n${result.stderr}`) || `exit code ${result.code}`);
+  const after = await antigravityVersion(binary);
+  if (after === null || compareVersions(after, MINIMUM_ANTIGRAVITY_CLI_VERSION) < 0) {
+    return failed(`version ${after ?? "unknown"} after the update`);
+  }
+  return { action: "updateCli", outcome: "done", detail: after };
+}
+
 /** True when `agy --help` lists `--sandbox` as a switch without a value. */
 export function antigravityHelpOffersSandbox(help: string): boolean {
   for (const line of help.split(/\r?\n/g)) {
@@ -789,11 +907,6 @@ export function antigravityHelpOffersSandbox(help: string): boolean {
     return !/^(?:\s*[=<[]|\s(?:string|[A-Z_]{2,})\b)/.test(rest);
   }
   return false;
-}
-
-/** True when `agy --help` lists `--effort` (agy 1.1.5 and later). */
-export function antigravityHelpOffersEffort(help: string): boolean {
-  return /^\s*(?:-\w,\s*)?--effort(?![\w-])/m.test(help);
 }
 
 /**
@@ -817,7 +930,6 @@ function helpText(binary: string): Promise<string> {
 }
 
 const sandboxFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersSandbox);
-const effortFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersEffort);
 
 // ── Hook events and transcript ───────────────────────────────────────────
 
@@ -923,12 +1035,29 @@ interface ActiveTurn {
   backgroundTaskStarted: boolean;
   interrupted: boolean;
   stopTeardownRequested: boolean;
+  /** Tears the CLI down when it lingers after the stop hook. */
+  stopTimer: NodeJS.Timeout | null;
   settled: boolean;
   polling: Promise<void> | null;
   settle: (outcome: TurnOutcome) => void;
 }
 
-type TurnOutcome = { kind: "completed"; text: string } | { kind: "failed"; error: Error } | { kind: "interrupted" };
+/** `hookMissing`: a read-only turn whose CLI did not call the hook. It fails without a `failed` event, since Trama repairs first. */
+type TurnOutcome = { kind: "completed"; text: string } | { kind: "failed"; error: Error } | { kind: "interrupted" } | { kind: "hookMissing" };
+
+interface RepairReport {
+  steps: ProviderRepairStep[];
+  repaired: boolean;
+}
+
+/** One run of the CLI for a turn; a turn has a second one after a repair. */
+interface TurnAttempt {
+  turnId: string;
+  /** `turnStarted` was sent: the second attempt does not send it again. */
+  started: boolean;
+  /** The refusal notice for this turn, taken once for both attempts (issue #228); undefined until taken. */
+  notice: string | null | undefined;
+}
 
 export interface AntigravityRuntimeDependencies {
   /** Home of Antigravity's state (`~/.gemini/antigravity-cli`). Tests point it elsewhere. */
@@ -961,6 +1090,8 @@ export class AntigravityRuntime implements AgentRuntime {
   private pending: PendingTurn | null = null;
   /** The hook's denial carries no message: the next prompt tells the agent why and what to use (issue #228). */
   private readonly refusals = new ToolRefusals(() => this.options.toolServer?.tools ?? []);
+  /** A repair made while opening the thread: the next turn records it in Activity. */
+  private unreportedRepair: RepairReport | null = null;
 
   constructor(
     private readonly options: RuntimeOptions = {},
@@ -973,6 +1104,10 @@ export class AntigravityRuntime implements AgentRuntime {
 
   get isRunningTurn(): boolean {
     return this.active !== null || this.pending !== null;
+  }
+
+  private language(): Language {
+    return this.options.language?.() ?? DEFAULT_LANGUAGE;
   }
 
   private binary(): string {
@@ -997,12 +1132,14 @@ export class AntigravityRuntime implements AgentRuntime {
         message: version.stderr.trim() || version.stdout.trim() || "Il controllo della versione di Antigravity CLI non è riuscito.",
       };
     }
-    const parsed = parseCliVersion(`${version.stdout}\n${version.stderr}`);
+    let parsed = parseCliVersion(`${version.stdout}\n${version.stderr}`);
     if (parsed !== null && compareVersions(parsed, MINIMUM_ANTIGRAVITY_CLI_VERSION) < 0) {
-      return {
-        kind: "unavailable",
-        message: `Antigravity CLI ${parsed} è troppo vecchio per Trama. Aggiorna alla ${MINIMUM_ANTIGRAVITY_CLI_VERSION} o successiva con agy update.`,
-      };
+      // Too old for Trama: Trama updates it by itself before telling the person.
+      const update = await updateOutdatedAntigravity(binary, parsed);
+      if (update.outcome !== "done") {
+        return { kind: "unavailable", message: repairOutdatedMessage(this.language(), CLI, parsed, MINIMUM_ANTIGRAVITY_CLI_VERSION, [update]) };
+      }
+      parsed = update.detail;
     }
     const block = currentUsageLimit("antigravity");
     if (block) return block;
@@ -1049,7 +1186,14 @@ export class AntigravityRuntime implements AgentRuntime {
     const readOnly = options.sandbox !== "workspace-write";
     const binary = this.binary();
     const cwd = resolve(options.cwd);
-    await this.preparePlugin(binary, readOnly, cwd);
+    try {
+      await this.preparePlugin(binary, readOnly, cwd);
+    } catch (error) {
+      if (!(error instanceof CaptureNotReady)) throw error;
+      const report = await this.repairCapture(binary, readOnly, cwd, null);
+      this.unreportedRepair = report;
+      if (!report.repaired) throw this.gaveUp(readOnly, "notReady", report);
+    }
     const base = {
       cwd,
       readOnly,
@@ -1077,27 +1221,101 @@ export class AntigravityRuntime implements AgentRuntime {
 
   /**
    * Installs the capture plugin; a read-only session also needs the installed hook to deny edits and
-   * shell commands when Trama calls it the way the CLI does. Without that, Trama refuses the session.
+   * shell commands when Trama calls it the way the CLI does. Throws CaptureNotReady otherwise, which the
+   * callers answer with a repair.
    */
   private async preparePlugin(binary: string, readOnly: boolean, cwd: string): Promise<void> {
     try {
       await ensureCapturePlugin(binary, this.home);
     } catch (error) {
-      const message = `Trama non è riuscito a installare il plugin di cattura per Antigravity: ${(error as Error).message}`;
-      throw new ProviderError(readOnly ? "unsupportedSandbox" : "rpcError", readOnly ? `${message.replace(/\.$/, "")}. Senza il plugin la sola lettura non è garantita. ${HOOK_ACTION}` : message);
+      throw new CaptureNotReady("notReady", `plugin install failed: ${(error as Error).message}`);
     }
     if (!readOnly) return;
     try {
       await ensureReadOnlyHook(binary, this.home, cwd);
     } catch (error) {
-      throw new ProviderError(
-        "unsupportedSandbox",
-        `L'hook di Trama per Antigravity non si è caricato (${(error as Error).message}), quindi Trama non apre la sessione in sola lettura. ${HOOK_ACTION}`,
-      );
+      throw new CaptureNotReady("notReady", `read-only hook check failed: ${(error as Error).message}`);
     }
   }
 
+  /**
+   * Repairs the capture plugin without asking the person: `agy update` when the CLI is older than Trama needs,
+   * a fresh `agy plugin install`, and for a read-only session the hook check. `repaired` only when no step
+   * failed. `pending` lets an interrupt or a stop end the repair between steps.
+   */
+  private async repairCapture(binary: string, readOnly: boolean, cwd: string, pending: PendingTurn | null): Promise<RepairReport> {
+    const steps: ProviderRepairStep[] = [];
+    const version = await antigravityVersion(binary);
+    if (version !== null) steps.push(await updateOutdatedAntigravity(binary, version));
+    pending?.checkpoint();
+    forgetCapture(binary, this.home);
+    try {
+      await ensureCapturePlugin(binary, this.home);
+      steps.push({ action: "reinstallPlugin", outcome: "done", detail: null });
+    } catch (error) {
+      steps.push({ action: "reinstallPlugin", outcome: "failed", detail: (error as Error).message });
+    }
+    pending?.checkpoint();
+    if (readOnly && steps.every((step) => step.outcome !== "failed")) {
+      try {
+        await ensureReadOnlyHook(binary, this.home, cwd);
+        steps.push({ action: "checkHook", outcome: "done", detail: null });
+      } catch (error) {
+        steps.push({ action: "checkHook", outcome: "failed", detail: (error as Error).message });
+      }
+      pending?.checkpoint();
+    }
+    return { steps, repaired: steps.every((step) => step.outcome !== "failed") };
+  }
+
+  /** The error that ends a turn or a session when the repair did not work: what Trama tried and what is left. */
+  private gaveUp(readOnly: boolean, problem: CaptureNotReady["problem"], report: RepairReport): ProviderError {
+    return new ProviderError(readOnly ? "unsupportedSandbox" : "rpcError", repairGaveUpMessage(this.language(), CLI, problem, report.steps));
+  }
+
+  /**
+   * Runs the turn. When the plugin is not ready or the CLI does not call the hook, Trama repairs by itself,
+   * records the repair in Activity and runs the turn once more; a turn never runs read-only without the hook.
+   */
   async runTurn(options: RunTurnOptions): Promise<string> {
+    const attempt: TurnAttempt = { turnId: randomUUID(), started: false, notice: undefined };
+    if (this.unreportedRepair) {
+      const { steps, repaired } = this.unreportedRepair;
+      this.unreportedRepair = null;
+      options.onEvent({ type: "providerRepaired", provider: this.providerId, steps, repaired, retrying: false });
+    }
+    let problem: CaptureNotReady;
+    try {
+      return await this.runAttempt(options, attempt);
+    } catch (error) {
+      if (!(error instanceof CaptureNotReady)) throw error;
+      problem = error;
+    }
+    const thread = this.threads.get(options.threadId);
+    const readOnly = !thread || thread.readOnly || !options.writableRoot;
+    const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
+    this.pending = pending;
+    let report: RepairReport;
+    try {
+      report = await this.repairCapture(this.binary(), readOnly, resolve(options.cwd), pending);
+    } finally {
+      if (this.pending === pending) this.pending = null;
+    }
+    options.onEvent({ type: "providerRepaired", provider: this.providerId, steps: report.steps, repaired: report.repaired, retrying: report.repaired });
+    if (report.repaired) {
+      try {
+        return await this.runAttempt(options, attempt);
+      } catch (error) {
+        if (!(error instanceof CaptureNotReady)) throw error;
+        problem = error;
+      }
+    }
+    const failure = this.gaveUp(readOnly, problem.problem, report);
+    if (attempt.started) options.onEvent({ type: "failed", message: failure.message });
+    throw failure;
+  }
+
+  private async runAttempt(options: RunTurnOptions, attempt: TurnAttempt): Promise<string> {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
     if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
@@ -1117,8 +1335,8 @@ export class AntigravityRuntime implements AgentRuntime {
 
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
     let sandboxFlag = false;
-    let effortFlag = false;
     const named = parseAntigravityCliModelLabel(options.model);
+    const contextWindow = antigravityContextWindow(options.model);
     this.pending = pending;
     const toolServer = this.options.toolServer ?? null;
     let text: string;
@@ -1133,8 +1351,6 @@ export class AntigravityRuntime implements AgentRuntime {
         sandboxFlag = await sandboxFlagAvailable(binary);
         pending.checkpoint();
       }
-      effortFlag = await effortFlagAvailable(binary);
-      pending.checkpoint();
       if (named && !named.effort && !effortsByModel.has(named.model) && !ANTIGRAVITY_KNOWN_MODELS[named.model]) {
         // A model Trama has no levels for: ask `agy models` once, since agy rejects a name without its level.
         await this.listModels().catch(() => undefined);
@@ -1144,7 +1360,8 @@ export class AntigravityRuntime implements AgentRuntime {
       pending.checkpoint();
       const attachments = await attachedFilesBlock(options.images);
       pending.checkpoint();
-      text = [this.refusals.takeNotice(), prompt, skillText, attachments].filter(Boolean).join("\n\n");
+      if (attempt.notice === undefined) attempt.notice = this.refusals.takeNotice();
+      text = [attempt.notice, prompt, skillText, attachments].filter(Boolean).join("\n\n");
       if (!thread.instructionsDelivered && thread.developerInstructions.trim()) {
         text = `${thread.developerInstructions.trim()}\n\n${text}`;
       }
@@ -1185,7 +1402,7 @@ export class AntigravityRuntime implements AgentRuntime {
       "--dangerously-skip-permissions",
       // Extra layer for read-only turns; the capture hook stays the rule Trama relies on.
       ...(sandboxFlag ? ["--sandbox"] : []),
-      ...antigravityModelArgs(cliModel, effortFlag),
+      ...antigravityModelArgs(cliModel),
       "--output-format",
       "stream-json",
       "--log-file",
@@ -1243,13 +1460,18 @@ export class AntigravityRuntime implements AgentRuntime {
         backgroundTaskStarted: false,
         interrupted: false,
         stopTeardownRequested: false,
+        stopTimer: null,
         settled: false,
         polling: null,
         settle: () => undefined,
       };
       this.active = turn;
-      const turnId = randomUUID();
-      options.onEvent({ type: "turnStarted", turnId });
+      if (!attempt.started) {
+        attempt.started = true;
+        options.onEvent({ type: "turnStarted", turnId: attempt.turnId });
+      }
+      // A run stopped for a missing hook never reached the model: a new conversation needs the instructions again.
+      const instructionsDelivered = thread.instructionsDelivered;
       if (thread.conversationId) {
         // Steps written before this turn belong to earlier turns.
         turn.transcriptPath = transcriptPathFor(this.home, thread.conversationId);
@@ -1268,8 +1490,9 @@ export class AntigravityRuntime implements AgentRuntime {
       let stderr = "";
       const parser = createAntigravityPrintResultParser((update) => {
         if (turn.settled || turn.hookMissing) return;
-        // The CLI calls PreInvocation before any step: a read-only turn without it has no guard.
-        if (turn.readOnly && !hookCalled(turn)) {
+        // The CLI calls PreInvocation before the model runs: a read-only turn with a model step and no hook
+        // record has no guard. agy streams the person's own message first, before the hook (1.2.12).
+        if (turn.readOnly && antigravityStepNeedsHook(update.type) && !hookCalled(turn)) {
           turn.hookMissing = true;
           teardownProcessTree(child);
           return;
@@ -1281,8 +1504,9 @@ export class AntigravityRuntime implements AgentRuntime {
         const usage = update.usage;
         const input = typeof usage?.input_tokens === "number" ? usage.input_tokens : null;
         const output = typeof usage?.output_tokens === "number" ? usage.output_tokens : null;
-        if (input !== null || output !== null) {
-          options.onEvent({ type: "tokenUsage", usedTokens: (input ?? 0) + (output ?? 0), contextWindow: null });
+        // A step's request is the context in use; without the model's window there is no reading at all.
+        if ((input !== null || output !== null) && contextWindow !== null) {
+          options.onEvent({ type: "tokenUsage", usedTokens: (input ?? 0) + (output ?? 0), contextWindow });
         }
       });
       child.stdout!.setEncoding("utf8");
@@ -1303,6 +1527,7 @@ export class AntigravityRuntime implements AgentRuntime {
         if (turn.settled) return;
         turn.settled = true;
         clearInterval(timer);
+        if (turn.stopTimer) clearTimeout(turn.stopTimer);
         if (this.active === turn) this.active = null;
         void rm(runDir, { recursive: true, force: true }).catch(() => undefined);
         if (outcome.kind === "completed") {
@@ -1311,6 +1536,9 @@ export class AntigravityRuntime implements AgentRuntime {
         } else if (outcome.kind === "interrupted") {
           options.onEvent({ type: "interrupted" });
           rejectPromise(new Error("Turno interrotto."));
+        } else if (outcome.kind === "hookMissing") {
+          if (thread.conversationId === null) thread.instructionsDelivered = instructionsDelivered;
+          rejectPromise(new CaptureNotReady("notCalled", "agy did not call the capture hook in a read-only turn"));
         } else {
           options.onEvent({ type: "failed", message: outcome.error.message });
           rejectPromise(outcome.error);
@@ -1335,8 +1563,8 @@ export class AntigravityRuntime implements AgentRuntime {
           await this.poll(turn, thread).catch(() => undefined);
           if (turn.settled) return;
           const result = parser.finish();
-          if (turn.hookMissing || (turn.readOnly && !turn.interrupted && (code ?? 1) === 0 && !hookCalled(turn))) {
-            settle({ kind: "failed", error: new ProviderError("unsupportedSandbox", HOOK_NOT_CALLED) });
+          if (!turn.interrupted && (turn.hookMissing || (turn.readOnly && (code ?? 1) === 0 && !hookCalled(turn)))) {
+            settle({ kind: "hookMissing" });
             return;
           }
           const responseText = result?.response ?? stdout.trim();
@@ -1505,10 +1733,16 @@ export class AntigravityRuntime implements AgentRuntime {
     }
     await this.readTranscript(turn);
     // Agent finished: when the print process lingers, tear it down so the close handler can settle.
-    // Background tasks keep the CLI alive by design, so they are left alone.
-    if (stopSeen && !turn.settled && !turn.backgroundTaskStarted && turn.pendingTools.length === 0) {
-      turn.stopTeardownRequested = true;
-      teardownProcessTree(turn.child);
+    // Background tasks keep the CLI alive by design, so they are left alone. agy 1.2.12 calls the stop hook
+    // just before it prints the result and exits, and a SIGTERM in between turns the finished turn into an
+    // ERROR "interrupted": the CLI gets a grace period to exit by itself first.
+    if (stopSeen && !turn.settled && !turn.backgroundTaskStarted && turn.pendingTools.length === 0 && !turn.stopTimer) {
+      turn.stopTimer = setTimeout(() => {
+        if (turn.settled || turn.child.exitCode !== null || turn.child.signalCode !== null) return;
+        turn.stopTeardownRequested = true;
+        teardownProcessTree(turn.child);
+      }, STOP_LINGER_MS);
+      turn.stopTimer.unref();
     }
   }
 

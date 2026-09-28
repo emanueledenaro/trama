@@ -180,6 +180,7 @@ export async function removeIssueLabel(repository: string, number: number, label
 
 export interface IssueDetail {
   number: number;
+  title: string;
   state: "open" | "closed";
   body: string;
   comments: string[];
@@ -200,7 +201,7 @@ export async function readIssue(repository: string, number: number): Promise<Iss
     comments.push(...rows.map((r) => r.body ?? ""));
     if (rows.length < 100) break;
   }
-  return { number: issue.number, state: issue.state === "closed" ? "closed" : "open", body: issue.body ?? "", comments };
+  return { number: issue.number, title: issue.title, state: issue.state === "closed" ? "closed" : "open", body: issue.body ?? "", comments };
 }
 
 export async function commentOnIssue(repository: string, number: number, body: string): Promise<void> {

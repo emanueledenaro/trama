@@ -45,16 +45,18 @@ describe("review triggers", () => {
 });
 
 describe("summarizeReviewActions", () => {
-  it("reports writes, staged proposals and batch skills, never failures", () => {
+  it("reports writes, staged proposals and batch skills in Italian, never failures (issue #305)", () => {
     const actions = summarizeReviewActions([
       { tool: "memory", args: { target: "user" }, result: { success: true, message: "Entry added", target: "user" } },
-      { tool: "memory", args: {}, result: { success: true, staged: true, proposal_staged: true, message: "staged for your approval" } },
+      { tool: "memory", args: {}, result: { success: true, staged: true, proposal_staged: true, message: "staged for your approval — review it with /memory pending" } },
       { tool: "memory", args: {}, result: { success: false, error: "Blocked" } },
       { tool: "skill_manage", args: {}, result: { success: true, operations_applied: 1, results: [{ name: "deploy", action: "patch", success: true }] } },
       { tool: "skill_view", args: {}, result: { success: true, content: "x" } },
       { tool: "memory", args: { target: "memory" }, result: { success: true, message: "Memory entry created." } },
+      { tool: "skill_manage", args: { action: "create", name: "release-flow" }, result: { success: true, message: "Skill 'release-flow' created." } },
     ]);
-    expect(actions).toEqual(["User profile updated", "staged for your approval", "Skill 'deploy' patched", "Memory entry created."]);
+    expect(actions).toEqual(["Profilo aggiornato", "Proposta di modifica della memoria: la trovi in Memoria", "Skill 'deploy' aggiornata", "Memoria aggiornata", "Skill 'release-flow' creata"]);
+    expect(actions.join(" ")).not.toMatch(/\/memory pending|updated|staged/);
   });
 });
 

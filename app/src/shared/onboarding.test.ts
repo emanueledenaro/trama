@@ -35,6 +35,7 @@ function appState(overrides: Partial<AppState> = {}): AppState {
     language: "it",
     error: null,
     backgroundProjects: [],
+    sharedCapacity: { running: 0, limit: 6, waiting: 0 },
     practices: [],
     platform: "linux",
     onboarding: { ...EMPTY_ONBOARDING, skippedSteps: [], completedExercises: {} },
@@ -442,6 +443,9 @@ describe("project picker", () => {
     attention: null,
     reasons: [],
     problem: null,
+    priority: 1,
+    waitingForCapacity: 0,
+    ci: null,
     ...overrides,
   });
 

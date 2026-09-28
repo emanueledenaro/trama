@@ -8,8 +8,10 @@
 // one JSON array per line, to that file, and it answers the issue writes Trama makes when it publishes a spec (M04)
 // and its slices with their blocking links (M05). With FAKE_GH_ISSUE_BASE as well, a new issue takes the next number
 // after that base and the issues list holds the issues created so far, as the Coordinator opens them for the problems
-// it finds (A08); the label writes of the triage are answered.
-import { appendFileSync, readFileSync } from "node:fs";
+// it finds (A08); the label writes of the triage are answered. With FAKE_GH_TICKET, a JSON file holds one issue with its
+// comments and the pull requests `gh pr view` answers for: the ticket updates (C10) read and write it, and with
+// "failComment" true posting a comment fails like a GitHub error.
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
 if (process.env.FAKE_GH_LOG) appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(args)}\n`);
@@ -22,6 +24,14 @@ const fail = (message) => {
   process.exit(1);
 };
 
+const ticketFile = process.env.FAKE_GH_TICKET;
+const ticket = ticketFile ? JSON.parse(readFileSync(ticketFile, "utf8")) : null;
+const saveTicket = () => writeFileSync(ticketFile, JSON.stringify(ticket, null, 2));
+if (ticket && args[0] === "pr" && args[1] === "view") {
+  const pull = ticket.pulls?.[args[2]];
+  if (!pull) fail(`fake gh: pull request ${args[2]} not found`);
+  reply({ number: Number(args[2]), state: pull.state, mergedAt: pull.mergedAt ?? null, statusCheckRollup: pull.checks ? [{ conclusion: pull.checks, status: pull.checks === "PENDING" ? "IN_PROGRESS" : "COMPLETED" }] : [] });
+}
 if (args[0] === "auth" && args[1] === "status") reply("github.com\n  ✓ Logged in to github.com account trama-ui (keyring)\n");
 // With FAKE_GH_PULLS Trama may publish and merge (issue #247): the account can push, a new pull request takes number 21,
 // `gh pr view` says it is open with no checks, and a merge at the head Trama pushed succeeds.
@@ -61,6 +71,27 @@ const createdIssues = () =>
         .filter((line) => line.includes('"POST"') && line.includes('/issues"'))
         .map((line) => JSON.parse(line))
     : [];
+if (ticket && rest.startsWith(`/issues/${ticket.number}`)) {
+  const rawField = (key) => args.find((arg, index) => args[index - 1] === "--raw-field" && arg.startsWith(`${key}=`))?.slice(key.length + 1);
+  const tail = rest.slice(`/issues/${ticket.number}`.length);
+  if (method === "GET" && tail === "") reply({ number: ticket.number, title: ticket.title, state: ticket.state, body: ticket.body, html_url: `https://github.com/${name}/issues/${ticket.number}` });
+  if (method === "GET" && tail === "/comments") reply(firstPage ? ticket.comments.map((body) => ({ body })) : []);
+  if (method === "POST" && tail === "/comments") {
+    if (ticket.failComment) fail("HTTP 502: Bad Gateway");
+    ticket.comments.push(rawField("body"));
+    saveTicket();
+    reply({});
+  }
+  if (method === "PATCH" && tail === "") {
+    if (rawField("body") !== undefined) ticket.body = rawField("body");
+    if (rawField("state") !== undefined) {
+      ticket.state = rawField("state");
+      ticket.closeCalls = (ticket.closeCalls ?? 0) + 1;
+    }
+    saveTicket();
+    reply({});
+  }
+}
 const issueBase = process.env.FAKE_GH_ISSUE_BASE ? Number(process.env.FAKE_GH_ISSUE_BASE) : null;
 const field = (call, name) =>
   call.flatMap((arg, index) => (call[index - 1] === "--raw-field" && arg.startsWith(`${name}=`) ? [arg.slice(name.length + 1)] : []));
@@ -97,6 +128,20 @@ if (rest === "/issues") {
             labels: [{ name: "bug" }],
             updated_at: "2026-09-25T09:00:00Z",
           },
+          ...(ticket
+            ? [
+                {
+                  number: ticket.number,
+                  title: ticket.title,
+                  state: ticket.state,
+                  body: ticket.body,
+                  html_url: `https://github.com/${name}/issues/${ticket.number}`,
+                  user: { login: "trama-ui" },
+                  labels: [],
+                  updated_at: "2026-09-28T10:00:00Z",
+                },
+              ]
+            : []),
           ...(process.env.FAKE_GH_MERGED_PULL
             ? [
                 {
