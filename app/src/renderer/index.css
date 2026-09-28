@@ -507,6 +507,8 @@
    so all bots step together. botEngine.ts draws the morphs and the eyes. */
 .agent-bot[data-live] {
   transform-origin: 50% 85%;
+  /* Its own layer: a step moves the bot without repainting what is around it, as in a list of people (issue #333). */
+  will-change: transform;
   animation: bot-breathe 3.6s steps(8) var(--bot-delay, 0s) infinite alternate;
 }
 .agent-bot[data-live][data-move="sleep"] {
