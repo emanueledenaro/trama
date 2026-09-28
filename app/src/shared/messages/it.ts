@@ -464,6 +464,17 @@ export const it = {
   "context.specialist.newThreadTitle": "Nuovo thread dello specialista",
   "context.specialist.newThread": "Contesto usato nel turno precedente: {percent}%, oltre la soglia del progetto ({threshold}%). Lo specialista continua in un thread nuovo con il riepilogo del worktree.",
 
+  // The candidate after a developer's turn (issue #388)
+  "candidate.afterTurn.declared.title": "Candidato nuovo sulla copia di lavoro",
+  "candidate.afterTurn.declared.detail": "Lo sviluppatore ha cambiato la copia di lavoro dopo l'ultimo candidato. Trama ha dichiarato un candidato nuovo con quello che c'è ora: le verifiche e i revisori lavorano su questo.",
+  "candidate.afterTurn.refused.title": "Candidato non aggiornato",
+  "candidate.afterTurn.refused.emptyWorktree": "La copia di lavoro non ha più modifiche: il candidato precedente non corrisponde al lavoro e non si può approvare.",
+  "candidate.afterTurn.refused.published": "Il candidato precedente è già una pull request: le modifiche nuove restano nella copia di lavoro e non entrano in quella pull request.",
+  "candidate.afterTurn.refused.notAuthorized": "Il mandato non copre più il lavoro in questa copia: il candidato precedente non corrisponde al lavoro e non si può approvare finché il Coordinatore non dichiara quello nuovo.",
+  "candidate.afterTurn.refused.invalid": "Trama non è riuscita a dichiarare il candidato nuovo: il candidato precedente non corrisponde al lavoro e non si può approvare finché il Coordinatore non dichiara quello nuovo.",
+  "candidate.afterTurn.refused.unreadable": "Trama non è riuscita a leggere la copia di lavoro: il candidato precedente non si può approvare finché la copia non si legge di nuovo.",
+  "candidate.blocker.worktreeChanged": "La copia di lavoro è cambiata dopo il candidato",
+
   // Ticket updates in Activity (C10)
   "ticket.issue": "Issue #{number} «{title}»",
   "ticket.issueUntitled": "Issue #{number}",
