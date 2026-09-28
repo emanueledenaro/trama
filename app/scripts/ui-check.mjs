@@ -1455,7 +1455,7 @@ const lastButton = pausedLine.getByRole("button").last();
 const lastBox = await lastButton.boundingBox();
 const pausedBox = await pausedLine.boundingBox();
 if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The last action of the paused line is not on the right");
-if ((await lastButton.getAttribute("aria-label")) !== "Riprendi" && !(await pausedLine.locator("button:not([aria-label])").count())) {
+if ((await lastButton.getAttribute("aria-label")) !== "Riprendi il Coordinatore" && !(await pausedLine.locator("button:not([aria-label])").count())) {
   throw new Error("The last action of the paused line is neither Riprendi nor the person's move");
 }
 await themeShots("15c-status-line-paused");
@@ -4302,6 +4302,7 @@ await app.close();
 // Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
 ({ app, page } = await launch());
 await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+await openView("Progetti");
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 const priority = page.getByTestId("overview-priority");
 await priority.waitFor({ timeout: 10_000 });
