@@ -44,6 +44,7 @@ import {
   TeamProposalCard,
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { ReferenceText } from "./ReferenceText";
 import { WaitingOr } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
 import { Sep } from "@/components/ui/sep";
@@ -148,7 +149,7 @@ function ActivityRow({ event }: { event: ConversationEvent }) {
       </button>
       {open && detail ? (
         <div className="mt-1 mb-1.5 ml-5.5 rounded-lg bg-[var(--app-chat-code-surface)] px-2.5 py-1.5 text-ui-sm whitespace-pre-wrap text-muted-foreground">
-          {detail}
+          <ReferenceText text={detail} />
         </div>
       ) : null}
     </div>
@@ -197,7 +198,11 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
   return (
     <div className="cta-row mt-2" data-testid="next-step">
-      {step.reason ? <span className="min-w-0 text-ui-xs text-muted-foreground">{step.reason}</span> : null}
+      {step.reason ? (
+        <span className="min-w-0 text-ui-xs text-muted-foreground">
+          <ReferenceText text={step.reason} />
+        </span>
+      ) : null}
       <Button size="sm" onClick={() => runNextStep(step, requestId)}>
         {step.label}
       </Button>
