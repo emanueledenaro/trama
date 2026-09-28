@@ -715,4 +715,7 @@ export const sharedIt = {
   // Findings turned into work (issue #128) and semantic conflicts (issue #40)
   "shared.blocker.SEMANTIC_CONFLICT": "Incompatibile con un altro lavoro",
   "shared.waiting.tradeOff": "Compromesso",
+
+  // Merges stopped by the Coordinator (issue #41)
+  "shared.waiting.mergeStopped": "Unione fermata",
 } satisfies Record<string, string>;

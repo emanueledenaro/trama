@@ -716,4 +716,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   // Findings turned into work (issue #128) and semantic conflicts (issue #40)
   "shared.blocker.SEMANTIC_CONFLICT": "Incompatible with other work",
   "shared.waiting.tradeOff": "Trade-off",
+
+  // Merges stopped by the Coordinator (issue #41)
+  "shared.waiting.mergeStopped": "Merge stopped",
 };

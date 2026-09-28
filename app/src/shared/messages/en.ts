@@ -179,6 +179,15 @@ export const en: Record<keyof typeof it, string> = {
   "github.detail.signedOut": "gh is not signed in. Run {command} in the terminal, then press Check again.",
   "github.detail.signedOutDetail": "gh is not signed in: {detail}. Run {command} in the terminal, then press Check again.",
 
+  // Merge stopped on a destructive change (issue #41)
+  "mergeStop.title": "The Coordinator does not merge this candidate on its own: the choice is yours.",
+  "mergeStop.consequences": "Consequences",
+  "mergeStop.alternatives": "What you can do",
+  "mergeStop.declined": "You chose not to merge it. It stays here until you ask for a new version.",
+  "mergeStop.decline": "Do not merge",
+  "mergeStop.merge": "Merge anyway",
+  "merge.mandateVersion": "Mandate version {version}.",
+
   // Settings
   "settings.sections": "Settings sections",
   "settings.section.general": "General",
@@ -334,6 +343,24 @@ export const en: Record<keyof typeof it, string> = {
   "audit.publication.issue": "issue #{number}",
   "audit.publication.comment": "comment on pull request #{number}",
   "audit.publication.publish": "Publish on GitHub",
+
+  // Focus mode lenses (F05)
+  "audit.lenses.title": "Trama's lenses",
+  "audit.lenses.addedBy": "Trama's additions",
+  "audit.lens.addedBy": "Trama's addition",
+  "audit.lenses.note":
+    "Security, test quality and agreement between documents and code are extra checks by Trama: they do not come from the AI Hero method, which gives the Standards and Spec axes. Each lens reads the candidate read-only and its findings go through the same verification as the axes.",
+  "audit.lens.security": "Security",
+  "audit.lens.tests": "Test quality",
+  "audit.lens.docs": "Documents and code",
+  "audit.lenses.summary": "Trama's lenses: {summary}",
+  "audit.lens.noFindings": "{lens}: no findings.",
+  "audit.lens.findings": "{lens}: {count} findings.",
+  "audit.lens.findings.one": "{lens}: 1 finding.",
+  "audit.lens.findingsWorst": "{lens}: {count} findings, the worst: {worst}.",
+  "audit.lens.findingsWorst.one": "{lens}: 1 finding, the worst: {worst}.",
+  "audit.lens.failed": "{lens}: did not finish.",
+  "audit.lens.running": "{lens}: running.",
 
   // Context managed by Trama (ADR 0018)
   "context.meter.aria": "Coordinator context: {percent}%, reorder above {threshold}%",

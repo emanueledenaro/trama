@@ -238,6 +238,8 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
     if (report.mergeRoute === "coordinator") continue;
     if (candidate.humanApproval && !report.approvalInvalidated) continue;
     if (candidate.humanRejection) continue;
+    // A merge the Coordinator stopped waits below as its own item, with its consequences (issue #41).
+    if (candidate.merge?.status === "stopped" && candidate.merge.stop) continue;
     const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
     items.push({
       key: `candidate:${candidate.id}`,
@@ -247,6 +249,23 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       title: oneLine(assignment?.objective ?? "") || t("shared.waiting.candidateTitle", { id: candidate.id }),
       goalId: candidate.goalId ?? null,
       askedAt: candidate.updatedAt,
+      blocks: 1,
+    });
+  }
+
+  // A merge the Coordinator stopped because it destroys something (issue #41): the choice is the person's.
+  for (const candidate of document.candidates) {
+    const merge = candidate.merge;
+    if (merge?.status !== "stopped" || !merge.stop || merge.stop.acknowledgedAt || candidate.pullRequest?.mergedAt) continue;
+    if (sources.candidateReports?.[candidate.id]?.state === "superseded") continue;
+    items.push({
+      key: `merge:${candidate.id}`,
+      kind: "candidate",
+      targetId: candidate.id,
+      label: t("shared.waiting.mergeStopped"),
+      title: merge.stop.reasons.join(" "),
+      goalId: candidate.goalId ?? null,
+      askedAt: merge.at,
       blocks: 1,
     });
   }

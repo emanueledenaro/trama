@@ -273,6 +273,28 @@ describe("Aspetta te (issue #240)", () => {
       ]);
     });
 
+    it("lists a merge the Coordinator stopped on a destructive change until the person chose (issue #41)", () => {
+      const document = withRequests();
+      const merge = (acknowledgedAt: string | null) => ({
+        by: "coordinator" as const,
+        fingerprint: "f",
+        status: "stopped" as const,
+        detail: "Il Coordinatore non unisce questo candidato da solo: Cancella un file.",
+        at: "2026-09-01T08:00:00Z",
+        mandateVersion: 1,
+        stop: { reasons: ["Cancella un file."], consequences: [], alternatives: [], acknowledgedAt },
+      });
+      document.candidates.push(
+        candidate("C1", { merge: merge(null) }),
+        candidate("C2", { merge: merge("2026-09-01T09:00:00Z") }),
+        candidate("C3", { merge: merge(null), pullRequest: { url: "", number: 7, branch: "b", at: "", mergedAt: "2026-09-01T09:00:00Z" } }),
+        candidate("C4", { merge: { ...merge(null), stop: null } }),
+        candidate("C5", { merge: merge(null) }),
+      );
+      const items = waitingForYou(t, document, { candidateReports: { C1: report("decided"), C5: report("superseded") } });
+      expect(items).toEqual([{ key: "merge:C1", kind: "candidate", targetId: "C1", label: "Unione fermata", title: "Cancella un file.", goalId: null, askedAt: "2026-09-01T08:00:00Z", blocks: 1 }]);
+    });
+
     it("keeps one order for every kind: the work held first, then the oldest", () => {
       const document = withRequests(["R1", null]);
       document.goals = [goal("G1", "proposed", "2026-09-01T05:00:00Z")];

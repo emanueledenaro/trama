@@ -36,13 +36,27 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Chromium under xvfb now and then fails a capture with this protocol error even on a shown, painted window. For that
+// exact error only the capture is retried up to 3 times, 250ms apart; any other error, or a fourth failure, throws.
+const UNCAPTURED = "Protocol error (Page.captureScreenshot): Unable to capture screenshot";
+const capture = async (options) => {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await page.screenshot(options);
+    } catch (error) {
+      if (retry >= 3 || !String(error?.message).includes(UNCAPTURED)) throw error;
+      console.log(`[capture] ${UNCAPTURED}, retry ${retry + 1} of 3`);
+      await page.waitForTimeout(250);
+    }
+  }
+};
 // Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
 const shotNames = new Set();
 const shot = async (name) => {
   if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
   shotNames.add(name);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(out, `${name}.png`) });
+  await capture({ path: join(out, `${name}.png`) });
   console.log("saved", name);
 };
 // Issue #271: a card that asks nothing more is one line; this opens the line when it is closed.
@@ -165,7 +179,20 @@ const themeShots = async (name) => {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
+// The window opens hidden and shows on ready-to-show (main.ts); the DOM can be ready before that, and a screenshot of a
+// hidden or not yet painted window fails ("Unable to capture screenshot"). So each frame waits for a visible window and
+// for a painted frame after the animations are set, instead of assuming a fixed time is enough.
+const windowShown = async () => {
+  const end = Date.now() + 10_000;
+  while (!(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false))) {
+    if (Date.now() > end) throw new Error("The window did not show within 10s");
+    await page.waitForTimeout(20);
+  }
+  await page.waitForFunction(() => document.visibilityState === "visible");
+};
+const painted = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const introFrames = async (label, times) => {
+  await windowShown();
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
@@ -176,7 +203,8 @@ const introFrames = async (label, times) => {
         animation.currentTime = t;
       }
     }, time);
-    await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
+    await painted();
+    await capture({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
   await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
@@ -818,6 +846,26 @@ await shot("05-map");
       };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+  // The strip lights up after the 300ms hover delay plus a 0.1s transition, so a read at a fixed time can catch it
+  // halfway (rgba(0, 95, 184, 0.957)). These helpers read again every 20ms, up to 1.5s, until the strip is the opaque
+  // accent, and return the last reading either way: the assertions below decide.
+  const channels = (color) => {
+    const [r, g, b, a = 1] = (color.match(/[\d.]+/g) ?? []).map(Number);
+    return { r, g, b, a };
+  };
+  const opaqueAccent = ({ strip, accent }) => {
+    const [lit, wanted] = [channels(strip), channels(accent)];
+    return lit.a === 1 && lit.r === wanted.r && lit.g === wanted.g && lit.b === wanted.b;
+  };
+  const settledLook = async (sash) => {
+    const end = Date.now() + 1_500;
+    let reading = await look(sash);
+    while (!opaqueAccent(reading) && Date.now() < end) {
+      await page.waitForTimeout(20);
+      reading = await look(sash);
+    }
+    return reading;
+  };
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
     if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
@@ -884,15 +932,12 @@ await shot("05-map");
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
-  // The hover class comes at 300ms and the color then fades in over 100ms: read it once the fade can have ended.
-  let hovered = await look(sidebarSash);
-  for (const end = Date.now() + 1_000; Date.now() < end && hovered.strip !== hovered.accent; hovered = await look(sidebarSash)) await page.waitForTimeout(50);
+  const hovered = await settledLook(sidebarSash);
   if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After the hover delay the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
   // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
   for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
-    await page.waitForTimeout(200);
-    const lit = (await look(sidebarSash)).strip;
+    const lit = (await settledLook(sidebarSash)).strip;
     if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
@@ -902,8 +947,7 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2, 300);
   await page.mouse.down();
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
-  await page.waitForTimeout(200);
-  const dragged = await look(inspectorSash);
+  const dragged = await settledLook(inspectorSash);
   if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
@@ -2236,7 +2280,22 @@ await auditFinding("spec", "confirmed").getByText(/Confermato da gpt-5\.5:/).wai
 await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
 if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
 if (await focusAudit.locator('[data-testid="audit-finding"][data-status="verified"]').filter({ hasText: "Prova: Nessuna prova" }).count()) throw new Error("Focus mode: a finding is verified without a proof");
-await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 1 verificato da Trama, 1 confermato da un secondo modello, 1 ipotesi.").waitFor();
+// F05: Trama's three lenses follow the axes, marked as Trama's additions, and their findings go through the same
+// verification: Trama reread the security line, the stronger model confirmed the test finding, the documents one has no proof.
+const auditLens = (lens) => focusAudit.locator(`[data-testid="audit-lens"][data-lens="${lens}"][data-status="done"]`);
+const lensNote = focusAudit.getByTestId("focus-audit-lenses-note");
+await lensNote.getByText(/controlli in più di Trama: non vengono dal metodo AI Hero/).waitFor();
+if ((await focusAudit.getByText("Aggiunta di Trama", { exact: true }).count()) !== 3) throw new Error("Focus mode: each lens is not marked as Trama's addition");
+await auditLens("security").locator('[data-testid="audit-finding"][data-status="verified"][data-severity="serious"]').getByText("Verificato da Trama").waitFor();
+await auditLens("tests").locator('[data-testid="audit-finding"][data-status="confirmed"]').getByText(/Confermato da gpt-5\.5:/).waitFor();
+if ((await auditLens("docs").locator('[data-testid="audit-finding"][data-status="hypothesis"] [data-testid="audit-finding-evidence"]').innerText()) !== "Prova: Nessuna prova") {
+  throw new Error("Focus mode: the documents lens finding without a proof is not a hypothesis");
+}
+const lensText = await focusAudit.innerText();
+const [specAt2, lensesAt, summaryAt] = ["Spec", "Lenti di Trama", "Sintesi"].map((heading) => lensText.indexOf(heading));
+if (!(specAt2 < lensesAt && lensesAt < summaryAt)) throw new Error("Focus mode: the lenses are not between the axes and the summary");
+await focusAudit.getByTestId("focus-audit-lens-summary").getByText(/^Lenti di Trama: Sicurezza: 1 rilievo.*Qualità dei test: 1 rilievo.*Documenti e codice: 1 rilievo/).waitFor();
+await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 2 verificati da Trama, 2 confermati da un secondo modello, 2 ipotesi.").waitFor();
 await shot("20a-focus-audit");
 await auditFinding("spec", "hypothesis").scrollIntoViewIfNeeded();
 await shot("20e-focus-audit-findings");
@@ -2247,10 +2306,13 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("20f-focus-audit-findings-dark");
 await focusAudit.getByTestId("focus-audit-status").scrollIntoViewIfNeeded();
 await shot("20b-focus-audit-dark");
+await lensNote.evaluate((node) => node.closest("section").scrollIntoView({ block: "start" }));
+await shot("20h-focus-audit-lenses-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("20g-focus-audit-lenses");
 // F04: from a finding to work, one click each. This candidate's project has no GitHub remote: the verified finding
 // goes to Trama's backlog, and its correction becomes an assignment for Ada, who wrote the candidate, within the
 // mandate. The hypothesis cannot become an assignment; as a trade-off it becomes a Pact card. Without GitHub the report
@@ -3725,11 +3787,15 @@ const placedProblem = problemLog.locator('[data-testid="activity-problem"]').fil
 await placedProblem.waitFor({ timeout: 90_000 });
 await placedProblem.getByText(/Triage: /).waitFor();
 await placedProblem.locator(".cta-row").getByRole("button", { name: "Apri la issue #21" }).waitFor();
-const problemCalls = (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const readProblemCalls = async () => (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const labelled = (calls) => calls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)));
+// The triage shows in Activity first; Trama writes its labels at the next look at the problems, a moment later.
+let problemCalls = await readProblemCalls();
+for (const end = Date.now() + 60_000; !labelled(problemCalls) && Date.now() < end; problemCalls = await readProblemCalls()) await page.waitForTimeout(500);
 const openedIssues = problemCalls.filter((call) => call.includes("POST") && call.some((arg) => /\/issues$/.test(arg)));
 if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red check, got ${openedIssues.length}`);
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
-if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
+if (!labelled(problemCalls)) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
 await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
@@ -4474,6 +4540,39 @@ await page.evaluate(() => window.trama.invoke("settings:update", { language: "it
 await page.waitForFunction(() => document.documentElement.lang === "it");
 await sharedActivity.locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).first().waitFor();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
+// green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"
+// merges it as the person's act. The merge on the green light names the mandate version it ran under.
+await send("[assegna] [cancella]");
+const deletingWork = await workDone(correctedWork);
+await send(`[candidato:${deletingWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.merge?.stop, "Destructive merge stopped");
+const stoppedItem = await openWaiting("candidate", undefined, 60_000);
+if ((await stoppedItem.getAttribute("data-waiting-key")) !== `merge:${await stateUntil((document) => candidateOfWork(document, deletingWork)?.id, "Stopped candidate")}`) {
+  throw new Error("The stopped merge is not its own item in Aspetta te");
+}
+const stopField = stoppedItem.getByTestId("candidate-merge-stop");
+await stopField.getByText("Il Coordinatore non unisce questo candidato da solo: la scelta è tua.", { exact: false }).waitFor();
+await stopField.getByText("Conseguenze", { exact: true }).waitFor();
+await stopField.getByText("Cosa puoi fare", { exact: true }).waitFor();
+await stopField.getByText(/README\.md/).waitFor();
+if (/[–—]/.test(await stoppedItem.innerText())) throw new Error("A dash in the stopped merge");
+await primaryLast(stoppedItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Unisci comunque" }) }), "Stopped merge");
+if ((await readFile(vetrinaGhLog, "utf8")).split("\n").filter((line) => line.includes('"PUT"')).length !== 2) throw new Error("The destructive candidate was merged without the person");
+await stopField.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30f-merge-stopped-destructive");
+await stoppedItem.getByRole("button", { name: "Unisci comunque" }).click();
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.pullRequest?.mergedBy === "person", "Destructive merge on the person's ok");
+await stoppedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The first candidate, merged on the green light, names the mandate it ran under: its reference opens it.
+const plainCandidate = await stateUntil((document) => candidateOfWork(document, plainWork)?.id, "Merged candidate");
+await page.locator(`[data-reference="candidate"][data-reference-id="${plainCandidate}"]`).first().click();
+const plainMerged = page.getByTestId("inspector");
+await plainMerged.getByTestId("candidate-merge-mandate").filter({ hasText: "Mandato versione 1." }).waitFor({ timeout: 20_000 });
+await plainMerged.getByTestId("candidate-merge").evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30g-merge-mandate-version");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 

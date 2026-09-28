@@ -188,3 +188,113 @@ describe("merge with the green light, interface candidates held for the person (
     expect(ghCalls().filter((c) => c.includes("PUT"))).toHaveLength(2);
   }, 120_000);
 });
+
+/** A shop with a GitHub remote, a fake gh that opens and merges, a team, a decision and a mandate that merges (issue #41). */
+async function openShop(env: Record<string, string> = {}) {
+  const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
+  ghLog = join(bin, "gh.log");
+  await symlink(join(root, "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+  process.env.PATH = `${bin}:${path}`;
+  process.env.FAKE_GH_LOG = ghLog;
+  process.env.FAKE_GH_PULLS = "1";
+  process.env.TRAMA_MERGE_CHECKS_MS = "200";
+  Object.assign(process.env, env);
+  const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+  await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+  await git(["init", "-b", "main"], repo, false);
+  await git(["add", "."], repo, false);
+  await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+  const remote = await mkdtemp(join(tmpdir(), "trama-remote-"));
+  await git(["init", "--bare", "-b", "main"], remote, false);
+  await git(["remote", "add", "origin", "https://github.com/trama-fixture/negozio.git"], repo, false);
+  await git(["config", "remote.origin.pushurl", remote], repo, false);
+  await git(["config", "user.name", "T"], repo, false);
+  await git(["config", "user.email", "t@t"], repo, false);
+  controller = new TramaController(await mkdtemp(join(tmpdir(), "trama-data-")), {
+    publish: () => undefined,
+    openExternal: async () => undefined,
+    applyTheme: () => undefined,
+    notify: () => undefined,
+    setOpenAtLogin: () => undefined,
+    aiHeroResourceDirectory: join(root, "resources/AIHero"),
+    demoResourceDirectory: "",
+    codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+  });
+  await controller.start();
+  await controller.updateSettings({ continuousWork: false });
+  await controller.openProject(repo);
+  await until(() => controller!.snapshot.project?.phase.kind === "ready");
+  await controller.refreshGitHub();
+  const document = controller.snapshot.project!.document;
+  await controller.send("[proponi-team]", null, null, null);
+  await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+  controller.recordDecision({ id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "Evita rimborsi errati" });
+  await controller.grantMandate({
+    requestId: null,
+    objectives: ["Negozio"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree", "openPullRequest", "integrateCandidate"],
+    limits: [],
+  });
+  const ada = findSpecialist(document, "Ada")!;
+  /** Assigns work with `tags`, declares its candidate and returns it. */
+  const candidateOf = async (tags: string) => {
+    const before = ada.assignments.length;
+    await controller!.send(`[assegna]${tags ? ` ${tags}` : ""}`, null, null, null);
+    await until(() => ada.assignments.length > before && ada.assignments.at(-1)!.status === "completed");
+    const assignment = ada.assignments.at(-1)!;
+    await controller!.send(`[candidato:${assignment.id}:${document.decisions[0]!.id}]`, null, null, null);
+    return document.candidates.at(-1)!;
+  };
+  const ghCalls = () => readFileSync(ghLog!, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
+  const merges = () => ghCalls().filter((c) => c.includes("PUT") && c.some((a) => a.endsWith("/merge")));
+  const titles = () => document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
+  return { document, candidateOf, merges, titles, waitingKeys: () => (controller!.snapshot.project!.waiting ?? []).map((w) => w.key) };
+}
+
+describe("merge by mandate without faking the human review (issue #41)", () => {
+  afterEach(() => {
+    delete process.env.FAKE_GH_MERGE_LOST;
+    delete process.env.FAKE_GH_PULL_HEAD;
+  });
+
+  it("settles a merge whose answer was lost by reading the pull request, without merging twice", async () => {
+    const shop = await openShop({ FAKE_GH_MERGE_LOST: "1" });
+    const candidate = await shop.candidateOf("");
+    await until(() => Boolean(candidate.pullRequest?.mergedAt));
+    expect(candidate.pullRequest).toMatchObject({ number: 21, mergedBy: "coordinator" });
+    expect(candidate.merge).toMatchObject({ by: "coordinator", status: "merged", mandateVersion: 1, mergeSHA: "0dd5e1ec0dd5e1ec0dd5e1ec0dd5e1ec0dd5e1ec" });
+    expect(candidate.clearance).toMatchObject({ actor: "Coordinatore", mandateVersion: 1 });
+    expect(candidate.humanApproval).toBeNull();
+    expect(shop.merges()).toHaveLength(1);
+    expect(shop.titles()).toContain(`Candidato ${candidate.id} unito con il via libera del Coordinatore`);
+    expect(shop.titles()).not.toContain(`Unione del candidato ${candidate.id} non riuscita`);
+  }, 60_000);
+
+  it("does not merge a pull request that received another push after Trama published it", async () => {
+    const shop = await openShop({ FAKE_GH_PULL_HEAD: "baddbaddbaddbaddbaddbaddbaddbaddbaddbadd" });
+    const candidate = await shop.candidateOf("");
+    await until(() => candidate.merge?.status === "stopped");
+    expect(candidate.merge!.detail).toMatch(/altro lavoro/);
+    expect(candidate.pullRequest?.mergedAt ?? null).toBeNull();
+    expect(shop.merges()).toHaveLength(0);
+  }, 60_000);
+
+  it("stops a candidate that deletes a file for the person, and merges it on their ok as their act", async () => {
+    const shop = await openShop();
+    const candidate = await shop.candidateOf("[cancella]");
+    expect(candidate.changedFiles).toContain("README.md");
+    await until(() => candidate.merge?.status === "stopped");
+    expect(candidate.merge!.stop).toMatchObject({ reasons: ["Cancella un file."], acknowledgedAt: null });
+    expect(candidate.pullRequest).toBeNull();
+    expect(shop.waitingKeys()).toContain(`merge:${candidate.id}`);
+    expect(shop.titles()).toContain("Unione fermata: serve la tua decisione");
+    expect(shop.merges()).toHaveLength(0);
+    await controller!.approveCandidateByPerson(candidate.id);
+    await until(() => Boolean(candidate.pullRequest?.mergedAt));
+    expect(candidate.pullRequest).toMatchObject({ mergedBy: "person" });
+    expect(candidate.merge).toMatchObject({ by: "person", mandateVersion: null });
+    expect(shop.waitingKeys()).not.toContain(`merge:${candidate.id}`);
+  }, 60_000);
+});
