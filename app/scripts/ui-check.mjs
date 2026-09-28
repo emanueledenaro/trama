@@ -161,7 +161,20 @@ const themeShots = async (name) => {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
+// The window opens hidden and shows on ready-to-show (main.ts); the DOM can be ready before that, and a screenshot of a
+// hidden or not yet painted window fails ("Unable to capture screenshot"). So each frame waits for a visible window and
+// for a painted frame after the animations are set, instead of assuming a fixed time is enough.
+const windowShown = async () => {
+  const end = Date.now() + 10_000;
+  while (!(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false))) {
+    if (Date.now() > end) throw new Error("The window did not show within 10s");
+    await page.waitForTimeout(20);
+  }
+  await page.waitForFunction(() => document.visibilityState === "visible");
+};
+const painted = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const introFrames = async (label, times) => {
+  await windowShown();
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
@@ -172,6 +185,7 @@ const introFrames = async (label, times) => {
         animation.currentTime = t;
       }
     }, time);
+    await painted();
     await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
