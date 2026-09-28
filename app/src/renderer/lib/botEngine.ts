@@ -1,13 +1,13 @@
 import type { BotAnimation, BotExpression, BotShape } from "@shared/agentBot";
-import { badgeTransform, type BotDetail, type BotPose, botPose, mixPose, type Point, renderPose, weaveStrength } from "./botGeometry";
+import { badgeTransform, type BotDetail, type BotPose, botPose, mixPose, renderPose, weaveStrength } from "./botGeometry";
 
 /**
  * The bots' motion (W16), kept cheap. A bot at rest never recomputes its outline: the steady moves (breathing, the
  * hop of the exclamation mark, the shake of the alert, the pulse of the knots) are CSS animations chosen by the
  * `data-move` attribute, and they run only on bots in view (`data-live`). This module draws only what CSS cannot:
- * the morph from one form to the next when the state changes, the eyes that follow the cursor while it moves, and
- * blinks and winks, which are two writes each at random intervals. Its frame loop runs at most `BOT_FPS` times per
- * second and only while one of those is under way. Everything stops when the window is hidden or loses focus, and
+ * the morph from one form to the next when the state changes, and blinks and winks, which are two writes each at
+ * random intervals. The eyes do not follow the cursor. Its frame loop runs at most `BOT_FPS` times per second and
+ * only while a morph is under way. Everything stops when the window is hidden or loses focus, and
  * with `prefers-reduced-motion` each bot keeps the still pose of its expression.
  */
 
@@ -15,8 +15,6 @@ export const BOT_FPS = 24;
 const FRAME = 1 / BOT_FPS;
 /** How long a morph runs after the target changes; the pose eases toward it with a 0.11 s time constant. */
 const SETTLE = 0.6;
-/** After the last pointer move, the eyes keep following for this long, then the loop can stop. */
-const LOOK_TAIL = 0.25;
 const BLINK = 0.13;
 const WINK = 0.45;
 const EVENT_SLOT = 0.25;
@@ -36,7 +34,6 @@ export interface BotState {
   shape: BotShape;
   animation: BotAnimation;
   expression: BotExpression;
-  followsCursor: boolean;
   detail: BotDetail;
   seed: number;
 }
@@ -51,7 +48,6 @@ interface Instance {
   target: BotPose;
   /** The loop eases this bot toward its target until then. */
   settleUntil: number;
-  look: Point | null;
   blinkUntil: number;
   nextBlink: number;
   winkUntil: number;
@@ -70,7 +66,6 @@ const instances = new Map<Element, Instance>();
 let frameTimer: ReturnType<typeof setTimeout> | null = null;
 let eventTimer: ReturnType<typeof setTimeout> | null = null;
 let lastFrame = 0;
-const pointer = { x: 0, y: 0, seen: false, movedAt: -Infinity };
 let blurred = false;
 
 const hasWindow = typeof window !== "undefined";
@@ -114,18 +109,6 @@ function setPaused() {
 }
 
 if (hasWindow) {
-  window.addEventListener(
-    "pointermove",
-    (event) => {
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-      pointer.seen = true;
-      pointer.movedAt = seconds();
-      schedule();
-    },
-    { passive: true },
-  );
-  document.addEventListener("pointerleave", () => (pointer.seen = false));
   document.addEventListener("visibilitychange", setPaused);
   window.addEventListener("blur", () => {
     blurred = true;
@@ -178,7 +161,7 @@ function move(instance: Instance, now: number): { animation: BotAnimation; expre
   return instance.state;
 }
 
-/** Where the bot should be now: its move's still pose, with the eyes on the cursor, closed in a blink or winking. */
+/** Where the bot should be now: its move's still pose, with the eyes closed in a blink or winking. */
 function targetPose(instance: Instance, now: number): BotPose {
   const current = move(instance, now);
   const winking = now < instance.winkUntil && current.animation === "idle" && current.expression === "neutral";
@@ -188,7 +171,6 @@ function targetPose(instance: Instance, now: number): BotPose {
     expression: current.expression,
     t: 0,
     seed: instance.state.seed,
-    look: instance.state.followsCursor ? instance.look : null,
     detail: instance.state.detail,
     moving: false,
   });
@@ -209,7 +191,6 @@ function drawStill(instance: Instance) {
   instance.once = null;
   instance.blinkUntil = 0;
   instance.winkUntil = 0;
-  instance.look = null;
   instance.pose = targetPose(instance, 0);
   instance.target = instance.pose;
   instance.settleUntil = 0;
@@ -271,18 +252,6 @@ function runEvents() {
   if (next < Infinity) eventTimer = setTimeout(runEvents, Math.max(16, (Math.ceil(next / EVENT_SLOT) * EVENT_SLOT - seconds()) * 1000));
 }
 
-function looksFor(active: Instance[]): (Point | null)[] {
-  // Read every position first, then write, so the loop never forces a layout between writes.
-  return active.map((instance) => {
-    if (!instance.state.followsCursor || !pointer.seen) return null;
-    const box = instance.el.getBoundingClientRect();
-    const reach = Math.max(box.width * 4, 160);
-    const look: Point = { x: (pointer.x - (box.left + box.width / 2)) / reach, y: (pointer.y - (box.top + box.height / 2)) / reach };
-    const length = Math.hypot(look.x, look.y);
-    return length > 1 ? { x: look.x / length, y: look.y / length } : look;
-  });
-}
-
 function frame() {
   frameTimer = null;
   if (paused()) return;
@@ -291,16 +260,6 @@ function frame() {
   lastFrame = now;
   stats.frames++;
   const visible = [...instances.values()].filter((i) => i.visible);
-  if (now - pointer.movedAt < LOOK_TAIL) {
-    const followers = visible.filter((i) => i.state.followsCursor);
-    looksFor(followers).forEach((look, index) => {
-      const instance = followers[index]!;
-      const before = instance.look;
-      if (look && before && Math.abs(look.x - before.x) < 0.01 && Math.abs(look.y - before.y) < 0.01) return;
-      instance.look = look;
-      retarget(instance, now);
-    });
-  }
   const k = 1 - Math.exp(-step / 0.11);
   for (const instance of visible) {
     if (instance.settleUntil <= now) continue;
@@ -310,13 +269,13 @@ function frame() {
   schedule();
 }
 
-/** Keeps the frame loop running only while a bot in view morphs or the cursor moves, at most `BOT_FPS` per second. */
+/** Keeps the frame loop running only while a bot in view morphs, at most `BOT_FPS` times per second. */
 function schedule() {
   if (paused() || !hasWindow) return;
   if (!eventTimer) eventTimer = setTimeout(runEvents, 0);
   if (frameTimer) return;
   const now = seconds();
-  const busy = now - pointer.movedAt < LOOK_TAIL || [...instances.values()].some((i) => i.visible && i.settleUntil > now);
+  const busy = [...instances.values()].some((i) => i.visible && i.settleUntil > now);
   if (!busy) {
     lastFrame = 0;
     return;
@@ -326,7 +285,7 @@ function schedule() {
 }
 
 export function registerBot(el: SVGSVGElement, nodes: BotNodes, state: BotState) {
-  const empty = botPose({ ...state, t: 0, look: null, moving: false });
+  const empty = botPose({ ...state, t: 0, moving: false });
   const instance: Instance = {
     el,
     nodes,
@@ -335,7 +294,6 @@ export function registerBot(el: SVGSVGElement, nodes: BotNodes, state: BotState)
     pose: empty,
     target: empty,
     settleUntil: 0,
-    look: null,
     blinkUntil: 0,
     nextBlink: 0,
     winkUntil: 0,

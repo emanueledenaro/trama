@@ -157,6 +157,37 @@ describe("CodexClient", () => {
     expect(events.at(-1)?.type).toBe("completed");
   });
 
+  it("reads the context from `last` and keeps `total` only as the cost (issue #305)", () => {
+    client = new CodexClient({ executable: fake });
+    const events: TurnEvent[] = [];
+    const internal = client as unknown as { activeTurn: unknown; handleNotification(method: string, params: unknown): void };
+    internal.activeTurn = { threadId: "t", turnId: "u", onEvent: (event: TurnEvent) => events.push(event), messagePhases: new Map(), reject: () => undefined };
+    const usage = (tokenUsage: unknown) => internal.handleNotification("thread/tokenUsage/updated", { threadId: "t", turnId: "u", tokenUsage });
+    usage({ total: { totalTokens: 9_820_158 }, last: { totalTokens: 120_000 }, modelContextWindow: 828_400 });
+    // Cached input is already inside input: it is not added again.
+    usage({ total: { totalTokens: 9_940_158 }, last: { inputTokens: 100_000, cachedInputTokens: 90_000, outputTokens: 2_000 }, modelContextWindow: 828_400 });
+    // Without `last` there is no context reading, never a fallback on `total`.
+    usage({ total: { totalTokens: 10_000_000 }, modelContextWindow: 828_400 });
+    internal.handleNotification("item/completed", { threadId: "t", turnId: "u", item: { id: "c", type: "contextCompaction" } });
+    expect(events).toEqual([
+      { type: "tokenUsage", usedTokens: 120_000, contextWindow: 828_400, processedTokens: 9_820_158 },
+      { type: "tokenUsage", usedTokens: 102_000, contextWindow: 828_400, processedTokens: 9_940_158 },
+      { type: "compacted" },
+    ]);
+  });
+
+  it("keeps the context reading steady while the thread's total grows (issue #305)", async () => {
+    client = new CodexClient({ executable: fake });
+    const { threadId } = await client.openThread({ model: "gpt-5.5", cwd: process.cwd(), developerInstructions: "test" });
+    const readings: Extract<TurnEvent, { type: "tokenUsage" }>[] = [];
+    for (const prompt of ["[pieno] uno", "[pieno] due"]) {
+      await client.runTurn({ threadId, prompt, cwd: process.cwd(), model: "gpt-5.5", onEvent: (event) => void (event.type === "tokenUsage" && readings.push(event)) });
+    }
+    expect(readings.map((r) => r.usedTokens)).toEqual([230_000, 230_000]);
+    expect(readings[1]!.processedTokens!).toBeGreaterThan(readings[0]!.processedTokens!);
+    expect(readings.every((r) => r.usedTokens! <= r.contextWindow!)).toBe(true);
+  });
+
   it("keeps an interrupt that arrives before app-server returns the turn id", async () => {
     client = new CodexClient({ executable: fake });
     const { threadId } = await client.openThread({ model: "gpt-5.5", cwd: process.cwd(), developerInstructions: "test" });

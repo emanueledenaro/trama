@@ -214,11 +214,26 @@ export function reviewTranscript(messages: TranscriptMessage[], tail = DIGEST_TA
 
 type JsonRecord = Record<string, unknown>;
 
-const SKILL_VERBS: Record<string, string> = { create: "created", patch: "patched", edit: "rewritten", write_file: "written", remove_file: "removed", delete: "deleted" };
+const SKILL_VERBS: Record<string, string> = { create: "creata", patch: "aggiornata", edit: "riscritta", write_file: "aggiornata", remove_file: "aggiornata", delete: "eliminata" };
+
+const REVIEW_STOP_LINES: Record<string, string> = {
+  "The review was stopped.": "La revisione è stata fermata.",
+  "The review ran out of time.": "La revisione ha finito il tempo a disposizione.",
+  "The review used a tool outside memory and skills.": "La revisione ha usato uno strumento fuori da memoria e skill: Trama l'ha fermata.",
+};
+
+/** Why a review stopped, as the person reads it in Memoria and Attività; a provider's own error stays as it is. */
+export const reviewErrorLine = (message: string) => REVIEW_STOP_LINES[message] ?? message;
+
+/** The Activity line of a review's staged memory change (issue #305): the review's own message is for the model. */
+export const REVIEW_STAGED_LINE = "Proposta di modifica della memoria: la trovi in Memoria";
+
+const skillLine = (name: string, action: string, filePath: unknown, archived: boolean) =>
+  `Skill '${name}' ${archived ? "archiviata" : (SKILL_VERBS[action] ?? "aggiornata")}${typeof filePath === "string" && filePath ? ` (${filePath})` : ""}`;
 
 /**
- * The summary of the review's actions in the default ("on") mode: one line per successful
- * memory or skill write of the review, staged proposals included; failures and reads say nothing.
+ * The summary of the review's actions in the default ("on") mode: one plain Italian line per successful memory or
+ * skill write of the review, staged proposals included; failures and reads say nothing (issue #305).
  */
 export function summarizeReviewActions(calls: { tool: string; args: JsonRecord; result: JsonRecord }[]): string[] {
   const actions: string[] = [];
@@ -226,29 +241,25 @@ export function summarizeReviewActions(calls: { tool: string; args: JsonRecord; 
     if (tool !== "memory" && tool !== "skill_manage") continue;
     if (result.success !== true) continue;
     if (result.staged === true) {
-      if (result.proposal_staged && typeof result.message === "string") actions.push(result.message);
+      if (result.proposal_staged) actions.push(REVIEW_STAGED_LINE);
       continue;
     }
-    const message = typeof result.message === "string" ? result.message : "";
-    const target = (typeof result.target === "string" ? result.target : null) ?? (typeof args.target === "string" ? args.target : "memory");
-    const isSkill = tool === "skill_manage";
-    if (isSkill && Array.isArray(result.results)) {
+    if (tool === "memory") {
+      if (String(result.message ?? "").toLowerCase().includes("already exists")) continue;
+      const target = (typeof result.target === "string" ? result.target : null) ?? (typeof args.target === "string" ? args.target : "memory");
+      actions.push(target === "user" ? "Profilo aggiornato" : "Memoria aggiornata");
+      continue;
+    }
+    if (Array.isArray(result.results)) {
       if (!result.operations_applied) continue;
       for (const item of result.results as JsonRecord[]) {
         if (item.success !== true || !item.name) continue;
-        const verb = SKILL_VERBS[String(item.action)] ?? String(item.action);
-        actions.push(`Skill '${String(item.name)}' ${verb}${item.file_path ? ` (${String(item.file_path)})` : ""}`);
+        actions.push(skillLine(String(item.name), String(item.action), item.file_path, item._archived === true));
       }
       continue;
     }
-    const lower = message.toLowerCase();
-    if (lower.includes("created") || lower.includes("updated") || (isSkill && ["patched", "deleted", "written", "archived"].some((w) => lower.includes(w)))) {
-      actions.push(message);
-      continue;
-    }
-    if (!isSkill && !target) continue;
-    const label = isSkill ? "Skill" : ({ memory: "Memory", user: "User profile" } as Record<string, string>)[target] ?? target;
-    if (["added", "replaced", "removed", "applied"].some((w) => lower.includes(w))) actions.push(`${label} updated`);
+    const name = typeof args.name === "string" ? args.name : "";
+    if (name) actions.push(skillLine(name, String(args.action ?? ""), args.file_path, result._archived === true));
   }
   return [...new Set(actions)];
 }

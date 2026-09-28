@@ -249,6 +249,8 @@ export const it = {
 
   // Context managed by Trama (ADR 0018)
   "context.meter.aria": "Contesto del Coordinatore: {percent}%, riordino sopra il {threshold}%",
+  "context.meter.ariaUnknown": "Contesto del Coordinatore: misura non disponibile, riordino sopra il {threshold}%",
+  "context.meter.unknown": "Misura non disponibile per questo modello.",
   "context.meter.tokens": "{used} su {window} token",
   "context.meter.title": "Contesto del Coordinatore: {percent}%",
   "context.meter.explanation": "Quando supera la soglia, Trama riordina il contesto: il Coordinatore continua in una sessione nuova con un riepilogo scritto da Trama. La conversazione resta qui.",

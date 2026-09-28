@@ -247,6 +247,8 @@ export const en: Record<keyof typeof it, string> = {
 
   // Context managed by Trama (ADR 0018)
   "context.meter.aria": "Coordinator context: {percent}%, reorder above {threshold}%",
+  "context.meter.ariaUnknown": "Coordinator context: measure not available, reorder above {threshold}%",
+  "context.meter.unknown": "Measure not available for this model.",
   "context.meter.tokens": "{used} of {window} tokens",
   "context.meter.title": "Coordinator context: {percent}%",
   "context.meter.explanation": "Past the threshold, Trama reorders the context: the Coordinator goes on in a new session with a summary Trama writes. The conversation stays here.",

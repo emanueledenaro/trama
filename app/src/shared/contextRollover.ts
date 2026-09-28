@@ -3,27 +3,21 @@
  * at the end of a turn, Trama writes a context summary from its records and the Coordinator goes on in a new session.
  * The person's texts live in the catalogs under `context.` and never name a provider. Pure.
  */
+import { contextReading, type ContextUsage } from "./contextReading";
 
 export const DEFAULT_CONTEXT_THRESHOLD = 80;
 
 /** Why the new session exists, as the model reads it in the study turn of the reorder. */
 export const CONTEXT_ROLLOVER_REASON = "riordino del contesto";
 
-export interface ContextReading {
-  usedTokens: number;
-  contextWindow: number | null;
-}
-
-/** The share of the window a reading uses, in whole percent within 0-100; null without a window. */
-export function contextPercent(reading: ContextReading | null | undefined): number | null {
-  if (!reading?.contextWindow || reading.contextWindow <= 0 || reading.usedTokens < 0) return null;
-  return Math.round(Math.min(1, reading.usedTokens / reading.contextWindow) * 100);
+/** The share of the window a reading uses, in whole percent within 0-100; null when unknown (issue #305's one reading). */
+export function contextPercent(usage: ContextUsage | null | undefined): number | null {
+  return contextReading(usage ?? null, 100).percent;
 }
 
 /** Whether a reading has passed the threshold, so Trama owes the Coordinator a reorder at the end of the turn. */
-export function passesThreshold(reading: ContextReading | null | undefined, threshold = DEFAULT_CONTEXT_THRESHOLD): boolean {
-  const percent = contextPercent(reading);
-  return percent !== null && percent >= threshold;
+export function passesThreshold(usage: ContextUsage | null | undefined, threshold = DEFAULT_CONTEXT_THRESHOLD): boolean {
+  return contextReading(usage ?? null, threshold).state === "over";
 }
 
 /**

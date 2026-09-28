@@ -6,7 +6,8 @@ import { PROVIDERS } from "./providers";
 describe("the context managed by Trama (ADR 0018)", () => {
   it("reads the share of the window within 0-100, and nothing without a window", () => {
     expect(contextPercent({ usedTokens: 160_000, contextWindow: 258_000 })).toBe(62);
-    expect(contextPercent({ usedTokens: 9_820_158, contextWindow: 828_400 })).toBe(100);
+    // A reading past the window is not a context reading (issue #305).
+    expect(contextPercent({ usedTokens: 9_820_158, contextWindow: 828_400 })).toBeNull();
     expect(contextPercent({ usedTokens: 12_000, contextWindow: null })).toBeNull();
     expect(contextPercent({ usedTokens: -1, contextWindow: 1_000 })).toBeNull();
     expect(contextPercent(null)).toBeNull();

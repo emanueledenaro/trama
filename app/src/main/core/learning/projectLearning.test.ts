@@ -49,6 +49,32 @@ describe("ProjectLearning", () => {
     expect(project.resolveProposal(proposal!.id, false).success).toBe(true);
     expect(project.proposals()).toEqual([]);
   });
+
+  it("turns a migrated memory over its limit into one consolidation proposal (issue #305)", () => {
+    const project = learning();
+    const paragraphs = Array.from({ length: 6 }, (_, i) => `Fatto ${i}: ${"dettaglio ".repeat(50)}`.trim());
+    expect(project.migrateLegacyMemory(paragraphs.join("\n\n"))).toBe(true);
+    const id = project.proposeConsolidation("memory");
+    expect(id).not.toBeNull();
+    expect(project.proposeConsolidation("memory")).toBeNull();
+    const [proposal] = project.proposals();
+    expect(proposal).toMatchObject({ kind: "consolidation", target: "memory" });
+    const [shown] = project.view({ turnsSinceMemory: 0, itersSinceSkill: 0 }).proposals;
+    expect(shown!.summary).toBe(proposal!.summary);
+    expect(shown!.operations[0]).toBe(`Togliere la nota «${paragraphs[0]}»`);
+    expect(proposal!.summary).toMatch(/^La memoria del progetto supera il limite \(\d{4} su 2200 caratteri\)\./);
+    // Nothing changes before the person applies it; then the rest fits under the limit.
+    expect(project.memory.charCount("memory")).toBe(0);
+    expect(project.resolveProposal(id!, true)).toMatchObject({ success: true });
+    project.memory.loadFromDisk();
+    expect(project.memory.charCount("memory")).toBeLessThanOrEqual(2200);
+    expect(project.memory.entriesFor("memory").at(-1)).toBe(paragraphs.at(-1));
+    expect(project.proposeConsolidation("memory")).toBeNull();
+  });
+
+  it("gives a refused proposal a code the person's line reads (issue #305)", () => {
+    expect(learning().resolveProposal("missing", true)).toMatchObject({ success: false, code: "unknown_proposal" });
+  });
 });
 
 describe("learning tools of the Coordinator", () => {
