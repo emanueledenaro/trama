@@ -115,7 +115,7 @@ export function Inspector() {
         {target.kind === "audit" ? <AuditView id={target.id} /> : null}
         {target.kind === "group" ? <GroupView /> : null}
         {target.kind === "work" ? <WorkView /> : null}
-        {target.kind === "activity" ? <ActivityView /> : null}
+        {target.kind === "activity" ? <ActivityView focusWork={target.work} /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
         {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}

@@ -16,6 +16,8 @@ import {
   dutyModel,
   dutySession,
   FIX_BINDING,
+  environmentFailure,
+  dutyLedger,
   nextDuty,
   onRequestBindingLine,
   recordCheckOutcome,
@@ -225,6 +227,63 @@ describe("diagnosis of failed checks (W11)", () => {
     expect(failure.diagnosisId).toBe(diagnosis.id);
     finish(document, diagnosis);
     expect(nextDuty(document, context())).toBeNull();
+  });
+
+  it("never diagnoses a failure of the sandbox or the machine as a bug of the project (issue #271)", () => {
+    const document = project();
+    const failed = { check: "node_typecheck" as const, passed: false, ran: true, command: "npm run typecheck", target: { kind: "checkout" as const, headSHA: HEAD } };
+    const sandbox = [
+      "Error: EPERM: operation not permitted, open '/Users/p/.npm/_logs/debug.log'",
+      "listen EPERM: operation not permitted 127.0.0.1\n[Trama] Alcuni fallimenti vengono dalla sandbox: la rete è permessa solo verso 127.0.0.1, internet è bloccato.",
+      "mkdir: /private/var/folders/x: Read-only file system",
+      "sh: tsc: command not found",
+      "bwrap: Creating new namespace failed: Operation not permitted",
+      "env: ‘npm’: No such file or directory",
+      "sh: tsc: Command not found",
+    ];
+    recordCheckOutcome(document, { ...failed, passed: true, output: "" });
+    for (const output of sandbox) {
+      expect(environmentFailure(output)).toBe(true);
+      expect(recordCheckOutcome(document, { ...failed, output })).toBeNull();
+    }
+    // The failure says nothing about the code: it does not hide the pass recorded before, and nothing starts.
+    expect(document.duties?.failures ?? []).toEqual([]);
+    expect(document.duties?.checkoutChecks.node_typecheck).toEqual({ headSHA: HEAD, passed: true });
+    expect(nextDuty(document, context())).toBeNull();
+    // A failure of the code on the same check is still diagnosed.
+    expect(environmentFailure("src/app/page.tsx(3,7): error TS2322: Type 'string' is not assignable to type 'number'.")).toBe(false);
+    expect(recordCheckOutcome(document, { ...failed, output: "src/app/page.tsx(3,7): error TS2322" })).not.toBeNull();
+    expect(nextDuty(document, context())?.duty?.skill).toBe("diagnosing-bugs");
+  });
+
+  it("leaves out a sandbox failure recorded before the rule, and says the diagnosis has nothing to do", () => {
+    const document = project();
+    dutyLedger(document).failures.push({
+      id: "F-1",
+      check: "node_typecheck",
+      title: "typecheck Node",
+      command: "npm run typecheck",
+      target: "checkout",
+      candidateId: null,
+      assignmentId: null,
+      version: HEAD,
+      regression: false,
+      output: "Error: EACCES: permission denied, mkdir '/Users/p/.cache'",
+      at: "2026-09-27T10:00:00.000Z",
+      diagnosisId: null,
+    });
+    expect(nextDuty(document, context())).toBeNull();
+    // Once the machine is fixed, a failure of the code on the same check and version is recorded and diagnosed.
+    const failure = recordCheckOutcome(document, {
+      check: "node_typecheck",
+      passed: false,
+      ran: true,
+      output: "src/app/page.tsx(3,7): error TS2322",
+      command: "npm run typecheck",
+      target: { kind: "checkout", headSHA: HEAD },
+    });
+    expect(failure).not.toBeNull();
+    expect(nextDuty(document, context())?.duty?.trigger).toEqual({ kind: "failedCheck", failureId: failure!.id });
   });
 
   it("marks a regression when the same check passed before, on an earlier HEAD or on the candidate's base", () => {
