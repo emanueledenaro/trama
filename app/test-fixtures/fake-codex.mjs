@@ -530,6 +530,16 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const resumedWithFindings = text.includes("Rilievi bloccanti dei revisori");
         const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}`;
         writeFileSync(join(root, "NOTE.md"), `Lavoro dello specialista\n${extra}`);
+        // "[impostazioni]" also changes the code owners, a setting of the repository: its merge runs into a fixed ban (issue #247).
+        if (text.includes("[impostazioni]")) {
+          writeFileSync(join(root, "CODEOWNERS"), "* @trama-fixture\n");
+        }
+        // "[interfaccia]" also changes the accent of the shop's page: a candidate that changes the interface (issue #247).
+        if (text.includes("[interfaccia]")) {
+          const { mkdirSync } = await import("node:fs");
+          mkdirSync(join(root, "web"), { recursive: true });
+          writeFileSync(join(root, "web/index.css"), ":root { --accent: #cc3300; }\n");
+        }
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
         // "[spazi]" leaves trailing whitespace in a tracked file, so git_diff_check fails on the candidate (V05).
         const tracked = join(root, "Sources/Orders/CancelPaidOrder.swift");
@@ -776,7 +786,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");

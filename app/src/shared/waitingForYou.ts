@@ -221,16 +221,21 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
   }
 
   // A verified candidate the person has not approved yet, or whose approval no longer holds: they look at it first.
+  // With the Coordinator's green light Trama merges the others by itself (issue #247): only a candidate that changes
+  // the interface, or one the mandate or the project leaves to the person, waits here. A refused one waits for its
+  // developer, not for the person.
   for (const candidate of document.candidates.filter((c) => !c.pullRequest)) {
     const report = sources.candidateReports?.[candidate.id];
     if (!report || (report.state !== "verified" && report.state !== "decided")) continue;
+    if (report.mergeRoute === "coordinator") continue;
     if (candidate.humanApproval && !report.approvalInvalidated) continue;
+    if (candidate.humanRejection) continue;
     const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
     items.push({
       key: `candidate:${candidate.id}`,
       kind: "candidate",
       targetId: candidate.id,
-      label: "Candidato da guardare",
+      label: report.mergeRoute === "interface" ? "Interfaccia da guardare" : "Candidato da guardare",
       title: oneLine(assignment?.objective ?? "") || `Candidato ${candidate.id}`,
       goalId: candidate.goalId ?? null,
       askedAt: candidate.updatedAt,
