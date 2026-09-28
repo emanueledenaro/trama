@@ -161,7 +161,20 @@ const themeShots = async (name) => {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
+// The window opens hidden and shows on ready-to-show (main.ts); the DOM can be ready before that, and a screenshot of a
+// hidden or not yet painted window fails ("Unable to capture screenshot"). So each frame waits for a visible window and
+// for a painted frame after the animations are set, instead of assuming a fixed time is enough.
+const windowShown = async () => {
+  const end = Date.now() + 10_000;
+  while (!(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false))) {
+    if (Date.now() > end) throw new Error("The window did not show within 10s");
+    await page.waitForTimeout(20);
+  }
+  await page.waitForFunction(() => document.visibilityState === "visible");
+};
+const painted = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const introFrames = async (label, times) => {
+  await windowShown();
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
@@ -172,6 +185,7 @@ const introFrames = async (label, times) => {
         animation.currentTime = t;
       }
     }, time);
+    await painted();
     await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
@@ -823,6 +837,26 @@ await shot("05-map");
       };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+  // The strip lights up after the 300ms hover delay plus a 0.1s transition, so a read at a fixed time can catch it
+  // halfway (rgba(0, 95, 184, 0.957)). These helpers read again every 20ms, up to 1.5s, until the strip is the opaque
+  // accent, and return the last reading either way: the assertions below decide.
+  const channels = (color) => {
+    const [r, g, b, a = 1] = (color.match(/[\d.]+/g) ?? []).map(Number);
+    return { r, g, b, a };
+  };
+  const opaqueAccent = ({ strip, accent }) => {
+    const [lit, wanted] = [channels(strip), channels(accent)];
+    return lit.a === 1 && lit.r === wanted.r && lit.g === wanted.g && lit.b === wanted.b;
+  };
+  const settledLook = async (sash) => {
+    const end = Date.now() + 1_500;
+    let reading = await look(sash);
+    while (!opaqueAccent(reading) && Date.now() < end) {
+      await page.waitForTimeout(20);
+      reading = await look(sash);
+    }
+    return reading;
+  };
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
     if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
@@ -889,14 +923,12 @@ await shot("05-map");
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(250);
-  const hovered = await look(sidebarSash);
-  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  const hovered = await settledLook(sidebarSash);
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`Within 1.5s of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
   // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
   for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
-    await page.waitForTimeout(200);
-    const lit = (await look(sidebarSash)).strip;
+    const lit = (await settledLook(sidebarSash)).strip;
     if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
@@ -906,8 +938,7 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2, 300);
   await page.mouse.down();
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
-  await page.waitForTimeout(200);
-  const dragged = await look(inspectorSash);
+  const dragged = await settledLook(inspectorSash);
   if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
