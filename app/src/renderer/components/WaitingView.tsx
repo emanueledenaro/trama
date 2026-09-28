@@ -85,7 +85,7 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-sm">
               <span className="font-medium text-foreground">{item.label}</span>
               <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
-              {goal ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">Nel dialogo di {goal.title}</span> : null}
+              {goal ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">Obiettivo: {goal.title}</span> : null}
             </div>
             <WaitingCard item={item} />
           </section>
