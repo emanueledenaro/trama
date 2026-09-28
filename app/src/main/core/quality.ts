@@ -156,6 +156,7 @@ const BLOCKER_WORDS: Record<string, string> = {
   GATE_RUNNING: "i revisori sono ancora al lavoro",
   GATE_FAILED: "una figura non ha finito la revisione",
   REMOTE_CONFLICT: "c'è un conflitto con il lavoro su GitHub",
+  CLOUD_CHECK_FAILED: "il lavoro della sessione cloud non ha superato i controlli sul Mac",
   WORKTREE_CONFLICT: "c'è un conflitto con il lavoro di un altro incarico",
 };
 
