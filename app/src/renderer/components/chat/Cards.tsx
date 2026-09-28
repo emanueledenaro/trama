@@ -382,7 +382,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
             <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
               Rifiuta la proposta
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
+            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
               Correggi
             </Button>
             <Button
@@ -1457,7 +1457,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {blockerText(t, b.code)}
-                {b.code === "BASE_CHANGED" ? null : (
+                {b.code === "BASE_CHANGED" || b.code === "WORKTREE_CHANGED" ? null : (
                   <span className="text-muted-foreground">
                     <Sep />
                     <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(t, b.detail) : b.detail} />

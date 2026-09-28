@@ -217,6 +217,9 @@ function candidateState(document: ProjectDocument, candidate: Candidate, headSHA
       case "BASE_CHANGED":
         problems.push("il progetto è cambiato dopo il candidato, va ricostruito e verificato di nuovo");
         break;
+      case "WORKTREE_CHANGED":
+        problems.push("la copia di lavoro è cambiata dopo questo candidato: non è il lavoro di ora, va dichiarato il candidato nuovo con declare_candidate");
+        break;
       case "EVIDENCE_MISSING":
         problems.push(`verifica ${blocker.detail} mai eseguita`);
         break;

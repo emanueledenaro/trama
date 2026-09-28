@@ -26,7 +26,7 @@ import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, rebindTramaCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
@@ -1452,20 +1452,19 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (isActive(assignment)) return toolFailure("assignment_running", `Assignment ${assignment.id} is still running; declare the candidate when it ends.`);
         const review = await context.reviewWorkspace(assignment.id);
         if (review.changedFiles.length === 0) return toolFailure("empty_candidate", `The worktree of ${assignment.id} has no changes.`);
-        const candidate = declareCandidate(
-          document,
-          {
-            assignmentId: assignment.id,
-            decisionIds: strings(args.decisionIDs),
-            unresolvedChoices: strings(args.unresolvedChoices),
-            externalEffects: strings(args.externalEffects),
-          },
-          review,
-        );
+        const input = {
+          assignmentId: assignment.id,
+          decisionIds: strings(args.decisionIDs),
+          unresolvedChoices: strings(args.unresolvedChoices),
+          externalEffects: strings(args.externalEffects),
+        };
+        // Trama may have declared this same worktree after the developer's turn (issue #388): the declaration binds that one.
+        const candidate = rebindTramaCandidate(document, input, review) ?? declareCandidate(document, input, review);
+        const rebound = candidate.declaredBy === "trama";
         // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
         candidate.whitespaceErrors = review.whitespaceErrors;
         candidate.commit = candidateCommit(document, candidate, (await context.conventions?.()) ?? DEFAULT_CONVENTIONS);
-        context.addCard("candidate", "Candidato", candidate.id);
+        if (!rebound) context.addCard("candidate", "Candidato", candidate.id);
         context.changed();
         return toolSuccess({
           candidateID: candidate.id,

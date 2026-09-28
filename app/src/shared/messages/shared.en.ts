@@ -258,6 +258,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
 
   // Plain language (issue #270)
   "shared.blocker.BASE_CHANGED": "The starting code changed",
+  "shared.blocker.WORKTREE_CHANGED": "The working copy changed after the candidate",
   "shared.blocker.DECISION_CHANGED": "A decision changed",
   "shared.blocker.UNRESOLVED_CHOICE": "A choice is still open",
   "shared.blocker.EXTERNAL_EFFECT_UNSUPPORTED": "It has an external effect Trama cannot check",

@@ -257,6 +257,7 @@ export const sharedIt = {
 
   // Plain language (issue #270)
   "shared.blocker.BASE_CHANGED": "Il codice di partenza è cambiato",
+  "shared.blocker.WORKTREE_CHANGED": "La copia di lavoro è cambiata dopo il candidato",
   "shared.blocker.DECISION_CHANGED": "Una decisione è cambiata",
   "shared.blocker.UNRESOLVED_CHOICE": "Resta una scelta da fare",
   "shared.blocker.EXTERNAL_EFFECT_UNSUPPORTED": "Ha un effetto esterno che Trama non sa verificare",

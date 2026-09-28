@@ -39,7 +39,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     insteadOf: ["remoto", "sandbox"],
   },
   { term: "Luogo di lavoro", meaning: "Dove lavora un incarico: in locale sul Mac o in una sessione cloud. Lo sceglie l'impostazione del progetto, e puoi spostare un incarico.", insteadOf: [] },
-  { term: "Patto Vivo", meaning: "Le decisioni che hai preso sul comportamento del prodotto, con la loro versione.", insteadOf: ["pact"] },
+  { term: "Patto", meaning: "Le decisioni che hai preso sul comportamento del prodotto, con la loro versione.", insteadOf: ["pact"] },
   { term: "Mandato", meaning: "Il permesso che dai al Coordinatore per fare da solo alcune cose.", insteadOf: ["mandate"] },
   { term: "Aspetta te", meaning: "L'elenco delle domande, proposte e permessi che aspettano una tua risposta.", insteadOf: ["pending", "waiting"] },
   { term: "Attività", meaning: "Il registro delle mosse che il Coordinatore ha fatto da solo, con l'esito.", insteadOf: ["activity log"] },
@@ -51,6 +51,7 @@ export const GLOSSARY: GlossaryTerm[] = [
 /** The codes of a candidate's blockers that the catalog explains. */
 export const BLOCKER_CODES = [
   "BASE_CHANGED",
+  "WORKTREE_CHANGED",
   "DECISION_CHANGED",
   "UNRESOLVED_CHOICE",
   "EXTERNAL_EFFECT_UNSUPPORTED",
