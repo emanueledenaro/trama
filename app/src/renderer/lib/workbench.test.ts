@@ -10,6 +10,7 @@ import {
   VIEW_TABS,
   homeOf,
   isDetail,
+  parentOf,
   sideBarDefaultWidth,
   sideBarMaxWidth,
   tabOf,
@@ -42,6 +43,7 @@ describe("window layout (issue #330)", () => {
         "pact",
         "pullRequest",
         "specialist",
+        "standard",
         "team",
         "waiting",
         "work",
@@ -49,6 +51,7 @@ describe("window layout (issue #330)", () => {
     );
     expect(viewOf({ kind: "map" })).toBe("rules");
     expect(viewOf({ kind: "pact" })).toBe("rules");
+    expect(viewOf({ kind: "standard" })).toBe("rules");
     expect(viewOf({ kind: "group" })).toBe("work");
     expect(viewOf({ kind: "issue", number: 7 })).toBe("work");
     expect(viewOf({ kind: "team" })).toBe("teams");
@@ -56,7 +59,12 @@ describe("window layout (issue #330)", () => {
   });
 
   it("puts each detail under the tab of its list, with a way back", () => {
-    expect(tabOf({ kind: "module", id: "Orders" })).toBe("map");
+    // Issue #334: the map is the Moduli section of Mandato; a module goes back to the modules.
+    expect(tabOf({ kind: "map" })).toBe("mandate");
+    expect(tabOf({ kind: "module", id: "Orders" })).toBe("mandate");
+    expect(tabOf({ kind: "file", path: "src/a.ts" })).toBe("mandate");
+    expect(parentOf({ kind: "module", id: "Orders" })).toEqual({ kind: "map" });
+    expect(parentOf({ kind: "decision", id: "D-1" })).toEqual({ kind: "pact" });
     expect(tabOf({ kind: "candidate", id: "C-1" })).toBe("work");
     expect(tabOf({ kind: "goal", id: "G-1" })).toBe("goals");
     expect(tabOf({ kind: "mandate" })).toBe("mandate");
@@ -76,6 +84,7 @@ describe("window layout (issue #330)", () => {
     }
     expect(homeOf("work")).toEqual({ kind: "goals" });
     expect(homeOf("rules")).toEqual({ kind: "mandate" });
+    expect(VIEW_TABS.rules).toEqual(["mandate", "pact", "standard"]);
     expect(homeOf("projects")).toBeNull();
   });
 
