@@ -1406,8 +1406,13 @@ await settings.getByTestId("language-choice").getByRole("radio", { name: "Englis
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();
 await shot("12-settings-en");
+// Issue #348: Informazioni shows the version of app/package.json, in each language.
+const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
+const aboutVersion = settings.getByTestId("about-version");
+if (!(await aboutVersion.textContent())?.startsWith(`Version ${appVersion}.`)) throw new Error(`About does not show Version ${appVersion}`);
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano" }).click();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().waitFor();
+await settings.getByTestId("about-version").getByText(`Versione ${appVersion}.`, { exact: false }).waitFor();
 // B01: Informazioni shows the mark on its tile with the version, in every provider theme.
 await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
 for (const provider of ["codex", "claudeAgent", "grok"]) {

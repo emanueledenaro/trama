@@ -14,6 +14,24 @@ export const it = {
   // Coordinator replies
   "toolError.placeholder": "uno strumento di Trama ha rifiutato la richiesta (il dettaglio è in Attività)",
 
+  // Automatic repair of a provider's CLI
+  "providerRepair.title": "Trama ha riparato {cli}",
+  "providerRepair.failedTitle": "Trama non è riuscito a riparare {cli}",
+  "providerRepair.retry": "Trama riprova il turno una volta.",
+  "providerRepair.updateCli.done": "Aggiornato con {command}: ora è la versione {detail}.",
+  "providerRepair.updateCli.failed": "{command} non è riuscito: {detail}",
+  "providerRepair.updateCli.notNeeded": "Versione {detail}: non serve aggiornarla.",
+  "providerRepair.reinstallPlugin.done": "Plugin di Trama reinstallato con {command}.",
+  "providerRepair.reinstallPlugin.failed": "Il plugin di Trama non si è reinstallato: {detail}",
+  "providerRepair.checkHook.done": "L'hook di Trama risponde come deve.",
+  "providerRepair.checkHook.failed": "L'hook di Trama non risponde come deve: {detail}",
+  "providerRepair.problem.notCalled": "{cli} non ha chiamato l'hook di Trama, il controllo che tiene il turno in sola lettura.",
+  "providerRepair.problem.notReady": "Il plugin di Trama per {cli} non è pronto, e senza il suo hook Trama non controlla cosa fa l'agente.",
+  "providerRepair.gaveUp": "{problem} Trama ha provato a ripararlo da solo. {steps} Senza l'hook Trama non fa partire il turno. Resta una cosa da fare: {action}",
+  "providerRepair.action.update": "aggiorna {cli} da un terminale con {command}, poi riprova.",
+  "providerRepair.action.reinstall": "reinstalla {cli}, poi riprova.",
+  "providerRepair.outdated": "{cli} {version} è troppo vecchio per Trama, che ha provato ad aggiornarlo da solo. {steps} Resta una cosa da fare: aggiornalo da un terminale con {command} alla versione {minimum} o successiva.",
+
   // Language
   "language.label": "Lingua",
   "language.description":
@@ -158,8 +176,10 @@ export const it = {
   "settings.guide.description":
     "Collegamenti, progetto, metodo AI Hero ed esercizi sulla copia di esempio. Riprende dal punto in cui ti eri fermato.",
   "settings.guide.open": "Apri la guida",
+  "menu.about": "Informazioni su Trama",
   "settings.about": "Informazioni",
   "settings.about.version": "Versione {version}. Coordina decisioni, lavoro e verifiche su un repository locale.",
+  "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "L'accesso avviene nel browser ufficiale o nel terminale. Trama non copia le credenziali.",
   "settings.connections.checkAll": "Verifica tutti",

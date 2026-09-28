@@ -43,12 +43,13 @@
     "tailwindcss": "^4.3.3",
     "typescript": "5.9",
     "vite": "^8.3.1",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.2",
     "zustand": "^5.0.15"
   },
   "build": {
     "appId": "dev.trama.app",
     "productName": "Trama",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -88,8 +89,20 @@
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/icon.icns",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "hardenedRuntime": true,
       "notarize": false
@@ -97,15 +110,28 @@
     "linux": {
       "icon": "resources/icons/png",
       "target": [
-        "AppImage"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Development"
     },
     "win": {
       "icon": "resources/icons/icon.ico",
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "publish": null,
     "asarUnpack": [

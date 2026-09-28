@@ -22,6 +22,7 @@ import {
   retryDelayMs,
   waitReasonOf,
 } from "@shared/providerFailure";
+import { REPAIRABLE_CLIS, repairActivity } from "@shared/providerRepair";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -489,6 +490,12 @@ const CHOICES_IN_TEXT_TITLE = "Scelta scritta nel testo invece che in una scheda
 
 /** How Trama records one of the provider's own tools it blocked, with what the agent was told to use (issue #228). */
 const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
+
+/** The Activity entry for a repair Trama made by itself on a provider's CLI, in the person's language. */
+const providerRepairEntry = (language: Language, event: Extract<TurnEvent, { type: "providerRepaired" }>) => {
+  const cli = REPAIRABLE_CLIS[event.provider];
+  return cli ? repairActivity(language, cli, event) : null;
+};
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
 
@@ -1103,7 +1110,7 @@ export class TramaController {
     if (id === "codex") return this.discovery;
     let runtime = this.providerDiscovery.get(id);
     if (!runtime) {
-      runtime = createRuntime(id, { onAccountChanged: () => void this.refreshProvider(id) });
+      runtime = createRuntime(id, { onAccountChanged: () => void this.refreshProvider(id), language: () => this.state.language });
       this.providerDiscovery.set(id, runtime);
     }
     return runtime;
@@ -2195,6 +2202,7 @@ export class TramaController {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
       requestTimeoutMs: 15_000,
+      language: () => this.state.language,
     });
     this.runtime = { client, provider, toolServer, projectId: project.id };
     return this.runtime;
@@ -2411,6 +2419,10 @@ export class TramaController {
         } else if (event.type === "toolRefused") {
           // A refusal during the study is visible too (issue #228).
           appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
+          this.changed();
+        } else if (event.type === "providerRepaired") {
+          const entry = providerRepairEntry(this.state.language, event);
+          if (entry) appendEvent(document, "trama", { type: "activity", ...entry }, null);
           this.changed();
         }
       },
@@ -3329,6 +3341,11 @@ export class TramaController {
       case "toolRefused":
         activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
         return;
+      case "providerRepaired": {
+        const entry = providerRepairEntry(this.state.language, event);
+        if (entry) activity(entry.title, entry.detail, entry.tone);
+        return;
+      }
       case "fixedBanRefused":
         this.recordFixedBan(project, event, { kind: "coordinator" }, request.id);
         return;
@@ -4311,6 +4328,7 @@ export class TramaController {
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
+      language: () => this.state.language,
       ...(toolServer ? { toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames } } : {}),
     });
     this.specialistRuntimes.set(assignmentId, { client, projectId: project.id });
@@ -4451,6 +4469,11 @@ export class TramaController {
             case "toolRefused":
               this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
               return;
+            case "providerRepaired": {
+              const entry = providerRepairEntry(this.state.language, event);
+              if (entry) this.specialistActivity(project, assignmentId, key, entry.title, entry.detail, entry.tone);
+              return;
+            }
             case "fixedBanRefused": {
               const specialistId = findAssignment(project.document, assignmentId)?.specialistId ?? "";
               this.recordFixedBan(project, event, { kind: "specialist", specialistId, assignmentId }, null, { assignmentId, workKey: `${assignmentId}:${key}` });
@@ -5299,7 +5322,7 @@ export class TramaController {
     const document = project.document;
     const { provider, model } = reviewer;
     if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
-    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     clients.add(client);
     try {
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
@@ -5387,7 +5410,7 @@ export class TramaController {
       finishReview(gate, role, { failure: "Nessun modello in sola lettura disponibile per i revisori del candidato." });
       return;
     }
-    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.gateRuns.get(gate.id);
     run?.clients.add(client);
     try {
@@ -5560,7 +5583,7 @@ export class TramaController {
       for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
       return;
     }
-    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
     try {
@@ -5584,7 +5607,7 @@ export class TramaController {
 
   /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
   private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
-    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
     try {
@@ -6317,7 +6340,7 @@ export class TramaController {
     if (plan.status !== "planning") return;
     const provider = this.coordinatorProvider(document);
     const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
-    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     this.planners.set(plan.id, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
@@ -6493,7 +6516,7 @@ export class TramaController {
     const key = `${plan.id}:slices`;
     const provider = this.coordinatorProvider(document);
     const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
-    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     this.planners.set(key, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per dividere il lavoro in fette.");
