@@ -712,12 +712,11 @@ const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-
 if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
 const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
 if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
-// W16, cost: CSS runs the steady moves; the frame loop runs only while the cursor moves or a bot morphs, at most
-// 24 times per second, and not at all at rest. Reduced motion stops everything and keeps the still pose.
+// W16, cost: CSS runs the steady moves; the frame loop runs only while a bot morphs, at most 24 times per second,
+// and not at all at rest. The eyes do not follow the cursor. Reduced motion stops everything and keeps the still pose.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
 await page.waitForFunction(() => !document.documentElement.classList.contains("bots-paused"), null, { timeout: 5_000 });
 const botFrames = () => page.evaluate(() => ({ frames: window.__tramaBots.frames, at: performance.now() }));
-const perSecond = (from, to) => ((to.frames - from.frames) * 1000) / (to.at - from.at);
 // CPU of the renderer and GPU processes over a few seconds, from Electron's own metrics.
 const cpuOver = async (ms) => {
   await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics());
@@ -739,18 +738,30 @@ const smooth = await page.evaluate(() =>
     .filter((a) => !a.effect.getKeyframes().slice(0, -1).every((k) => String(k.easing).startsWith("steps"))).length,
 );
 if (smooth) throw new Error(`${smooth} bot animations run at every frame instead of in steps`);
-const eyeOf = (bot) => bot.locator('[data-part="eye-0"]').getAttribute("transform");
-const follower = teamPanel.locator('[data-testid="agent-bot"][data-live]:is([data-activity="idle"], [data-activity="done"], [data-activity="waiting"])').first();
-const followerBox = await follower.boundingBox();
-const eyesBefore = await eyeOf(follower);
+// The eyes stay where they are while the cursor moves, and the loop draws no frame for it. The cursor moves over the
+// composer, away from every bot, so no hover wink starts a morph; blinks and winks change the eyes' size, not where
+// they sit, so only the position is compared.
+const eyePositions = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="agent-bot"] [data-part^="eye-"]')].map((eye) => /translate\([^)]*\)/.exec(eye.getAttribute("transform") ?? "")?.[0]),
+  );
+const composerBox = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
+// First let any morph under way finish: the loop is idle once a whole second passes without a frame.
+for (let quiet = 0, last = (await botFrames()).frames, tries = 0; quiet < 4 && tries < 40; tries++) {
+  await page.waitForTimeout(250);
+  const now = (await botFrames()).frames;
+  quiet = now === last ? quiet + 1 : 0;
+  last = now;
+}
+const eyesBefore = await eyePositions();
 const movingFrom = await botFrames();
 for (let i = 0; i < 40; i++) {
-  await page.mouse.move(followerBox.x + followerBox.width / 2 + 200 * Math.cos(i / 6), followerBox.y + followerBox.height / 2 + 120 * Math.sin(i / 6));
+  await page.mouse.move(composerBox.x + composerBox.width / 2 + (composerBox.width / 3) * Math.cos(i / 6), composerBox.y + composerBox.height / 2 + 10 * Math.sin(i / 6));
   await page.waitForTimeout(50);
 }
-const movingRate = perSecond(movingFrom, await botFrames());
-if (movingRate > 24 * 1.1) throw new Error(`The bot loop ran ${movingRate.toFixed(1)} frames per second while the cursor moved, over 24`);
-if ((await eyeOf(follower)) === eyesBefore) throw new Error("The eyes do not follow the cursor");
+const movingFrames = (await botFrames()).frames - movingFrom.frames;
+if (movingFrames > 0) throw new Error(`The bot loop ran ${movingFrames} frames while only the cursor moved`);
+if (JSON.stringify(await eyePositions()) !== JSON.stringify(eyesBefore)) throw new Error("The eyes moved with the cursor");
 await page.waitForTimeout(800);
 const restFrom = await botFrames();
 await page.waitForTimeout(3_000);
@@ -762,7 +773,7 @@ const cpuStill = await cpuOver(3_000);
 await page.emulateMedia({ reducedMotion: "no-preference" });
 if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
 console.log(
-  `bots: ${botSizes.length} on screen, ${movingRate.toFixed(1)} frames/s with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
+  `bots: ${botSizes.length} on screen, ${movingFrames} frames with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
     `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
 );
 const firstBot = teamPanel.getByTestId("agent-bot").first();
