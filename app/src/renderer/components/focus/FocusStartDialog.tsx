@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import { errorText, type FocusStartTarget, useUi } from "@/lib/store";
 
 const OPTION =
@@ -16,6 +17,7 @@ const sameTarget = (a: FocusStartTarget, b: FocusStartTarget) => a.kind === b.ki
  * asks. Trama checks both before anything starts; a fixed point that does not exist or an empty diff shows here.
  */
 export function FocusStartDialog() {
+  const t = useT();
   const open = useUi((s) => s.dialog === "focusMode");
   const initial = useUi((s) => s.focusStart);
   const setDialog = useUi((s) => s.setDialog);
@@ -64,27 +66,27 @@ export function FocusStartDialog() {
     <Dialog
       open={open}
       onOpenChange={(value) => setDialog(value ? "focusMode" : null)}
-      title="Esame approfondito"
-      description="Una lettura completa in sola lettura: Trama esegue le verifiche reali, poi confronta i cambiamenti dal punto fisso con le regole del codice e con il piano."
+      title={t("focus.title")}
+      description={t("focus.start.description")}
       icon={<IconFocus2 className="size-4 text-muted-foreground" stroke={1.7} />}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={() => setDialog(null)}>
-            Annulla
+            {t("focus.start.cancel")}
           </Button>
           <Button size="sm" disabled={!fixedPoint.trim() || opening} onClick={() => void submit()}>
-            Avvia l'esame
+            {t("focus.start.submit")}
           </Button>
         </>
       }
     >
       <div className="space-y-3 pt-2" data-testid="focus-start">
         <div>
-          <Label>Cosa esaminare</Label>
-          <div className="-mx-2 flex max-h-44 flex-col gap-0.5 overflow-y-auto" role="radiogroup" aria-label="Cosa esaminare">
+          <Label>{t("focus.start.what")}</Label>
+          <div className="-mx-2 flex max-h-44 flex-col gap-0.5 overflow-y-auto" role="radiogroup" aria-label={t("focus.start.what")}>
             <button type="button" role="radio" aria-checked={target.kind === "project"} className={OPTION} onClick={() => setTarget({ kind: "project" })}>
               <IconFolders className="size-4 shrink-0 text-muted-foreground" stroke={1.6} />
-              <span className="min-w-0 flex-1 truncate">L'intero progetto</span>
+              <span className="min-w-0 flex-1 truncate">{t("focus.start.project")}</span>
             </button>
             {modules.map((module) => {
               const option: FocusStartTarget = { kind: "module", moduleId: module.id };
@@ -98,7 +100,7 @@ export function FocusStartDialog() {
                   onClick={() => setTarget(option)}
                 >
                   <IconFolder className="size-4 shrink-0 text-muted-foreground" stroke={1.6} />
-                  <span className="min-w-0 flex-1 truncate">Il modulo {module.name}</span>
+                  <span className="min-w-0 flex-1 truncate">{t("focus.start.module", { name: module.name })}</span>
                   <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{module.relativePath}</span>
                 </button>
               );
@@ -106,7 +108,7 @@ export function FocusStartDialog() {
           </div>
         </div>
         <div>
-          <Label>Punto fisso</Label>
+          <Label>{t("focus.start.fixedPoint")}</Label>
           <Input
             value={fixedPoint}
             onChange={(e) => {
@@ -116,15 +118,15 @@ export function FocusStartDialog() {
             onKeyDown={(e) => {
               if (e.key === "Enter") void submit();
             }}
-            placeholder="main, un tag, un commit o HEAD~5"
-            aria-label="Punto fisso"
+            placeholder={t("focus.start.placeholder")}
+            aria-label={t("focus.start.fixedPoint")}
             aria-invalid={error !== null}
             aria-describedby="focus-start-note"
             className="font-mono"
             autoFocus
           />
           {suggestions.length ? (
-            <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Punti fissi proposti">
+            <div className="mt-1.5 flex flex-wrap gap-1" aria-label={t("focus.start.suggestions")}>
               {suggestions.map((ref) => (
                 <button
                   key={ref}
@@ -150,8 +152,7 @@ export function FocusStartDialog() {
           </p>
         ) : (
           <p className="text-ui-xs text-muted-foreground" id="focus-start-note">
-            Trama confronta l'ultimo commit con il punto fisso e non cambia il codice. L'esame occupa tutta la finestra: gli altri progetti continuano a
-            lavorare e le notifiche aspettano che tu esca.
+            {t("focus.start.note")}
           </p>
         )}
       </div>

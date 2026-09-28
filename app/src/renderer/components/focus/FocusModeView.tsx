@@ -1,6 +1,7 @@
 import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
+import type { Translate } from "@shared/i18n";
 import { evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf } from "@shared/findings";
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { cn } from "@/lib/cn";
+import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 
 type StepState = "done" | "running" | "waiting" | "failed" | "skipped";
@@ -39,53 +41,55 @@ function Step({ state, title, children }: { state: StepState; title: string; chi
 const axisState = (axis: AuditAxis): StepState =>
   axis.status === "done" ? "done" : axis.status === "running" ? "running" : axis.status === "failed" ? "failed" : axis.status === "skipped" ? "skipped" : "waiting";
 
-function axisNote(axis: AuditAxis): string {
-  if (axis.status === "waiting") return "Parte dopo le verifiche reali.";
-  if (axis.status === "running") return axis.model ? `In esame con ${axis.model}.` : "In esame.";
-  if (axis.status === "skipped") return axis.report ? plainText(axis.report) : "Saltato.";
-  if (axis.status === "failed") return axis.failure ?? "L'asse non ha prodotto un rapporto.";
-  const n = axis.findings ?? 0;
-  return n === 0 ? "Nessun rilievo." : n === 1 ? "1 rilievo." : `${n} rilievi.`;
+function axisNote(axis: AuditAxis, t: Translate): string {
+  if (axis.status === "waiting") return t("focus.axis.waiting");
+  if (axis.status === "running") return axis.model ? t("focus.axis.runningWith", { model: axis.model }) : t("focus.axis.running");
+  if (axis.status === "skipped") return axis.report ? plainText(axis.report) : t("focus.axis.skipped");
+  if (axis.status === "failed") return axis.failure ?? t("focus.axis.failed");
+  const count = axis.findings ?? 0;
+  return count === 0 ? t("focus.axis.none") : t("focus.axis.findings", { count });
 }
 
 /** Left: how far the examination got, the real checks first (spec #124). */
 function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
+  const t = useT();
   // An examination that failed before the axes started failed in its checks.
   const checksState: StepState = audit.status === "checking" ? "running" : audit.status === "failed" && !audit.standards.startedAt ? "failed" : "done";
   const verifying: StepState = audit.status === "verifying" ? "running" : audit.status === "done" ? "done" : audit.status === "failed" ? "failed" : "waiting";
   return (
-    <ol className="divide-y divide-[color:var(--app-surface-divider)]" aria-label="Avanzamento">
-      <Step state="done" title="Punto fisso">
+    <ol className="divide-y divide-[color:var(--app-surface-divider)]" aria-label={t("focus.column.progress")}>
+      <Step state="done" title={t("focus.step.fixedPoint")}>
         <p className="text-ui-sm text-muted-foreground">
-          <span className="font-mono text-[11.5px] text-foreground/85" title={audit.fixedPoint}>{fixedPointText(audit)}</span>
+          <span className="font-mono text-[11.5px] text-foreground/85" title={audit.fixedPoint}>{fixedPointText(audit, t)}</span>
           <Sep />
-          {audit.changedFiles.length === 1 ? "1 file cambiato" : `${audit.changedFiles.length} file cambiati`}
-          {audit.commits ? <><Sep />{audit.commits.length === 1 ? "1 commit" : `${audit.commits.length} commit`}</> : null}
+          {t("focus.files", { count: audit.changedFiles.length })}
+          {audit.commits ? <><Sep />{t("focus.commits", { count: audit.commits.length })}</> : null}
         </p>
       </Step>
-      <Step state={checksState} title="Verifiche reali">
+      <Step state={checksState} title={t("focus.step.checks")}>
         <div className="space-y-0.5" data-testid="focus-audit-checks">
           {checks.length ? (
             checks.map((check) => <EvidenceRow key={check} check={check} evidence={audit.checks.find((c) => c.check === check) ?? null} />)
           ) : (
-            <p className="text-ui-sm text-muted-foreground">Nessuna verifica applicabile a questo progetto.</p>
+            <p className="text-ui-sm text-muted-foreground">{t("focus.noChecks")}</p>
           )}
         </div>
       </Step>
       {(["standards", "spec"] as const).map((name) => (
-        <Step key={name} state={axisState(audit[name])} title={`Asse ${AXIS_TITLE[name]}`}>
-          <p className={cn("text-ui-sm", audit[name].status === "failed" ? "text-destructive" : "text-muted-foreground")}>{axisNote(audit[name])}</p>
-          {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground">Fonte: {audit.specSource}</p> : null}
+        <Step key={name} state={axisState(audit[name])} title={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
+          <p className={cn("text-ui-sm", audit[name].status === "failed" ? "text-destructive" : "text-muted-foreground")}>{axisNote(audit[name], t)}</p>
+          {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{t("focus.specSource", { source: audit.specSource })}</p> : null}
         </Step>
       ))}
-      <Step state={verifying} title="Verifica delle prove">
-        <p className="text-ui-sm text-muted-foreground">Trama ricontrolla ogni prova; un rilievo grave che non può ricontrollare passa a un modello più forte.</p>
+      <Step state={verifying} title={t("focus.step.verify")}>
+        <p className="text-ui-sm text-muted-foreground">{t("focus.step.verifyNote")}</p>
       </Step>
     </ol>
   );
 }
 
 function FindingButton({ finding, selected, onSelect }: { finding: AuditFinding; selected: boolean; onSelect(): void }) {
+  const t = useT();
   const { evidence } = finding;
   return (
     <li data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
@@ -100,11 +104,13 @@ function FindingButton({ finding, selected, onSelect }: { finding: AuditFinding;
       >
         <span className="flex flex-wrap items-center gap-1.5">
           <Badge tone={FINDING_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
-          {finding.severity === "serious" ? <Badge tone="destructive">Grave</Badge> : null}
+          {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
           <span className="text-ui text-foreground">{finding.title}</span>
         </span>
         <span className="block text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
-          Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence)}
+          {withNodes(t("focus.evidence"), {
+            evidence: evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence),
+          })}
         </span>
       </button>
     </li>
@@ -113,6 +119,7 @@ function FindingButton({ finding, selected, onSelect }: { finding: AuditFinding;
 
 /** Center: the findings of each axis, kept apart as the skill presents them, then each axis's own report. */
 function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: string | null; onSelect(id: string): void }) {
+  const t = useT();
   const tally = findingTally(audit);
   return (
     <div className="space-y-4">
@@ -126,7 +133,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
       {(["standards", "spec"] as const).map((name) => {
         const axis = audit[name];
         return (
-          <section key={name} data-testid="audit-axis" data-axis={name} data-status={axis.status} aria-label={`Asse ${AXIS_TITLE[name]}`}>
+          <section key={name} data-testid="audit-axis" data-axis={name} data-status={axis.status} aria-label={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
             <div className="mb-1.5 flex items-center gap-2">
               <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{AXIS_TITLE[name]}</h3>
               {name === "spec" && audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
@@ -140,10 +147,10 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-ui-sm text-muted-foreground">Nessun rilievo.</p>
+                  <p className="text-ui-sm text-muted-foreground">{t("focus.axis.none")}</p>
                 )}
                 <details className="mt-2 rounded-lg border border-[color:var(--app-surface-divider)] px-3 py-2">
-                  <summary className="cursor-pointer text-ui-sm text-muted-foreground">Rapporto dell'asse {AXIS_TITLE[name]}</summary>
+                  <summary className="cursor-pointer text-ui-sm text-muted-foreground">{t("focus.axis.report", { axis: AXIS_TITLE[name] })}</summary>
                   <div className="mt-2 text-ui">
                     <ChatMarkdown text={axis.report ?? ""} plain />
                   </div>
@@ -152,7 +159,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
             ) : (
               <p className={cn("flex items-center gap-1.5 text-ui-sm", axis.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
                 {axis.status === "running" ? <Spinner /> : null}
-                {axisNote(axis)}
+                {axisNote(axis, t)}
               </p>
             )}
           </section>
@@ -164,21 +171,22 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
 
 /** Right: the proof of the selected finding and how Trama verified it (F02); a hypothesis stays one. */
 function Proof({ finding }: { finding: AuditFinding | null }) {
-  if (!finding) return <p className="text-ui text-muted-foreground/70">Scegli un rilievo per vedere la sua prova.</p>;
+  const t = useT();
+  if (!finding) return <p className="text-ui text-muted-foreground/70">{t("focus.proof.pick")}</p>;
   const { evidence } = finding;
   return (
     <div className="space-y-3" data-testid="focus-proof" data-finding={finding.id}>
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge tone={FINDING_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
-          {finding.severity === "serious" ? <Badge tone="destructive">Grave</Badge> : null}
+          {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
         </div>
         <p className="text-ui text-foreground">{finding.title}</p>
       </div>
       <div>
-        <h4 className="text-ui-sm font-medium text-muted-foreground">Prova</h4>
+        <h4 className="text-ui-sm font-medium text-muted-foreground">{t("focus.proof.title")}</h4>
         {!evidence ? (
-          <p className="mt-1 text-ui-sm text-muted-foreground">L'asse non ha dato una prova.</p>
+          <p className="mt-1 text-ui-sm text-muted-foreground">{t("focus.proof.none")}</p>
         ) : evidence.kind === "reproduction" ? (
           <p className="mt-1 whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p>
         ) : (
@@ -186,7 +194,7 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
             <p className="mt-1 font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</p>
             {evidence.kind === "fileLine" && evidence.quote ? (
               <p className="mt-1 text-ui-sm text-muted-foreground">
-                Riga citata: <code className="font-mono text-[11.5px] text-foreground/85">{evidence.quote}</code>
+                {withNodes(t("focus.proof.quote"), { quote: <code className="font-mono text-[11.5px] text-foreground/85">{evidence.quote}</code> })}
               </p>
             ) : null}
           </>
@@ -194,13 +202,13 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
       </div>
       {finding.basis ? (
         <div>
-          <h4 className="text-ui-sm font-medium text-muted-foreground">Come l'ha verificata Trama</h4>
+          <h4 className="text-ui-sm font-medium text-muted-foreground">{t("focus.proof.basis")}</h4>
           <p className="mt-1 text-ui-sm text-foreground/85" data-testid="audit-finding-basis">{finding.basis}</p>
         </div>
       ) : null}
       {finding.observed ? (
         <div>
-          <h4 className="text-ui-sm font-medium text-muted-foreground">Cosa ha letto Trama</h4>
+          <h4 className="text-ui-sm font-medium text-muted-foreground">{t("focus.proof.observed")}</h4>
           <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2 font-mono text-[11px] leading-[1.55] text-foreground/85">
             {finding.observed}
           </pre>
@@ -224,6 +232,7 @@ function Column({ title, testId, className, children }: { title: string; testId:
  * covers the whole window until the person leaves it; the other projects keep working and their notifications wait.
  */
 export function FocusModeView({ isMac }: { isMac: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const focus = useUi((s) => s.app?.focusMode)!;
   const audit = (project.document.audits ?? []).find((a) => a.id === focus.auditId) ?? null;
@@ -241,13 +250,13 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
 
   const exit = (
     <Button size="sm" onClick={() => void act("focusMode:exit", undefined)}>
-      Esci dall'esame
+      {t("focus.exit")}
     </Button>
   );
   if (!audit) {
     return (
       <div className="chat-content-card flex h-svh w-full flex-col items-center justify-center gap-3" data-focus-mode="">
-        <p className="text-ui text-muted-foreground">Esame non trovato.</p>
+        <p className="text-ui text-muted-foreground">{t("focus.notFound")}</p>
         <div className="cta-row">{exit}</div>
       </div>
     );
@@ -269,7 +278,7 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
         <div className="flex min-w-[12rem] flex-1 items-center gap-2">
           <IconFocus2 className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
           <h1 className="min-w-0 truncate font-system-ui text-ui text-foreground" data-testid="focus-mode-title">
-            <span className="font-medium">Esame approfondito</span> <span className="text-muted-foreground">{focusTargetOf(audit.target, assignment?.objective)}</span>
+            <span className="font-medium">{t("focus.title")}</span> <span className="text-muted-foreground">{focusTargetOf(audit.target, assignment?.objective, t)}</span>
           </h1>
           <span className="flex shrink-0 items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
             <Sep />
@@ -278,14 +287,14 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
           </span>
         </div>
         <div className="no-drag flex flex-wrap items-center justify-end gap-2">
-          <span className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="focus-mode-notifications" title="Le notifiche arrivano quando esci dall'esame">
+          <span className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="focus-mode-notifications" title={t("focus.pausedHint")}>
             <IconBellPause className="size-3.5" stroke={1.7} />
-            {focus.pausedNotifications ? `Notifiche in pausa: ${focus.pausedNotifications}` : "Notifiche in pausa"}
+            {focus.pausedNotifications ? t("focus.pausedCount", { count: focus.pausedNotifications }) : t("focus.paused")}
           </span>
           <div className="cta-row">
             {running ? null : (
               <Button size="sm" variant="outline" onClick={() => void examineAgain(audit)}>
-                Esamina di nuovo
+                {t("focus.again")}
               </Button>
             )}
             {exit}
@@ -296,17 +305,15 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
         className="grid min-h-0 flex-1 grid-cols-[minmax(13rem,15rem)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(0,auto)] lg:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(18rem,24rem)] lg:grid-rows-1"
         data-testid="focus-columns"
       >
-        <Column title="Avanzamento" testId="focus-progress" className="row-span-2 border-r border-[color:var(--app-surface-divider)] lg:row-span-1">
+        <Column title={t("focus.column.progress")} testId="focus-progress" className="row-span-2 border-r border-[color:var(--app-surface-divider)] lg:row-span-1">
           <Progress audit={audit} checks={checks} />
-          <p className="mt-3 text-ui-sm text-muted-foreground">
-            Sola lettura: l'esame non cambia il codice. Le verifiche sono fatti; un rilievo è verificato solo quando Trama ha ricontrollato la sua prova.
-          </p>
+          <p className="mt-3 text-ui-sm text-muted-foreground">{t("focus.readOnly")}</p>
         </Column>
-        <Column title="Rilievi" testId="focus-findings">
+        <Column title={t("focus.column.findings")} testId="focus-findings">
           <Findings audit={audit} selected={shown?.id ?? null} onSelect={setSelected} />
         </Column>
         <Column
-          title="Prova"
+          title={t("focus.column.proof")}
           testId="focus-proof-column"
           className="max-h-[45vh] border-t border-[color:var(--app-surface-divider)] lg:max-h-none lg:border-t-0 lg:border-l"
         >

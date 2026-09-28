@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { formatRelativeTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
@@ -107,6 +108,7 @@ function AxisBody({ axis, name, target }: { axis: AuditAxis; name: "standards" |
  * finding with its proof and its verification (F02).
  */
 export function AuditView({ id }: { id: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
@@ -171,7 +173,7 @@ export function AuditView({ id }: { id: string }) {
       ) : null}
       <div className="cta-row px-4 py-3">
         <Button size="sm" variant="outline" onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
-          <IconFocus2 /> Apri a tutto schermo
+          <IconFocus2 /> {t("focus.openFullScreen")}
         </Button>
         {running || (target.kind === "candidate" && !candidate) ? null : (
           <Button size="sm" variant="outline" onClick={() => void examineAgain(audit)}>

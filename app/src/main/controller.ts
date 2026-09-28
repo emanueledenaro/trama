@@ -213,7 +213,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translate } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -4989,14 +4989,15 @@ export class TramaController {
   async startScopedFocusAudit(target: { kind: "module"; moduleId: string } | { kind: "project" }, fixedPoint: string): Promise<string> {
     const project = this.requireProject();
     const module = target.kind === "module" ? project.snapshot.modules.find((m) => m.id === target.moduleId) : null;
-    if (target.kind === "module" && !module) throw new DomainError("Il modulo non esiste più dopo l'ultima scansione.");
+    const language = this.state.language;
+    if (target.kind === "module" && !module) throw new DomainError(translate(language, "focus.error.moduleGone"));
     const scoped = module ? { kind: "module" as const, moduleId: module.id, moduleName: module.name, path: module.relativePath } : { kind: "project" as const };
     let audit: FocusAudit;
     let diff: string;
     try {
-      const range = await captureFocusRange(project.rootPath, fixedPoint, module ? { path: module.relativePath, name: module.name } : null);
-      if (this.state.project !== project) throw new DomainError("Il progetto è cambiato mentre Trama leggeva il punto fisso.");
-      audit = openScopedAudit(project.document, scoped, range);
+      const range = await captureFocusRange(project.rootPath, fixedPoint, module ? { path: module.relativePath, name: module.name } : null, language);
+      if (this.state.project !== project) throw new DomainError(translate(language, "focus.error.projectChanged"));
+      audit = openScopedAudit(project.document, scoped, range, new Date(), language);
       diff = range.diff;
     } catch (error) {
       if (error instanceof AuditError) throw new DomainError(error.message);
@@ -5040,9 +5041,10 @@ export class TramaController {
     const [only] = focus.held;
     if (focus.held.length === 1 && only) this.host.notify(only.title, only.body, only.sound);
     else {
+      const language = this.state.language;
       this.host.notify(
-        "Trama: novità durante l'esame approfondito",
-        `${focus.held.length} notifiche sono arrivate durante l'esame approfondito: ${focus.held.map((n) => n.title.replace(/^Trama: /, "")).join("; ")}.`,
+        translate(language, "focus.notify.title"),
+        translate(language, "focus.notify.body", { count: focus.held.length, titles: focus.held.map((n) => n.title.replace(/^Trama: /, "")).join("; ") }),
         focus.held.some((n) => n.sound),
       );
     }

@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
 import { AuditError } from "./audit";
 import { git } from "./process";
 import { isSensitive } from "./workspace";
@@ -26,11 +27,11 @@ export const COMMIT_LIMIT = 50;
  * A fixed point is a revision git can read: a SHA, a branch, a tag, `HEAD~5`. Trama refuses anything that could
  * pass for an option or a range, so the text never changes the git command it goes into.
  */
-export function readFixedPointRef(text: string): string {
+export function readFixedPointRef(text: string, language: Language = DEFAULT_LANGUAGE): string {
   const ref = text.trim();
-  if (!ref) throw new AuditError("fixed_point_missing", "Scrivi il punto fisso: un commit, un branch o un tag, per esempio main o HEAD~5.");
+  if (!ref) throw new AuditError("fixed_point_missing", translate(language, "focus.error.pointMissing"));
   if (ref.startsWith("-") || /\s/.test(ref) || ref.includes("..") || /[\0-\x1f\x7f]/.test(ref)) {
-    throw new AuditError("fixed_point_invalid", `"${ref}" non è un punto fisso valido: scrivi un commit, un branch o un tag, per esempio main o HEAD~5.`);
+    throw new AuditError("fixed_point_invalid", translate(language, "focus.error.pointInvalid", { ref }));
   }
   return ref;
 }
@@ -39,21 +40,26 @@ export function readFixedPointRef(text: string): string {
 export const modulePathspec = (path: string | null): string[] => (path && path !== "." ? ["--", path] : ["--"]);
 
 /** `module` limits the diff to a module's folder; its name is the one the error shows. Null for the whole project. */
-export async function captureFocusRange(root: string, text: string, module: { path: string; name: string } | null): Promise<FocusRange> {
+export async function captureFocusRange(
+  root: string,
+  text: string,
+  module: { path: string; name: string } | null,
+  language: Language = DEFAULT_LANGUAGE,
+): Promise<FocusRange> {
   const path = module?.path ?? null;
-  const ref = readFixedPointRef(text);
+  const ref = readFixedPointRef(text, language);
   const headSHA = (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim();
-  if (!headSHA) throw new AuditError("no_head", "Il progetto non ha ancora un commit: l'esame approfondito confronta l'ultimo commit con un punto fisso.");
+  if (!headSHA) throw new AuditError("no_head", translate(language, "focus.error.noCommit"));
   const fixedPoint = (await git(["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`], root).catch(() => "")).trim();
-  if (!fixedPoint) throw new AuditError("fixed_point_not_found", `Il punto fisso "${ref}" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.`);
+  if (!fixedPoint) throw new AuditError("fixed_point_not_found", translate(language, "focus.error.pointNotFound", { ref }));
   const pathspec = modulePathspec(path);
   const listed = (await git(["diff", "--name-only", "-z", "--no-renames", `${fixedPoint}...HEAD`, ...pathspec], root)).split("\0").filter(Boolean).sort();
   const excludedSensitiveFiles = listed.filter(isSensitive);
   const changedFiles = listed.filter((p) => !isSensitive(p));
   if (!changedFiles.length) {
-    const where = module ? ` nel modulo ${module.name}` : "";
-    const hidden = excludedSensitiveFiles.length ? ", a parte file sensibili che Trama non legge" : "";
-    throw new AuditError("empty_diff", `Nessun cambiamento${where} tra il punto fisso "${ref}" e l'ultimo commit${hidden}: scegli un punto fisso più indietro.`);
+    const hidden = excludedSensitiveFiles.length > 0;
+    const key = module ? (hidden ? "focus.error.emptyDiffModuleSensitive" : "focus.error.emptyDiffModule") : hidden ? "focus.error.emptyDiffSensitive" : "focus.error.emptyDiff";
+    throw new AuditError("empty_diff", translate(language, key, { ref, name: module?.name ?? "" }));
   }
   const diff = await git(["diff", "--no-renames", `${fixedPoint}...HEAD`, "--", ...changedFiles], root);
   const log = await git(["log", "--oneline", "--no-decorate", `-${COMMIT_LIMIT}`, `${fixedPoint}..HEAD`, ...pathspec], root);

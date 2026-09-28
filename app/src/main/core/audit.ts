@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH, translate, translator } from "@shared/i18n";
 import { randomUUID } from "node:crypto";
 import type { AuditAxis, AuditFinding, Candidate, CandidateEvidence, FindingEvidence, FocusAudit, FocusTarget, GitHubIssue, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { focusTargetOf } from "@shared/findings";
@@ -182,9 +182,12 @@ export function openScopedAudit(
   target: Exclude<FocusTarget, { kind: "candidate" }>,
   range: { ref: string; fixedPoint: string; headSHA: string; changedFiles: string[]; commits: string[] },
   now = new Date(),
+  language: Language = DEFAULT_LANGUAGE,
 ): FocusAudit {
   const running = latestAuditOn(document, target);
-  if (running && isAuditRunning(running)) throw new AuditError("audit_running", `L'esame approfondito ${focusTargetOf(target)} è già in corso.`);
+  if (running && isAuditRunning(running)) {
+    throw new AuditError("audit_running", translate(language, "focus.error.running", { target: focusTargetOf(target, null, translator(language)) }));
+  }
   const audit: FocusAudit = {
     id: shortId("F", randomUUID()),
     target: { ...target },

@@ -1,6 +1,7 @@
 import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { moduleQuestion } from "@/lib/askCoordinator";
 import { OverlapMarkSign, OverlapRow } from "@/components/OverlapNotice";
@@ -13,6 +14,7 @@ export function MapView() {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openFocusStart = useUi((s) => s.openFocusStart);
+  const t = useT();
   const { snapshot } = project;
   const marks = project.overlaps?.modules ?? {};
   return (
@@ -39,7 +41,7 @@ export function MapView() {
         ) : null}
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "project" })}>
-            <IconFocus2 stroke={1.8} /> Esame approfondito del progetto
+            <IconFocus2 stroke={1.8} /> {t("focus.openProject")}
           </Button>
         </div>
       </InspectorSection>
@@ -72,6 +74,7 @@ export function ModuleView({ id }: { id: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
   const openFocusStart = useUi((s) => s.openFocusStart);
+  const t = useT();
   const module = project.snapshot.modules.find((m) => m.id === id);
   const fileMarks = project.overlaps?.files ?? {};
   const moduleOverlaps = (project.overlaps?.items ?? []).filter((item) => item.modules.some((m) => m.id === id));
@@ -87,7 +90,7 @@ export function ModuleView({ id }: { id: string }) {
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{module.relativePath}</p>
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "module", moduleId: module.id })}>
-            <IconFocus2 stroke={1.8} /> Esame approfondito
+            <IconFocus2 stroke={1.8} /> {t("focus.openModule")}
           </Button>
           <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore su questo modulo
