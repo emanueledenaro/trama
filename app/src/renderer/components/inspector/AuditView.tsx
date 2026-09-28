@@ -1,7 +1,7 @@
 import { IconFocus2, IconRotateClockwise } from "@tabler/icons-react";
 import { plainText } from "@shared/plainLanguage";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
-import { auditFindings, evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { RecordName } from "@/components/chat/ReferenceText";
@@ -143,7 +143,7 @@ function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; a
   );
 }
 
-function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: "standards" | "spec"; audit: FocusAudit }) {
+function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit: FocusAudit }) {
   const t = useT();
   if (axis.status === "waiting") return <EmptyNote>{t("audit.axis.waiting")}</EmptyNote>;
   if (axis.status === "running") {
@@ -192,6 +192,7 @@ function Verdict({ audit }: { audit: FocusAudit }) {
   const running = isRunning(audit);
   const total = auditFindings(audit).length;
   const tally = findingTally(audit);
+  const lensLine = lensSummary(audit, t);
   return (
     <div className="space-y-1" data-testid="focus-audit-verdict">
       <p
@@ -217,6 +218,11 @@ function Verdict({ audit }: { audit: FocusAudit }) {
       {audit.summary ? (
         <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
           {plainText(audit.summary)}
+        </p>
+      ) : null}
+      {audit.summary && lensLine ? (
+        <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-lens-summary">
+          {t("audit.lenses.summary", { summary: lensLine })}
         </p>
       ) : null}
       {tally ? (
@@ -328,6 +334,26 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
           </h5>
           <AxisBody axis={audit.spec} name="spec" audit={audit} />
         </div>
+        {/* Trama's lenses, marked as its additions to the skill (F05). */}
+        {auditLenses(audit).length ? (
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
+              <span className="font-medium">{t("audit.lenses.title")}</span>
+              <Sep />
+              {t("audit.lenses.note")}
+            </p>
+            <Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>
+          </div>
+        ) : null}
+        {auditLenses(audit).map(({ name, lens }) => (
+          <div key={name} data-testid="audit-lens" data-lens={name} data-status={lens.status}>
+            <h5 className="mb-1 flex items-center gap-2 text-ui-sm font-medium text-muted-foreground">
+              {t(LENS_TITLE_KEYS[name])}
+              <Badge tone="outline">{t("audit.lens.addedBy")}</Badge>
+            </h5>
+            <AxisBody axis={lens} name={name} audit={audit} />
+          </div>
+        ))}
       </div>
       {audit.status === "done" ? <Publication audit={audit} /> : null}
       <TechnicalDetail testId="focus-audit-technical">

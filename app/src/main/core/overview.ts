@@ -1,16 +1,7 @@
-import {
-  type AttentionReason,
-  type CandidateReport,
-  type GitHubSnapshot,
-  isOpenQuestion,
-  type ProjectDocument,
-  type ProjectOverview,
-  type RecentProject,
-  type StatusLineView,
-} from "@shared/domain";
+import type { AttentionReason, CandidateReport, GitHubSnapshot, ProjectDocument, ProjectOverview, RecentProject, StatusLineView } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
 import { presenceFreshness, type PresenceView } from "@shared/presence";
-import { type WaitingItem, waitingForYou } from "@shared/waitingForYou";
+import { type WaitingItem, type WaitingKind, waitingForYou } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
 import { currentAssignment } from "./team";
 
@@ -40,10 +31,14 @@ export function summarizeProject(
     status?: StatusLineView | null;
   },
 ): ProjectOverview {
-  // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision.
-  const openDecisions = document.decisionRequests.filter(isOpenQuestion).length;
-  const openMandates = document.mandateRequests.filter((r) => !r.resolution).length;
-  const openTeams = document.team.proposals.filter((p) => !p.resolution).length;
+  // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision. The
+  // counts come from the list of Aspetta te (issue #390), so the overview never shows what the project does not.
+  const reports = Object.fromEntries(document.candidates.flatMap((candidate, index) => (input.candidateReports[index] ? [[candidate.id, input.candidateReports[index]]] : [])));
+  const waiting = waitingForYou(document, { candidateReports: reports });
+  const count = (kind: WaitingKind) => waiting.filter((item) => item.kind === kind).length;
+  const openDecisions = count("question");
+  const openMandates = count("mandate");
+  const openTeams = count("team");
   const pendingDecisions = openDecisions + openMandates + openTeams;
   let blockedWork = 0;
   for (const specialist of document.team.specialists) {
@@ -53,10 +48,7 @@ export function summarizeProject(
     if (current.status === "failed" || current.status === "stopped") blockedWork += 1;
     else if (input.source === "saved" && ACTIVE.includes(current.status)) blockedWork += 1;
   }
-  const toApprove = document.candidates.filter((candidate, index) => {
-    const report = input.candidateReports[index];
-    return report && (report.state === "verified" || report.state === "decided") && !candidate.pullRequest && (!candidate.humanApproval || report.approvalInvalidated);
-  }).length;
+  const toApprove = count("candidate");
   const runningWork = input.runningAssignments;
   const waitingForCapacity = input.waitingForCapacity ?? 0;
   const ci = input.ci ?? null;
@@ -99,7 +91,7 @@ export function summarizeProject(
     waitingForCapacity,
     ci,
     coordinator: coordinatorLine(input.status ?? statusLine(document, null)),
-    waiting: waitingSummary(input.waiting ?? waitingForYou(document)),
+    waiting: waitingSummary(input.waiting ?? waiting),
   };
 }
 

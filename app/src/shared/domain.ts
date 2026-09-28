@@ -33,7 +33,9 @@ export type CardKind =
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
   | "overlap"
   /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
-  | "recap";
+  | "recap"
+  /** Trama reordered the Coordinator's context (ADR 0018); referenceId is the Activity event with the context summary. */
+  | "contextRollover";
 
 export interface ConflictAssessment {
   id: string;
@@ -502,7 +504,18 @@ export interface CoordinatorState {
   threadProvider?: ProviderId;
   /** Set when the person moved the Coordinator to another provider: the next study hands the conversation over. */
   /** `transcript` false: the new session starts without the conversation (an Ask Trama "/clear", M07). */
-  pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean } | null;
+  /**
+   * `summary`: the context summary Trama wrote at a reorder (ADR 0018), handed over in place of the transcript;
+   * `rollover` keeps the thread it replaces, to go back to when the new session cannot open.
+   */
+  pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean; summary?: string; rollover?: ContextRollover } | null;
+  /**
+   * A reorder of the context Trama owes the Coordinator (ADR 0018): marked when a reading passes the threshold or the
+   * person asks for it, made between turns, never during one. `failedAt`: the last attempt could not open a new session.
+   */
+  pendingRollover?: { reason: "threshold" | "manual"; markedAt: string; failedAt?: string | null } | null;
+  /** The last context window the provider reported for the Coordinator, for the limit of the provider's own compaction. */
+  contextWindow?: number | null;
   injectedStudy: Partial<Record<StudyPart, string>>;
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
@@ -513,12 +526,28 @@ export interface CoordinatorState {
   referencesSent?: string | null;
   /** The late rules (writing, grilling) the thread holds: a thread opened before they changed receives them in a turn. */
   rulesSent?: string | null;
-  /** Percent of the context window above which the chat shows a notice (5-95). */
+  /** Percent of the context window above which Trama reorders the context (5-95, ADR 0018). */
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
   contextWarnedAt?: number | null;
   /** The learning loop (ADR 0014); absent in documents written before it. */
   learning?: CoordinatorLearning;
+}
+
+/** The thread a context reorder replaces (ADR 0018), with what it had received, to go back to it on a failure. */
+export interface ContextRollover {
+  reason: "threshold" | "manual";
+  /** The Activity event that holds the context summary. */
+  summaryEventId: string;
+  threadId: string;
+  threadModel: string | null;
+  injectedStudy: Partial<Record<StudyPart, string>>;
+  memorySentToThread: string | null;
+  practicesSent: string | null;
+  referencesSent: string | null;
+  rulesSent: string | null;
+  liveFromSequence: number;
+  skillsIndexSent: string | null;
 }
 
 export interface CoordinatorLearning {
@@ -579,6 +608,8 @@ export interface AssignmentTurn {
   startedAt: string;
   endedAt: string | null;
   outcome: "completed" | "interrupted" | "failed" | null;
+  /** The highest share of the context window the turn used, in percent (ADR 0018); absent when the provider reported none. */
+  contextPercent?: number | null;
 }
 
 export interface AssignmentStop {
@@ -1108,7 +1139,11 @@ export interface Candidate {
   updatedAt: string;
   evidence: Record<string, CandidateEvidence>;
   technicalReview: TechnicalReview | null;
-  clearance: { actor: string; fingerprint: string; at: string } | null;
+  /**
+   * The Coordinator's green light. `mandateVersion` is the mandate it was given under (issue #41): Trama merges on it only
+   * while that mandate is in force, so a green light without it, or from an earlier mandate, needs a new one.
+   */
+  clearance: { actor: string; fingerprint: string; at: string; mandateVersion?: number } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
   /**
    * mergedAt: when Trama saw the pull request merged on GitHub. headSHA: the commit Trama pushed, the only head its merge
@@ -1172,6 +1207,19 @@ export interface CandidateMerge {
   at: string;
   /** The merge commit on GitHub, when it is known. */
   mergeSHA?: string | null;
+  /** The mandate version a merge on the Coordinator's green light ran under (issue #41); null on the person's ok. */
+  mandateVersion?: number | null;
+  /** A serious destructive change the Coordinator does not merge (issue #41): it waits for the person. */
+  stop?: MergeStop | null;
+}
+
+/** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */
+export interface MergeStop {
+  reasons: string[];
+  consequences: string[];
+  alternatives: string[];
+  /** When the person chose not to merge it: it leaves Aspetta te and stays on the candidate. */
+  acknowledgedAt: string | null;
 }
 
 export interface InterfaceShot {
@@ -1655,6 +1703,13 @@ export interface AuditFinding {
 }
 
 /**
+ * Trama's own lenses of focus mode (F05, issue #129): security, test quality and agreement between documents and code.
+ * They are not in AI Hero's skills: Trama adds them next to the two axes of code-review, each as a read-only session
+ * whose findings go through the same verification as the axes' (F02).
+ */
+export type LensName = "security" | "tests" | "docs";
+
+/**
  * What the person made of a finding with one click (F04, issue #128). "ticket": a found problem in Trama's ledger, with
  * its GitHub issue when the repository is linked, else kept as Trama's own work. "assignment": the correction given
  * to a developer within the mandate. "pactCard": a trade-off put to the person as a question of the Pact.
@@ -1664,7 +1719,7 @@ export type FindingFollowUp =
   | { kind: "assignment"; assignmentId: string; at: string }
   | { kind: "pactCard"; questionId: string; at: string };
 
-/** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
+/** One axis of AI Hero's code-review skill, or one of Trama's lenses, run as a read-only session of its own (F01, F05). */
 export interface AuditAxis {
   /** "skipped": the skill skips the Spec sub-agent when there is no spec. */
   status: "waiting" | "running" | "done" | "skipped" | "failed";
@@ -1701,6 +1756,8 @@ export interface FocusAudit {
   specSource: string | null;
   standards: AuditAxis;
   spec: AuditAxis;
+  /** Trama's lenses (F05), run next to the axes; absent in reports written before them. */
+  lenses?: Record<LensName, AuditAxis>;
   /** The skill's closing line, per axis: total findings and the worst one within each axis. */
   summary: string | null;
   failure: string | null;
