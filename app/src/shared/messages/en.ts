@@ -135,6 +135,15 @@ export const en: Record<keyof typeof it, string> = {
   "github.detail.signedOut": "gh is not signed in. Run {command} in the terminal, then press Check again.",
   "github.detail.signedOutDetail": "gh is not signed in: {detail}. Run {command} in the terminal, then press Check again.",
 
+  // Merge stopped on a destructive change (issue #41)
+  "mergeStop.title": "The Coordinator does not merge this candidate on its own: the choice is yours.",
+  "mergeStop.consequences": "Consequences",
+  "mergeStop.alternatives": "What you can do",
+  "mergeStop.declined": "You chose not to merge it. It stays here until you ask for a new version.",
+  "mergeStop.decline": "Do not merge",
+  "mergeStop.merge": "Merge anyway",
+  "merge.mandateVersion": "Mandate version {version}.",
+
   // Settings
   "settings.sections": "Settings sections",
   "settings.section.general": "General",

@@ -291,7 +291,7 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
-import { CHECKS_RETRY_MS, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./core/merge";
+import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
@@ -5261,6 +5261,13 @@ export class TramaController {
         this.changedIn(project);
         continue;
       }
+      // A destructive change waits for the person with its consequences and alternatives (issue #41).
+      if (readiness.kind === "destructive") {
+        stopDestructiveMerge(document, candidate, readiness.stop);
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "destructive", reasons: readiness.stop.reasons }, "coordinator"));
+        this.changedIn(project);
+        continue;
+      }
       if (readiness.kind !== "merge" || (readiness.by === "coordinator" && isPaused(document))) continue;
       this.integrating.add(candidate.id);
       try {
@@ -5299,10 +5306,19 @@ export class TramaController {
       if (checks?.state === "MERGED") {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
+        candidate.merge!.mergeSHA = checks.mergeSHA ?? null;
         this.changedIn(project);
         return;
       }
       if (checks?.checks === "failure") throw new DomainError(`Le verifiche della pull request #${pull.number} su GitHub sono rosse: il Coordinatore le sistema prima dell'unione.`);
+      // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
+      const drift = checks ? pullRequestDrift(pull.headSHA, checks) : null;
+      if (drift) {
+        recordMerge(document, candidate, by, "stopped", drift);
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason: drift }, by));
+        this.changedIn(project);
+        return;
+      }
       const message = await this.candidateMessage(project, candidate);
       const authority = by === "coordinator" ? "Via libera del Coordinatore" : "Ok della persona sulle schermate";
       const merged = await mergePullRequest(repository, pull.number, {
@@ -5317,6 +5333,18 @@ export class TramaController {
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
     } catch (error) {
       const reason = (error as Error).message;
+      // The request may have merged before its answer got lost (a timeout): GitHub says so, and nothing merges twice (issue #41).
+      const pull = candidate.pullRequest;
+      const after = pull && !(error instanceof PushRefusedError) ? await readPullRequestStatus(repository, pull.number).catch(() => null) : null;
+      if (pull && after?.state === "MERGED") {
+        pull.mergedAt = after.mergedAt ?? new Date().toISOString();
+        pull.mergedBy = by;
+        recordMerge(document, candidate, by, "merged");
+        candidate.merge!.mergeSHA = after.mergeSHA ?? null;
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
+        this.changedIn(project);
+        return;
+      }
       // The mandate or a fixed ban stopped the push: nothing to try again until the person changes something.
       recordMerge(document, candidate, by, error instanceof PushRefusedError ? "stopped" : "failed", reason);
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason }, by));
@@ -5376,6 +5404,15 @@ export class TramaController {
     approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
     this.changed();
     await this.integrateCandidates(project);
+  }
+
+  /** The person chose not to merge a destructive candidate the Coordinator stopped (issue #41): it leaves Aspetta te. */
+  declineMergeByPerson(candidateId: string): void {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    declineDestructiveMerge(candidate);
+    this.changed();
   }
 
   /**

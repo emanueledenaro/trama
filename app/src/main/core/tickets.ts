@@ -105,6 +105,12 @@ export interface PullRequestStatus {
   state: "OPEN" | "CLOSED" | "MERGED";
   mergedAt: string | null;
   checks: "success" | "failure" | "pending" | "none";
+  /** The commit at the head of the pull request, when read (issue #41). */
+  headSHA?: string | null;
+  /** False when GitHub finds conflicts with the base; null while it computes it or when not read (issue #41). */
+  mergeable?: boolean | null;
+  /** The merge commit, once merged and when read (issue #41). */
+  mergeSHA?: string | null;
 }
 
 /** What still prevents closing the ticket: every criterion ticked, a merged pull request with green checks. */

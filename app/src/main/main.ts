@@ -172,6 +172,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "pactDemo:approve": () => controller.approvePactDemo(),
   "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
   "candidate:reject": ({ candidateId, note }) => controller.rejectCandidateByPerson(candidateId, note),
+  "candidate:declineMerge": ({ candidateId }) => controller.declineMergeByPerson(candidateId),
   "candidate:shot": ({ candidateId, index }) => controller.interfaceShot(candidateId, index),
   "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),

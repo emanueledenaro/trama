@@ -1025,7 +1025,11 @@ export interface Candidate {
   updatedAt: string;
   evidence: Record<string, CandidateEvidence>;
   technicalReview: TechnicalReview | null;
-  clearance: { actor: string; fingerprint: string; at: string } | null;
+  /**
+   * The Coordinator's green light. `mandateVersion` is the mandate it was given under (issue #41): Trama merges on it only
+   * while that mandate is in force, so a green light without it, or from an earlier mandate, needs a new one.
+   */
+  clearance: { actor: string; fingerprint: string; at: string; mandateVersion?: number } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
   /**
    * mergedAt: when Trama saw the pull request merged on GitHub. headSHA: the commit Trama pushed, the only head its merge
@@ -1089,6 +1093,19 @@ export interface CandidateMerge {
   at: string;
   /** The merge commit on GitHub, when it is known. */
   mergeSHA?: string | null;
+  /** The mandate version a merge on the Coordinator's green light ran under (issue #41); null on the person's ok. */
+  mandateVersion?: number | null;
+  /** A serious destructive change the Coordinator does not merge (issue #41): it waits for the person. */
+  stop?: MergeStop | null;
+}
+
+/** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */
+export interface MergeStop {
+  reasons: string[];
+  consequences: string[];
+  alternatives: string[];
+  /** When the person chose not to merge it: it leaves Aspetta te and stays on the candidate. */
+  acknowledgedAt: string | null;
 }
 
 export interface InterfaceShot {

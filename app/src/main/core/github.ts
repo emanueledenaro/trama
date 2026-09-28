@@ -267,16 +267,27 @@ export async function mergePullRequest(repository: string, number: number, input
 /** State of a pull request and the rollup of its checks, from gh. */
 export async function readPullRequestStatus(repository: string, number: number): Promise<import("./tickets").PullRequestStatus> {
   const raw = JSON.parse(
-    await run("gh", ["pr", "view", String(number), "--repo", repository, "--json", "number,state,mergedAt,statusCheckRollup"], {
+    await run("gh", ["pr", "view", String(number), "--repo", repository, "--json", "number,state,mergedAt,statusCheckRollup,headRefOid,mergeable,mergeCommit"], {
       env: ghEnvironment(),
       timeout: 20_000,
     }),
-  ) as { number: number; state: string; mergedAt: string | null; statusCheckRollup?: { conclusion?: string | null; state?: string | null; status?: string | null }[] };
+  ) as {
+    number: number;
+    state: string;
+    mergedAt: string | null;
+    statusCheckRollup?: { conclusion?: string | null; state?: string | null; status?: string | null }[];
+    headRefOid?: string | null;
+    mergeable?: string | null;
+    mergeCommit?: { oid?: string | null } | null;
+  };
   return {
     number: raw.number,
     state: raw.state === "MERGED" ? "MERGED" : raw.state === "CLOSED" ? "CLOSED" : "OPEN",
     mergedAt: raw.mergedAt,
     checks: checksConclusion(raw.statusCheckRollup ?? []),
+    headSHA: raw.headRefOid ?? null,
+    mergeable: raw.mergeable === "MERGEABLE" ? true : raw.mergeable === "CONFLICTING" ? false : null,
+    mergeSHA: raw.mergeCommit?.oid ?? null,
   };
 }
 
