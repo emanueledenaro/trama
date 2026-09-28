@@ -2839,7 +2839,8 @@ await fixedBans.scrollIntoViewIfNeeded();
 await mandateShots("26a-project-mandate");
 await projectMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
-if (await page.getByTestId("waiting-summary").count()) throw new Error("The granted project mandate still waits in Aspetta te");
+// The goal the study proposed may still wait (issue #292): only the mandate must have left Aspetta te.
+if (await page.locator('[data-waiting-kind="mandate"]').count()) throw new Error("The granted project mandate still waits in Aspetta te");
 
 // Restricting: the mandate stays in force, one action less, a new version in the history.
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
@@ -2869,7 +2870,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[vietato:git push --for
 await page.keyboard.press("Enter");
 // The refusal is not a card of the chat: the summary above the composer opens it in Aspetta te.
 await page.getByTestId("waiting-summary").getByText("Azione vietata").waitFor({ timeout: 20_000 });
-await page.getByTestId("waiting-summary").getByRole("button", { name: /aspetta te$/ }).click();
+await page.getByTestId("waiting-summary").getByRole("button", { name: /aspett(a|ano) te$/ }).click();
 const bannedItem = page.getByTestId("inspector").locator('[data-testid="waiting-item"][data-waiting-kind="fixedBan"]');
 await bannedItem.waitFor();
 const bannedCard = bannedItem.getByTestId("fixed-ban-card");
