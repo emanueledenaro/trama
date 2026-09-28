@@ -49,6 +49,7 @@ export const BLOCKER_TEXT: Record<string, string> = {
   GATE_FAILED: "La lettura dei revisori va ripetuta",
   REMOTE_CONFLICT: "In conflitto con il lavoro su GitHub",
   WORKTREE_CONFLICT: "Tocca gli stessi file di un altro lavoro",
+  SEMANTIC_CONFLICT: "Incompatibile con un altro lavoro",
 };
 
 /** What code-review writes when there is no spec to compare with (the skill's own words, kept in the records). */

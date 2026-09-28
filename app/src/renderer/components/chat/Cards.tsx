@@ -23,12 +23,14 @@ import {
   type AssignmentStatus,
   type CandidateEvidence,
   type CandidateState,
+  type ConflictAssessment,
   type DeveloperQuestion,
   type DeveloperReport,
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
   type MandateAction,
+  type ProjectDocument,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
@@ -60,6 +62,7 @@ import { DutyFields } from "./DutyFields";
 import { GateField } from "./GateField";
 import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
+import { formatTime } from "@/lib/format";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
@@ -1333,7 +1336,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length && report.state !== "superseded" ? (
         <Field label="Cosa manca">
-          <ul className="space-y-0.5 text-ui-sm">
+          <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
@@ -1595,7 +1598,103 @@ const CONFLICT_LABEL = {
   overlap: { label: "Stessi file", tone: "warning" as const },
   clean: { label: "Nessun conflitto", tone: "success" as const },
   unknown: { label: "Non verificato", tone: "secondary" as const },
+  hypothesis: { label: "Ipotesi", tone: "info" as const },
+  semantic: { label: "Incompatibili", tone: "destructive" as const },
 };
+
+const SCENARIO_RESULT = { pass: "passa", fail: "fallisce", notRun: "non è partito" } as const;
+
+/** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
+function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
+  const candidate = document.candidates.find((c) => c.id === candidateId);
+  if (!candidate) return null;
+  const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const assignment = specialist?.assignments.find((a) => a.id === candidate.assignmentId);
+  return [specialist?.name, assignment?.objective].filter(Boolean).join(", ") || null;
+}
+
+/**
+ * Where a comparison comes from (issue #40): the project, the assignments, the base and the copies compared, and each
+ * source with its own time, so the reading on GitHub, the merge probe and the AI's analysis are never one moment.
+ */
+function ConflictProvenance({ assessment, projectName, document }: { assessment: ConflictAssessment; projectName: string; document: ProjectDocument }) {
+  const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
+  const works = [candidateWork(document, assessment.candidateId), assessment.otherCandidateId ? candidateWork(document, assessment.otherCandidateId) : null].filter(
+    (w): w is string => Boolean(w),
+  );
+  const copies = [assessment.snapshotId, assessment.otherSnapshotId].filter((id): id is string => Boolean(id)).map((id) => id.slice(0, 7));
+  const semantic = assessment.semantic;
+  const times = [
+    assessment.remoteReadAt ? `GitHub letto alle ${formatTime(assessment.remoteReadAt)}` : null,
+    semantic
+      ? `analisi AI alle ${formatTime(semantic.analyzedAt)}${semantic.carriedFrom ? " su copie precedenti" : ""}`
+      : `prova di fusione alle ${formatTime(assessment.checkedAt)}`,
+    semantic?.scenario ? `scenario alle ${formatTime(semantic.scenario.ranAt)}` : null,
+  ].filter((t): t is string => Boolean(t));
+  return (
+    <Field label="Da dove viene">
+      <div className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="conflict-provenance">
+        <p>
+          Progetto {projectName}
+          {works.length ? (
+            <>
+              <Sep />
+              {works.length === 1 ? "incarico" : "incarichi"} {works.join("; ")}
+            </>
+          ) : null}
+        </p>
+        <p>
+          base <span className="font-mono text-[11px]">{(candidate?.baseSHA ?? assessment.remoteSHA).slice(0, 7)}</span>
+          <Sep />
+          {copies.length === 1 ? "copia" : "copie"} <span className="font-mono text-[11px]">{copies.join(" e ")}</span>
+          {assessment.otherCandidateId ? null : (
+            <>
+              <Sep />
+              GitHub <span className="font-mono text-[11px]">{assessment.remoteSHA.slice(0, 7)}</span>
+            </>
+          )}
+        </p>
+        <p>
+          {times.map((time, index) => (
+            <span key={time}>
+              {index ? <Sep /> : null}
+              {time}
+            </span>
+          ))}
+        </p>
+      </div>
+    </Field>
+  );
+}
+
+/** The AI's reading of a semantic risk and the scenario that tests it on the combined candidate (issue #40). */
+function SemanticFields({ assessment }: { assessment: ConflictAssessment }) {
+  const semantic = assessment.semantic!;
+  const scenario = semantic.scenario;
+  return (
+    <>
+      <Field label="Lettura dell'AI">
+        <p data-testid="semantic-reading">
+          <span className="text-muted-foreground">
+            {assessment.classification === "semantic" ? "Interpretazione confermata dallo scenario: " : "Interpretazione, non ancora una prova: "}
+          </span>
+          {semantic.explanation}
+        </p>
+      </Field>
+      <Field label="Scenario sul candidato combinato">
+        <p className="text-ui-sm" data-testid="semantic-scenario" data-result={scenario?.result ?? "pending"}>
+          <span className="font-mono text-[11.5px]">{semantic.check}</span>{" "}
+          {scenario ? SCENARIO_RESULT[scenario.result] : "in attesa: Trama unisce i due candidati in una copia separata e lo prova lì"}
+        </p>
+        {scenario?.result === "fail" && scenario.output ? (
+          <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-background-button-secondary)] p-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+            {scenario.output.slice(-800)}
+          </pre>
+        ) : null}
+      </Field>
+    </>
+  );
+}
 
 /** How many files a conflict lists before "Mostra tutti" (issue #271). */
 const CONFLICT_FILES_SHOWN = 5;
@@ -1685,23 +1784,27 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
             : "Il candidato o il lavoro su GitHub sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
         </p>
       ) : null}
-      {exercise ? (
-        <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
-      ) : null}
-      <p className="text-ui text-foreground/90">
-        Candidato{" "}
-        <RecordName id={assessment.candidateId} short />
-        {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
-        {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
-      </p>
-      <p className="mt-1 text-ui-sm text-muted-foreground">
-        <ReferenceText text={assessment.detail} />
-      </p>
-      {assessment.conflictingFiles.length ? (
-        <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
-          <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
-        </Field>
-      ) : null}
+      <div data-testid="conflict-card" data-classification={assessment.classification}>
+        {exercise ? (
+          <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
+        ) : null}
+        <p className="text-ui text-foreground/90">
+          Candidato{" "}
+          <RecordName id={assessment.candidateId} short />
+          {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
+          {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
+        </p>
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={assessment.detail} />
+        </p>
+        {assessment.semantic ? <SemanticFields assessment={assessment} /> : null}
+        {assessment.conflictingFiles.length ? (
+          <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
+            <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
+          </Field>
+        ) : null}
+        {exercise ? null : <ConflictProvenance assessment={assessment} projectName={project.name} document={project.document} />}
+      </div>
     </CardFrame>
   );
 }

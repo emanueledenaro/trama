@@ -3543,3 +3543,223 @@ if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in 
 await waitShots("28e-reopened-paused");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// Issue #40: the chat tells an overlap, a reproduced conflict and a semantic hypothesis apart. Each card names the
+// project, the assignments, the base and the copies compared, with the time of the GitHub reading apart from the time
+// of the AI analysis. A hypothesis stays an interpretation until the scenario on the combined candidate fails; only
+// then it blocks the green light. Both themes.
+const conflictsProject = await mkdtemp(join(tmpdir(), "trama-ui-conflitti-"));
+await cp(resolve("resources/DemoProject"), conflictsProject, { recursive: true });
+const conflictsGit = (...args) => execFileSync("git", ["-C", conflictsProject, ...args], { encoding: "utf8" });
+conflictsGit("init", "-q", "-b", "main");
+conflictsGit("add", ".");
+conflictsGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+const conflictsBase = conflictsGit("rev-parse", "HEAD").trim();
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), conflictsProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let conflictsPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-conflitti-")) conflictsPath = join(dataDir, "Projects", file);
+}
+if (!conflictsPath) throw new Error("Conflicts: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(conflictsPath, "utf8"));
+  const at = (hour, minute = 0) => `2026-09-28T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`;
+  const work = (id, specialistId, objective, hour, branch, issueNumber) => ({
+    id,
+    specialistId,
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["node_test"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(hour),
+    status: "completed",
+    workspace: { sourceRoot: conflictsProject, worktreeRoot: join(conflictsProject, "..", `wt-${id}`), branch, baseSHA: conflictsBase },
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Fatto.",
+    failure: null,
+    updatedAt: at(hour),
+    lastUpdate: "",
+    reportedStatus: "completed",
+  });
+  const cart = work("A-1C0A7E21", "S-ADA", "Sconto nel carrello", 9, "feature/sconto-carrello", 41);
+  const orders = work("A-6B3F90D4", "S-ADA", "Totale degli ordini", 10, "feature/totale-ordini", 43);
+  const rounding = work("A-94E2B7C8", "S-BEA", "Arrotondamento dei prezzi", 9, "feature/arrotondamento-prezzi", 44);
+  const specialist = (id, name, color, assignments) => ({
+    id,
+    name,
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color,
+    tag: "Next.js",
+    createdAt: at(8),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(12),
+    lastUpdate: "",
+    removal: null,
+    assignments,
+  });
+  document.team.specialists.push(specialist("S-ADA", "Ada", "blue", [cart, orders]), specialist("S-BEA", "Bea", "green", [rounding]));
+  const candidate = (id, assignment, snapshotId, hour, changedFiles) => ({
+    id,
+    assignmentId: assignment.id,
+    specialistId: assignment.specialistId,
+    snapshotId,
+    baseSHA: conflictsBase,
+    diff: "",
+    changedFiles,
+    touchedModules: [],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["node_test"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(hour),
+    updatedAt: at(hour),
+    evidence: { node_test: { check: "node_test", result: "pass", command: "npm test", output: "", snapshotId, decisionVersions: {}, recordedAt: at(hour) } },
+    technicalReview: null,
+    clearance: null,
+    humanApproval: null,
+    pullRequest: null,
+  });
+  const cartWork = candidate("C-3F1A9B20", cart, "5e2c8a17d09b4f6e", 10, ["src/lib/prezzi.ts", "src/app/carrello/page.tsx"]);
+  const roundingWork = candidate("C-7D42C1E5", rounding, "a81f3c90b27d4e55", 11, ["src/lib/prezzi.ts"]);
+  const ordersWork = candidate("C-51B0E7A3", orders, "c4d9e012f7a35b68", 12, ["src/lib/ordini.ts"]);
+  document.candidates.push(cartWork, roundingWork, ordersWork);
+  const pullSHA = "8e1d4c7b2a9f0e3d6c5b4a39281706f5e4d3c2b1";
+  document.conflicts = [
+    {
+      id: `${roundingWork.snapshotId}:worktree:${cartWork.snapshotId}`,
+      candidateId: roundingWork.id,
+      snapshotId: roundingWork.snapshotId,
+      remoteSHA: "0b7e5d3c1a2f4e6d8c9b0a1f2e3d4c5b6a7f8e9d",
+      references: [cartWork.id],
+      otherCandidateId: cartWork.id,
+      otherSnapshotId: cartWork.snapshotId,
+      classification: "overlap",
+      conflictingFiles: ["src/lib/prezzi.ts"],
+      detail: "Nessun conflitto testuale tra le due copie di lavoro, ma entrambe cambiano src/lib/prezzi.ts.",
+      checkedAt: at(11, 2),
+    },
+    {
+      id: `${cartWork.snapshotId}:${pullSHA}`,
+      candidateId: cartWork.id,
+      snapshotId: cartWork.snapshotId,
+      remoteSHA: pullSHA,
+      references: ["#42 feature/coupon-checkout"],
+      classification: "conflict",
+      conflictingFiles: ["src/app/carrello/page.tsx"],
+      conflictingLines: { "src/app/carrello/page.tsx": [{ start: 14, end: 18 }] },
+      detail: "La fusione temporanea produce conflitti testuali.",
+      checkedAt: at(10, 6),
+      remoteReadAt: at(10, 5),
+    },
+  ];
+  document.conflicts.push(
+    {
+      id: `${ordersWork.snapshotId}:semantic:${cartWork.snapshotId}`,
+      candidateId: ordersWork.id,
+      snapshotId: ordersWork.snapshotId,
+      remoteSHA: conflictsBase,
+      references: [cartWork.id],
+      otherCandidateId: cartWork.id,
+      otherSnapshotId: cartWork.snapshotId,
+      classification: "hypothesis",
+      conflictingFiles: [],
+      detail: "Lo scenario sul candidato combinato passa: l'incompatibilità resta un'ipotesi.",
+      checkedAt: at(12, 20),
+      semantic: {
+        explanation: "Il totale degli ordini somma i prezzi prima dello sconto del carrello: il totale potrebbe non coincidere con quello pagato.",
+        analyzedAt: at(12, 10),
+        check: "node_test",
+        scenario: { result: "pass", command: "npm test", output: "", ranAt: at(12, 20) },
+      },
+    },
+    {
+      id: `${ordersWork.snapshotId}:semantic:${roundingWork.snapshotId}`,
+      candidateId: ordersWork.id,
+      snapshotId: ordersWork.snapshotId,
+      remoteSHA: conflictsBase,
+      references: [roundingWork.id],
+      otherCandidateId: roundingWork.id,
+      otherSnapshotId: roundingWork.snapshotId,
+      classification: "semantic",
+      conflictingFiles: [],
+      detail: "Ognuno passa da solo, ma sul candidato combinato test Node fallisce: le due modifiche sono incompatibili.",
+      checkedAt: at(12, 25),
+      semantic: {
+        explanation: "Bea arrotonda i prezzi unitari, Ada arrotonda il totale: insieme il totale può perdere un centesimo.",
+        analyzedAt: at(12, 12),
+        check: "node_test",
+        scenario: { result: "fail", command: "npm test", output: "FAIL ordini.test.ts > totale con tre righe\nexpected 30.00, received 29.99", ranAt: at(12, 25) },
+      },
+    },
+  );
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (kind, referenceId, minute) => ({ id: `E-c08-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(12, minute), content: { type: "card", kind, title: kind, detail: null, referenceId } });
+  document.events.push(...document.conflicts.map((a, index) => card("conflict", a.id, 30 + index)), card("candidate", ordersWork.id, 40));
+  await writeFile(conflictsPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), conflictsProject);
+await page.locator(".chat-card").filter({ hasText: "Pull request aperta" }).first().waitFor({ timeout: 30_000 });
+const conflictShots = ["overlap", "conflict", "hypothesis", "semantic"];
+for (const kind of conflictShots) {
+  const one = page.locator(`[data-testid="conflict-card"][data-classification="${kind}"]`);
+  if ((await one.count()) !== 1) throw new Error(`Conflicts: ${await one.count()} cards for ${kind}`);
+  const text = await one.innerText();
+  if (/[–—]|[A-Z]-[0-9A-F]{8}/.test(text)) throw new Error(`Conflicts: a dash or an id in the ${kind} card: ${text}`);
+  for (const wanted of ["Progetto trama-ui-conflitti-", "Ada, ", "base ", "copi"]) {
+    if (!text.includes(wanted)) throw new Error(`Conflicts: the ${kind} card does not say ${wanted}: ${text}`);
+  }
+}
+{
+  const pullCard = await page.locator('[data-testid="conflict-card"][data-classification="conflict"]').innerText();
+  if (!pullCard.includes("GitHub letto alle") || !pullCard.includes("prova di fusione alle")) throw new Error(`Conflicts: the GitHub card mixes its times: ${pullCard}`);
+  const hypothesis = await page.locator('[data-testid="conflict-card"][data-classification="hypothesis"]').innerText();
+  if (!hypothesis.includes("analisi AI alle") || !hypothesis.includes("non ancora una prova")) throw new Error(`Conflicts: the hypothesis is not an interpretation: ${hypothesis}`);
+  const semantic = page.locator('[data-testid="conflict-card"][data-classification="semantic"]');
+  await semantic.locator('[data-testid="semantic-scenario"][data-result="fail"]').waitFor();
+  if (!(await semantic.innerText()).includes("Incompatibili") && !(await page.locator(".chat-card", { has: semantic }).innerText()).includes("Incompatibili")) {
+    throw new Error("Conflicts: the proved case is not marked incompatible");
+  }
+}
+for (const kind of conflictShots) {
+  const one = page.locator(`[data-testid="conflict-card"][data-classification="${kind}"]`);
+  await one.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`29-conflicts-${kind}-${dark ? "dark" : "light"}`);
+  }
+}
+// The proved case blocks the green light of the newer candidate; the hypothesis next to it does not.
+const blockedCandidate = page.locator('[data-testid="candidate-blockers"]').filter({ hasText: "Incompatibile con un altro lavoro" });
+await blockedCandidate.waitFor({ timeout: 10_000 });
+if ((await blockedCandidate.locator("li").filter({ hasText: "Incompatibile" }).count()) !== 1) throw new Error("Conflicts: the hypothesis blocks the green light too");
+await blockedCandidate.evaluate((element) => element.scrollIntoView({ block: "center" }));
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`29-conflicts-blocked-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();

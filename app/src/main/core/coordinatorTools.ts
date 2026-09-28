@@ -25,6 +25,7 @@ import type { GitHubState } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
+import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
@@ -508,6 +509,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: true,
   },
   {
+    name: "report_semantic_risk",
+    description:
+      "Report that two open candidates of different assignments, changing different files, may not work together: a rule one changes that the other relies on. candidate and otherCandidate are candidateIDs (C-…) or assignment ids; explanation says in plain Italian what may break; check is a required check of both. Trama records your reading as a hypothesis, an interpretation that blocks nothing, and runs check on the two candidates merged in a separate copy. Only a failure there, where each candidate passed the check alone, becomes evidence and blocks the newer candidate's green light. Reporting the same pair again updates the reading and adds no warning. Candidates that change the same files are already compared with a merge probe: do not report them here.",
+    properties: { candidate: text, otherCandidate: text, explanation: text, check: { type: "string", enum: ALL_CHECKS } },
+    required: ["candidate", "otherCandidate", "explanation", "check"],
+    readOnly: true,
+  },
+  {
     name: "review_candidate",
     description:
       "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval.",
@@ -606,7 +615,9 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route" | "conflict", title: string, referenceId: string): void;
+  /** Runs the scenarios of the semantic hypotheses not tried yet (issue #40), in the background. */
+  runSemanticScenarios?(): void;
   /** The skills ask-trama names and the skills of Trama's bundled package, for propose_route (M07). */
   askTramaCatalog(): Promise<{ references: string[]; bundled: string[] }>;
   /** Models of the Coordinator's provider, and the Coordinator's own model. */
@@ -1478,6 +1489,40 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           output: result.output,
           state: report.state,
           blockers: report.blockers as unknown as Json,
+        });
+      }
+      case "report_semantic_risk": {
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const other = candidateArgument(document, args.otherCandidate);
+        if ("failure" in other) return other.failure;
+        const check = args.check as ReadOnlyCheck;
+        if (!context.availableChecks.includes(check)) return toolFailure("check_unavailable", `${String(args.check)} does not apply to this project.`);
+        let recorded: ReturnType<typeof recordSemanticHypothesis>;
+        try {
+          recorded = recordSemanticHypothesis(document, {
+            candidate: found.candidate,
+            other: other.candidate,
+            explanation: typeof args.explanation === "string" ? args.explanation : "",
+            check,
+          });
+        } catch (error) {
+          if (error instanceof SemanticRiskError) return toolFailure(error.code, error.message);
+          throw error;
+        }
+        const { assessment, created } = recorded;
+        if (created) context.addCard("conflict", "Conflitto", assessment.id);
+        context.changed();
+        context.runSemanticScenarios?.();
+        return toolSuccess({
+          assessmentID: assessment.id,
+          created,
+          classification: assessment.classification,
+          blocks: assessment.classification === "semantic",
+          scenario: (assessment.semantic?.scenario ?? null) as unknown as Json,
+          note: created
+            ? "Recorded as a hypothesis. Trama runs the scenario on the combined candidate; until it fails where each side passed alone, it is an interpretation and blocks nothing."
+            : "The same pair at the same snapshots was already reported: the reading is updated and no new warning is shown.",
         });
       }
       case "review_candidate": {
