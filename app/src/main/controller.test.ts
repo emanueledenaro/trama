@@ -53,6 +53,13 @@ async function confirmUnderstanding(document: ProjectDocument): Promise<void> {
   await controller!.takeStep(document.requests.at(-1)!.id);
 }
 
+/** Waits until Trama handed the running turn to the provider, so Esci finds a turn to end. */
+async function interruptOnceSentOrQuit(document: ProjectDocument, requestId: string): Promise<void> {
+  await until(() =>
+    document.events.some((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
+  );
+}
+
 const automaticRequests = (document: ProjectDocument) => document.requests.filter((r) => r.step?.by === "trama");
 
 async function setup() {
@@ -901,6 +908,170 @@ describe("TramaController", () => {
       delete process.env.FAKE_CODEX_NO_WAIT;
     }
   }, 60_000);
+
+  /** Trama opened again on the same data, as after a restart, with the last project selected. */
+  async function restart(data: string, ready = true) {
+    let state: AppState | null = null;
+    controller = new TramaController(data, {
+      publish: (s) => {
+        state = s;
+      },
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    // With the quota used up the Coordinator cannot open: the project is there all the same.
+    await until(() => (ready ? state?.project?.phase.kind === "ready" : state?.project?.document !== undefined));
+    return controller.snapshot.project!;
+  }
+
+  const grantProjectMandate = () =>
+    controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+
+  it("holds moves and rounds while a provider limit lasts, says so in the status line, and resumes the move at its end (issue #249)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "10";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      // The understanding is confirmed in Pause, so the Coordinator's move waits for Riprendi.
+      await controller!.pauseContinuousWork(true);
+      await confirmUnderstanding(document);
+      await writeFile(quota, "");
+      await controller!.pauseContinuousWork(false);
+      await until(() => automaticRequests(document)[0]?.state === "failed");
+      const move = automaticRequests(document)[0]!;
+      expect(move.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "round" });
+      await until(() => project.providerRetry?.reason === "quotaExhausted");
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
+      await until(() => controller!.snapshot.project!.statusLine?.providerWait !== null);
+      expect(controller!.snapshot.project!.statusLine).toMatchObject({
+        state: "blocked",
+        text: expect.stringMatching(/^Aspetto che la quota di ChatGPT si sblocchi/),
+        reason: "Fino ad allora non parte nessun turno. Poi riprendo da solo.",
+        providerWait: { provider: "ChatGPT" },
+      });
+      // Rounds and new moves wait: several checks of the account pass with no new turn.
+      const requests = document.requests.length;
+      await controller!.runRound();
+      await new Promise((r) => setTimeout(r, 800));
+      expect(document.requests).toHaveLength(requests);
+
+      // The quota comes back: the move starts again by itself, and the line no longer waits.
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await until(() => automaticRequests(document).at(-1)?.state === "completed", 20_000);
+      expect(automaticRequests(document).map((r) => [r.state, r.step?.move, r.retry?.attempt ?? null])).toEqual([
+        ["failed", "preparePlan", null],
+        ["completed", "preparePlan", 1],
+      ]);
+      await until(() => controller!.snapshot.project!.statusLine?.providerWait === null);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 90_000);
+
+  it("takes up the turn Esci ended when Trama opens again with a mandate, reconciling first (issue #249)", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "requests.jsonl");
+    process.env.FAKE_CODEX_LOG = log;
+    try {
+      const { data } = await setup();
+      const project = controller!.snapshot.project!;
+      await grantProjectMandate();
+      void controller!.send("[attesa] Prepara il piano degli annullamenti", null, null, null);
+      await until(() => project.runningRequestId !== null);
+      const turnId = project.runningRequestId!;
+      await interruptOnceSentOrQuit(project.document, turnId);
+      await controller!.stop();
+      expect(project.document.requests.find((r) => r.id === turnId)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+
+      process.env.FAKE_CODEX_NO_WAIT = "1";
+      const reopened = await restart(data);
+      await until(() => reopened.document.requests.at(-1)?.state === "completed", 20_000);
+      const resumed = reopened.document.requests.at(-1)!;
+      expect(resumed).toMatchObject({ text: "[attesa] Prepara il piano degli annullamenti", retry: { of: turnId, attempt: 0 } });
+      const line = reopened.document.events.find((e) => e.requestId === resumed.id && e.content.type === "activity" && e.content.title === "Turno ripreso alla riapertura");
+      expect(line).toBeDefined();
+      // One message of the person, and the resumed turn is told to check what was already done.
+      expect(reopened.document.events.filter((e) => e.content.type === "personMessage" && e.content.text === resumed.text)).toHaveLength(1);
+      const { readFile } = await import("node:fs/promises");
+      const turns = (await readFile(log, "utf8"))
+        .trim()
+        .split("\n")
+        .map((entry) => JSON.parse(entry) as { method: string; params: { input?: { text: string }[] } })
+        .filter((entry) => entry.method === "turn/start" && entry.params.input?.[0]?.text.includes("[attesa] Prepara il piano"));
+      // The first attempt, then only the resumed turn carries the note (the study of the reopened project quotes the chat).
+      const marked = turns.map((t) => t.params.input![0]!.text.includes("## Resumed turn"));
+      expect(marked[0]).toBe(false);
+      expect(marked.at(-1)).toBe(true);
+      expect(marked.filter(Boolean)).toHaveLength(1);
+    } finally {
+      delete process.env.FAKE_CODEX_LOG;
+      delete process.env.FAKE_CODEX_NO_WAIT;
+    }
+  }, 90_000);
+
+  it("leaves the turn Esci ended alone after a restart when the project is in Pause (issue #249)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    await grantProjectMandate();
+    await controller!.pauseContinuousWork(true);
+    void controller!.send("[attesa] Prepara il piano degli annullamenti", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    await interruptOnceSentOrQuit(project.document, project.runningRequestId!);
+    await controller!.stop();
+    process.env.FAKE_CODEX_NO_WAIT = "1";
+    try {
+      const reopened = await restart(data);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(reopened.document.continuousWork?.paused).toBe(true);
+      expect(reopened.statusLine).toMatchObject({ paused: true });
+      expect(reopened.document.requests.at(-1)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+      expect(reopened.document.requests.some((r) => r.retry)).toBe(false);
+    } finally {
+      delete process.env.FAKE_CODEX_NO_WAIT;
+    }
+  }, 90_000);
+
+  it("waits for the end of the limit that failed the latest turn before Esci, then resumes it by itself (issue #249)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "10";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      const { data } = await setup();
+      const project = controller!.snapshot.project!;
+      await grantProjectMandate();
+      await writeFile(quota, "");
+      await controller!.send("Riprendi il piano degli annullamenti", null, null, null);
+      expect(project.document.requests.at(-1)!.state).toBe("failed");
+      await controller!.stop();
+
+      const count = project.document.requests.length;
+      const reopened = await restart(data, false);
+      await until(() => reopened.providerRetry?.reason === "quotaExhausted");
+      await new Promise((r) => setTimeout(r, 500));
+      // No new turn while the quota is used up.
+      expect(reopened.document.requests).toHaveLength(count);
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await until(() => reopened.document.requests.at(-1)?.state === "completed", 20_000);
+      expect(reopened.document.requests.slice(count - 1).map((r) => [r.text, r.state, r.retry?.attempt ?? null])).toEqual([
+        ["Riprendi il piano degli annullamenti", "failed", null],
+        ["Riprendi il piano degli annullamenti", "completed", 1],
+      ]);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 90_000);
 
   it("tells the Coordinator when its previous reply closed with a generic confirmation question (W04)", async () => {
     await setup();
