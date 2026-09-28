@@ -1,5 +1,7 @@
-import type { AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RequestedAction, RoundRecord, WorkEvent } from "./domain";
+import type { Language } from "./i18n";
 import { problemActivity } from "./problems";
+import { requestedActionEntries } from "./requestedActions";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -18,9 +20,10 @@ export interface ActivityEntry {
   id: string;
   /**
    * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), a person's
-   * step the Coordinator took within the mandate (A06), or Trama's merge of a candidate (issue #247).
+   * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), or an action a fixed
+   * ban stops that Trama did because the person asked for it (issue #422).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "requested";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round. */
@@ -42,6 +45,8 @@ export interface ActivityEntry {
   issue?: { number: number; url: string } | null;
   /** The pull request a merge names (issue #247); absent for the other entries. */
   pullRequest?: { number: number; url: string } | null;
+  /** The person's message that asked for the action, with the words quoted (issue #422); absent for the other entries. */
+  personMessage?: { eventId: string; quote: string } | null;
 }
 
 /**
@@ -131,7 +136,7 @@ export const ROUND_LABEL = "Giro del Coordinatore";
 
 /**
  * The automatic moves, the rounds with an outcome, the steps of the found problems, the person's steps the Coordinator
- * took and Trama's merges of the project, newest first, from the requests, the move lines Trama recorded, the rounds,
+ * took, Trama's merges and the actions the person asked for of the project, newest first, from the requests, the move lines Trama recorded, the rounds,
  * the problems, the steps and the candidates. Pure.
  */
 export function activityLog(
@@ -141,6 +146,8 @@ export function activityLog(
   problems: FoundProblem[] = [],
   steps: AutonomousStep[] = [],
   candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[] = [],
+  requestedActions: RequestedAction[] = [],
+  language?: Language,
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -201,7 +208,8 @@ export function activityLog(
   );
   const found = problemActivity(problems);
   const merged = mergeActivityEntries(candidates);
-  if (!done.length && !found.length && !taken.length && !merged.length) return moves;
+  const requested = requestedActionEntries(requestedActions, language);
+  if (!done.length && !found.length && !taken.length && !merged.length && !requested.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done, ...found, ...taken, ...merged].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found, ...taken, ...merged, ...requested].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

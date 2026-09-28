@@ -4188,6 +4188,54 @@ await primaryLast(bannedCard.locator(".cta-row"), "Fixed ban");
 await lookShots("26d-fixed-ban");
 await bannedCard.getByRole("button", { name: "Ho visto" }).click();
 await bannedItem.waitFor({ state: "detached", timeout: 20_000 });
+
+// Issue #422: the person's written request unlocks a banned action. Trama runs it and the chat says so with the
+// person's words; the action stays in Activity with the link to the message. A deletion waits for a confirmation in
+// Aspetta te first: the button runs it, "Non farlo" never does.
+const requestRemote = await mkdtemp(join(tmpdir(), "trama-ui-remoto-"));
+execFileSync("git", ["-C", requestRemote, "init", "-q", "--bare", "-b", "main"]);
+execFileSync("git", ["-C", mandateProject, "remote", "add", "origin", requestRemote]);
+execFileSync("git", ["-C", mandateProject, "push", "-q", "origin", "main:main", "main:feature/vecchio", "main:feature/prova"], { stdio: "ignore" });
+const remoteBranches = () => execFileSync("git", ["-C", requestRemote, "branch", "--format=%(refname:short)"], { encoding: "utf8" }).trim().split("\n");
+await page.getByLabel("Messaggio al Coordinatore").fill("[richiesta:git tag v0.1.0|metti il tag v0.1.0 sul commit attuale|Creo il tag v0.1.0 sul commit attuale] Sistema tu, metti il tag v0.1.0 sul commit attuale");
+await page.keyboard.press("Enter");
+const tagLine = page.locator('[data-testid="requested-action"][data-status="done"]').last();
+await tagLine.getByText("Faccio un tag o un rilascio perché me l'hai chiesto: «metti il tag v0.1.0 sul commit attuale»").waitFor({ timeout: 20_000 });
+if (execFileSync("git", ["-C", mandateProject, "tag", "-l"], { encoding: "utf8" }).trim() !== "v0.1.0") throw new Error("Trama did not create the tag the person asked for");
+if (/[–—]/.test(await tagLine.innerText())) throw new Error("The requested action line has a dash");
+await tagLine.getByRole("button").first().click();
+await tagLine.getByTestId("requested-action-detail").getByText("git tag v0.1.0").waitFor();
+await lookShots("26e-requested-action");
+await tagLine.getByRole("button").first().click();
+// In Activity, the row "Su tua richiesta" goes back to the person's message.
+await page.getByTestId("status-bar").getByRole("button", { name: "Attività", exact: true }).click();
+const requestedRow = page.getByTestId("activity-log").locator('[data-testid="activity-requested"][data-outcome="done"]').first();
+await requestedRow.getByText("Su tua richiesta: un tag o un rilascio").waitFor({ timeout: 20_000 });
+await requestedRow.getByRole("button", { name: "Vai al tuo messaggio" }).click();
+await page.locator('[data-testid="person-message"][data-highlight="true"]').getByText(/metti il tag v0\.1\.0 sul commit attuale/).waitFor({ timeout: 5_000 });
+await page.getByTestId("bottom-panel").getByRole("button", { name: "Chiudi il pannello" }).click();
+
+await page.getByLabel("Messaggio al Coordinatore").fill("[richiesta:git push origin --delete feature/vecchio|cancella il branch remoto feature/vecchio|Cancello il branch feature/vecchio su GitHub] Cancella il branch remoto feature/vecchio");
+await page.keyboard.press("Enter");
+const confirmation = await openWaiting("confirmation", "Cancello il branch feature/vecchio");
+const confirmationCard = confirmation.getByTestId("requested-action-card");
+await confirmationCard.getByText("git push origin --delete feature/vecchio").waitFor();
+await confirmationCard.getByText("Un branch o un tag cancellato sul remoto sparisce anche per gli altri.").waitFor();
+await primaryLast(confirmationCard.locator(".cta-row"), "Deletion confirmation");
+if (!remoteBranches().includes("feature/vecchio")) throw new Error("A deletion ran before the person's confirmation");
+await lookShots("26f-deletion-confirmation");
+await confirmationCard.getByRole("button", { name: "Conferma", exact: true }).click();
+await confirmation.waitFor({ state: "detached", timeout: 20_000 });
+await page.locator('[data-testid="requested-action"][data-status="done"]').getByText(/^Faccio la cancellazione di un branch o di un tag remoto/).waitFor({ timeout: 20_000 });
+if (remoteBranches().includes("feature/vecchio")) throw new Error("The confirmed deletion did not run");
+
+await page.getByLabel("Messaggio al Coordinatore").fill("[richiesta:git push origin --delete feature/prova|cancella anche il branch feature/prova|Cancello il branch feature/prova su GitHub] Cancella anche il branch feature/prova");
+await page.keyboard.press("Enter");
+const declined = await openWaiting("confirmation", "Cancello il branch feature/prova");
+await declined.getByRole("button", { name: "Non farlo" }).click();
+await declined.waitFor({ state: "detached", timeout: 20_000 });
+await page.locator('[data-testid="requested-action"][data-status="declined"]').getByText(/^Non faccio la cancellazione di un branch o di un tag remoto: non l'hai confermato/).waitFor({ timeout: 20_000 });
+if (!remoteBranches().includes("feature/prova")) throw new Error("A declined deletion ran");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 

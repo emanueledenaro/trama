@@ -72,6 +72,7 @@ const TYPE_LABELS: Record<ActivityType, MessageKey> = {
   problems: "activity.type.problems",
   steps: "activity.type.steps",
   merges: "activity.type.merges",
+  requested: "activity.type.requested",
 };
 
 const TEST_IDS: Record<ActivityEntry["kind"], string> = {
@@ -80,6 +81,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   problem: "activity-problem",
   step: "activity-step",
   merge: "activity-merge",
+  requested: "activity-requested",
 };
 
 const ICON_BUTTON = "sidebar-icon-button size-6 shrink-0 rounded-md";
@@ -225,6 +227,11 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
               </button>
             </Tooltip>
           ) : null}
+          {entry.personMessage ? (
+            <RowIcon label={t("activity.openMessage")} onClick={() => showMessageInChat(entry.personMessage!.eventId)}>
+              <IconMessageCircle className="size-3.5" stroke={1.8} />
+            </RowIcon>
+          ) : null}
           {entry.kind === "move" || entry.kind === "step" ? (
             <RowIcon label={t("activity.openDialog")} onClick={() => openDialog(entry.goalId)}>
               <IconMessageCircle className="size-3.5" stroke={1.8} />
@@ -272,6 +279,20 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
       ) : null}
     </li>
   );
+}
+
+/** Opens the whole chat and brings the person's message that asked for an action into view (issue #422). */
+function showMessageInChat(eventId: string) {
+  const find = () => document.querySelector<HTMLElement>(`[data-testid="person-message"][data-event="${CSS.escape(eventId)}"]`);
+  const ui = useUi.getState();
+  if (ui.mainView !== "dialog" || !find()) ui.openDialog(null);
+  window.setTimeout(() => {
+    const message = find();
+    if (!message) return;
+    message.scrollIntoView({ block: "center" });
+    message.dataset.highlight = "true";
+    window.setTimeout(() => delete message.dataset.highlight, 1600);
+  }, 120);
 }
 
 /** Opens the whole chat when the line is not in the dialog shown, then brings the turn's line into view. */
@@ -485,6 +506,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
   const document = useUi((s) => s.app?.project?.document);
   const running = useUi((s) => s.app?.project?.runningWork);
   const focus = useUi((s) => s.panelFocus);
+  const language = useLanguage();
   const openActivity = useUi((s) => s.openActivity);
   const closePanel = useUi((s) => s.closePanel);
   const [filter, setFilter] = useState<ActivityFilter>({ who: "all", kind: "all" });
@@ -497,13 +519,15 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       document.problems?.items ?? [],
       document.autonomousSteps ?? [],
       document.candidates,
+      document.requestedActions ?? [],
+      language,
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);
     const developerOf = (row: WorkRow) =>
       row.assignmentId ? (document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId))?.id ?? null) : null;
     return activityItems(entries, turns, developerOf);
-  }, [document, running]);
+  }, [document, running, language]);
   const people = useMemo(() => [...new Set(items.map((item) => item.who).filter((who) => who !== "coordinator"))], [items]);
   // A row asked from the chat shows whatever the filter: the filter steps aside for it.
   const focusHidden = focus && !filterActivity(items, filter).some((item) => item.id === focus.id);

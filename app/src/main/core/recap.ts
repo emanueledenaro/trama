@@ -163,17 +163,31 @@ function stepLine(entry: { label: string; outcome: ActivityOutcome; detail: stri
   return `${entry.label}${corrected}: ${entry.detail ?? ""}`.trim();
 }
 
+/** An action the person asked for (issue #422): what it was and what happened, without the command. */
+function requestedLine(entry: { label: string; outcome: ActivityOutcome; detail: string | null }): string {
+  const summary = entry.detail?.split("\n")[0] ?? "";
+  return `${entry.label} (${ACTIVITY_OUTCOME_LABELS[entry.outcome].toLowerCase()}): ${summary}`.trim();
+}
+
 /**
  * "Cosa ho fatto": the moves and rounds in Activity since the last recap, oldest first, and the issues the Coordinator
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
-  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates)
+  const entries = activityLog(
+    document.requests,
+    document.events,
+    document.continuousWork?.rounds ?? [],
+    [],
+    document.autonomousSteps ?? [],
+    document.candidates,
+    document.requestedActions ?? [],
+  )
     .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({
     at: entry.startedAt,
-    text: entry.kind === "move" ? moveLine(entry.label, entry.outcome, entry.detail) : stepLine(entry),
+    text: entry.kind === "move" ? moveLine(entry.label, entry.outcome, entry.detail) : entry.kind === "requested" ? requestedLine(entry) : stepLine(entry),
     number: null,
     url: null,
   }));

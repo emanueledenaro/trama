@@ -1815,6 +1815,42 @@ describe("TramaController", () => {
     // The fake server forgets threads, so Trama starts a new one and says so.
     expect(project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextNotice")).toBe(true);
   });
+
+  it("runs the banned action the person typed, and asks their yes before a deletion (issue #422)", async () => {
+    const { project: projectPath } = await setup();
+    const { execFileSync } = await import("node:child_process");
+    const run = (args: string[], cwd = projectPath) => execFileSync("git", args, { cwd, encoding: "utf8" });
+    const remote = await mkdtemp(join(tmpdir(), "trama-remote-"));
+    run(["init", "-q", "--bare", "-b", "main"], remote);
+    run(["init", "-q", "-b", "main"]);
+    run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"]);
+    run(["remote", "add", "origin", remote]);
+    run(["push", "-q", "origin", "main:main", "main:feature/old"]);
+    const document = controller!.snapshot.project!.document;
+
+    await controller!.send("[richiesta:git tag v9.9.9|metti il tag v9.9.9 sul commit attuale|Creo il tag v9.9.9] Metti il tag v9.9.9 sul commit attuale", null, null, null);
+    const typed = document.events.filter((e) => e.content.type === "personMessage").at(-1)!;
+    expect(typed.content).toMatchObject({ composer: true });
+    expect(document.requestedActions).toMatchObject([{ ban: "tagOrRelease", status: "done", request: { eventId: typed.id } }]);
+    expect(run(["tag", "-l"]).trim()).toBe("v9.9.9");
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "requestedAction")).toBe(true);
+
+    await controller!.send("[richiesta:git push origin --delete feature/old|cancella il branch remoto feature/old|Cancello feature/old] Cancella il branch remoto feature/old", null, null, null);
+    const deletion = document.requestedActions!.at(-1)!;
+    expect(deletion).toMatchObject({ ban: "deleteRemoteRef", status: "waiting" });
+    expect(waitingForYou(document).map((item) => item.key)).toContain(`confirmation:${deletion.id}`);
+    expect(run(["branch", "--list", "feature/old"], remote).trim()).toBe("feature/old");
+
+    await controller!.confirmRequestedAction(deletion.id);
+    expect(deletion).toMatchObject({ status: "done", confirmation: { by: "button" } });
+    expect(run(["branch", "--list", "feature/old"], remote).trim()).toBe("");
+    // The Coordinator hears the yes as the person's choice, which Trama wrote: it asks for nothing by itself.
+    const choice = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
+    expect(choice).toMatchObject({ text: "Confermo: Cancello feature/old" });
+    expect(choice).not.toHaveProperty("composer");
+    expect(activityLog(document.requests, document.events, [], [], [], [], document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
+  });
+
 });
 
 describe("the branch divergence notice (issue #390)", () => {
