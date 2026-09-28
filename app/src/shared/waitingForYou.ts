@@ -2,6 +2,8 @@ import { type CandidateReport, isOpenQuestion, pendingMandateRequest, type Proje
 import { fixedBanInfo } from "./fixedBans";
 import { workingGoals } from "./goals";
 import { workRequests } from "./grilling";
+import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
+import { blockedReviews, candidateHeld } from "./reviewLoop";
 
 /**
  * "Aspetta te" (issue #240): everything in a project that waits for the person, in one place. Trama derives the items
@@ -57,6 +59,8 @@ export interface WaitingSources {
   memoryProposals?: WaitingMemoryProposal[];
   /** The current verdict of each candidate, as the main process computed it. */
   candidateReports?: Record<string, CandidateReport>;
+  /** The interface language of the texts Trama writes here; Italian when absent. */
+  language?: Language;
 }
 
 /**
@@ -246,6 +250,23 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
     if (!report || report.state === "superseded") continue;
     // A merge the Coordinator stopped on a destructive change waits below as its own item, with its consequences (issue #41).
     if (candidate.merge?.status === "stopped" && candidate.merge.stop) continue;
+    // Work the review stopped too many times in a row (issue #389): Trama no longer sends it back, the person decides.
+    if (candidateHeld(document, candidate)) {
+      const held = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId)!;
+      const reviews = blockedReviews(document, held);
+      const language = sources.language ?? DEFAULT_LANGUAGE;
+      items.push({
+        key: `candidate:${candidate.id}`,
+        kind: "candidate",
+        targetId: candidate.id,
+        label: translate(language, "reviewLoop.label"),
+        title: translate(language, "reviewLoop.title", { objective: oneLine(held.objective), count: reviews.length }),
+        goalId: candidate.goalId ?? null,
+        askedAt: reviews.at(-1)!.finishedAt!,
+        blocks: heldWork(document, sources, held.requestId),
+      });
+      continue;
+    }
     const settled = report.state === "verified" || report.state === "decided";
     const stopped = settled ? candidate.merge?.status === "stopped" : report.blockers.some((b) => PERSON_BLOCKERS.includes(b.code));
     if (!stopped) {
