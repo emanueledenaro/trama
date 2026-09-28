@@ -4,7 +4,8 @@ import { chmod, cp, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { PROVIDERS } from "@shared/providers";
 import type { AppState, ProjectDocument } from "@shared/domain";
 import { chatEvents, decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { activityLog } from "@shared/activity";
@@ -13,7 +14,7 @@ import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
-import { developers } from "./core/team";
+import { assign, confirmTeam, developers, proposeTeam } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -155,6 +156,34 @@ describe("TramaController", () => {
     } finally {
       delete process.env.FAKE_CODEX_INITIALIZE_GATE;
     }
+  });
+
+  it("keeps the project the person opens while the last one is still being restored", async () => {
+    const { data, project: last } = await setup();
+    await controller!.stop();
+    const other = await mkdtemp(join(tmpdir(), "trama-project-"));
+    await cp(join(root, "resources/DemoProject"), other, { recursive: true });
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    // Trama reopens the last project on start; the person opens another one before that ends.
+    const starting = controller.start();
+    await controller.openProject(other);
+    await starting;
+    expect(controller.snapshot.project?.rootPath).toBe(await realpath(other));
+    // Two opens in a row: the later one is the project the person sees.
+    const first = controller.openProject(last);
+    await controller.openProject(other);
+    await first;
+    expect(controller.snapshot.project?.rootPath).toBe(await realpath(other));
+    expect(controller.snapshot.loadingProject).toBeNull();
   });
 
   it("studies the project, answers a message and records references", async () => {
@@ -346,9 +375,65 @@ describe("TramaController", () => {
     await controller!.send("[pieno] due", null, null, null);
     const notices = project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia");
     expect(notices).toHaveLength(1);
+    // The meter reads Codex's `last`, the request that fills the window, never the growing `total` (issue #305).
     expect(project.contextUsage).toEqual({ usedTokens: 230_000, contextWindow: 258_000 });
     controller!.setContextThreshold(95);
     expect(project.document.coordinator.contextThreshold).toBe(95);
+  });
+
+  it("says the threshold card without a provider name and within the window (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("[pieno] uno", null, null, null);
+    const card = project.document.events.find((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia")!.content as { detail: string };
+    expect(card.detail).toBe(
+      "La finestra di contesto del Coordinatore è piena al 89% (230.000 su 258.000 token), sopra la soglia del 80%. Quando serve, l'agente compatta il contesto da solo, se lo prevede. Puoi cambiare la soglia dal misuratore.",
+    );
+    for (const provider of PROVIDERS) expect(card.detail).not.toContain(provider.name);
+  });
+
+  it("does not repeat the threshold card after a compaction that leaves the context full (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("[pieno] uno", null, null, null);
+    const learning = (controller as unknown as { coordinatorLearning(d: unknown): { liveFromSequence: number } }).coordinatorLearning(project.document);
+    const before = learning.liveFromSequence;
+    // Codex reports the compaction as an item of the turn: Trama hears it, and the reading is still over the threshold.
+    await controller!.send("[pieno] [compattato] due", null, null, null);
+    expect(learning.liveFromSequence).toBeGreaterThan(before);
+    const notices = () => project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia");
+    expect(notices()).toHaveLength(1);
+    // A reading well under the threshold arms the card again for the next time the context fills.
+    await controller!.send("[compattato] tre", null, null, null);
+    expect(project.contextUsage).toEqual({ usedTokens: 20_000, contextWindow: 258_000 });
+    await controller!.send("[pieno] quattro", null, null, null);
+    expect(notices()).toHaveLength(2);
+  });
+
+  it("keeps a reading past the window as unknown, with no number (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const internal = controller as unknown as { recordContextUsage(p: unknown, e: unknown): void };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    internal.recordContextUsage(project, { type: "tokenUsage", usedTokens: 9_820_158, contextWindow: 828_400 });
+    internal.recordContextUsage(project, { type: "tokenUsage", usedTokens: 9_820_158, contextWindow: 828_400 });
+    expect(project.contextUsage).toEqual({ usedTokens: null, contextWindow: 828_400 });
+    expect(project.document.events.some((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia")).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("checks the threshold in the study turn too (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    // The fake study turn reads 13.000 of 258.000 tokens: 5,04%, just past the lowest threshold with the exact share.
+    controller!.setContextThreshold(5);
+    const internal = controller as unknown as { runStudyTurn(p: unknown, r: unknown, m: string, reason: string | null): Promise<void>; runtime: unknown };
+    project.document.coordinator.contextWarnedAt = null;
+    project.contextUsage = null;
+    await internal.runStudyTurn(project, internal.runtime, "gpt-5.5", null);
+    expect(project.contextUsage).toEqual({ usedTokens: 13_000, contextWindow: 258_000 });
+    expect(project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia").length).toBeGreaterThan(0);
   });
 
   it("loads project skills and sends invoked ones", async () => {
@@ -1133,6 +1218,41 @@ describe("TramaController", () => {
     expect(message).toMatchObject({ text: expect.stringContaining("Ho ristretto il mandato") });
   });
 
+  it("stops only the work a narrower perimeter leaves out and its dependents, keeping their worktree (C06)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    const proposal = proposeTeam(document, {
+      requestId: null,
+      summary: null,
+      members: ["Ada", "Bea", "Cy"].map((name) => ({ name, competence: "Swift", reason: "r", moduleIds: [] })),
+    });
+    confirmTeam(document, proposal.id, null, null);
+    const order = { kind: "agreedTicket" as const, objective: "o", issueNumber: null, exercise: null, dependencies: [], model: "m", tools: ["edits" as const], requiredChecks: [], instructions: "i" };
+    const base = assign(document, { ...order, specialist: "Ada", objective: "Base degli ordini", moduleIds: ["Sources/Orders"] }, 1, null);
+    base.status = "completed";
+    const orders = assign(document, { ...order, specialist: "Ada", objective: "Annullamento degli ordini", moduleIds: ["Sources/Orders"] }, 1, null);
+    const workspace = { worktreeRoot: "/tmp/trama-worktree-orders", branch: "trama/orders", baseSHA: "abc" } as never;
+    orders.workspace = workspace;
+    const payments = assign(document, { ...order, specialist: "Bea", objective: "Rimborsi sugli ordini", moduleIds: ["Sources/Payments"], dependencies: [base.id] }, 1, null);
+    const users = assign(document, { ...order, specialist: "Cy", objective: "Profilo utente", moduleIds: ["Sources/Users"] }, 1, null);
+
+    await controller!.restrictMandate({ scopeModuleIds: request!.scopeModuleIds.filter((id) => id !== "Sources/Orders"), authorizedActions: request!.authorizedActions });
+    // The work on Orders and the work that builds on it stop; the work on Users goes on.
+    expect(orders.status).toBe("stopped");
+    expect(orders.stops.at(-1)).toMatchObject({ requestedBy: "Trama", reason: expect.stringContaining("mandato ristretto") });
+    expect(orders.workspace).toBe(workspace);
+    expect(payments.status).toBe("stopped");
+    expect(payments.stops.at(-1)).toMatchObject({ reason: expect.stringContaining(`Dipende da ${base.id}`) });
+    expect(users.status).toBe("preparing");
+    const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
+    expect(message).toMatchObject({ text: expect.stringContaining(`Ho fermato ${orders.id}, ${payments.id} (dipende da ${base.id})`) });
+    // Neither resumes while the perimeter leaves out the work they rely on.
+    await expect(controller!.resumeSpecialistWork(orders.id)).rejects.toThrow(/mandato/);
+    await expect(controller!.resumeSpecialistWork(payments.id)).rejects.toThrow(/mandato/);
+  });
+
   it("stops a command a fixed ban covers, whatever the mandate, and puts it in Aspetta te (issue #244)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
@@ -1551,6 +1671,57 @@ describe("TramaController", () => {
 });
 
 describe("the learning loop (ADR 0014)", () => {
+  type LearningInternals = {
+    learningFor(p: unknown): {
+      memory: { withCaller<T>(caller: string | null, run: () => T): T; replace(t: "memory", o: string, n: string): Record<string, unknown>; pathFor(t: "memory"): string };
+    };
+  };
+
+  it("tells the person in Italian when memory is full, even after the Coordinator's failures (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const store = (controller as unknown as LearningInternals).learningFor(project).memory;
+    // The Coordinator already failed three times this turn: the person's edit never shares that counter.
+    for (let i = 0; i < 3; i += 1) store.withCaller("foreground", () => store.replace("memory", "missing", "y"));
+    const result = controller!.editLearnedMemory({ target: "memory", action: "add", content: "x".repeat(2_300) });
+    expect(result).toEqual({ success: false, error: "La memoria del progetto è piena (0 su 2200 caratteri): togli o accorcia una nota prima di aggiungerne un'altra." });
+    expect(controller!.editLearnedMemory({ target: "memory", action: "remove", oldText: "missing" })).toEqual({ success: false, error: "Questa nota non c'è più: la memoria è cambiata." });
+  });
+
+  it("treats a refused memory write as a tool error and stops the retries in the turn (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("[memoria-piena] ricorda tutto", null, null, null);
+    const reply = project.document.events.findLast((e) => e.content.type === "coordinatorText")!.content as { text: string };
+    // The pasted English error left the reply.
+    expect(reply.text).not.toContain("Memory at");
+    expect(reply.text).toContain("uno strumento di Trama ha rifiutato la richiesta");
+    // One Activity row with the error tone and one Italian line, for three attempts.
+    const rows = project.document.events.filter((e) => e.content.type === "activity" && e.content.title === "Strumento di Trama: memory");
+    expect(rows.map((e) => e.content)).toEqual([expect.objectContaining({ tone: "error", detail: "Memoria non aggiornata: è piena." })]);
+    expect(controller!.snapshot.learning!.memory.entries).toEqual([]);
+    expect(controller!.snapshot.learning!.proposals).toEqual([]);
+  });
+
+  it("turns a memory over its limit into a proposal for the person, not a loop (issue #305)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const store = (controller as unknown as LearningInternals).learningFor(project).memory;
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const entries = Array.from({ length: 5 }, (_, i) => `Nota ${i}: ${"fatto ".repeat(90)}`.trim());
+    mkdirSync(dirname(store.pathFor("memory")), { recursive: true });
+    writeFileSync(store.pathFor("memory"), entries.join("\n§\n"));
+    await controller!.send("[memoria-piena] ricorda tutto", null, null, null);
+    const proposals = controller!.snapshot.learning!.proposals;
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]!.summary).toMatch(/^La memoria del progetto supera il limite \(\d{4} su 2200 caratteri\)/);
+    expect(proposals[0]!.operations).toEqual([`Togliere la nota «${entries[0]}»`]);
+    // A second full turn adds no second proposal; the person applies it and the memory fits.
+    await controller!.send("[memoria-piena] ancora", null, null, null);
+    expect(controller!.snapshot.learning!.proposals).toHaveLength(1);
+    controller!.resolveLearningProposal(proposals[0]!.id, true);
+    expect(controller!.snapshot.learning!.memory.entries).toEqual(entries.slice(1));
+  });
   it("keeps memory in Trama's folder and recalls earlier dialogs only outside the live thread", async () => {
     const { data, project: root } = await setup();
     const { existsSync, readFileSync } = await import("node:fs");
@@ -1582,7 +1753,7 @@ describe("the learning loop (ADR 0014)", () => {
     expect(learning.skills).toMatchObject([{ name: "release-flow", createdBy: "agent", state: "active" }]);
     const run = learning.reviews[0]!;
     expect(run).toMatchObject({ trigger: "memory+skills", status: "completed", toolCalls: 3 });
-    expect(run.actions).toEqual(["User profile updated", expect.stringContaining("staged for your approval"), "Skill 'release-flow' created"]);
+    expect(run.actions).toEqual(["Profilo aggiornato", "Proposta di modifica della memoria: la trovi in Memoria", "Skill 'release-flow' creata"]);
     const card = project.document.events.at(-1)!.content;
     expect(card).toMatchObject({ type: "activity", title: "Revisione dell'esperienza" });
 
@@ -1604,7 +1775,7 @@ describe("the learning loop (ADR 0014)", () => {
     const internal = controller as unknown as { runLearningReview(p: unknown, scope: { memory: boolean; skills: boolean }): Promise<void> };
     await internal.runLearningReview(project, { memory: true, skills: true });
     const learning = controller!.snapshot.learning!;
-    expect(learning.reviews[0]).toMatchObject({ status: "failed", error: "The review used a tool outside memory and skills.", actions: [] });
+    expect(learning.reviews[0]).toMatchObject({ status: "failed", error: "La revisione ha usato uno strumento fuori da memoria e skill: Trama l'ha fermata.", actions: [] });
     expect(learning.user.entries).toEqual([]);
     expect(learning.skills).toEqual([]);
   });
@@ -1616,7 +1787,7 @@ describe("the learning loop (ADR 0014)", () => {
     await internal.runLearningReview(project, { memory: false, skills: true });
     const learning = controller!.snapshot.learning!;
     expect(learning.user.entries).toEqual([]);
-    expect(learning.reviews[0]).toMatchObject({ trigger: "skills", actions: ["Skill 'release-flow' created"] });
+    expect(learning.reviews[0]).toMatchObject({ trigger: "skills", actions: ["Skill 'release-flow' creata"] });
   });
 
   it("moves the old single-text memory into MEMORY.md once", async () => {

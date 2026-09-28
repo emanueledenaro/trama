@@ -19,7 +19,7 @@ import {
   parseAntigravityPrintResult,
   resolveAntigravityCliModelLabel,
   ANTIGRAVITY_KNOWN_MODELS,
-  antigravityHelpOffersEffort,
+  antigravityContextWindow,
   antigravityModelArgs,
 } from "./antigravity";
 import { mcpProxyScriptSource } from "./hostToolProxy";
@@ -68,18 +68,20 @@ fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ args, cwd: process.
   profile: process.env.TRAMA_ANTIGRAVITY_PROFILE,
   tokenFile: process.env.TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE, hostTools: process.env.TRAMA_ANTIGRAVITY_HOST_TOOLS,
   leaked: process.env.TRAMA_SECRET } }) + "\n");
-// Like agy 1.2.11, a strict run joins --model and --effort into one label and refuses any label outside
-// the list, a bare name included. This pairing is inferred from the error text in issue #209.
+// Like agy 1.2.12 (checked on the Mac on 28 September): --model takes the full label with its level, as agy
+// models lists it; a bare name is not a known model, and --effort is refused for a model whose levels are in
+// its labels, with the error text agy prints.
 if (process.env.FAKE_AGY_STRICT_MODELS) {
   const flag = (name) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : "");
   const model = flag("--model");
   const effort = flag("--effort");
-  const label = effort ? model + " (" + effort.charAt(0).toUpperCase() + effort.slice(1) + ")" : model;
-  if (!REAL_MODELS.includes(label) || (effort && !["low", "medium", "high"].includes(effort))) {
-    const error = "invalid model selection (--model \"" + model + "\" --effort \"" + effort + "\"): model " + model + " is not recognized as a known model or custom model in settings";
+  const fail = (reason) => {
+    const error = "invalid model selection (--model \"" + model + "\"" + (effort ? " --effort \"" + effort + "\"" : "") + "): " + reason;
     process.stdout.write(JSON.stringify({ event: "error", message: error }) + "\n");
     process.exit(1);
-  }
+  };
+  if (effort && REAL_MODELS.some((label) => label.startsWith(model + " ("))) fail("--effort is not supported for model \"" + model + "\"");
+  if (!REAL_MODELS.includes(model)) fail("model " + model + " is not recognized as a known model or custom model in settings");
 }
 // Like the real CLI, every hook runs the installed capture script and honors its decision.
 const capture = require("node:path").join(process.env.FAKE_AGY_PLUGIN, "capture.cjs");
@@ -256,6 +258,12 @@ describe("Antigravity models and health", () => {
     expect(resolveAntigravityCliModelLabel("slug\tGemini 3.1 Pro")).toBe("Gemini 3.1 Pro (Low)");
   });
 
+  it("knows the context window of every model in its list, and none of an unknown one (issue #305)", () => {
+    for (const model of Object.keys(ANTIGRAVITY_KNOWN_MODELS)) expect(antigravityContextWindow(`${model} (High)`)).toBeGreaterThan(0);
+    expect(antigravityContextWindow("Gemini 3.8 Flash (High)")).toBe(1_048_576);
+    expect(antigravityContextWindow("Gemini 9 Ultra")).toBeNull();
+  });
+
   it("builds a label agy 1.2.11 accepts for every model and effort in its list", async () => {
     process.env.FAKE_AGY_MODELS = "real";
     runtime = make();
@@ -359,13 +367,10 @@ describe("Antigravity sandbox", () => {
     ).resolves.toMatchObject({ replaced: false });
   });
 
-  it("splits the level into --effort only when the CLI lists it and documents the level", () => {
-    expect(antigravityHelpOffersEffort("  --effort <level>      Reasoning effort (low|medium|high)")).toBe(true);
-    expect(antigravityHelpOffersEffort("  --efforts <x>\n  --model <m>")).toBe(false);
-    expect(antigravityModelArgs("Gemini 3.8 Flash (High)", true)).toEqual(["--model", "Gemini 3.8 Flash", "--effort", "high"]);
-    expect(antigravityModelArgs("Claude Sonnet 4.6 (Thinking)", true)).toEqual(["--model", "Claude Sonnet 4.6 (Thinking)"]);
-    expect(antigravityModelArgs("Gemini 3.8 Flash (High)", false)).toEqual(["--model", "Gemini 3.8 Flash (High)"]);
-    expect(antigravityModelArgs("My Custom Model", true)).toEqual(["--model", "My Custom Model"]);
+  it("passes the full label with its level to --model and never a separate --effort, which agy 1.2.12 refuses", () => {
+    expect(antigravityModelArgs("Gemini 3.8 Flash (High)")).toEqual(["--model", "Gemini 3.8 Flash (High)"]);
+    expect(antigravityModelArgs("Claude Sonnet 4.6 (Thinking)")).toEqual(["--model", "Claude Sonnet 4.6 (Thinking)"]);
+    expect(antigravityModelArgs("My Custom Model")).toEqual(["--model", "My Custom Model"]);
   });
 
   it("reads the --sandbox switch from the CLI help", () => {
@@ -555,10 +560,10 @@ describe("Antigravity turns", () => {
     await expect(run("Claude Opus 4.6", null)).resolves.toBe('{"ok":true}');
     const sent = (await logLines()).map((line) => {
       const args = line.args as string[];
-      const at = args.indexOf("--model");
-      return args[at + 2] === "--effort" ? [args[at + 1], args[at + 3]] : [args[at + 1]];
+      expect(args).not.toContain("--effort");
+      return args[args.indexOf("--model") + 1];
     });
-    expect(sent).toEqual([["Gemini 3.8 Flash", "high"], ["Gemini 3.1 Pro", "low"], ["Claude Opus 4.6 (Thinking)"]]);
+    expect(sent).toEqual(["Gemini 3.8 Flash (High)", "Gemini 3.1 Pro (Low)", "Claude Opus 4.6 (Thinking)"]);
   });
 
   it("uses the levels one runtime discovered in another runtime's turn", async () => {
@@ -576,7 +581,8 @@ describe("Antigravity turns", () => {
       runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 3.9 Flash", writableRoot: worktree, onEvent: () => undefined }),
     ).resolves.toBe('{"ok":true}');
     const args = (await logLines()).at(-1)!.args as string[];
-    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 4)).toEqual(["--model", "Gemini 3.9 Flash", "--effort", "medium"]);
+    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2)).toEqual(["--model", "Gemini 3.9 Flash (Medium)"]);
+    expect(args).not.toContain("--effort");
   });
 
   it("asks agy models for the levels of a model Trama does not know yet", async () => {
@@ -590,7 +596,8 @@ describe("Antigravity turns", () => {
       runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 4.0 Flash", writableRoot: worktree, onEvent: () => undefined }),
     ).resolves.toBe('{"ok":true}');
     const args = (await logLines()).at(-1)!.args as string[];
-    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 4)).toEqual(["--model", "Gemini 4.0 Flash", "--effort", "low"]);
+    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2)).toEqual(["--model", "Gemini 4.0 Flash (Low)"]);
+    expect(args).not.toContain("--effort");
   });
 
   it("reports an unknown model as unavailable with a change-model hint, not as raw JSON", async () => {
@@ -656,7 +663,8 @@ describe("Antigravity turns", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "fileChangeCompleted", paths: [join(worktree, "a.txt")], succeeded: true }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallStarted", tool: "view_file" }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", tool: "view_file", succeeded: false, error: "boom" }));
-    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 110, contextWindow: null });
+    // The window comes from the catalog of the model (issue #305).
+    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 110, contextWindow: 1_048_576 });
     expect(events.filter((event) => event.type === "textDelta").map((event) => (event as { delta: string }).delta).join("")).toBe(
       '{"ok":true}',
     );

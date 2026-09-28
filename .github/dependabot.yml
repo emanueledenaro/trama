@@ -13,6 +13,13 @@ updates:
       prefix-development: build
       include: scope
     labels: [dependencies]
+    # TypeScript 7 is a new compiler, and @types/node follows the Node 22
+    # used in CI: their major versions change only on purpose, by hand.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]

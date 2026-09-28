@@ -14,13 +14,13 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import type { ProviderAccount, ProviderId } from "@shared/codex";
+import type { ProviderAccount } from "@shared/codex";
 import type { GitHubCliState } from "@shared/onboarding";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
 import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
@@ -28,6 +28,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
+import { RuleLabel } from "@/components/chat/RuleLabel";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -270,7 +271,33 @@ const GITHUB_STATUS: Record<GitHubCliState["status"], MessageKey> = {
   error: "github.status.error",
 };
 
+/** The Capacità button of a provider row, the same for every provider (issue #71). */
+function CapabilityToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const t = useT();
+  return (
+    <Button variant="ghost" size="xs" aria-expanded={open} onClick={onToggle}>
+      {t("settings.provider.capabilities")} <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
+    </Button>
+  );
+}
+
+function CapabilityList({ provider }: { provider: ProviderDescriptor }) {
+  return (
+    <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg bg-[var(--color-background-button-secondary)] px-3 py-2 text-ui-xs @xl/chat:grid-cols-2">
+      {capabilityLines(provider.capabilities).map((line) => (
+        <div key={line.label} className="flex justify-between gap-2">
+          <span className="text-muted-foreground">{line.label}</span>
+          <span className="text-foreground/90">{line.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const CODEX = PROVIDERS.find((provider) => provider.id === "codex")!;
+
 function ConnectionsSection() {
+  const [codexOpen, setCodexOpen] = useState(false);
   const t = useT();
   const language = useLanguage();
   const codex = useUi((s) => s.app!.codex);
@@ -319,6 +346,7 @@ function ConnectionsSection() {
           control={
             <>
               <Badge tone={status.tone}>{status.label}</Badge>
+              <CapabilityToggle open={codexOpen} onToggle={() => setCodexOpen(!codexOpen)} />
               {account?.kind === "signedOut" ? (
                 <Button size="sm" onClick={() => void act("codex:login", undefined)}>
                   {t("settings.connections.signInChatGpt")}
@@ -326,7 +354,9 @@ function ConnectionsSection() {
               ) : null}
             </>
           }
-        />
+        >
+          {codexOpen ? <CapabilityList provider={CODEX} /> : null}
+        </Row>
         <Row
           label={
             <span className="flex items-center gap-2">
@@ -365,7 +395,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [hint, setHint] = useState<string | null>(null);
   const t = useT();
   const language = useLanguage();
-  const id = provider.id as ProviderId;
+  const id = provider.id;
   const state = useUi((s) => s.app!.providers[id]);
   const status = providerStatus(t, language, state?.account ?? null, state?.checking ?? false);
   const connected = status.tone === "success";
@@ -397,9 +427,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
       control={
         <>
           <Badge tone={status.tone}>{status.label}</Badge>
-          <Button variant="ghost" size="xs" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {t("settings.provider.capabilities")} <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
-          </Button>
+          <CapabilityToggle open={open} onToggle={() => setOpen(!open)} />
           <Button variant="ghost" size="xs" onClick={() => void act("providers:refresh", { provider: id })}>
             {t("settings.provider.check")}
           </Button>
@@ -419,16 +447,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
         </>
       }
     >
-      {open ? (
-        <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg bg-[var(--color-background-button-secondary)] px-3 py-2 text-ui-xs @xl/chat:grid-cols-2">
-          {capabilityLines(provider.capabilities).map((line) => (
-            <div key={line.label} className="flex justify-between gap-2">
-              <span className="text-muted-foreground">{line.label}</span>
-              <span className="text-foreground/90">{line.value}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {open ? <CapabilityList provider={provider} /> : null}
     </Row>
   );
 }
@@ -513,6 +532,9 @@ function MethodSection() {
   );
 }
 
+/** The shared limit's choices (issue #39): the small numbers one by one, then the larger steps. */
+const SHARED_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+
 const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
 
 /** W08: how many developers work at the same time in the open project; three unless the person changes it. */
@@ -521,6 +543,7 @@ function ParallelDevelopersGroup() {
   const usable = project && !project.isDemo && project.stateWritable;
   const limit = project ? parallelDevelopers(project.document) : null;
   const t = useT();
+  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
   return (
     <Group title={t("settings.parallel.title")} note={t("settings.parallel.note")}>
       <Row
@@ -546,6 +569,29 @@ function ParallelDevelopersGroup() {
               ))}
             </div>
           ) : null
+        }
+      />
+      <Row
+        label={t("settings.parallel.shared")}
+        description={t("settings.parallel.sharedDescription")}
+        control={
+          <div role="radiogroup" aria-label={t("settings.parallel.sharedLabel")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="shared-developers">
+            {SHARED_OPTIONS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={shared === value}
+                onClick={() => void act("settings:update", { sharedDevelopers: value })}
+                className={cn(
+                  "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+                  shared === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
         }
       />
     </Group>
@@ -632,7 +678,7 @@ function StandardSection() {
                 key={rule.id}
                 label={
                   <span className="flex items-center gap-2">
-                    {rule.label}
+                    <RuleLabel rule={rule} />
                     {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
                   </span>
                 }
@@ -717,7 +763,10 @@ function MonitorSection() {
         ) : null}
       </Group>
       <Group title={t("settings.monitor.repositories")}>
-        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} /> : null}
+        {/* The empty note never sits above the open project's repository: that row says it is not observed yet (issue #272). */}
+        {monitor.repositories.length === 0 && !(repository && !monitored) ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} />
+        ) : null}
         {monitor.repositories.map((repo) => {
           const status = monitor.status[repo];
           return (

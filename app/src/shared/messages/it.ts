@@ -193,7 +193,7 @@ export const it = {
   "settings.continuous.title": "Lavoro continuo",
   "settings.continuous.label": "Il Coordinatore va avanti da solo dentro il mandato",
   "settings.continuous.description":
-    "Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con Pausa.",
+    "Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con «Pausa del Coordinatore».",
   "settings.parallel.title": "Sviluppatori in parallelo",
   "settings.parallel.note":
     "Ogni sviluppatore libero prende in autonomia la prossima fetta pronta nei suoi moduli, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nel limite.",
@@ -202,6 +202,28 @@ export const it = {
   "settings.parallel.openProject": "Apri un progetto per scegliere il limite.",
   "settings.parallel.demo": "Il progetto di esempio non ha un limite da scegliere.",
   "settings.parallel.default": "Tre, se non lo cambi.",
+  "settings.parallel.shared": "Al massimo in tutti i progetti",
+  "settings.parallel.sharedLabel": "Sviluppatori in tutti i progetti",
+  "settings.parallel.sharedDescription":
+    "Vale anche per i progetti che lasci mentre il loro team lavora. Chi resta senza posto aspetta e parte secondo l'ordine dei progetti della Panoramica. Sei, se non lo cambi.",
+
+  // Projects overview (issue #39)
+  "overview.ci.summary": "CI delle pull request aperte: {parts}",
+  "overview.ci.none": "CI: nessuna pull request aperta con controlli",
+  "overview.ci.failing": "{count} rosse",
+  "overview.ci.failing.one": "{count} rossa",
+  "overview.ci.pending": "{count} in corso",
+  "overview.ci.passing": "{count} verdi",
+  "overview.ci.passing.one": "{count} verde",
+  "overview.priority.title": "Ordine dei progetti",
+  "overview.priority.note":
+    "I progetti che lasci continuano il lavoro già autorizzato. Quando uno sviluppatore si libera, passa al primo progetto di questa lista che ha lavoro in attesa. Aprire un progetto non cambia l'ordine.",
+  "overview.priority.capacity": "Sviluppatori al lavoro in tutti i progetti: {running} su {limit}.",
+  "overview.priority.waiting": "{count} incarichi aspettano uno sviluppatore libero.",
+  "overview.priority.waiting.one": "{count} incarico aspetta uno sviluppatore libero.",
+  "overview.priority.waitingBadge": "{count} in attesa",
+  "overview.priority.up": "Sposta {name} più in alto",
+  "overview.priority.down": "Sposta {name} più in basso",
 
   "settings.standard.description":
     "Lo standard Clean Code di Trama, versione {version}. Gli sviluppatori lo ricevono come testo di Trama accanto alle skill, che restano col testo originale, e la revisione tecnica controlla il diff anche rispetto a questo standard.",
@@ -233,10 +255,10 @@ export const it = {
   "settings.monitor.enabled": "Monitor attivo",
   "settings.monitor.openAtLogin": "Avvia Trama all'accesso, in background",
   "settings.monitor.repositories": "Repository osservati",
-  "settings.monitor.none": "Nessun repository.",
+  "settings.monitor.none": "Nessun repository osservato.",
   "settings.monitor.updated": "Aggiornato",
   "settings.monitor.remove": "Togli",
-  "settings.monitor.openRepository": "Repository del progetto aperto.",
+  "settings.monitor.openRepository": "Repository del progetto aperto, non ancora osservato.",
   "settings.monitor.watch": "Osserva",
 
   "settings.presence.title": "Presenza",
@@ -246,6 +268,13 @@ export const it = {
   "settings.presence.openProject": "Apri un progetto per scegliere se condividere la presenza.",
   "settings.presence.demo": "Il progetto di esempio non condivide la presenza.",
   "settings.presence.share": "Condividi la presenza in {name}",
+
+  // Work a change of the mandate stops (C06)
+  "mandate.stoppedWork.revokeLead": "Senza mandato il Coordinatore legge e propone, ma non agisce.",
+  "mandate.stoppedWork.restrictLead": "Il lavoro fuori dal mandato ristretto, e quello che dipende da esso, si ferma subito; il resto continua.",
+  "mandate.stoppedWork.some": "Si fermano questi lavori; il loro worktree resta com'è:",
+  "mandate.stoppedWork.none": "Nessun lavoro in corso si ferma.",
+  "mandate.stoppedWork.dependsOn": "(dipende da «{objective}»)",
 
   // Place of work (A19)
   "workPlace.setting.automatic": "Automatico",
@@ -299,7 +328,7 @@ export const it = {
   "workPlace.moveToCloud": "Sposta in cloud",
   "workPlace.moveToLocal": "Sposta in locale",
   "cloudSession.label": "Sessione cloud",
-  "cloudSession.status.starting": "In avvio",
+  "cloudSession.status.starting": "In preparazione",
   "cloudSession.status.working": "Al lavoro",
   "cloudSession.status.draft": "Pull request in bozza aperta",
   "cloudSession.status.returned": "Tornata sul Mac",

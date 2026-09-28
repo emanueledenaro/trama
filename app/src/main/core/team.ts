@@ -704,7 +704,7 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       const question = pendingQuestion(assignment);
       if (question) {
         assignment.status = "paused";
-        assignment.lastUpdate = `In pausa: aspetta la risposta alla domanda ${question.id}`;
+        assignment.lastUpdate = `Aspetta la risposta alla domanda ${question.id}`;
       }
     } else if (outcome.kind === "interrupted") {
       confirmStop(assignment, "Il provider ha interrotto il turno.", now);
@@ -718,7 +718,7 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       const question = pendingQuestion(assignment);
       if (question) {
         assignment.status = "paused";
-        assignment.lastUpdate = `In pausa: aspetta la risposta alla domanda ${question.id}. Il turno non è riuscito: ${outcome.message}`;
+        assignment.lastUpdate = `Aspetta la risposta alla domanda ${question.id}. Il turno non è riuscito: ${outcome.message}`;
       }
     }
   });

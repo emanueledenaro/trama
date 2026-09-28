@@ -1,5 +1,5 @@
 import type { ProviderAccount, ProviderId } from "./codex";
-import type { AssignmentPlace, CloudSessionStatus, ProjectDocument, Specialist, SpecialistAssignment, WorkPlace, WorkPlaceSetting } from "./domain";
+import type { AssignmentPlace, ProjectDocument, Specialist, SpecialistAssignment, WorkPlace, WorkPlaceSetting } from "./domain";
 import type { MessageParams, Translate } from "./i18n";
 
 /**
@@ -150,15 +150,6 @@ export function chooseWorkPlace(input: {
 export const cloudWorking = (assignment: SpecialistAssignment): boolean =>
   assignment.cloud?.status === "starting" || assignment.cloud?.status === "working" || assignment.cloud?.status === "draft";
 
-/** The badge tone of each state of a cloud session; the label is `cloudSession.status.<state>` in the catalog. */
-export const CLOUD_STATUS_TONE: Record<CloudSessionStatus, "info" | "success" | "warning" | "destructive" | "secondary"> = {
-  starting: "info",
-  working: "info",
-  draft: "info",
-  returned: "success",
-  stopped: "secondary",
-  failed: "destructive",
-};
 
 /** Whether the person can move the work now (Q30): before it starts, or when it waits for a resume. */
 export function canMovePlace(assignment: SpecialistAssignment): boolean {

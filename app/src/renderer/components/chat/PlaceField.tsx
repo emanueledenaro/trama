@@ -1,5 +1,6 @@
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
-import { CLOUD_STATUS_TONE, canMovePlace, cloudEligible, cloudWorking, offersCloud } from "@shared/workPlace";
+import { canMovePlace, cloudEligible, cloudWorking, offersCloud } from "@shared/workPlace";
+import { CLOUD_SESSION_TONE } from "@shared/states";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
@@ -40,7 +41,7 @@ export function PlaceField({ assignment }: { assignment: SpecialistAssignment })
           <div className="mt-1.5 space-y-1 rounded-lg border border-[color:var(--color-border)] px-3 py-2" data-testid="cloud-session" data-status={cloud.status}>
             <div className="flex flex-wrap items-center gap-1.5 text-ui-sm">
               <span className="text-muted-foreground">{t("cloudSession.label")}</span>
-              <Badge tone={CLOUD_STATUS_TONE[cloud.status]}>{t(`cloudSession.status.${cloud.status}`)}</Badge>
+              <Badge tone={CLOUD_SESSION_TONE[cloud.status]}>{t(`cloudSession.status.${cloud.status}`)}</Badge>
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-sm">
               {cloud.url ? (
