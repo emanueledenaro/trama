@@ -5,7 +5,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { type InspectorTarget, useUi } from "@/lib/store";
-import { TAB_LABELS, VIEW_LABELS, VIEW_TABS, homeOf, isDetail, tabOf, viewOf } from "@/lib/workbench";
+import { TAB_LABELS, type TargetKind, VIEW_LABELS, VIEW_TABS, homeOf, isDetail, parentOf, tabOf, viewOf } from "@/lib/workbench";
 
 const HEADER_BUTTON = "sidebar-icon-button no-drag size-6 rounded-md";
 
@@ -37,6 +37,11 @@ export function SideBar({ size }: { size: SideBarWidth }) {
   const tabs = view === "projects" ? [] : VIEW_TABS[view];
   const isWide = size.width >= size.max - 8;
   const viewName = t(VIEW_LABELS[view]);
+  const decisions = useUi((s) => s.app?.project?.document.decisions.length ?? 0);
+  // A tab that lists records says how many (issue #334: "Patto 3").
+  const tabCount: Partial<Record<TargetKind, number>> = { pact: decisions };
+  // A view with few tabs shows them as a segmented control across the side bar, as Regole (issue #334).
+  const segmented = tabs.length > 1 && tabs.length <= 3;
   return (
     <aside
       aria-label={target ? TITLES[target.kind] : viewName}
@@ -60,7 +65,7 @@ export function SideBar({ size }: { size: SideBarWidth }) {
                 aria-label={t("workbench.sideBar.back")}
                 className={cn(HEADER_BUTTON, "-ml-2")}
                 // Back to where the person came from, else to the list the detail belongs to.
-                onClick={() => (canGoBack ? goBack() : setInspector({ kind: tabOf(target) } as InspectorTarget))}
+                onClick={() => (canGoBack ? goBack() : setInspector(parentOf(target)))}
               >
                 <IconArrowNarrowLeft className="size-4" stroke={1.7} />
               </button>
@@ -92,31 +97,44 @@ export function SideBar({ size }: { size: SideBarWidth }) {
         </Tooltip>
       </div>
       {tabs.length > 1 && target ? (
-        <div
-          role="tablist"
-          aria-label={t("workbench.sideBar.sections", { view: viewName })}
-          className="chat-surface-divider flex shrink-0 gap-0.5 overflow-x-auto px-2 pb-1.5 [scrollbar-width:none]"
-        >
-          {tabs.map((kind) => {
-            const selected = tabOf(target) === kind;
-            return (
-              <button
-                key={kind}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                className={cn(
-                  "h-6 shrink-0 rounded-md px-2 text-ui-sm transition-colors",
-                  selected
-                    ? "bg-[var(--sidebar-selected)] text-[var(--sidebar-accent-foreground)]"
-                    : "text-muted-foreground hover:bg-[var(--sidebar-accent)] hover:text-foreground",
-                )}
-                onClick={() => setInspector({ kind } as InspectorTarget)}
-              >
-                {t(TAB_LABELS[kind]!)}
-              </button>
-            );
-          })}
+        <div className={cn("chat-surface-divider shrink-0 px-2 pb-1.5", segmented && "px-3 pb-2")}>
+          <div
+            role="tablist"
+            aria-label={t("workbench.sideBar.sections", { view: viewName })}
+            data-testid="side-bar-tabs"
+            className={cn(
+              "flex gap-0.5 overflow-x-auto [scrollbar-width:none]",
+              segmented && "rounded-lg bg-[var(--color-background-button-secondary)] p-0.5",
+            )}
+          >
+            {tabs.map((kind) => {
+              const selected = tabOf(target) === kind;
+              const count = tabCount[kind];
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  data-tab={kind}
+                  aria-label={count ? `${t(TAB_LABELS[kind]!)} ${count}` : undefined}
+                  className={cn(
+                    "h-6 shrink-0 rounded-md px-2 text-ui-sm transition-colors",
+                    segmented && "flex-1",
+                    selected
+                      ? segmented
+                        ? "bg-[var(--color-background-surface)] text-foreground shadow-sm"
+                        : "bg-[var(--sidebar-selected)] text-[var(--sidebar-accent-foreground)]"
+                      : "text-muted-foreground hover:bg-[var(--sidebar-accent)] hover:text-foreground",
+                  )}
+                  onClick={() => setInspector({ kind } as InspectorTarget)}
+                >
+                  {t(TAB_LABELS[kind]!)}
+                  {count ? <span className="ml-1.5 tabular-nums text-muted-foreground">{count}</span> : null}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">{target ? <InspectorBody target={target} /> : <ProjectsView />}</div>
