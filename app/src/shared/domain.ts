@@ -231,7 +231,7 @@ export interface FocusTask {
   /** Null when the task has no work yet: a goal nobody started. */
   phase: WorkPhase | null;
   phaseLabel: string;
-  /** Why the work cannot go on; set only in the blocked phase. */
+  /** Why the work cannot go on, in the person's words; set only in the blocked phase. */
   blocker: string | null;
   /** The person's move the work waits for, as its button says it ("Rispondi alla domanda"); null when none. */
   waitingFor: string | null;
@@ -271,6 +271,11 @@ export interface StatusLineView {
   runningMove: { requestId: string; label: string } | null;
   /** The person paused continuous work (A05): no automatic move, round or automatic work starts until Riprendi. */
   paused: boolean;
+  /**
+   * The provider limit the Coordinator waits for (issue #249): no move, round or new turn starts until it ends, then the
+   * work resumes by itself. `until` is the end the provider gave, ISO, or null when it did not say. Null when none.
+   */
+  providerWait: { provider: string; until: string | null } | null;
 }
 
 /** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */

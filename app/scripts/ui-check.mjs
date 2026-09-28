@@ -1301,6 +1301,8 @@ const focusBar = page.getByTestId("focus-bar");
 await focusBar.waitFor({ timeout: 20_000 });
 const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
 const firstFocus = await focusTitle();
+// Issue #241: the bar is titled with the goal, never with the first message of a dialog.
+if (/^\[/.test(firstFocus)) throw new Error(`The focus bar is titled with a message: ${firstFocus}`);
 await focusBar.getByTestId("focus-phase").first().waitFor();
 const queueToggle = focusBar.getByRole("button", { name: /^In coda/ });
 await queueToggle.click();
@@ -1576,6 +1578,19 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Issue #241: the tool's English error stays out of the chat; the reply says it in Italian and Activity keeps the detail.
+if (await page.getByText(/is an assignment, not a candidate/).count()) throw new Error("A tool error reached the chat");
+await page.getByText(/uno strumento di Trama ha rifiutato la richiesta/).last().waitFor();
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
+await toolErrors.locator("summary").click();
+await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
+for (const dark of [false, true]) {
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+  await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // The person takes the move again: it reaches the Coordinator as the person's message, and the button goes away.
 await retryButton.click();
 await page.getByText("Esegui le verifiche del lavoro.").last().waitFor({ timeout: 20_000 });
@@ -1661,7 +1676,8 @@ await blockedGate.locator('[data-testid="gate-review"][data-role="security"]').g
 await blockedGate.locator('[data-testid="gate-finding"][data-severity="blocking"]').getByText("Segreto nel diff: chiave API in NOTE.md").waitFor();
 await blockedGate.locator('[data-testid="gate-review"][data-role="devops"][data-status="skipped"]').getByText(/il diff contiene un segreto/).waitFor();
 await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i rilievi bloccanti/).waitFor();
-await page.getByText(/Via libera rifiutato: .*GATE_BLOCKED/).last().waitFor({ timeout: 20_000 });
+// The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
+await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("Rilievo bloccante dei revisori").waitFor();
 await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
@@ -1796,7 +1812,13 @@ const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]')
 await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
-await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
+await page.getByText(/Rifiutato: .*incomplete_contract/).last().waitFor({ timeout: 20_000 });
+// The tool's own words stay in the turn's activity, out of the reply (issue #241).
+const contractRefusal = await page.evaluate(async () => {
+  const state = await window.trama.getState();
+  return state.project.document.events.findLast((e) => e.content.type === "activity" && e.content.tone === "error")?.content.detail ?? "";
+});
+if (!/seams.*decisionIDs/.test(contractRefusal)) throw new Error(`The contract refusal does not name the missing fields: ${contractRefusal}`);
 if ((await assignmentCards.count()) !== 5) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
 const sliceWork = assignmentCards.nth(5);
@@ -3004,4 +3026,120 @@ await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo i
 await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]').filter({ hasText: "Nel backlog di Trama" }).waitFor();
 await localBacklog.scrollIntoViewIfNeeded();
 await problemShots("27c-found-problem-local-backlog");
+await app.close();
+
+
+// Issue #249: the always active Coordinator of a project with a mandate. A provider limit holds moves, rounds and new
+// turns, and the status line says what it waits for; on reopening Trama the turn that waited for the limit waits again
+// and resumes by itself at its end, the turn Esci ended resumes by itself, reconciled first, and a project in Pause
+// stays in Pause with its turn interrupted. The quota file stands in for the ChatGPT usage limit.
+const alwaysProject = await mkdtemp(join(tmpdir(), "trama-ui-sempre-attivo-"));
+await cp(resolve("resources/DemoProject"), alwaysProject, { recursive: true });
+execFileSync("git", ["-C", alwaysProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", alwaysProject, "add", "."]);
+execFileSync("git", ["-C", alwaysProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+const alwaysQuota = join(await mkdtemp(join(tmpdir(), "trama-ui-quota-")), "exhausted");
+const alwaysEnv = { TRAMA_PROVIDER_RETRY_MS: "3000", TRAMA_PROVIDER_CHECK_MS: "3000", FAKE_CODEX_QUOTA_FILE: alwaysQuota };
+({ app, page } = await launch(alwaysEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), alwaysProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const alwaysMandate = await openWaiting("mandate");
+await alwaysMandate.getByRole("button", { name: "Concedi", exact: true }).click();
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const waitShots = async (name) => {
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLook(provider, dark);
+      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLook(null, false);
+};
+// The page changes at each launch: the line is looked up again every time.
+const checkWaitingLine = async (where) => {
+  const waitingLine = page.locator('[data-testid="status-line"][data-provider-wait="true"]');
+  await waitingLine.waitFor({ timeout: 30_000 });
+  await waitingLine.getByTestId("status-line-text").getByText(/^Aspetto che la quota di ChatGPT si sblocchi/).waitFor();
+  await waitingLine.getByTestId("status-line-reason").getByText("Fino ad allora non parte nessun turno. Poi riprendo da solo.").waitFor();
+  // The Pause stays reachable while the Coordinator waits.
+  await waitingLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+  if (/[–—]/.test(await waitingLine.innerText())) throw new Error(`${where}: dash in the status line`);
+};
+const alwaysReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
+const waitForAlwaysReply = async (before, what) => {
+  for (let tries = 0; (await alwaysReplies()) <= before; tries++) {
+    if (tries > 160) throw new Error(`${what}: the turn did not resume`);
+    await page.waitForTimeout(250);
+  }
+};
+
+// A used up quota: the turn fails, and the status line says the Coordinator waits for the quota and resumes by itself.
+await writeFile(alwaysQuota, "");
+await page.getByLabel("Messaggio al Coordinatore").fill("Prepara il riepilogo dei resi");
+await page.keyboard.press("Enter");
+await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last().waitFor({ timeout: 30_000 });
+await checkWaitingLine("Limit");
+await page.getByTestId("status-line").scrollIntoViewIfNeeded();
+await waitShots("27a-status-line-provider-wait");
+
+// Esci while the quota is still used up: after reopening, the turn waits again, and no new turn starts meanwhile.
+await app.close();
+({ app, page } = await launch(alwaysEnv));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
+await checkWaitingLine("Reopened limit");
+await page.waitForTimeout(7_000);
+if ((await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').count()) !== 1) throw new Error("Trama started a turn while the quota was used up");
+await waitShots("27b-reopened-provider-wait");
+let alwaysSoFar = await alwaysReplies();
+await rm(alwaysQuota);
+await waitForAlwaysReply(alwaysSoFar, "Reopened limit");
+await page.locator('[data-testid="status-line"][data-provider-wait="false"]').waitFor({ timeout: 30_000 });
+if ((await page.getByText("Prepara il riepilogo dei resi", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
+await shot("27c-reopened-limit-resumed");
+
+// Esci during a turn: after reopening, the turn resumes by itself, and the Coordinator checks first what was done.
+await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Controlla i test dei resi");
+await page.keyboard.press("Enter");
+await page.getByText("[attesa] Controlla i test dei resi", { exact: true }).waitFor();
+await page.waitForTimeout(1_500);
+alwaysSoFar = await alwaysReplies();
+await app.close();
+({ app, page } = await launch({ ...alwaysEnv, FAKE_CODEX_NO_WAIT: "1" }));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
+// Nobody presses Riprendi: the resumed turn replies by itself, its work lists Trama's line, and the message is not
+// written again.
+await waitForAlwaysReply(alwaysSoFar, "Reopened turn");
+if ((await page.getByText("[attesa] Controlla i test dei resi", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
+await page.getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+const reopenedRow = page.getByText("Turno ripreso alla riapertura", { exact: true }).last();
+await reopenedRow.waitFor({ timeout: 10_000 });
+await page.waitForTimeout(1_000);
+await reopenedRow.scrollIntoViewIfNeeded();
+await waitShots("27d-reopened-turn-resumed");
+
+// A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
+await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa", exact: true }).click();
+await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor();
+await app.close();
+({ app, page } = await launch(alwaysEnv));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
+await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Rileggi gli esempi dei resi");
+await page.keyboard.press("Enter");
+await page.getByText("[attesa] Rileggi gli esempi dei resi", { exact: true }).waitFor();
+await page.waitForTimeout(1_500);
+alwaysSoFar = await alwaysReplies();
+await app.close();
+({ app, page } = await launch({ ...alwaysEnv, FAKE_CODEX_NO_WAIT: "1" }));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
+const pausedAgain = page.locator('[data-testid="status-line"][data-paused="true"]');
+await pausedAgain.waitFor({ timeout: 30_000 });
+const pausedQuit = page.getByRole("status").filter({ hasText: "Trama è stato chiuso mentre il Coordinatore lavorava." }).last();
+await pausedQuit.waitFor({ timeout: 30_000 });
+await page.waitForTimeout(2_000);
+if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
+await waitShots("27e-reopened-paused");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

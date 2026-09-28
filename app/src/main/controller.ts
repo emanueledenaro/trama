@@ -106,7 +106,18 @@ import {
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { recordGate } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
-import { appendEvent, emptyDocument, handoverTranscript, moveEvent, QUIT_NOTE, recordReply, referencedPaths } from "./core/document";
+import {
+  appendEvent,
+  ASSIGNMENT_CRASH_NOTE,
+  ASSIGNMENT_QUIT_NOTE,
+  emptyDocument,
+  handoverTranscript,
+  moveEvent,
+  QUIT_NOTE,
+  recordReply,
+  referencedPaths,
+} from "./core/document";
+import { type ProviderWait, providerWaitLine, reopeningResume } from "./core/resumeWork";
 import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
@@ -188,6 +199,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
+import { TOOL_ERRORS_RULE, toolErrorMessage, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   beginTurn,
@@ -438,7 +450,7 @@ const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, inde
 type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
 
 function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
-  const style = messageStyle("the person");
+  const style = [messageStyle("the person"), TOOL_ERRORS_RULE].join("\n");
   const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
@@ -494,8 +506,20 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
   }
 }
 
+/**
+ * A turn Trama repeats (P10, C11): the request it repeats, the automatic attempt (0 for Riprova or a resume), why it
+ * waited, and whether Trama took it up by itself on reopening a project with a mandate (issue #249).
+ */
+type ResumedTurn = { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason; reopened?: boolean };
+
 /** Trama's line in the chat when a turn is repeated (P10, C11): the message is already above it. */
-function retryLine(retry: { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason }, provider: string): { title: string; detail: string } {
+function retryLine(retry: ResumedTurn, provider: string): { title: string; detail: string } {
+  if (retry.reopened) {
+    return {
+      title: "Turno ripreso alla riapertura",
+      detail: "Trama riprende da sola, dentro il mandato, il turno interrotto dalla chiusura. Il Coordinatore controlla prima cosa era già stato fatto.",
+    };
+  }
   if (retry.attempt === 0) {
     return retry.of.state === "interrupted"
       ? { title: "Turno ripreso", detail: "Trama riprende il messaggio del turno interrotto. Il Coordinatore controlla prima cosa era già stato fatto." }
@@ -746,7 +770,7 @@ export class TramaController {
       project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
     );
     project.focus = focusView(project.document);
-    project.statusLine = statusLine(project.document, project.runningRequestId);
+    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project));
     project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
@@ -1152,7 +1176,7 @@ export class TramaController {
       }
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
-      const orphanNote = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
+      const orphanNote = ASSIGNMENT_CRASH_NOTE;
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
         appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
           assignmentId,
@@ -1215,8 +1239,17 @@ export class TramaController {
         void this.prepareSkills().catch((error) => this.fail(error));
       }
       void this.loadSkills();
-      // After a restart continuous work picks up where it was with a round once the Coordinator is open (A05).
-      void this.startCoordinator().then(() => this.runRound(), () => undefined).catch((error) => this.fail(error));
+      // After a restart continuous work picks up from the recorded step, then with a round, once the Coordinator is open
+      // (A05, issue #249).
+      void this.startCoordinator()
+        .then(
+          async () => {
+            await this.resumeOnReopening(project);
+            await this.runRound();
+          },
+          () => undefined,
+        )
+        .catch((error) => this.fail(error));
       const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
       for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
@@ -1827,7 +1860,7 @@ export class TramaController {
       const project = this.projectById(runtime.projectId);
       const assignment = project ? findAssignment(project.document, assignmentId) : null;
       if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
-        requestStop(project.document, assignment.specialistId, "Trama", "Esci: Trama si sta chiudendo. Riprendi l'incarico quando vuoi.");
+        requestStop(project.document, assignment.specialistId, "Trama", ASSIGNMENT_QUIT_NOTE);
       }
     }
     await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
@@ -1888,6 +1921,8 @@ export class TramaController {
         this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, `${providerName(provider)} è di nuovo disponibile`, "Trama riprende l'incarico.", "info");
         if (project === this.state.project) void this.startAssignment(assignment.id);
       }
+      // The Coordinator's provider is back: the round the limit held runs now (issue #249).
+      if (this.coordinatorProvider(project.document) === provider) void this.runRound().catch((error) => this.fail(error));
     }
   }
 
@@ -1992,7 +2027,8 @@ export class TramaController {
         const current = this.state.project;
         if (!current || current.id !== project.id) throw new Error("The project is no longer open.");
         const counters = this.coordinatorLearning(current.document);
-        return runCoordinatorTool(name, args, {
+        const runningRequestId = current.runningRequestId;
+        const result = await runCoordinatorTool(name, args, {
           document: current.document,
           learning: this.learningFor(current),
           sessionSearch: {
@@ -2047,6 +2083,10 @@ export class TramaController {
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
         });
+        // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
+        const error = toolErrorMessage(result);
+        if (error && runningRequestId) this.turnToolErrors.set(runningRequestId, [...(this.turnToolErrors.get(runningRequestId) ?? []), error]);
+        return result;
       },
       TOOL_SERVER_INSTRUCTIONS,
     );
@@ -2297,7 +2337,7 @@ export class TramaController {
     /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
     step: RequestStep | null = null,
     /** The failed request this one repeats (P10): the chat does not show the message a second time. */
-    retry: { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason } | null = null,
+    retry: ResumedTurn | null = null,
     /** Bundled skills without a Trama flow that a started Ask Trama route runs, delivered with their original text (M07). */
     routeSkills: string[] = [],
   ): Promise<void> {
@@ -2518,7 +2558,7 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       const references = referencedPaths(reply, paths);
       if (reply) {
-        recordReply(document, request.id, reply, selectedModel, references, activeProvider);
+        recordReply(document, request.id, withoutToolErrors(reply, this.turnToolErrors.get(request.id) ?? []), selectedModel, references, activeProvider);
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
@@ -2576,6 +2616,7 @@ export class TramaController {
       if (!interrupted) void this.noticeIfBlocked(project, activeProvider, message, request.id);
     } finally {
       this.turnToolIterations.delete(request.id);
+      this.turnToolErrors.delete(request.id);
       this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -2601,7 +2642,7 @@ export class TramaController {
     if (this.quitting || attempt > PROVIDER_RETRY_ATTEMPTS) return;
     const provider = request.provider ?? this.coordinatorProvider(project.document);
     const delay = reason === "quotaExhausted" ? quotaCheckDelayMs(providerCheckMs(), until) : retryDelayMs(attempt, providerRetryBaseMs(), until);
-    this.armProviderRetry(project, { requestId: request.id, provider: providerName(provider), reason, attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: "" }, delay);
+    this.armProviderRetry(project, { requestId: request.id, provider: providerName(provider), reason, attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: "", until }, delay);
   }
 
   private armProviderRetry(project: ActiveProjectState, base: ProviderRetryView, delay: number): void {
@@ -2633,7 +2674,8 @@ export class TramaController {
       this.queue.some((q) => q.projectId === project.id) ||
       project.document.requests.at(-1)?.id !== view.requestId;
     const failed = project.document.requests.find((r) => r.id === view.requestId);
-    if (stale() || failed?.state !== "failed") {
+    // A turn Esci ended waits too when it is resumed on reopening while the provider is blocked (issue #249).
+    if (stale() || (failed?.state !== "failed" && failed?.state !== "interrupted")) {
       project.providerRetry = null;
       this.changed();
       return;
@@ -2650,7 +2692,8 @@ export class TramaController {
       }
       const account = this.state.providers[provider]?.account ?? null;
       if (providerUnavailableReason(provider, account) !== null) {
-        this.armProviderRetry(project, view, quotaCheckDelayMs(providerCheckMs(), account?.kind === "blocked" ? account.until : null));
+        const until = account?.kind === "blocked" ? account.until : null;
+        this.armProviderRetry(project, { ...view, until: until ?? view.until ?? null }, quotaCheckDelayMs(providerCheckMs(), until));
         this.publish();
         return;
       }
@@ -2662,6 +2705,58 @@ export class TramaController {
       attempt: view.attempt,
       reason: view.reason,
     });
+  }
+
+  /**
+   * On reopening a project with a granted mandate, not in Pause (issue #249): the specialists' work Esci or a crash
+   * stopped resumes in its own worktree, and the Coordinator turn it ended is taken up again, told to reconcile what
+   * was already done before repeating an action with effects. A turn that failed on a provider limit waits for its end.
+   * Without a mandate or in Pause nothing starts: the person resumes by hand (C11).
+   */
+  private async resumeOnReopening(project: ActiveProjectState): Promise<void> {
+    if (this.quitting || this.state.project !== project || project.isDemo || !project.stateWritable) return;
+    const document = project.document;
+    const plan = reopeningResume(document, this.state.settings.continuousWork !== false);
+    for (const id of plan.assignments) {
+      const assignment = findAssignment(document, id);
+      if (!assignment) continue;
+      const key = `${assignment.turns.length + 1}`;
+      if (!withinMandate(document, assignment)) {
+        this.specialistActivity(project, id, key, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
+        continue;
+      }
+      try {
+        resumeAssignment(document, id);
+      } catch (error) {
+        this.specialistActivity(project, id, key, "Ripresa non eseguita", (error as Error).message, "info");
+        continue;
+      }
+      refreshDecisionVersions(document, id);
+      this.specialistActivity(project, id, key, "Incarico ripreso alla riapertura", "Trama riprende l'incarico nel suo worktree, com'era alla chiusura.", "info");
+      void this.startAssignment(id);
+    }
+    const turn = plan.turn;
+    const request = turn ? document.requests.find((r) => r.id === turn.requestId) : undefined;
+    if (!turn || !request) {
+      this.changed();
+      return;
+    }
+    const provider = this.coordinatorProvider(document);
+    const account = this.state.providers[provider]?.account ?? null;
+    if (turn.kind === "wait") {
+      this.scheduleProviderRetry(project, request, turn.reason, turn.until);
+    } else if (account?.kind === "blocked") {
+      // The provider is still at its limit: the turn waits for it, with checks of the account only.
+      this.scheduleProviderRetry(project, request, "quotaExhausted", account.until);
+    } else if (project.runningRequestId === null && !this.queue.some((q) => q.projectId === project.id)) {
+      await this.send(request.text, request.moduleId, null, request.effort, [], null, request.goalId ?? null, false, request.step ?? null, {
+        of: request,
+        attempt: 0,
+        reopened: true,
+      });
+      return;
+    }
+    this.changed();
   }
 
   /** After the computer wakes up, a turn waiting for the network or a quota is checked soon instead of at its old time (C11). */
@@ -2730,9 +2825,30 @@ export class TramaController {
   /** The round that runs now: a tick meanwhile waits for the next one. */
   private roundRunning = false;
 
+  /**
+   * The provider limit the selected project's Coordinator waits for (issue #249): a turn waiting to be resumed after a
+   * limit, a used up quota or an outage, or its provider's account blocked while the project has open work. Null when
+   * it can work.
+   */
+  private coordinatorWait(project: ActiveProjectState): ProviderWait | null {
+    const provider = this.coordinatorProvider(project.document);
+    const account = this.state.providers[provider]?.account ?? null;
+    const retry = project.providerRetry;
+    // The end of the limit, from the failure or from the account the check read.
+    if (retry) {
+      const fromAccount = account?.kind === "blocked" && providerName(provider) === retry.provider ? account.until : null;
+      return { provider: retry.provider, reason: retry.reason, until: retry.until ?? fromAccount };
+    }
+    // Without open work a blocked account holds nothing: the line does not promise a resume.
+    if (account?.kind !== "blocked" || !hasOpenWork(project.document)) return null;
+    return { provider: providerName(provider), reason: "quotaExhausted", until: account.until };
+  }
+
   private continuationGuards(project: ActiveProjectState): ContinuationGuards {
     const provider = this.coordinatorProvider(project.document);
+    const wait = project.providerRetry ? providerWaitLine(this.coordinatorWait(project)!).text : null;
     const unavailable =
+      wait ??
       providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) ??
       (project.phase.kind === "unavailable" ? project.phase.message : null) ??
       (this.coordinatorModel(project.document, provider) ? null : this.coordinatorModelProblem(project.document, provider));
@@ -2769,8 +2885,11 @@ export class TramaController {
     const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
     this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (this.quitting || this.state.project !== project) return;
-    if (project.document.requests.find((r) => r.id === requestId)?.state !== "completed") return;
+    const request = project.document.requests.find((r) => r.id === requestId);
+    if (request?.state !== "completed") return;
     this.startAutomaticMove(project, [{ requestId, event: "turnEnded" }, ...deferred]);
+    // A turn resumed after a limit also brings back the round the limit held (issue #249).
+    if ((request.retry?.attempt ?? 0) > 0) void this.runRound().catch((error) => this.fail(error));
   }
 
   /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). Returns its name, or null. */
@@ -2815,6 +2934,11 @@ export class TramaController {
     const project = this.state.project;
     if (!project || this.quitting || this.roundRunning || !project.stateWritable || project.isDemo) return;
     if (this.state.settings.continuousWork === false || isPaused(project.document) || !hasOpenWork(project.document)) return;
+    // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
+    if (this.coordinatorWait(project)) {
+      if (!project.providerRetry) this.scheduleProviderWait(this.coordinatorProvider(project.document));
+      return;
+    }
     this.roundRunning = true;
     try {
       const working = (document: ProjectDocument) =>
@@ -5617,6 +5741,8 @@ export class TramaController {
   private readonly learningReviews = new Map<string, AbortController>();
   /** Tool iterations of each running Coordinator turn: the skill review counts them. */
   private readonly turnToolIterations = new Map<string, number>();
+  /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
+  private readonly turnToolErrors = new Map<string, string[]>();
   /** Learning tools the Coordinator wrote with in each running turn. */
   private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;

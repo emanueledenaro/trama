@@ -5,6 +5,7 @@ import { needsWorktree } from "./team";
 import { contractBriefing, REPORT_HEADINGS } from "./implementation";
 import { answerBriefing, asksCoordinator } from "./developerQuestions";
 import { providerToolsRule } from "./providers/toolRefusal";
+import { stoppedByClosing } from "./resumeWork";
 
 export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
   const lines = [
@@ -65,6 +66,10 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   const lines = [`Riprendi l'incarico ${assignment.id}: ${assignment.objective}`];
   const stop = assignment.stops.at(-1);
   if (stop?.confirmedAt) lines.push(`Il lavoro era stato fermato (${stop.reason}). Il worktree è come l'hai lasciato.`);
+  // Trama closed during the turn (issue #249): its outcome is uncertain, so what is done is checked before it is repeated.
+  if (stoppedByClosing(assignment)) {
+    lines.push("Trama si è chiuso durante il tuo turno: parte del lavoro può essere già fatta. Prima di ripetere un'azione con effetti, controlla nel worktree cosa c'è già e non rifarlo.");
+  }
   if (assignment.failure) lines.push(`Il turno precedente non è riuscito: ${assignment.failure}`);
   const relied = decisionLines(assignment, decisions);
   if (relied.length) lines.push(...relied, "Se una decisione è cambiata rispetto al lavoro fatto, adegua il lavoro alla versione attuale.");

@@ -26,6 +26,7 @@ export function problemActivity(problems: FoundProblem[]): ActivityEntry[] {
     move: null,
     goalId: null,
     endedAt: null,
+    toolErrors: [],
   };
   for (const problem of problems) {
     const issue = problem.issue ? { number: problem.issue.number, url: problem.issue.url } : null;
