@@ -137,6 +137,10 @@ export interface ActionMap {
   "candidate:shot": [{ candidateId: string; index: number }, string];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */
   "candidate:focusAudit": [{ candidateId: string }, string];
+  /** Turns a finding of focus mode into work (F04): a ticket, an assignment within the mandate or a Pact card. */
+  "finding:followUp": [{ auditId: string; findingId: string; kind: "ticket" | "assignment" | "pactCard" }, void];
+  /** Publishes the report of a finished focus mode on GitHub, only when the person asks (F04). */
+  "audit:publish": [{ auditId: string }, void];
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },

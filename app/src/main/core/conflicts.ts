@@ -192,6 +192,48 @@ export async function probeWorktrees(
   }
 }
 
+export type CombinedCheckout = { status: "clean"; path: string; remove: () => Promise<void> } | { status: "conflict" | "unavailable"; detail: string };
+
+/**
+ * The combined candidate of a semantic scenario (issue #40): two worktrees become temporary commits on their bases in a
+ * scratch clone, merged as `probeWorktrees` does; a clean merge is committed and checked out there, so a required check
+ * can run on both changes together. Neither worktree nor the project's checkout changes; `remove` deletes the clone.
+ */
+export async function combineWorktrees(
+  mine: { session: WorktreeSession; snapshotId: string },
+  other: { session: WorktreeSession; snapshotId: string },
+  probeRoot: string,
+): Promise<CombinedCheckout> {
+  const clone = await scratchClone(mine.session.sourceRoot, probeRoot);
+  const remove = () => rm(clone, { recursive: true, force: true });
+  try {
+    const otherSHA = await commitCandidate(clone, other.session, other.snapshotId, MAXIMUM_CANDIDATE_BYTES / 2);
+    const mineSHA = await commitCandidate(clone, mine.session, mine.snapshotId, MAXIMUM_CANDIDATE_BYTES / 2);
+    const merge = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-tree", "--write-tree", mineSHA, otherSHA], { cwd: clone, env: gitEnvironment(true) });
+    if (merge.exitCode === 1) {
+      await remove();
+      return { status: "conflict", detail: "La fusione temporanea delle due copie di lavoro produce conflitti testuali." };
+    }
+    const tree = merge.stdout.split("\n")[0]!.trim();
+    if (merge.exitCode !== 0 || !isObjectId(tree)) {
+      await remove();
+      return { status: "unavailable", detail: `git merge-tree non ha completato la fusione: ${merge.stderr.trim()}` };
+    }
+    const combined = (
+      await git(
+        ["-c", "user.name=Trama", "-c", "user.email=probe@trama.local", "commit-tree", tree, "-p", mineSHA, "-p", otherSHA, "-m", "Trama combined candidate"],
+        clone,
+        false,
+      )
+    ).trim();
+    await git(["checkout", "--quiet", "--force", "--detach", combined, "--"], clone, false);
+    return { status: "clean", path: clone, remove };
+  } catch (error) {
+    await remove();
+    return { status: "unavailable", detail: (error as Error).message };
+  }
+}
+
 const MAXIMUM_LINE_FILES = 20;
 
 /**
@@ -225,6 +267,8 @@ export async function assessConflict(input: {
   source: RemoteSource;
   cacheRoot: string;
   probeRoot: string;
+  /** When Trama read the remote heads on GitHub: the card shows it apart from the time of the comparison. */
+  remoteReadAt?: string;
 }): Promise<ConflictAssessment> {
   const base = {
     id: `${input.snapshotId}:${input.remoteSHA}`,
@@ -233,6 +277,7 @@ export async function assessConflict(input: {
     remoteSHA: input.remoteSHA,
     references: input.references,
     checkedAt: new Date().toISOString(),
+    ...(input.remoteReadAt ? { remoteReadAt: input.remoteReadAt } : {}),
   };
   try {
     const cache = await fetchRemoteRevision(input.session.sourceRoot, input.source, input.remoteSHA, input.cacheRoot);

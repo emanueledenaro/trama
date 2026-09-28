@@ -82,7 +82,7 @@ function currentPlans(document: ProjectDocument): WorkPlan[] {
 }
 
 /** The provider and model of the developer's work: its own, the plan's latest slice, or the fallback, while connected. */
-function providerFor(specialist: Specialist, earlier: SpecialistAssignment[], input: PickInput): { provider: ProviderId; model: string } | null {
+export function providerFor(specialist: Specialist, earlier: SpecialistAssignment[], input: PickInput): { provider: ProviderId; model: string } | null {
   const own = specialist.assignments.at(-1);
   const options = [
     specialist.model ? { provider: specialist.provider ?? own?.provider ?? "codex", model: specialist.model } : null,
