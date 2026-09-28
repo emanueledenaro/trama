@@ -8,7 +8,9 @@ import {
   nextVersion,
   parseVersion,
   parseSubject,
+  pullRequestNumber,
   releaseChangelog,
+  uncitedCommits,
 } from './lib.mjs';
 
 const REPO = 'https://github.com/emanueledenaro/trama';
@@ -92,9 +94,9 @@ test('groups commits into Keep a Changelog sections', () => {
     REPO,
   );
   assert.deepEqual(groups, {
-    Added: [`- **app:** add the palette ([#5](${REPO}/pull/5))`],
-    Fixed: ['- guard paths'],
-    Changed: ['- **BREAKING** **deps:** require Node 24'],
+    Added: [`- **app:** Add the palette ([#5](${REPO}/pull/5)).`],
+    Fixed: ['- Guard paths.'],
+    Changed: ['- **BREAKING** **deps:** Require Node 24.'],
   });
 });
 
@@ -194,4 +196,62 @@ test('extracts the notes of a version', () => {
 test('treats the version as plain text, not as a pattern', () => {
   assert.equal(extractSection(CHANGELOG, '0.1.*'), null);
   assert.equal(extractSection(CHANGELOG, '0.1'), null);
+});
+
+test('reads the pull request a merge subject ends with', () => {
+  assert.equal(pullRequestNumber('feat(app): add the palette (#12)'), 12);
+  assert.equal(pullRequestNumber('test(app): one clock (#321) (#321)'), 321);
+  assert.equal(pullRequestNumber('Merge pull request #7 from owner/branch'), null);
+  assert.equal(pullRequestNumber('fix: no number'), null);
+});
+
+test('skips the pull requests the changelog already cites', () => {
+  const changelog = `## [Unreleased]\n\n### Added\n\n- Palette ([#5](${REPO}/pull/5)).\n- Templates ([#9](${REPO}/issues/9)).\n`;
+  const commits = [commit('feat: palette (#5)'), commit('feat: search (#7)'), commit('fix: templates (#9)'), commit('fix: no number')];
+  assert.deepEqual(
+    uncitedCommits(commits, changelog).map((c) => c.subject),
+    ['feat: search (#7)', 'fix: no number'],
+  );
+});
+
+test('the first release keeps the hand-written notes and adds every pull request they miss', () => {
+  const changelog = `# Changelog
+
+## [Unreleased]
+
+Reconstructed up to the 26th.
+
+### Added
+
+- Palette ([#5](${REPO}/pull/5)).
+`;
+  const history = [
+    commit('feat(app): add the search (#8)'),
+    commit('fix(app): guard paths (#7)'),
+    commit('docs: update the README (#6)'),
+    commit('feat(app): add the palette (#5)'),
+    commit('Merge pull request #4 from owner/old-branch'),
+  ];
+  const result = releaseChangelog(changelog, {
+    version: '0.2.0',
+    date: '2026-09-28',
+    previousTag: null,
+    generated: groupCommits(uncitedCommits(history, changelog), REPO),
+    repoUrl: REPO,
+  });
+  const section = extractSection(result, '0.2.0');
+  assert.equal(
+    section,
+    [
+      '### Added',
+      '',
+      `- Palette ([#5](${REPO}/pull/5)).`,
+      `- **app:** Add the search ([#8](${REPO}/pull/8)).`,
+      '',
+      '### Fixed',
+      '',
+      `- **app:** Guard paths ([#7](${REPO}/pull/7)).`,
+    ].join('\n'),
+  );
+  assert.equal(result.match(/\/pull\/5\)/g).length, 1);
 });

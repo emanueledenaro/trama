@@ -11,6 +11,7 @@ import {
   nextVersion,
   parseVersion,
   releaseChangelog,
+  uncitedCommits,
 } from './lib.mjs';
 
 const CHANGELOG = 'CHANGELOG.md';
@@ -38,9 +39,10 @@ function lastTag() {
 }
 
 // Main uses merge commits whose subjects carry the PR title, so the first
-// parent history gives one entry per pull request.
+// parent history gives one entry per pull request. Without a tag, the first
+// release reads the whole history.
 function commitsSince(tag) {
-  const output = git('log', '--first-parent', '--format=%s%x1f%b%x1e', `${tag}..HEAD`);
+  const output = git('log', '--first-parent', '--format=%s%x1f%b%x1e', tag ? `${tag}..HEAD` : 'HEAD');
   return output
     .split('\x1e')
     .map((record) => record.replace(/^\n/, ''))
@@ -53,7 +55,8 @@ function commitsSince(tag) {
 
 function prepare(requested) {
   const tag = lastTag();
-  const commits = tag ? commitsSince(tag) : [];
+  const current = readFileSync(CHANGELOG, 'utf8');
+  const commits = commitsSince(tag);
   let version = requested;
   if (version) {
     try {
@@ -74,11 +77,13 @@ function prepare(requested) {
   const date = new Date().toISOString().slice(0, 10);
   let changelog;
   try {
-    changelog = releaseChangelog(readFileSync(CHANGELOG, 'utf8'), {
+    changelog = releaseChangelog(current, {
       version,
       date,
       previousTag: tag,
-      generated: groupCommits(commits, repoUrl),
+      // A pull request the changelog already cites, by hand under [Unreleased]
+      // or in an older section, is not listed again.
+      generated: groupCommits(uncitedCommits(commits, current), repoUrl),
       repoUrl,
     });
   } catch (error) {

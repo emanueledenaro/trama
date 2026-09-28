@@ -79,6 +79,32 @@ export function nextVersion(current, commits) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+/** The number of the pull request a merge subject ends with, as in "feat: x (#12)"; null without one. */
+export function pullRequestNumber(subject) {
+  const match = /\(#(\d+)\)\s*$/.exec(subject ?? '');
+  return match ? Number(match[1]) : null;
+}
+
+/** Every pull request or issue number the changelog already links to. */
+export function citedNumbers(changelog) {
+  const numbers = new Set();
+  for (const match of changelog.matchAll(/\/(?:pull|issues)\/(\d+)\)/g)) numbers.add(Number(match[1]));
+  return numbers;
+}
+
+/**
+ * Drops the commits whose pull request the changelog already cites, such as
+ * the notes written by hand under [Unreleased]. The first release reads the
+ * whole history, so this keeps each pull request in the notes once.
+ */
+export function uncitedCommits(commits, changelog) {
+  const cited = citedNumbers(changelog);
+  return commits.filter((commit) => {
+    const number = pullRequestNumber(commit.subject);
+    return number === null || !cited.has(number);
+  });
+}
+
 function linkPullRequests(text, repoUrl) {
   return text.replace(/\(#(\d+)\)$/, `([#$1](${repoUrl}/pull/$1))`);
 }
@@ -94,7 +120,9 @@ export function groupCommits(commits, repoUrl) {
     if (!group && !breaking) continue;
     const scope = parsed.scope ? `**${parsed.scope}:** ` : '';
     const marker = breaking ? '**BREAKING** ' : '';
-    const line = `- ${marker}${scope}${linkPullRequests(parsed.description, repoUrl)}`;
+    // Sentences like the hand-written notes: capital first letter, final period.
+    const text = linkPullRequests(parsed.description, repoUrl);
+    const line = `- ${marker}${scope}${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
     (groups[group ?? 'Changed'] ??= []).push(line);
   }
   return groups;

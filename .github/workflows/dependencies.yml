@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: 22
       - name: Test dello script
-        run: node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs
+        run: node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs scripts/release/cli.test.mjs
       - name: Licenze delle dipendenze
         run: node scripts/licenses/cli.mjs app/package-lock.json
   review:

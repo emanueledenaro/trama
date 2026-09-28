@@ -37,20 +37,31 @@ La 1.0 la decide la persona. Da lì in poi vale SemVer pieno: un cambiamento inc
 ## CHANGELOG
 
 - `CHANGELOG.md` segue [Keep a Changelog 1.1.0](https://keepachangelog.com/it-IT/1.1.0/), raggruppato per tipo (`Added`, `Changed`, `Fixed`, ...).
-- Le voci vengono dai Conventional Commits, con il link alla PR. `feat` va in Added, `fix` in Fixed, `perf`, `refactor` e `revert` in Changed.
-- Le note sotto `[Unreleased]` si possono scrivere a mano: la release successiva le sposta nella propria sezione.
-- Le note nuove si scrivono in italiano semplice. Le voci già pubblicate non si traducono.
+- Le voci vengono dai Conventional Commits, con il link alla PR. `feat` va in Added, `fix` in Fixed, `perf`, `refactor` e `revert` in Changed. Ogni voce è una frase: iniziale maiuscola e punto finale.
+- La sezione di una release copre ogni PR unita su `main` dall'ultimo tag. La prima release, senza tag, legge tutta la cronologia di `main`. Una PR che il CHANGELOG cita già non viene ripetuta.
+- Le note sotto `[Unreleased]` si possono scrivere a mano, con il link alla PR: la release successiva le sposta nella propria sezione e non aggiunge la voce generata per la stessa PR.
+- `CHANGELOG.md` e le note delle release sono in inglese, come il `README.md`: si rivolgono a chi scarica Trama da GitHub e le voci vengono dai titoli delle PR, che sono in inglese. Si scrivono in inglese semplice, senza gergo interno.
 - La sezione si può correggere nella PR di rilascio, prima dell'unione.
 
 ## Come nasce una release
 
-1. **Preparazione.** Il coordinatore lancia `release-prepare.yml` (a mano, da Actions o con `gh workflow run release-prepare.yml`). Senza input calcola la versione; la prima release, e ogni beta, vogliono la versione esplicita. Il workflow scrive la sezione di `CHANGELOG.md`, aggiorna `app/package.json` e `app/package-lock.json` e apre la PR `chore(release): vX.Y.Z` dal branch `release/vX.Y.Z`. Il nome del branch passa lo stesso controllo di Conventional Branch della CI.
+1. **Preparazione.** Il coordinatore lancia `release-prepare.yml` (a mano, da Actions o con `gh workflow run release-prepare.yml`). Senza input calcola la versione; la prima release, e ogni beta, vogliono la versione esplicita. Il workflow scrive la sezione di `CHANGELOG.md`, aggiorna `app/package.json` e `app/package-lock.json` e apre la PR `chore(release): vX.Y.Z` dal branch `release/vX.Y.Z`. Il nome del branch passa lo stesso controllo di Conventional Branch della CI. Se il branch esiste già senza una PR aperta, per esempio lasciato da una run precedente, il workflow lo rigenera da `main`; con una PR aperta si ferma.
 2. **Approvazione.** La persona rivede e approva la PR di rilascio. Il commit di unione su `main` ha l'oggetto `chore(release): vX.Y.Z (#<numero>)`.
 3. **Pubblicazione.** All'unione `release-publish.yml` vede una versione con la sua sezione nel CHANGELOG e senza tag. Crea la release in bozza (pre-release per una beta), fa costruire i pacchetti da `release.yml`, allega pacchetti e checksum e pubblica. La pubblicazione crea il tag.
 
 Se un passo fallisce, rilanciare la run: la bozza già creata viene ripresa sullo stesso commit, i file già allegati vengono sostituiti.
 
 Perché la PR di rilascio faccia partire i controlli richiesti serve il segreto `RELEASE_TOKEN` (un token personale con accesso al repository). Senza, il workflow usa il token di GitHub Actions e i controlli della PR non partono da soli.
+
+### Se GitHub non lascia aprire la PR
+
+Senza `RELEASE_TOKEN`, GitHub apre la PR solo se nel repository è attiva l'impostazione Settings, Actions, General, Workflow permissions, "Allow GitHub Actions to create and approve pull requests". Se è spenta, il workflow:
+
+- lascia pubblicato il branch `release/vX.Y.Z` con il CHANGELOG e la versione;
+- finisce senza errore, con un avviso;
+- scrive nel riepilogo della run il comando `gh pr create` esatto per aprire la PR a mano e le due strade per evitarlo nelle run successive.
+
+Il coordinatore apre la PR con quel comando; la persona la approva come sempre. Attivare l'impostazione o aggiungere `RELEASE_TOKEN` resta una scelta della persona.
 
 ## Cosa contiene una release
 
@@ -66,7 +77,7 @@ Ogni release ha i pacchetti delle tre piattaforme, i checksum e le note:
 
 Per controllare un file scaricato: `sha256sum -c SHA256SUMS.txt --ignore-missing` (Linux), `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` (macOS), `Get-FileHash .\Trama-X.Y.Z-x64.exe` (Windows, da confrontare con la riga del file).
 
-Le note sono la sezione del CHANGELOG, più un paragrafo "Pacchetti" che dice quali file ci sono e se sono firmati.
+Le note sono la sezione del CHANGELOG, più un paragrafo "Packages" che dice quali file ci sono e se sono firmati.
 
 ## Firma e notarizzazione
 
@@ -77,7 +88,7 @@ Le credenziali di firma le mette solo la persona, come segreti del repository. I
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | certificato Developer ID di Apple (`.p12` in base64) e la sua password |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | notarizzazione Apple, solo insieme al certificato |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | certificato di firma del codice per Windows e la sua password |
-| `RELEASE_TOKEN` | facoltativo: fa partire i controlli sulla PR di rilascio |
+| `RELEASE_TOKEN` | facoltativo: apre la PR di rilascio e ne fa partire i controlli |
 
 Senza segreti i pacchetti non sono firmati e le note della release lo dicono, con quello che vede chi installa:
 
