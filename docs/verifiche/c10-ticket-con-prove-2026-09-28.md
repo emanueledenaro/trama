@@ -1,6 +1,6 @@
 # C10: aggiornare ticket e checklist solo quando le prove lo consentono
 
-Data: 28 settembre 2026. Issue #42. Base: `origin/main` 7e13d3f.
+Data: 28 settembre 2026. Issue #42. Base: `origin/main` 8bf9f4a, con la scelta della lingua (#303).
 
 ## Cosa c'era già su main
 
@@ -16,15 +16,16 @@ Il meccanismo di C10 era già su `main`, arrivato con la PR #110. L'audit `ticke
 - Il commento su GitHub citava i candidati con l'id (`C-...`). Ora li nomina per autore e fetta, con la PR se c'è, come fa la chat.
 - In Attività i motivi per cui la issue resta aperta erano in inglese ("Criterion not met", "No pull request of this work is merged") e i criteri spuntati erano numeri. Ora il passo nomina la issue con il titolo e dice in italiano cosa manca, con i criteri per nome. Il Coordinatore riceve ancora i motivi in inglese dallo strumento.
 - Un errore di GitHub a metà aggiornamento lasciava in Attività solo l'errore tecnico dello strumento. Ora c'è un passo "aggiornamento non riuscito" che dice cosa è arrivato su GitHub e cosa no (resoconto, criteri, chiusura).
+- I testi nuovi di Attività sono nel catalogo delle traduzioni (`app/src/shared/messages/it.ts` ed `en.ts`, chiavi `ticket.*`) e seguono la lingua scelta. Il commento su GitHub resta in italiano, come prima.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`) e un `gh` finto. Nessuna esecuzione reale di un provider e nessuna scrittura su un repository GitHub reale.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 132 file, 1263 test superati, 3 saltati.
+- `npx vitest run`: 135 file, 1283 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 355 schermate. Passi nuovi: `30a-ticket-partial` e `30b-ticket-failed`, con Codex e Claude, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 359 schermate. Passi nuovi: `30a-ticket-partial` e `30b-ticket-failed`, con Codex e Claude, in chiaro e in scuro.
 
 ## Test
 
