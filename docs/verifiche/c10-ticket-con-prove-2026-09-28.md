@@ -1,6 +1,6 @@
 # C10: aggiornare ticket e checklist solo quando le prove lo consentono
 
-Data: 28 settembre 2026. Issue #42. Base: `origin/main` 8bf9f4a, con la scelta della lingua (#303).
+Data: 28 settembre 2026. Issue #42. Base: `origin/main` d9d1e04, con la scelta della lingua (#303).
 
 ## Cosa c'era già su main
 
@@ -23,9 +23,9 @@ Il meccanismo di C10 era già su `main`, arrivato con la PR #110. L'audit `ticke
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`) e un `gh` finto. Nessuna esecuzione reale di un provider e nessuna scrittura su un repository GitHub reale.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 135 file, 1283 test superati, 3 saltati.
+- `npx vitest run`: 139 file, 1299 test superati, 3 saltati, su d9d1e04.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 359 schermate. Passi nuovi: `30a-ticket-partial` e `30b-ticket-failed`, con Codex e Claude, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 371 schermate, su 59e2a83 (da lì a d9d1e04 cambia solo un test). Passi nuovi: `30a-ticket-partial` e `30b-ticket-failed`, con Codex e Claude, in chiaro e in scuro.
 
 ## Test
 
