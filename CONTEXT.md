@@ -10,7 +10,7 @@ Il Patto Vivo è questo legame operativo tra decisioni, deleghe e verifiche. Non
 
 ## Lingua
 
-Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, inclusi interfaccia, documentazione di prodotto, issue e pull request, sono in italiano. I contenuti persistiti e le fonti esistenti mantengono la loro lingua per non alterare il loro significato.
+Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, inclusi documentazione di prodotto, issue e pull request, sono in italiano. L'interfaccia è nella lingua che la persona sceglie, italiano o inglese (issue #301). I contenuti persistiti e le fonti esistenti mantengono la loro lingua per non alterare il loro significato.
 
 Nei testi per la persona Trama usa l'italiano semplice del glossario dell'interfaccia (`docs/glossario.md`): nomi al posto degli id, che restano al passaggio del mouse, e parole comuni al posto del gergo. Nell'interfaccia il task in focus si chiama lavoro in primo piano, la focus mode esame approfondito, i seam punti di prova e il worktree copia di lavoro.
 
