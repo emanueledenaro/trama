@@ -635,6 +635,8 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   if (!proposal) return null;
   const selected = kept ?? proposal.members.map((m) => m.name);
   const resolution = proposal.resolution;
+  // Confirmed by the Coordinator within the mandate (A06): the person corrects it from Activity.
+  const byCoordinator = (project.document.autonomousSteps ?? []).some((step) => step.move === "confirmTeam" && step.targetId === proposal.id);
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const corrected = selected.length !== proposal.members.length || note.trim().length > 0;
   return (
@@ -644,7 +646,13 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "superseded" ? "secondary" : "success"}>
-            {resolution.kind === "confirmed" ? "Team confermato" : resolution.kind === "corrected" ? "Team corretto" : "Proposta sostituita"}
+            {resolution.kind === "confirmed"
+              ? byCoordinator
+                ? "Team confermato dal Coordinatore"
+                : "Team confermato"
+              : resolution.kind === "corrected"
+                ? "Team corretto"
+                : "Proposta sostituita"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -1439,7 +1447,7 @@ export function PlanCard({ planId }: { planId: string }) {
         ) : plan.status === "ready" && plan.slicing?.status === "proposed" ? (
           <Badge tone="warning">Fette da rivedere</Badge>
         ) : plan.status === "ready" && plan.slicing?.status === "approved" ? (
-          <Badge tone="success">Fette confermate</Badge>
+          <Badge tone="success">{plan.slicing.approvedBy === "coordinator" ? "Fette confermate dal Coordinatore" : "Fette confermate"}</Badge>
         ) : plan.status === "stale" ? (
           <Badge tone="warning">Da rivalutare</Badge>
         ) : plan.status === "failed" ? (

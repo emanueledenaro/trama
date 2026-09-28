@@ -882,13 +882,26 @@ const otherItem = await waitingItem(round.getByTestId("waiting-reference").first
 await otherItem.getByRole("button", { name: /Anche il cliente/ }).click();
 await otherItem.getByRole("button", { name: "Registra la decisione" }).click();
 await round.getByText("Turno completo").waitFor({ timeout: 20_000 });
-await page.waitForTimeout(500);
+// A06: with no question open, the conflict of Bea's work with the main branch is a technical block the mandate lets
+// the Coordinator resolve by itself: Trama starts the move and the status line names it, with its stop on the right.
+const resolveConflict = page.getByTestId("status-line").getByRole("button", { name: "Ferma: Risolvi il conflitto" });
+await resolveConflict.waitFor({ timeout: 20_000 });
+await page.getByTestId("status-line").getByTestId("status-line-text").getByText(/^Sto risolvendo il conflitto/).waitFor();
+for (const dark of [false, true]) {
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+  await shot(`14b0-block-resolution-${dark ? "dark" : "light"}`);
+}
+// The check stops it, so the plan below starts from an idle Coordinator.
+await resolveConflict.click();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await round.scrollIntoViewIfNeeded();
 await shot("14b-grilling-withdrawn");
 // M04: the plan follows to-spec, once the grilling round above is complete (a plan waits for open questions).
 // The seams come first and wait for the person, with the confirmation on the right; then the spec with the
-// template's sections, which stays in Trama without GitHub.
+// template's sections, which stays in Trama without GitHub. The mandate allows planning, so the Coordinator would
+// confirm the seams and the slices by itself (A06): the check pauses continuous work, and in pause they stay the person's.
+await page.getByTestId("status-line").getByRole("button", { name: "Pausa", exact: true }).click();
+await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
 await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
 const seamsItem = await openWaiting("seams");
@@ -941,20 +954,29 @@ await shot("04c3-plan-slices");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await shot("04c3b-plan-slices-light");
 await page.evaluate(() => document.documentElement.classList.add("dark"));
-// The slices held the work for the person; once confirmed they stay in Trama without GitHub, the first is ready
-// and the others wait for it, and the work goes on by itself within the mandate (W04).
-await confirmSlices.click();
-// Confirmed, the plan leaves Aspetta te and the chat shows it again in full.
+// The slices held the work for the person while in pause. After Riprendi, the end of the next turn lets the
+// Coordinator confirm them by itself within the mandate (A06): they stay in Trama without GitHub, the first is ready
+// and the others wait for it, and the work goes on by itself (W04). The example project runs no periodic round.
+await page.getByTestId("status-line").getByRole("button", { name: "Riprendi" }).click();
+await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ state: "detached", timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.getByLabel("Messaggio al Coordinatore").fill("A che punto sono le fette?");
+await page.keyboard.press("Enter");
+await page.getByText("Fette confermate dal Coordinatore").last().waitFor({ timeout: 20_000 });
+// Confirmed, the plan leaves Aspetta te and the chat shows it again in full.
 const confirmedSlices = page.locator('[data-testid="plan-spec"][data-status="ready"]').last().getByTestId("plan-slices");
 await confirmedSlices.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 await confirmedSlices.scrollIntoViewIfNeeded();
 const sliceStates = await confirmedSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (sliceStates[0] === "blocked" || sliceStates.slice(1).some((state) => state !== "blocked")) throw new Error(`The slices do not respect their blockers: ${sliceStates}`);
 await shot("04c4-plan-slices-confirmed");
+for (const dark of [false, true]) {
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+  await shot(`04c4a-slices-by-coordinator-${dark ? "dark" : "light"}`);
+}
+const statusLine = page.getByTestId("status-line");
 // The check stops the automatic assignment from the status line, so the queue below starts from an idle Coordinator.
 // The move is not a row of the chat (issue #241): the status line names it and carries its stop.
-const statusLine = page.getByTestId("status-line");
 await statusLine.getByRole("button", { name: "Ferma: Assegna il lavoro" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 // A message sent while the Coordinator works waits in the queue and can be deleted after a confirmation.
@@ -1067,8 +1089,8 @@ await createDialog.waitFor();
 await createDialog.getByRole("button", { name: "Annulla" }).click();
 await createDialog.waitFor({ state: "hidden" });
 
-// W04: within the mandate the Coordinator goes on by itself. In the goal dialog, once the grilling is answered and
-// the person confirmed it with the step's button, Trama starts the plan as its own line with a stop on the right.
+// W04, A06: within the mandate the Coordinator goes on by itself. In the goal dialog, once the grilling is answered,
+// the Coordinator confirms the understanding and Trama starts the plan as its own line with a stop on the right.
 await page.getByTestId("sidebar-goal").filter({ hasText: goalTitle }).click();
 await page.getByTestId("dialog-title").filter({ hasText: goalTitle }).waitFor();
 await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] Gli ordini pagati annullati restano in revisione");
@@ -1083,23 +1105,11 @@ const goalSecond = await waitingItem(goalRound.getByTestId("waiting-reference").
 await goalSecond.getByRole("button", { name: /Anche il cliente/ }).click();
 await goalSecond.getByRole("button", { name: "Registra la decisione" }).click();
 await goalRound.getByText("Turno completo").waitFor({ timeout: 20_000 });
-await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-await page.getByRole("button", { name: /^Mandato/ }).first().click();
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
-await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
-await page.getByRole("button", { name: "Salva correzione" }).click();
-await page.getByText(/Mandato v4/).first().waitFor({ timeout: 20_000 });
-await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-// The correction is a turn of the project dialog, whose M04 spec is ready: Trama goes on there with the slices.
-// The check stops that move, which belongs to the other dialog, before the goal dialog's own work.
-await page.getByRole("button", { name: "Interrompi" }).click({ timeout: 20_000 });
-await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama went on before the person confirmed the shared understanding");
-await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso");
-await page.keyboard.press("Enter");
-const confirmStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma la comprensione" });
-await confirmStep.waitFor({ timeout: 20_000 });
-await confirmStep.click();
+// A06: the mandate allows planning, so once no question is open the Coordinator confirms the shared understanding by
+// itself: the person has no step button to press, and Trama starts the plan.
+if (await page.getByTestId("next-step").getByRole("button", { name: "Conferma la comprensione" }).count()) {
+  throw new Error("The shared understanding still waits for the person within a mandate that allows planning");
+}
 // Issue #241: the automatic move is in the status line, "Sto preparando il piano", with its stop on the right before
 // the person's move; the chat keeps no row for it.
 const stopMove = statusLine.getByRole("button", { name: "Ferma: Prepara il piano" });
@@ -1119,7 +1129,18 @@ await statusLine.getByRole("button", { name: "Attività" }).click();
 const activity = page.getByTestId("activity-log");
 await activity.locator('[data-testid="activity-entry"][data-outcome="stopped"]').filter({ hasText: "Prepara il piano" }).first().waitFor({ timeout: 20_000 });
 await activity.getByText("Fermata").first().waitFor();
+// A06: the understanding the Coordinator confirmed by itself is listed too, with its Correggi on the right.
+const understandingStep = activity.getByTestId("activity-step").filter({ hasText: "Comprensione confermata dal Coordinatore" }).first();
+await understandingStep.waitFor({ timeout: 20_000 });
+await understandingStep.getByRole("button", { name: "Correggi" }).waitFor();
 await themeShots("15b-activity");
+// Correggi opens the person's words for the step, with Invia la correzione as the primary on the right.
+await understandingStep.getByRole("button", { name: "Correggi" }).click();
+await understandingStep.getByLabel("Correzione del passo").fill("Anche il cliente vede che l'ordine è in revisione.");
+const correctActions = await understandingStep.locator(".cta-row").last().locator("button").allTextContents();
+if (correctActions.join("|") !== "Annulla|Invia la correzione") throw new Error(`Correction buttons out of order: ${correctActions.join(", ")}`);
+await themeShots("15b1-activity-step-correct");
+await understandingStep.getByRole("button", { name: "Annulla" }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
 // of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
@@ -1852,6 +1873,7 @@ await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await send("[piano]");
+// Continuous work is off here, so the seams and the slices stay the person's, as without a mandate (A06).
 await (await openWaiting("seams")).getByRole("button", { name: "Conferma i seam" }).click({ timeout: 20_000 });
 await (await openWaiting("slices")).getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
