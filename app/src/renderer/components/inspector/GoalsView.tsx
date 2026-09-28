@@ -302,7 +302,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
           <GoalBadges goal={goal} />
         </div>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
-          <span title={goal.id}>{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}</span>
+          <span title={goal.id} data-goal-id={goal.id}>{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}</span>
           <Sep />{formatRelativeTime(goal.createdAt)}
           {goal.archivedAt ? (
             <>

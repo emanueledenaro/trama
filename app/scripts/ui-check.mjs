@@ -806,9 +806,11 @@ await page.getByLabel("Esempio 1").fill("Ordine 42 pagato e annullato: stato rev
 await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
 await page.getByTestId("dialog-title").filter({ hasText: "Ordini annullati in revisione" }).waitFor();
 await page.getByTestId("goal-dialog-header").waitFor();
-// The goal is saved before the dialog opens; its detail shows the stable id used after the restart.
+// The goal is saved before the dialog opens; its detail keeps the stable id used after the restart on hover (issue #270).
 const goalTitle = "Ordini annullati in revisione";
-const goalId = (await page.getByText(/^G-[0-9A-F]{8}$/).first().textContent()).trim();
+const goalId = await page.locator("[data-goal-id]").first().getAttribute("data-goal-id");
+if (!/^G-[0-9A-F]{8}$/.test(goalId ?? "")) throw new Error(`The goal has no id on hover: ${goalId}`);
+if (await page.getByText(/^G-[0-9A-F]{8}$/).count()) throw new Error("The goal's id shows as text");
 await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
 await page.keyboard.press("Enter");
 // Issue #277: the echoed goal id ("Messaggio sull'obiettivo G-...") is a link that shows the goal's title.
@@ -1054,7 +1056,7 @@ await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
 await page.getByRole("button", { name: /^Lavoro/ }).first().click();
-await page.getByTestId("inspector").getByRole("button", { name: /^C-[0-9A-F]{8}/ }).first().click();
+await page.getByTestId("inspector").locator('button[data-record-id^="C-"]').first().click();
 await page.getByTestId("inspector").getByText(/^Diff catturato da Trama/).waitFor();
 if (await page.getByTestId("inspector").getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
@@ -2197,7 +2199,9 @@ await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
 // Started, the route leaves Aspetta te and the chat shows its card again in full.
 const startedRoute = page.getByRole("main").locator('[data-anchor="route"]').last();
 await startedRoute.getByText("Avviato", { exact: true }).waitFor({ timeout: 20_000 });
-await page.getByText(/^Avvia il percorso AT-[0-9A-F]{8} di Ask Trama/).last().waitFor({ timeout: 20_000 });
+// Issue #270: the message names the route by its situation; the id stays on the link's hover.
+await page.getByText(/^Avvia il percorso «.+» di Ask Trama/).last().waitFor({ timeout: 20_000 });
+await page.locator('.chat-markdown a[data-reference="route"][data-reference-id^="AT-"]').last().waitFor();
 await page.getByText("Chi vede gli ordini in revisione?").last().waitFor({ timeout: 20_000 });
 if (await startedRoute.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });

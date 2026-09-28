@@ -82,6 +82,12 @@ export function openReference(target: ReferenceTarget): void {
       return setInspector({ kind: "work" });
     case "goal":
       return setInspector({ kind: "goal", id: target.id });
+    case "route": {
+      // The route's card in the dialog; while it waits for the person, its item in Aspetta te.
+      if (revealCard(target.id)) return;
+      const item = (useUi.getState().app?.project?.waiting ?? []).find((i) => i.targetId === target.id);
+      return setInspector(item ? { kind: "waiting", key: item.key } : { kind: "waiting" });
+    }
     case "specialist":
       return setInspector({ kind: "specialist", id: target.id });
     case "module":

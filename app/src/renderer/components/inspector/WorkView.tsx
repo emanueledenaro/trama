@@ -42,10 +42,12 @@ export function WorkView() {
                   <button
                     key={candidate.id}
                     type="button"
+                    title={candidate.id}
+                    data-record-id={candidate.id}
                     onClick={() => setInspector({ kind: "candidate", id: candidate.id })}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)]"
                   >
-                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/90" title={candidate.id}>
+                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/90">
                       {assignment?.objective ?? <RecordLabel id={candidate.assignmentId} />}
                     </span>
                     {candidate.pullRequest ? <Badge tone="success">PR #{candidate.pullRequest.number}</Badge> : <Badge tone={CANDIDATE_STATE[state].tone}>{CANDIDATE_STATE[state].label}</Badge>}
