@@ -52,6 +52,9 @@ const BRANCH_FIXTURES = [
   ['fix/header-bug', true, 'short alias for bugfix'],
   ['hotfix/security-patch', true, 'urgent fix'],
   ['release/v1.2.0', true, 'release with dotted version'],
+  // Repo-specific cases: the branches release-prepare.yml opens (docs/agents/versioning.md).
+  ['release/v0.2.0', true, 'release branch from release-prepare.yml'],
+  ['release/v0.2.0-beta.1', true, 'pre-release branch from release-prepare.yml'],
   ['chore/update-dependencies', true, 'non-code task'],
   ['feature/issue-123-new-login', true, 'feature with ticket number'],
   ['chore/123', true, 'digits-only description segment'],

@@ -158,8 +158,10 @@ export const it = {
   "settings.guide.description":
     "Collegamenti, progetto, metodo AI Hero ed esercizi sulla copia di esempio. Riprende dal punto in cui ti eri fermato.",
   "settings.guide.open": "Apri la guida",
+  "menu.about": "Informazioni su Trama",
   "settings.about": "Informazioni",
   "settings.about.version": "Versione {version}. Coordina decisioni, lavoro e verifiche su un repository locale.",
+  "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "L'accesso avviene nel browser ufficiale o nel terminale. Trama non copia le credenziali.",
   "settings.connections.checkAll": "Verifica tutti",

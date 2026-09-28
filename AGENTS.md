@@ -30,6 +30,14 @@ L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request
 
 Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
 
+## Versioni e rilasci
+
+Trama segue SemVer 2.0.0. La versione sta solo in `app/package.json`. Prima della 1.0 `feat` alza la minore, `fix` e `perf` la patch, un cambiamento incompatibile la minore; la 1.0 la decide la persona. Le prove escono come pre-release `X.Y.Z-beta.N`.
+
+Una release parte quando un gruppo di lavoro è su `main` con la CI verde, almeno una a settimana se ci sono cambiamenti. La prepara il coordinatore con `release-prepare.yml`, che apre la PR `chore(release): vX.Y.Z`; la persona la approva; all'unione `release-publish.yml` pubblica la release con i pacchetti per macOS (arm64 e x64), Windows e Linux, i checksum SHA-256 e le note dal CHANGELOG. Gli agenti non creano tag e non pubblicano release a mano.
+
+Le credenziali di firma sono segreti che mette solo la persona: senza, i pacchetti escono non firmati e la release lo dice. Una build di prova si lancia con `gh workflow run release.yml --ref <branch>` e lascia i pacchetti negli artefatti, senza release. Dettagli in `docs/agents/versioning.md`.
+
 ## Agent skills
 
 ### Issue tracker
