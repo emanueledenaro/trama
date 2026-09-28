@@ -12,6 +12,11 @@ describe("tool errors stay out of the chat (issue #241)", () => {
     expect(toolErrorMessage(toolSuccess({ ok: true }))).toBeNull();
   });
 
+  it("reads the error of a refused learning write (issue #305)", () => {
+    const refused = { ...toolSuccess({ success: false, code: "memory_full", error: "Memory at 2,450/2,200 chars." }), isError: true };
+    expect(toolErrorMessage(refused)).toBe("Memory at 2,450/2,200 chars.");
+  });
+
   it("replaces an error the reply pastes verbatim with a line in Italian", () => {
     const reply = `Non posso eseguire le verifiche: ${notDeclared}`;
     expect(withoutToolErrors(reply, [notDeclared])).toBe(`Non posso eseguire le verifiche: ${TOOL_ERROR_PLACEHOLDER}`);
