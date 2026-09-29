@@ -872,7 +872,7 @@ export interface ToolContext {
   delegationChanged?(delegation: FullDelegation): void;
   /** A question the Coordinator answered with the delegation: the same effects as the person's answer (issue #423). */
   questionDecided?(questionId: string, decisionId: string): void;
-  /** The Coordinator's ok with the delegation on a candidate that waited for the person: Trama merges it (issue #423). */
+  /** The Coordinator's ok with the delegation on a candidate that waited for the person: Trama merges it in the background (issue #423). */
   approveWithDelegation?(candidateId: string): Promise<void>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
@@ -2173,7 +2173,12 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
         recordChoice(document, { kind: "interfaceCandidate", subject: t("main.delegation.candidateSubject", { id: candidate.id }), choice: reason || t("main.delegation.approvedAfterShots"), doubt: typeof args.doubt === "string" ? args.doubt : null, targetId: candidate.id });
         context.changed();
         await context.approveWithDelegation(candidate.id);
-        return toolSuccess({ candidateID: candidate.id, status: "approved", screenshots: (shots?.snapshotId === candidate.snapshotId ? shots.shots : []).map((shot) => shot.path) });
+        return toolSuccess({
+          candidateID: candidate.id,
+          status: "approved",
+          screenshots: (shots?.snapshotId === candidate.snapshotId ? shots.shots : []).map((shot) => shot.path),
+          note: "Trama publishes and merges it in the background and tells the outcome in Activity: go on with the work.",
+        });
       }
       case "note_doubt": {
         const choice = recordChoice(document, {

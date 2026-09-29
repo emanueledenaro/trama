@@ -272,6 +272,27 @@ describe("the candidate gate (W10)", () => {
     expect(candidate.evidence.node_test).toMatchObject({ result: "pass", snapshotId: candidate.snapshotId });
   }, 120_000);
 
+  it("never holds the Coordinator's turn for the merge it starts with the full delegation", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    await controller!.send("[delega:fai tutto tu in automatico] Stanotte fai tutto tu in automatico", null, null, null);
+    // Publishing and merging on GitHub takes long: here it never ends.
+    (controller as unknown as { integrateCandidates(): Promise<void> }).integrateCandidates = () => new Promise(() => undefined);
+    const tools = (controller as unknown as { runtime: { toolServer: { handler(name: string, args: object): Promise<{ content: { text: string }[] }> } } }).runtime.toolServer;
+    const answer = await Promise.race([
+      tools.handler("approve_with_delegation", { candidate: candidate.id, reason: "Le schermate sono coerenti" }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
+    ]);
+    expect(answer).not.toBeNull();
+    expect(JSON.parse(answer!.content[0]!.text)).toMatchObject({ candidateID: candidate.id, status: "approved" });
+    expect(candidate.humanApproval).toMatchObject({ actor: expect.any(String) });
+  }, 120_000);
+
   it("lets a long check of the checkout go on in the background and tells the result to the person and the Coordinator", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;

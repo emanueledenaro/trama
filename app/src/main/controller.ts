@@ -2342,7 +2342,8 @@ export class TramaController {
           approveWithDelegation: async (candidateId) => {
             approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.headSHA(current.rootPath));
             this.changedIn(current);
-            await this.integrateCandidates(current);
+            // Publishing and merging on GitHub go on in the background and tell their outcome in Activity: never in the turn.
+            void this.integrateCandidates(current).catch((error) => this.fail(error));
           },
           mainBranches: current.github.snapshot?.defaultBranch ? [current.github.snapshot.defaultBranch] : [],
           checkedOutBranch: () => checkedOutBranch(current.rootPath),
