@@ -455,7 +455,9 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
       aside={refusal.acknowledgedAt ? <Badge tone="secondary">{t("chat.card.fixedBan.seen")}</Badge> : <Badge tone="warning">{t("chat.card.fixedBan.stopped")}</Badge>}
     >
       <div data-testid="fixed-ban-card">
-        <p className="text-ui text-foreground/90">{info.reason} {t("chat.card.fixedBan.noMandate")}</p>
+        <p className="text-ui text-foreground/90">
+          {info.reason} {t("fixedBan.card.handle")}
+        </p>
         <Field label={t("chat.card.fixedBan.ban")}>{info.label}</Field>
         <Field label={t("chat.card.fixedBan.askedBy")}>
           {specialist ? <AgentName agent={specialist} /> : by.kind === "coordinator" ? t("chat.card.fixedBan.coordinator") : "Trama"}

@@ -24,7 +24,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.fixedBan.title": "Action stopped by a fixed ban",
   "chat.card.fixedBan.seen": "Seen",
   "chat.card.fixedBan.stopped": "Stopped",
-  "chat.card.fixedBan.noMandate": "No mandate grants it: if you need it, you do it yourself outside Trama.",
   "chat.card.fixedBan.ban": "Ban",
   "chat.card.fixedBan.askedBy": "Asked by",
   "chat.card.fixedBan.coordinator": "The Coordinator",

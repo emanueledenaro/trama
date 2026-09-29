@@ -97,6 +97,9 @@ export interface ActionMap {
   "mandate:restrict": [{ scopeModuleIds: string[]; authorizedActions: MandateAction[] }, void];
   /** The person has seen an action a fixed ban stopped; it leaves Aspetta te (issue #244). */
   "fixedBan:acknowledge": [{ id: string }, void];
+  /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
+  "requestedAction:confirm": [{ id: string }, void];
+  "requestedAction:decline": [{ id: string }, void];
   "mandate:reject": [{ requestId: string; reason: string }, void];
   /** The person corrects a step the Coordinator took by itself within the mandate, in their own words (A06). */
   "autonomousStep:correct": [{ stepId: string; note: string }, boolean];

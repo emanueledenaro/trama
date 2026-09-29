@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandBan, FIXED_BANS, isSecretPath, pathBan, pushBan } from "./fixedBans";
+import { commandBan, FIXED_BANS, isSecretPath, needsConfirmation, pathBan, pushBan, runnableCommand } from "./fixedBans";
 
 describe("fixed bans on commands (issue #244)", () => {
   it.each([
@@ -159,5 +159,19 @@ describe("fixed bans on files and pushes", () => {
   it("lists every ban once, with a reason for the person", () => {
     expect(new Set(FIXED_BANS.map((b) => b.id)).size).toBe(6);
     for (const ban of FIXED_BANS) expect(ban.reason).toMatch(/\.$/);
+  });
+});
+
+describe("actions the person asks for (issue #422)", () => {
+  it("asks a confirmation only for what deletes something or cannot be undone", () => {
+    expect(FIXED_BANS.filter((b) => needsConfirmation(b.id)).map((b) => b.id)).toEqual(["forcePush", "deleteRemoteRef", "secrets"]);
+  });
+
+  it("runs one plain git or gh command and nothing that could run another program", () => {
+    expect(runnableCommand("git push --force origin feature/x")).toEqual(["git", "push", "--force", "origin", "feature/x"]);
+    expect(runnableCommand('gh release create v1 --notes "a; b"')).toEqual(["gh", "release", "create", "v1", "--notes", "a; b"]);
+    for (const line of ["git fetch; git push -f", "sudo git push -f", "GIT_SSH_COMMAND=x git push -f", "git -c core.sshCommand=x push", "/usr/bin/git push -f", "git", "echo $(git push -f)", "sh -c 'git push -f'"]) {
+      expect(runnableCommand(line), line).toBeNull();
+    }
   });
 });

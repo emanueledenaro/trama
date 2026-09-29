@@ -24,7 +24,6 @@ export const chatIt = {
   "chat.card.fixedBan.title": "Azione fermata da un divieto fisso",
   "chat.card.fixedBan.seen": "Vista",
   "chat.card.fixedBan.stopped": "Fermata",
-  "chat.card.fixedBan.noMandate": "Nessun mandato la concede: se serve, la fai tu fuori da Trama.",
   "chat.card.fixedBan.ban": "Divieto",
   "chat.card.fixedBan.askedBy": "Chi l'ha chiesta",
   "chat.card.fixedBan.coordinator": "Il Coordinatore",
