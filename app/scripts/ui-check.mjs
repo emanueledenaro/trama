@@ -112,10 +112,20 @@ const shot = async (name) => {
 // B02-B08 build the new views, the panels of today are the view's tabs. Opening a view from the activity bar shows
 // its first tab, as a click on the panel's row in the old sidebar showed that panel.
 const activityBar = () => page.getByRole("navigation", { name: "Viste" });
+// A menu that is closing keeps its items on screen until its exit animation ends: opening another one meanwhile showed
+// two "Rinomina" items (issue #460). A menu opens once the previous one is gone, and its items are looked for inside
+// the one open menu. `page` changes at every launch, so the locator is built on each call.
+const openMenus = () => page.getByRole("menu");
+const openMenu = async (trigger) => {
+  await openMenus().first().waitFor({ state: "hidden" });
+  await trigger.click();
+  await openMenus().waitFor();
+  return openMenus();
+};
 // Issue #354: the Benvenuto reopens from the menu of the project's name (and from the Help menu).
 const openWelcomeFromProjectMenu = async () => {
-  await page.getByTestId("title-bar").getByRole("button", { name: /^Progetto .*: cambia progetto$/ }).click();
-  await page.getByRole("menuitem", { name: "Benvenuto", exact: true }).click();
+  const menu = await openMenu(page.getByTestId("title-bar").getByRole("button", { name: /^Progetto .*: cambia progetto$/ }));
+  await menu.getByRole("menuitem", { name: "Benvenuto", exact: true }).click();
   await page.getByTestId("welcome").waitFor();
 };
 const VIEWS = { Progetti: "projects", "Aspetta te": "waiting", Lavoro: "work", Squadre: "teams", Regole: "rules", Memoria: "memory" };
@@ -307,7 +317,17 @@ const dragFiles = (type) =>
 // paint; the frames below check the weave itself.
 const welcome = page.getByTestId("welcome");
 await welcome.waitFor();
-await welcome.getByTestId("launch-intro").waitFor({ timeout: 10_000 });
+// Issue #460: the weave lasts under two seconds from the window showing. On a loaded machine the check can reach this
+// line after it ended, and would wait for an intro that is over: the still mark says the weave ran on this launch
+// (data-woven), and then the check replays it, held, to look at where it sits.
+const liveIntro = welcome.getByTestId("launch-intro");
+const wovenMark = welcome.locator('[data-testid="welcome-mark"][data-woven="true"]');
+await liveIntro.or(wovenMark).first().waitFor({ timeout: 10_000 });
+const introReplayed = !(await liveIntro.isVisible());
+if (introReplayed) {
+  await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
+  await liveIntro.waitFor();
+}
 const uncovered = await welcome
   .getByTestId("welcome-start-actions")
   .getByRole("button")
@@ -317,8 +337,9 @@ const uncovered = await welcome
     return link.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
   });
 if (!uncovered) throw new Error("The launch intro covers the Benvenuto");
+if (introReplayed) await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
 await page.getByTestId("launch-intro").waitFor({ state: "detached", timeout: 3_000 });
-await welcome.getByTestId("welcome-mark").waitFor();
+await wovenMark.waitFor();
 const lookOf = () => page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLookTo = (provider, dark) =>
   page.evaluate(
@@ -1208,9 +1229,9 @@ if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "")) throw new Error(`The specialist'
 await expectNoRawIds(personTab.getByTestId("specialist-header"), "The specialist's header");
 // Issue #333: the whole header carries the id on hover too; Rename and Remove are in the menu of more actions.
 if ((await personTab.getByTestId("specialist").getAttribute("data-specialist-id")) !== developerId || (await personTab.getByTestId("specialist-header").getAttribute("title")) !== developerId) throw new Error(`The developer's id is not on hover: ${developerId}`);
-await personTab.getByRole("button", { name: "Altre azioni", exact: true }).click();
-await page.getByRole("menuitem", { name: "Togli dalla squadra" }).waitFor();
-await page.getByRole("menuitem", { name: "Rinomina", exact: true }).click();
+const personMenu = await openMenu(personTab.getByRole("button", { name: "Altre azioni", exact: true }));
+await personMenu.getByRole("menuitem", { name: "Togli dalla squadra" }).waitFor();
+await personMenu.getByRole("menuitem", { name: "Rinomina", exact: true }).click();
 const rename = personTab.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
 await rename.getByText("È il nome di un ruolo fisso").waitFor();
@@ -2070,8 +2091,7 @@ if ((await page.getByLabel("Messaggio al Coordinatore").inputValue()) !== "Bozza
 await shot("10f-single-chat-dark");
 // Issue #332: the goal filter is the button at the top of Lavoro, with the menu of the goals.
 await openView("Lavoro");
-await page.getByTestId("work-summary").getByTestId("chat-filter").click();
-await page.getByRole("menuitem", { name: goalTitle }).waitFor();
+await (await openMenu(page.getByTestId("work-summary").getByTestId("chat-filter"))).getByRole("menuitem", { name: goalTitle }).waitFor();
 await shot("10g-chat-filter-menu-dark");
 await page.keyboard.press("Escape");
 await app.evaluate(({ nativeTheme }) => {
@@ -2080,15 +2100,13 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.getByTestId("chat-goal-tag").filter({ hasText: goalTitle }).last().scrollIntoViewIfNeeded();
 await shot("10f-single-chat-light");
-await page.getByTestId("chat-filter").click();
-await page.getByRole("menuitem", { name: goalTitle }).click();
+await (await openMenu(page.getByTestId("chat-filter"))).getByRole("menuitem", { name: goalTitle }).click();
 await page.getByTestId("dialog-title").filter({ hasText: goalTitle }).waitFor();
 if (await page.getByText("Ho letto lo studio").count()) throw new Error("The goal filter shows messages outside the goal");
 await shot("10h-chat-filtered-light");
 // Filtered on the goal, the summary counts its examples tried on a candidate.
 await page.getByTestId("work-summary").getByTestId("work-goal-progress").waitFor();
-await page.getByTestId("chat-filter").click();
-await page.getByRole("menuitem", { name: "Tutta la chat" }).click();
+await (await openMenu(page.getByTestId("chat-filter"))).getByRole("menuitem", { name: "Tutta la chat" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor();
 await page.getByLabel("Messaggio al Coordinatore").fill("");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
@@ -5883,11 +5901,35 @@ for (let tries = 0; ; tries++) {
   await page.waitForTimeout(250);
 }
 await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: true }));
+// Issue #460: the person comes back only once the Coordinator's turn has ended, so no choice or recap lands after the
+// return. The return goes to Trama's one window, and the recap is waited for in the document, not only on screen: if
+// it does not come, the error says what the document holds instead of a bare timeout on the card.
+const delegationState = async () => {
+  const project = (await page.evaluate(() => window.trama.getState())).project;
+  const document = project?.document;
+  return {
+    running: project?.runningRequestId ?? null,
+    choices: (document?.delegatedChoices ?? []).map((c) => `${c.kind} ${c.at}`),
+    recaps: (document?.recap?.recaps ?? []).map((r) => `${r.reason} ${r.at} (${(r.delegated ?? []).length} choices)`),
+  };
+};
+for (let tries = 0; (await delegationState()).running !== null; tries++) {
+  if (tries > 240) throw new Error("The Coordinator's turn did not end after the pause");
+  await page.waitForTimeout(250);
+}
+const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+if (windows !== 1) throw new Error(`Trama has ${windows} windows: the return would not reach the main one`);
 // The person comes back to the window: the recap of the night, with the choice and its doubt.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit("blur"));
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit("focus"));
+for (let tries = 0; !(await delegationState()).recaps.some((r) => r.startsWith("return ")); tries++) {
+  if (tries > 80) throw new Error(`No return recap after the person came back: ${JSON.stringify(await delegationState())}`);
+  await page.waitForTimeout(250);
+}
 const nightRecap = page.locator('[data-testid="recap-card"][data-reason="return"]').last();
-await nightRecap.waitFor({ timeout: 20_000 });
+await nightRecap.waitFor({ timeout: 20_000 }).catch(async (error) => {
+  throw new Error(`The return recap is in the document but its card does not show: ${JSON.stringify(await delegationState())}`, { cause: error });
+});
 await nightRecap.getByText("Cosa ho deciso con la tua delega").waitFor();
 await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Dubbio: Non so se vale anche per gli ordini pagati con un buono").waitFor();
 await primaryLast(nightRecap.getByTestId("recap-delegated-choice").first(), "Delegated choice");
@@ -7055,8 +7097,8 @@ const squadNamed = (name) => squadsSide.locator(`[data-testid="squad"][data-squa
 await squadNamed("Ordini").waitFor({ timeout: 20_000 });
 await squadNamed("Catalogo").waitFor();
 const squadMenu = async (name, item) => {
-  await squadNamed(name).getByTestId("squad-menu").click();
-  if (item) await page.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();
+  const menu = await openMenu(squadNamed(name).getByTestId("squad-menu"));
+  if (item) await menu.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();
 };
 // Each squad has its menu of changes, with the reason beside an action that cannot be made.
 {
@@ -7076,7 +7118,7 @@ const squadMenu = async (name, item) => {
   await page.setViewportSize({ width: 1280, height: 820 });
 }
 await squadMenu("Catalogo");
-const splitItem = page.getByRole("menuitem", { name: /^Dividi per aree/ });
+const splitItem = openMenus().getByRole("menuitem", { name: /^Dividi per aree/ });
 if ((await splitItem.getAttribute("aria-disabled")) !== "true") throw new Error("A squad with one area offers to split");
 await splitItem.getByText("La squadra Catalogo ha una sola area: non si divide.").waitFor();
 await themeShots("51b-squad-menu");
