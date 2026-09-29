@@ -6,6 +6,7 @@ import {
   IconChevronDown,
   IconDeviceDesktop,
   IconEye,
+  IconListDetails,
   IconMoon,
   IconPlugConnected,
   IconRefresh,
@@ -31,6 +32,7 @@ import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Toggle } from "@/components/ui/toggle";
+import { Tooltip } from "@/components/ui/tooltip";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -38,6 +40,9 @@ import { act, type SettingsSection, useUi } from "@/lib/store";
 import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
+
+/** The sections of the app (issue #336), apart from those of the open project. */
+const APP_SECTIONS: SettingsSection[] = ["general", "connections"];
 
 const SECTIONS: { id: SettingsSection; label: MessageKey; icon: React.ReactNode }[] = [
   { id: "general", label: "settings.section.general", icon: <IconSettings stroke={1.7} /> },
@@ -54,6 +59,7 @@ export function SettingsView() {
   const section = useUi((s) => s.settingsSection);
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
+  const projectName = useUi((s) => (s.app?.project ? (s.app.project.isDemo ? null : s.app.project.name) : null));
   const t = useT();
   return (
     <div
@@ -67,22 +73,31 @@ export function SettingsView() {
         aria-label={t("settings.sections")}
         className="flex shrink-0 gap-0.5 overflow-x-auto [scrollbar-width:none] border-b border-[color:var(--app-surface-divider)] px-3 py-2 @2xl/chat:w-52 @2xl/chat:flex-col @2xl/chat:overflow-visible @2xl/chat:border-r @2xl/chat:border-b-0 @2xl/chat:px-2 @2xl/chat:py-4"
       >
-        {SECTIONS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            aria-current={section === entry.id ? "page" : undefined}
-            onClick={() => openSettings(entry.id)}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
-              section === entry.id
-                ? "bg-[var(--sidebar-selected)] text-foreground"
-                : "text-foreground/80 hover:bg-[var(--sidebar-accent)] hover:text-foreground",
-            )}
-          >
-            {entry.icon}
-            <span className="truncate">{t(entry.label)}</span>
-          </button>
+        {/* The app's sections, then the project's (issue #336). */}
+        {[
+          { title: t("settings.group.app"), entries: SECTIONS.filter((entry) => APP_SECTIONS.includes(entry.id)) },
+          { title: projectName ? t("settings.group.projectOf", { name: projectName }) : t("settings.group.project"), entries: SECTIONS.filter((entry) => !APP_SECTIONS.includes(entry.id)) },
+        ].map((group) => (
+          <div key={group.title} className="flex shrink-0 gap-0.5 @2xl/chat:mb-3 @2xl/chat:flex-col" role="group" aria-label={group.title}>
+            <span className="hidden truncate px-2 pb-1 text-ui-xs text-muted-foreground @2xl/chat:block">{group.title}</span>
+            {group.entries.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                aria-current={section === entry.id ? "page" : undefined}
+                onClick={() => openSettings(entry.id)}
+                className={cn(
+                  "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
+                  section === entry.id
+                    ? "bg-[var(--sidebar-selected)] text-foreground"
+                    : "text-foreground/80 hover:bg-[var(--sidebar-accent)] hover:text-foreground",
+                )}
+              >
+                {entry.icon}
+                <span className="truncate">{t(entry.label)}</span>
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -258,13 +273,33 @@ const GITHUB_STATUS: Record<GitHubCliState["status"], MessageKey> = {
   error: "github.status.error",
 };
 
-/** The Capacità button of a provider row, the same for every provider (issue #71). */
+/** The Capacità button of a provider row, the same for every provider (issue #71), as an icon with its tooltip (issue #336). */
 function CapabilityToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const t = useT();
   return (
-    <Button variant="ghost" size="xs" aria-expanded={open} onClick={onToggle}>
-      {t("settings.provider.capabilities")} <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
-    </Button>
+    <Tooltip label={t("settings.provider.capabilities")}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={t("settings.provider.capabilities")}
+        aria-expanded={open}
+        className={cn(open && "bg-[var(--color-background-button-secondary)] text-foreground")}
+        onClick={onToggle}
+      >
+        <IconListDetails />
+      </Button>
+    </Tooltip>
+  );
+}
+
+/** Checks a connection again, as an icon with its tooltip (issue #336). */
+function CheckButton({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <Tooltip label={label}>
+      <Button variant="ghost" size="icon-xs" aria-label={label} disabled={disabled} onClick={onClick}>
+        <IconRefresh />
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -348,6 +383,7 @@ function ConnectionsSection() {
             <>
               <Badge tone={status.tone}>{status.label}</Badge>
               <CapabilityToggle open={codexOpen} onToggle={() => setCodexOpen(!codexOpen)} />
+              <CheckButton label={t("settings.provider.checkOf", { name: "ChatGPT" })} onClick={() => void act("codex:refresh", undefined)} />
               {account?.kind === "signedOut" ? (
                 <Button size="sm" onClick={() => void act("codex:login", undefined)}>
                   {t("settings.connections.signInChatGpt")}
@@ -379,14 +415,11 @@ function ConnectionsSection() {
               <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
                 {t(GITHUB_STATUS[gitHubCli.status])}
               </Badge>
-              <Button
-                variant="outline"
-                size="xs"
+              <CheckButton
+                label={t("settings.connections.checkAgain")}
                 disabled={gitHubCli.status === "checking"}
                 onClick={() => void act("onboarding:checkGitHub", undefined)}
-              >
-                {t("settings.connections.checkAgain")}
-              </Button>
+              />
             </>
           }
         />
@@ -400,6 +433,10 @@ function ConnectionsSection() {
   );
 }
 
+/**
+ * The GitHub account of the open project's repository: who is signed in, the repository's visibility, whether the
+ * account can push and the API requests left. It was in Issue until issue #336.
+ */
 function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
@@ -438,9 +475,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
         <>
           <Badge tone={status.tone}>{status.label}</Badge>
           <CapabilityToggle open={open} onToggle={() => setOpen(!open)} />
-          <Button variant="ghost" size="xs" onClick={() => void act("providers:refresh", { provider: id })}>
-            {t("settings.provider.check")}
-          </Button>
+          <CheckButton label={t("settings.provider.checkOf", { name: provider.name })} onClick={() => void act("providers:refresh", { provider: id })} />
           {state?.account?.kind === "signedOut" ? (
             <Button
               variant="outline"

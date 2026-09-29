@@ -27,6 +27,7 @@ import { createDecisionRequest, decide, DomainError, grantMandate } from "./pact
 import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
 import { setPersonLanguage } from "./personLanguage";
+import { statusLine } from "./statusLine";
 
 const input = {
   title: "Revisione degli ordini",
@@ -485,6 +486,32 @@ describe("projects overview (UX03)", () => {
     expect(entry).toMatchObject({ priority: 2, waitingForCapacity: 1, attention: "running", ci: { failing: 1 } });
     expect(entry.reasons).toEqual(["1 incarico aspetta uno sviluppatore libero", "CI rossa su 1 pull request"]);
     expect(unreadableProject(recent("b", "Bravo"), null, 3)).toMatchObject({ priority: 3, waitingForCapacity: 0, ci: null });
+  });
+
+  it("shows what the Coordinator does and the same count as Aspetta te (issue #336)", () => {
+    const document = emptyDocument("a");
+    document.decisionRequests.push({
+      id: "Q-1",
+      requestId: null,
+      category: "product",
+      question: "Cosa succede a un ordine pagato annullato?",
+      concreteCase: "c",
+      alternatives: [],
+      revisesDecisionId: null,
+      askedAt: "",
+      outcome: null,
+    });
+    const live = { selected: true, candidateReports: [], source: "live" as const, runningAssignments: 0 };
+    const items = waitingForYou(document);
+    const entry = summarizeProject(recent("a", "Alfa"), document, live);
+    expect(items.length).toBeGreaterThan(0);
+    expect(entry.waiting).toEqual({ count: items.length, first: { key: items[0]!.key, label: items[0]!.label, title: items[0]!.title } });
+    expect(entry.coordinator).toMatchObject({ text: statusLine(document, null).text, state: statusLine(document, null).state });
+    // The open project passes its own Aspetta te and status line: the overview shows those, not a second reading.
+    const shown = summarizeProject(recent("a", "Alfa"), document, { ...live, waiting: [], status: { ...statusLine(document, null), text: "Riallineo il branch." } });
+    expect(shown.waiting).toEqual({ count: 0, first: null });
+    expect(shown.coordinator?.text).toBe("Riallineo il branch.");
+    expect(unreadableProject(recent("b", "Bravo"), null)).toMatchObject({ coordinator: null, waiting: { count: 0, first: null } });
   });
 
   it("orders projects by attention with a stable order on ties", () => {
