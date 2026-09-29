@@ -107,7 +107,13 @@ function createWindow(): void {
       spellcheck: false,
     },
   });
-  window.once("ready-to-show", () => window?.show());
+  // ready-to-show waits for the renderer's first paint, which a renderer without a GPU (xvfb in CI, issue #460) can
+  // report late or never: the window would stay hidden. The page's finished load shows it too, whichever comes first.
+  const reveal = () => {
+    if (window && !window.isVisible()) window.show();
+  };
+  window.once("ready-to-show", reveal);
+  window.webContents.once("did-finish-load", reveal);
   window.on("closed", () => {
     window = null;
   });
