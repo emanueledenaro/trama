@@ -57,8 +57,7 @@ Window role=window
   ---
   Bring All to Front role=front
 Help role=help
-  Welcome to Trama -> send:welcome
-  Getting Started -> send:guide
+  Welcome -> send:welcome
   Exercises on the Example Project -> send:exercises
   ---
   Documentation -> open:https://github.com/emanueledenaro/trama#readme
@@ -123,8 +122,7 @@ Finestra role=window
   ---
   Porta tutto in primo piano role=front
 Aiuto role=help
-  Benvenuto in Trama -> send:welcome
-  Guida introduttiva -> send:guide
+  Benvenuto -> send:welcome
   Esercizi sul progetto di esempio -> send:exercises
   ---
   Documentazione -> open:https://github.com/emanueledenaro/trama#readme
@@ -177,8 +175,7 @@ exports[`application menu (issue #345) > prints the template on linux in en 1`] 
   Minimize role=minimize
   Close Window role=close
 &Help role=help
-  Welcome to Trama -> send:welcome
-  Getting Started -> send:guide
+  Welcome -> send:welcome
   Exercises on the Example Project -> send:exercises
   ---
   Documentation -> open:https://github.com/emanueledenaro/trama#readme
@@ -233,8 +230,7 @@ F&inestra
   Riduci a icona role=minimize
   Chiudi finestra role=close
 &Guida role=help
-  Benvenuto in Trama -> send:welcome
-  Guida introduttiva -> send:guide
+  Benvenuto -> send:welcome
   Esercizi sul progetto di esempio -> send:exercises
   ---
   Documentazione -> open:https://github.com/emanueledenaro/trama#readme
@@ -289,8 +285,7 @@ exports[`application menu (issue #345) > prints the template on win32 in en 1`] 
   Minimize role=minimize
   Close Window role=close
 &Help role=help
-  Welcome to Trama -> send:welcome
-  Getting Started -> send:guide
+  Welcome -> send:welcome
   Exercises on the Example Project -> send:exercises
   ---
   Documentation -> open:https://github.com/emanueledenaro/trama#readme
@@ -345,8 +340,7 @@ F&inestra
   Riduci a icona role=minimize
   Chiudi finestra role=close
 &Guida role=help
-  Benvenuto in Trama -> send:welcome
-  Guida introduttiva -> send:guide
+  Benvenuto -> send:welcome
   Esercizi sul progetto di esempio -> send:exercises
   ---
   Documentazione -> open:https://github.com/emanueledenaro/trama#readme

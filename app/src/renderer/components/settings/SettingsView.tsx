@@ -6,11 +6,11 @@ import {
   IconChevronDown,
   IconDeviceDesktop,
   IconEye,
+  IconHome,
   IconListDetails,
   IconMoon,
   IconPlugConnected,
   IconRefresh,
-  IconSchool,
   IconSettings,
   IconSun,
   IconTools,
@@ -165,7 +165,7 @@ function ToggleRow({ label, description, checked, onChange }: { label: string; d
 function GeneralSection() {
   const theme = useUi((s) => s.app?.settings.theme ?? "system");
   const sounds = useUi((s) => s.app?.settings.sounds === true);
-  const setDialog = useUi((s) => s.setDialog);
+  const openWelcome = useUi((s) => s.openWelcome);
   const t = useT();
   const options: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [
     { value: "system", label: t("settings.theme.system"), icon: <IconDeviceDesktop className="size-3.5" stroke={1.7} /> },
@@ -211,8 +211,8 @@ function GeneralSection() {
           label={t("settings.guide")}
           description={t("settings.guide.description")}
           control={
-            <Button variant="outline" size="sm" onClick={() => setDialog("guide")}>
-              <IconSchool stroke={1.8} /> {t("settings.guide.open")}
+            <Button variant="outline" size="sm" onClick={() => openWelcome()}>
+              <IconHome stroke={1.8} /> {t("settings.guide.open")}
             </Button>
           }
         />

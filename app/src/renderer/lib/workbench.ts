@@ -146,7 +146,8 @@ export const EDITOR_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
 export const opensInEditor = (target: InspectorTarget): boolean => EDITOR_KINDS.has(target.kind);
 
 /** A tab of the editor area besides the conversation. */
-export type EditorTab = { kind: "projects" } | { kind: "settings" } | { kind: "detail"; target: InspectorTarget };
+/** Benvenuto is a main tab like Progetti and Impostazioni (issue #354). */
+export type EditorTab = { kind: "projects" } | { kind: "settings" } | { kind: "welcome" } | { kind: "detail"; target: InspectorTarget };
 
 export const CONVERSATION_TAB = "conversation";
 

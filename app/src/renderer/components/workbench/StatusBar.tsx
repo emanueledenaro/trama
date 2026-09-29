@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import type { StatusLineAction, StatusLineView } from "@shared/domain";
+import { needsProvider, type WelcomeStepId, welcomeSteps } from "@shared/onboarding";
 import { strongest } from "@shared/overlap";
 import { BranchDivergencePanel } from "@/components/chat/BranchDivergenceNotice";
 import { FocusPanel, focusOverlaps } from "@/components/chat/FocusBar";
@@ -179,6 +180,42 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
   );
 }
 
+/** The steps of Configura seen done in this window: one that goes back is a warning, not a reason to reopen the Benvenuto. */
+const seenDone = new Set<string>();
+
+/**
+ * A step of Configura that went back, such as an access that expired or GitHub CLI removed, or no provider at all
+ * (issue #354): a warning with its action, which opens the Benvenuto on that step. The Benvenuto never reopens by itself.
+ */
+function SetupItem() {
+  const t = useT();
+  const app = useUi((s) => s.app);
+  const openWelcome = useUi((s) => s.openWelcome);
+  if (!app) return null;
+  const steps = welcomeSteps(app);
+  for (const step of steps) if (step.status === "done") seenDone.add(step.id);
+  const back =
+    steps.find((step) => step.id === "provider" && needsProvider(app)) ??
+    steps.find((step) => seenDone.has(step.id) && (step.status === "pending" || step.status === "skipped"));
+  if (!back) return null;
+  const label = t("welcome.stepBack", { title: back.title });
+  return (
+    <Tooltip label={back.detail}>
+      <button
+        type="button"
+        className={cn(ITEM, "min-w-0 text-warning hover:text-warning")}
+        data-testid="status-setup"
+        data-step={back.id}
+        aria-label={label}
+        onClick={() => openWelcome(back.id as WelcomeStepId)}
+      >
+        <IconAlertTriangle className="size-3 shrink-0" stroke={1.8} />
+        <span className="min-w-0 truncate">{label}</span>
+      </button>
+    </Tooltip>
+  );
+}
+
 /**
  * The status bar at the bottom of the window (issue #330, ADR 0018): the branch, the conflict with the default branch,
  * the status line, the work in focus, Activity and Pause. It says what happens now; decisions wait in Aspetta te.
@@ -239,6 +276,7 @@ export function StatusBar() {
               {t("workbench.status.conflicts", { count: divergence.conflictingFiles.length })}
             </button>
           ) : null}
+          <SetupItem />
           <StatusLine line={line} focus={<FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />} />
           {popup === "focus" ? (
             <StatusPopup side="end">

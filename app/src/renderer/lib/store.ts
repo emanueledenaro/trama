@@ -3,7 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
 import { latestCandidateAudit } from "@shared/findings";
-import type { ExerciseId, GuideStepId } from "@shared/onboarding";
+import type { ExerciseId, WelcomeStepId } from "@shared/onboarding";
 import { CONVERSATION_TAB, type EditorTab, SIDE_BAR_VIEWS, type SideBarView, detailKey, homeOf, opensInEditor, tabKey, viewOf } from "@/lib/workbench";
 
 export type InspectorTarget =
@@ -41,21 +41,19 @@ export type InspectorTarget =
   | { kind: "goal"; id: string; edit?: boolean };
 
 /**
- * The main tab of the editor area: the conversation with the Coordinator, the projects overview (UX03), or the settings
- * page. Since issue #336 Progetti and Impostazioni are tabs next to the conversation; the details are tabs too.
+ * The main tab of the editor area: the conversation with the Coordinator, the projects overview (UX03), the settings
+ * page or the Benvenuto (issue #354). Since issue #336 Progetti, Impostazioni and Benvenuto are tabs next to the
+ * conversation; the details are tabs too.
  */
-export type MainView = "dialog" | "overview" | "settings";
+export type MainView = "dialog" | "overview" | "settings" | "welcome";
 
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
 export type SettingsSection = "general" | "connections" | "method" | "standard" | "learning" | "monitor" | "presence";
 
-export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | "focusMode" | null;
+export type DialogName = "createProject" | "cloneProject" | "search" | "focusMode" | null;
 
 /** What the focus mode dialog opens on (F03): a module of the project or the whole project. */
 export type FocusStartTarget = { kind: "module"; moduleId: string } | { kind: "project" };
-
-/** The welcome (B02): its first page, or one of its configuration steps. */
-export type WelcomePage = "hello" | GuideStepId;
 
 interface UiState {
   app: AppState | null;
@@ -78,13 +76,22 @@ interface UiState {
   togglePanel(): void;
   closePanel(): void;
   dialog: DialogName;
-  /** The dialog to reopen when the current one closes, for example the guide after Collegamenti. */
+  /** The dialog to reopen when the current one closes. */
   dialogReturn: DialogName;
   /** The exercise shown in the panel over the example project's chat. */
   exercise: ExerciseId | null;
-  /** The welcome page shown over the window, null when closed (B02). */
-  welcome: WelcomePage | null;
-  setWelcome(page: WelcomePage | null): void;
+  /** The row of Configura the Benvenuto opens on, unfolded and in view; null opens it at the top (issue #354). */
+  welcomeStep: WelcomeStepId | null;
+  /** Shows the Benvenuto in the editor area, on a step of Configura when given. */
+  openWelcome(step?: WelcomeStepId | null): void;
+  /** Back to the conversation; without a project the Benvenuto stays, as the only thing in the window. */
+  closeWelcome(): void;
+  /** "Clona da GitHub" waits for GitHub CLI: the clone dialog opens by itself once gh is ready (issue #354). */
+  cloneAfterGitHub: boolean;
+  setCloneAfterGitHub(waiting: boolean): void;
+  /** The mark weaves in at the head of the Benvenuto on the first launch only (B02, issue #354). */
+  welcomeIntro: boolean;
+  setWelcomeIntro(play: boolean): void;
   toast: string | null;
   /** "info" for a plain confirmation, such as a goal archived; errors and warnings keep the default. */
   toastTone: "warning" | "info";
@@ -213,7 +220,8 @@ const editorTarget = (target: InspectorTarget, app: AppState | null): InspectorT
 };
 
 /** The main tab a main view needs in the tab list; the conversation has none. */
-const mainTab = (view: MainView): EditorTab | null => (view === "overview" ? { kind: "projects" } : view === "settings" ? { kind: "settings" } : null);
+const mainTab = (view: MainView): EditorTab | null =>
+  view === "overview" ? { kind: "projects" } : view === "settings" ? { kind: "settings" } : view === "welcome" ? { kind: "welcome" } : null;
 
 export const useUi = create<UiState>((set, get) => ({
   app: null,
@@ -237,8 +245,24 @@ export const useUi = create<UiState>((set, get) => ({
   dialog: null,
   dialogReturn: null,
   exercise: null,
-  welcome: null,
-  setWelcome: (welcome) => set({ welcome }),
+  welcomeStep: null,
+  openWelcome: (step = null) => {
+    const tabs = get().editorTabs;
+    set({
+      mainView: "welcome",
+      editorFocus: "main",
+      editorTabs: tabs.some((t) => t.kind === "welcome") ? tabs : [...tabs, { kind: "welcome" }],
+      welcomeStep: step,
+    });
+  },
+  closeWelcome: () => {
+    const editorTabs = get().editorTabs.filter((t) => t.kind !== "welcome");
+    set({ editorTabs, welcomeStep: null, ...(get().mainView === "welcome" ? { mainView: "dialog" as const, editorFocus: "main" as const } : {}) });
+  },
+  cloneAfterGitHub: false,
+  setCloneAfterGitHub: (cloneAfterGitHub) => set({ cloneAfterGitHub }),
+  welcomeIntro: false,
+  setWelcomeIntro: (welcomeIntro) => set({ welcomeIntro }),
   toast: null,
   toastTone: "warning",
   composerFocusRequest: 0,
@@ -267,11 +291,13 @@ export const useUi = create<UiState>((set, get) => ({
     if (key === CONVERSATION_TAB) return set({ mainView: "dialog", editorFocus: "main" });
     if (key === "projects") return set({ mainView: "overview", editorFocus: "main" });
     if (key === "settings") return set({ mainView: "settings", editorFocus: "main" });
+    if (key === "welcome") return set({ mainView: "welcome", editorFocus: "main" });
     if (get().editorTabs.some((tab) => tabKey(tab) === key)) set({ activeDetail: key, editorFocus: "detail" });
   },
   closeTab: (key) => {
     if (key === CONVERSATION_TAB) return;
     if (key === "settings") return get().closeSettings();
+    if (key === "welcome") return get().closeWelcome();
     const tabs = get().editorTabs;
     const index = tabs.findIndex((tab) => tabKey(tab) === key);
     if (index < 0) return;
@@ -316,7 +342,8 @@ export const useUi = create<UiState>((set, get) => ({
     const editorTabs = get().editorTabs.filter((t) => t.kind !== "settings");
     const back = get().settingsReturn;
     // The page the settings came from, if its tab is still open; else the conversation.
-    const mainView = back === "overview" && !editorTabs.some((t) => t.kind === "projects") ? "dialog" : back;
+    const gone = (back === "overview" && !editorTabs.some((t) => t.kind === "projects")) || (back === "welcome" && !editorTabs.some((t) => t.kind === "welcome"));
+    const mainView = gone ? "dialog" : back;
     set({ editorTabs, ...(get().mainView === "settings" ? { mainView, editorFocus: "main" as const } : {}) });
   },
   openDialog: (dialogGoalId) => set({ dialogGoalId, mainView: "dialog", editorFocus: "main" }),
@@ -351,8 +378,10 @@ export const useUi = create<UiState>((set, get) => ({
     if (previous?.project?.id !== app.project?.id) {
       const pending = get().pendingGoal;
       const goal = pending && pending.projectId === app.project?.id ? pending.goalId : null;
-      // The detail tabs point into the old project and close; Progetti and Impostazioni stay (issue #336).
-      const editorTabs = get().editorTabs.filter((tab) => tab.kind !== "detail");
+      // The detail tabs point into the old project and close; Progetti and Impostazioni stay (issue #336). A project
+      // opened from the Benvenuto closes it and shows the conversation (issue #354).
+      const opened = Boolean(app.project && previous);
+      const editorTabs = get().editorTabs.filter((tab) => tab.kind !== "detail" && !(opened && tab.kind === "welcome"));
       set({
         inspector: null,
         panelFocus: null,
@@ -369,6 +398,8 @@ export const useUi = create<UiState>((set, get) => ({
       // A project opened from the settings, the overview or the menu shows its dialog, not the page left behind (W12).
       if (app.project && previous) set({ mainView: "dialog" });
     }
+    // GitHub CLI became ready while "Clona da GitHub" waited for it: the clone starts again by itself (issue #354).
+    if (get().cloneAfterGitHub && app.gitHubCli.status === "ready") set({ cloneAfterGitHub: false, dialog: "cloneProject", dialogReturn: null });
     // A goal that no longer exists falls back to the project dialog.
     const goalId = get().dialogGoalId;
     if (goalId && !app.project?.document.goals?.some((g) => g.id === goalId)) set({ dialogGoalId: null });

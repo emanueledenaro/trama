@@ -22,7 +22,6 @@ export type MenuCommand =
   | "togglePanel"
   | "toggleSplitEditor"
   | "welcome"
-  | "guide"
   | "exercises"
   | `view:${(typeof MENU_VIEWS)[number] | "projects"}`;
 
@@ -36,7 +35,6 @@ export const MENU_COMMANDS: MenuCommand[] = [
   "togglePanel",
   "toggleSplitEditor",
   "welcome",
-  "guide",
   "exercises",
   "view:projects",
   ...MENU_VIEWS.map((view) => `view:${view}` as const),
@@ -184,8 +182,8 @@ export function menuTemplate({ platform, language, packaged, actions }: MenuOpti
     role: "help",
     label: section("menu.help", "menu.help.mnemonic"),
     submenu: [
+      // One way into the Benvenuto tab, with its setup steps, recent projects and exercises (issue #354).
       { label: t("menu.welcome"), click: send("welcome") },
-      { label: t("menu.guide"), click: send("guide") },
       { label: t("menu.exercises"), click: send("exercises") },
       separator,
       { label: t("menu.documentation"), click: () => actions.openExternal(DOCUMENTATION_URL) },
