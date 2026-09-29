@@ -43,6 +43,7 @@ import { GroupBoardSection } from "./GroupBoard";
 import { MergeProposalCard, MergeSquad, RenameSquad, type SquadEdit, SplitSquad, SquadMenu } from "./SquadChanges";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { WaitingProposalPointer } from "@/components/WaitingPointer";
 import { ReferenceText } from "@/components/chat/ReferenceText";
 
 /** The specialist's own status, as the projects view still shows it beside an agent (W16). */
@@ -326,7 +327,10 @@ export function SquadsView() {
       <GroupBoardSection />
       {pending ? (
         <InspectorSection title={t("teams.pendingProposal")}>
-          <TeamProposalCard proposalId={pending.id} />
+          {/* Confirmed or corrected only in Aspetta te (issue #331). */}
+          <WaitingProposalPointer kind="team" targetId={pending.id} textKey="waiting.pointer.proposal">
+            <TeamProposalCard proposalId={pending.id} />
+          </WaitingProposalPointer>
         </InspectorSection>
       ) : null}
       {squads.map((squad) => (
