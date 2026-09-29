@@ -36,6 +36,7 @@ import { SettledOr } from "./SettledCard";
 import { DisclosureChevron, WorkLabel } from "./WorkSteps";
 import { useWaiting, WaitingOr, WaitingReference } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
+import { RequestedActionLine } from "./RequestedAction";
 import { ContextRolloverCard } from "./ContextRolloverCard";
 import { Sep } from "@/components/ui/sep";
 
@@ -44,7 +45,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
   const [openPaste, setOpenPaste] = useState<number | null>(null);
   const { prompt, pastes } = extractPastes(row.text);
   return (
-    <div className="chat-message-send-enter flex w-full justify-end py-2">
+    <div className="chat-message-send-enter chat-person-message flex w-full justify-end py-2" data-testid="person-message" data-event={row.event.id}>
       <div className="group flex max-w-[80%] flex-col items-end gap-px">
         {row.moduleName || row.imageCount ? (
           <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">
@@ -428,6 +429,12 @@ function RowContent({ row, streaming = false, latest = false }: { row: TimelineR
           </WaitingOr>
         );
       if (row.cardKind === "contextRollover") return <ContextRolloverCard summaryEventId={content.referenceId} />;
+      if (row.cardKind === "requestedAction" && content.referenceId)
+        return (
+          <WaitingOr kind="confirmation" targetId={content.referenceId}>
+            <RequestedActionLine actionId={content.referenceId} />
+          </WaitingOr>
+        );
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

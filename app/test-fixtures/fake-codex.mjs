@@ -781,6 +781,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      const requested = text.match(/\[richiesta:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/);
+      const confirmed = text.match(/\[conferma:([^|\]]+)\|([^\]]+)\]/);
+      if (requested || confirmed) {
+        // [richiesta:<command>|<quote>|<summary>]: the person asked for an action a fixed ban stops (issue #422);
+        // [conferma:<actionID>|<quote>]: the person confirmed in the chat an action that waits for their yes.
+        const args = requested
+          ? { command: requested[1], quote: requested[2], summary: requested[3] }
+          : { actionID: confirmed[1], quote: confirmed[2] };
+        callTool(threadId, "run_requested_action", args).then((result) => {
+          toolDone("run_requested_action", result);
+          if (result.isError && !result.content[0].text.includes("\"status\"")) return finish(`Non posso farlo: ${result.content[0].text}`);
+          const answer = JSON.parse(result.content[0].text);
+          finish(answer.status === "waiting_for_confirmation" ? "Aspetto la tua conferma in Aspetta te; intanto vado avanti con il resto." : `Fatto: ${answer.status}.`);
+        });
+        return;
+      }
       if (text.includes("[vietato:")) {
         // [vietato:<command>]: the model starts a command a fixed ban covers (issue #244); Trama interrupts the turn.
         const command = text.match(/\[vietato:([^\]]+)\]/)[1];

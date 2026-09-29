@@ -76,6 +76,7 @@ const TYPE_LABELS: Record<ActivityType, MessageKey> = {
   steps: "activity.type.steps",
   merges: "activity.type.merges",
   squads: "activity.type.squads",
+  requested: "activity.type.requested",
 };
 
 const TEST_IDS: Record<ActivityEntry["kind"], string> = {
@@ -85,6 +86,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   step: "activity-step",
   merge: "activity-merge",
   squad: "activity-squad",
+  requested: "activity-requested",
   supersede: "activity-supersede",
 };
 
@@ -264,6 +266,11 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
               </button>
             </Tooltip>
           ) : null}
+          {entry.personMessage ? (
+            <RowIcon label={t("activity.openMessage")} onClick={() => showMessageInChat(entry.personMessage!.eventId)}>
+              <IconMessageCircle className="size-3.5" stroke={1.8} />
+            </RowIcon>
+          ) : null}
           {entry.kind === "move" || entry.kind === "step" || entry.kind === "supersede" ? (
             <RowIcon label={t("activity.openDialog")} onClick={() => openDialog(entry.goalId)}>
               <IconMessageCircle className="size-3.5" stroke={1.8} />
@@ -312,6 +319,20 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
       ) : null}
     </li>
   );
+}
+
+/** Opens the whole chat and brings the person's message that asked for an action into view (issue #422). */
+function showMessageInChat(eventId: string) {
+  const find = () => document.querySelector<HTMLElement>(`[data-testid="person-message"][data-event="${CSS.escape(eventId)}"]`);
+  const ui = useUi.getState();
+  if (ui.mainView !== "dialog" || !find()) ui.openDialog(null);
+  window.setTimeout(() => {
+    const message = find();
+    if (!message) return;
+    message.scrollIntoView({ block: "center" });
+    message.dataset.highlight = "true";
+    window.setTimeout(() => delete message.dataset.highlight, 1600);
+  }, 120);
 }
 
 /** Opens the whole chat when the line is not in the dialog shown, then brings the turn's line into view. */
@@ -540,6 +561,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       document.candidates,
       document.squadChanges ?? [],
       language,
+      document.requestedActions ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);
