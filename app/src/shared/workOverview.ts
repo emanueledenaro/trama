@@ -90,6 +90,44 @@ export function sliceRows(document: ProjectDocument, views: Record<string, Slice
   return rows;
 }
 
+/**
+ * The slices of Lavoro by where they stand (UI wave of 29 September): in progress, ready to start, waiting for other
+ * slices, done. Waiting slices are ordered along their chain, those that wait only for work already moving first, so
+ * "aspetta S1" comes before "aspetta S2" when S2 waits for S1; ties keep the breakdown's order.
+ */
+export interface SliceGroups {
+  active: SliceRow[];
+  ready: SliceRow[];
+  waiting: SliceRow[];
+  done: SliceRow[];
+}
+
+export function sliceGroups(rows: SliceRow[]): SliceGroups {
+  const waiting = rows.filter((row) => row.state === "blocked");
+  const key = (planId: string, sliceId: string) => `${planId}:${sliceId}`;
+  const blocked = new Map(waiting.map((row) => [key(row.planId, row.ticket.id), row]));
+  const depths = new Map<string, number>();
+  // How far down the chain a waiting slice is: 0 when it waits only for slices that are not waiting themselves.
+  const depth = (row: SliceRow, seen: Set<string>): number => {
+    const id = key(row.planId, row.ticket.id);
+    const known = depths.get(id);
+    if (known !== undefined) return known;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const above = row.waitingFor.map((slice) => blocked.get(key(row.planId, slice))).filter((r): r is SliceRow => r !== undefined);
+    const value = above.length ? 1 + Math.max(...above.map((r) => depth(r, seen))) : 0;
+    depths.set(id, value);
+    return value;
+  };
+  const order = new Map(waiting.map((row, index) => [row, index]));
+  return {
+    active: rows.filter((row) => row.state === "working" || row.state === "verifying" || row.state === "paused"),
+    ready: rows.filter((row) => row.state === "ready"),
+    waiting: [...waiting].sort((a, b) => depth(a, new Set()) - depth(b, new Set()) || order.get(a)! - order.get(b)!),
+    done: rows.filter((row) => row.state === "done"),
+  };
+}
+
 /** What Trama does with an issue: part of a slice, the spec of a plan, in triage, in the backlog, or nothing yet. */
 export type IssueWork = { kind: "slice"; sliceId: string } | { kind: "plan" } | { kind: "triage" } | { kind: "backlog" } | { kind: "none" };
 

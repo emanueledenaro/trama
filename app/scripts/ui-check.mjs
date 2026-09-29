@@ -5,7 +5,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
-import { addWorkView } from "./work-view-fixture.mjs";
+import { addCoordinatorMove, addWorkView } from "./work-view-fixture.mjs";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
@@ -175,9 +175,10 @@ const menuLabelBecomes = async (id, label, timeout = 5_000) => {
   for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(100)) if ((await menuLabel(id)) === label) return;
   throw new Error(`The menu item ${id} is "${await menuLabel(id)}", not "${label}"`);
 };
-// The work in focus and the queue open from the status bar (issue #330).
+// The work in focus and the queue open from the bar above the composer while the conversation shows (UI wave of 29
+// September), from the status bar over Progetti and Impostazioni (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
-  if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("status-focus").click({ timeout });
+  if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("work-bar-focus").or(page.getByTestId("status-focus")).first().click({ timeout });
   await page.getByTestId("focus-bar").waitFor();
 };
 // Issue #336: a detail (a person of the team, a candidate, a decision, a module, an issue, a goal) opens in a tab of
@@ -905,9 +906,25 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
-// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
-const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
-if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
+// UI wave of 29 September: the line is part of one bar attached to the top of the composer, with the work in focus.
+// Issue #392: its blur stays behind it, so the timeline does not read through it; and the chat leaves room for the
+// whole dock, so the last message ends above the bar.
+const workBar = page.getByTestId("work-bar");
+const waitingGlass = await workBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The bar above the composer lets the chat through: ${JSON.stringify(waitingGlass)}`);
+{
+  const layout = await page.evaluate(async () => {
+    const bar = document.querySelector('[data-testid="work-bar"]').getBoundingClientRect();
+    const composer = document.querySelector(".chat-composer-surface").getBoundingClientRect();
+    const scroller = document.querySelector(".chat-timeline-scroll");
+    scroller.scrollTop = scroller.scrollHeight;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const last = scroller.firstElementChild.lastElementChild.getBoundingClientRect();
+    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, lastBottom: last.bottom, barTop: bar.top };
+  });
+  if (Math.abs(layout.gap) > 2 || layout.inset < 12) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
+  if (layout.lastBottom > layout.barTop + 1) throw new Error(`The bar above the composer covers the last message: ${JSON.stringify(layout)}`);
+}
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -971,6 +988,25 @@ await setTheme("system");
     await waitingBar.waitFor();
   }
   await page.setViewportSize(viewport);
+  // UI wave of 29 September: one status line at the top, how the view works folded behind "Come funziona"; the open
+  // item's card is its one frame, with no second border and no second title. Then the side bar at its widest.
+  await waitingBar.getByRole("button", { name: "Decidi" }).click();
+  const view = page.getByTestId("waiting-view");
+  await view.waitFor();
+  const how = view.getByTestId("waiting-view-how");
+  if ((await how.getAttribute("aria-expanded")) !== "false") throw new Error("Aspetta te explains itself before the person asks");
+  const openItem = view.locator('[data-testid="waiting-item"][data-open="true"]');
+  await openItem.getByTestId("waiting-open-card").waitFor();
+  if (await openItem.locator(":scope > div.rounded-xl").count()) throw new Error("The open item of Aspetta te wraps its card in a second frame");
+  await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
+  await how.click();
+  await view.getByText("Mentre aspetti, il Coordinatore lavora sul resto.", { exact: false }).waitFor();
+  await themeShots("31e-waiting-view-side-bar-wide");
+  await how.click();
+  await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
+  await activityBar().getByRole("button", { name: "Aspetta te", exact: true }).click();
+  await page.getByTestId("side-bar").waitFor({ state: "detached" });
+  await waitingBar.waitFor();
 }
 // Issue #331: the questions have one home, Aspetta te. Patto keeps one line per question that opens it there, with no
 // button to answer; the open project in Progetti carries the same count as the icon of Aspetta te.
@@ -2899,9 +2935,12 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 
 // W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
 // lists the others. Pausing the task in focus passes the focus to the next one; "Metti in primo piano" takes it back.
-// Issue #330: the bar left the top of the chat; the status bar names the work in focus and opens the same panel.
+// Issue #330: the bar left the top of the chat. UI wave of 29 September: the bar above the composer names the work in
+// focus next to what waits for the person, and unfolds the panel inside it; the status bar no longer repeats it.
 await openFocusPanel();
 const focusBar = page.getByTestId("focus-bar");
+if (!(await page.getByTestId("work-bar").getByTestId("focus-bar").count())) throw new Error("The focus panel does not unfold inside the bar above the composer");
+if (await page.getByTestId("status-focus").count()) throw new Error("The status bar repeats the work in focus while the conversation shows");
 const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
 const firstFocus = await focusTitle();
 // Issue #241: the bar is titled with the goal, never with the first message of a dialog.
@@ -2977,6 +3016,9 @@ for (const dark of [false, true]) {
 await setLookTo(look.provider, look.dark);
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
+// The panel unfolds inside the bar above the composer (UI wave of 29 September); Escape folds it again.
+await page.keyboard.press("Escape");
+await focusBar.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
 
 // T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
@@ -3323,7 +3365,7 @@ await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scro
 await page.waitForTimeout(300);
 const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
 const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
-if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+if (await page.getByTestId("work-bar").count()) covers.push(await page.getByTestId("work-bar").boundingBox());
 for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
 await themeShots("29b-context-rollover-summary");
 await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
@@ -4745,8 +4787,9 @@ if (!(await overlapCard.first().innerText()).includes("riga 1")) throw new Error
 await overlapCard.first().scrollIntoViewIfNeeded();
 await shot("16d-overlap-chat");
 const focusOverlap = page.locator('[data-testid="focus-overlap"][data-level="conflict"]');
-// Issue #330: the work in focus in the status bar carries the overlap's badge and opens the panel with the warning.
-await page.locator('[data-testid="status-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
+// Issue #330: the work in focus carries the overlap's badge and opens the panel with the warning; since the UI wave of
+// 29 September it is in the bar above the composer.
+await page.locator('[data-testid="work-bar-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
 await openFocusPanel();
 await focusOverlap.waitFor({ timeout: 10_000 });
 // Issue #338: the details of the overlaps are a chevron with their number.
@@ -5546,14 +5589,29 @@ for (const row of await workView.getByTestId("work-goal").all()) {
 await workView.getByTestId("work-goal").filter({ hasText: "Spedizioni e pagamenti" }).getByText("Attivo", { exact: true }).waitFor();
 await workView.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).waitFor();
 await workView.getByTestId("work-section-goals").getByRole("button", { name: "Nuovo obiettivo" }).waitFor();
-// Slices: one row per slice with who, state and goal; a developer is its animated avatar, never a letter in a circle.
+// UI wave of 29 September: the status at the top says how far the sprint is and the next move; what holds the work is
+// one click away (Aspetta te, the conflict with main).
+await workView.getByTestId("work-slice-progress").getByText("1 di 4 fette fatte").waitFor();
+await workView.getByTestId("work-next").waitFor();
+await workView.getByTestId("work-held").getByRole("button", { name: "18 file in conflitto" }).waitFor();
+// Slices, grouped by where they stand: in progress with their state, then the waiting ones with what they wait for,
+// and the done ones folded at the end. A developer is its animated avatar, never a letter in a circle.
 const workSlices = workView.getByTestId("work-slice");
-if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
-const elenaSlice = workSlices.filter({ hasText: "S2 Spese di spedizione per zona" });
+if ((await workSlices.count()) !== 3) throw new Error(`Lavoro: ${await workSlices.count()} slices open instead of 3, the done one folded`);
+const elenaSlice = workView.getByTestId("work-slices-active").getByTestId("work-slice").filter({ hasText: "S2 Spese di spedizione per zona" });
 await elenaSlice.getByTestId("agent-bot").waitFor();
 await elenaSlice.getByText("In verifica", { exact: true }).waitFor();
-await workSlices.filter({ hasText: "S1 Soglie di spedizione gratuita" }).getByText("Fatta", { exact: true }).waitFor();
-await workSlices.filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+await workView.getByTestId("work-slices-waiting").getByTestId("work-slice").filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+const doneSlices = workView.getByTestId("work-slices-done");
+if ((await doneSlices.getAttribute("data-open")) !== "false") throw new Error("Lavoro: the done slices are open before the click");
+await doneSlices.getByRole("button", { name: "Fatte (1)" }).click();
+await doneSlices.locator('[data-testid="work-slice"][data-state="done"]').filter({ hasText: "S1 Soglie di spedizione gratuita" }).waitFor();
+if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
+await doneSlices.getByRole("button", { name: "Fatte (1)" }).click();
+// Candidates: the replaced ones fold at the end with their count, since they only tell the history.
+const replaced = workView.getByTestId("work-candidates-superseded");
+await replaced.getByRole("button", { name: "Sostituiti (2)" }).waitFor();
+if (await replaced.getByTestId("work-candidate").count()) throw new Error("Lavoro: the replaced candidates are open before the click");
 // Branch and pull requests: the divergence says the commits on each side and the conflicts; its files are one click away.
 const workBranch = workView.getByTestId("work-branch");
 await workBranch.getByText("13 commit avanti, 7 indietro rispetto a main").waitFor();
@@ -5596,10 +5654,55 @@ const workShots = async (name, scroll) => {
 await workShots("32-work-view", () => workView.getByTestId("work-summary").scrollIntoViewIfNeeded());
 await workShots("32a-work-view-branches", () => workView.getByTestId("work-section-branches").evaluate((node) => node.scrollIntoView({ block: "start" })));
 await workShots("32b-work-view-issues", () => workView.getByTestId("work-section-issues").evaluate((node) => node.scrollIntoView({ block: "start" })));
+// The side bar at its widest: the status at the top, the verified candidates, the slices by state and the folds.
+await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
+await workView.getByTestId("work-summary").scrollIntoViewIfNeeded();
+await themeShots("32c-work-view-side-bar-wide");
+await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
 // The status bar opens the same conflict with its files shown.
 await page.getByTestId("status-conflict").click();
 await page.getByTestId("branch-divergence").getByTestId("branch-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
 await page.keyboard.press("Escape");
+await app.close();
+
+// Continuous work off (found live on the negozio, 29 September): the setting was off in Impostazioni, so the
+// Coordinator never started anything by itself, while the status bar said "Il prossimo passo è mio: verifico il
+// lavoro." as if it were about to. With the mandate granted, the team confirmed and a ready slice, the Coordinator's own
+// next move is "assegno S5": the status bar says it waits for a message and offers to turn continuous work back on,
+// and Lavoro says the same at its top. The button turns it on and the line goes back to the Coordinator's move.
+{
+  let workPath = null;
+  for (const file of await readdir(join(dataDir, "Projects"))) {
+    if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-lavoro-")) workPath = join(dataDir, "Projects", file);
+  }
+  if (!workPath) throw new Error("Continuous work off: the project's state was not saved");
+  await writeFile(workPath, JSON.stringify(addCoordinatorMove(JSON.parse(await readFile(workPath, "utf8")))));
+}
+({ app, page } = await launch(workEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.setViewportSize({ width: 1280, height: 800 });
+{
+  const offLine = page.locator('[data-testid="status-line"][data-state="waiting"]');
+  await offLine.getByTestId("status-line-text").getByText("Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.").waitFor({ timeout: 20_000 });
+  await offLine.getByTestId("status-line-reason").getByText("Acceso, il prossimo passo sarebbe mio: assegno S5.").waitFor();
+  if (await page.getByTestId("status-line-text").getByText(/prossimo passo è mio/).count()) throw new Error("With continuous work off the status bar still says the next step is the Coordinator's");
+  const turnOn = offLine.getByTestId("status-continuous-on");
+  if ((await turnOn.innerText()).trim() !== "Riaccendi il lavoro continuo") throw new Error("The status bar does not offer to turn continuous work back on");
+  await openView("Lavoro");
+  const offWork = page.getByTestId("side-bar").getByTestId("work-overview");
+  await offWork.getByTestId("work-next").getByText("Lavoro continuo spento", { exact: false }).waitFor();
+  await offWork.getByTestId("work-held").getByTestId("work-continuous-on").waitFor();
+  await offWork.getByTestId("work-slices-ready").getByTestId("work-slice").filter({ hasText: "S5 Ricevuta dell'ordine via email" }).waitFor();
+  await themeShots("15d-status-line-continuous-off");
+  await turnOn.click();
+  await page.getByTestId("status-continuous-on").waitFor({ state: "detached", timeout: 20_000 });
+  if (await page.getByTestId("status-line-text").getByText(/^Lavoro continuo spento/).count()) throw new Error("The status bar still says continuous work is off after turning it on");
+  await offWork.getByTestId("work-continuous-on").waitFor({ state: "detached" });
+  // The next launches start with continuous work off, as the rest of the check expects.
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+}
 await app.close();
 
 // Issue #271: a noisy history stays compact. The technical steps of each turn (seven read_issues in a row, empty

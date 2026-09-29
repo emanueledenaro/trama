@@ -1,6 +1,7 @@
 // The records of the Lavoro view in the UI check (issue #332): a goal with its examples, a sprint of four slices with
-// who works on them, a candidate with two examples tried, a found problem in the backlog, and the divergence of the
-// project's branch from main. The check writes them in the saved state of a copy of the example project.
+// who works on them, a candidate with two examples tried and two earlier ones it replaced, a found problem in the
+// backlog, and the divergence of the project's branch from main. The check writes them in the saved state of a copy of
+// the example project.
 import { join } from "node:path";
 
 const at = (day, hour) => `2026-09-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00.000Z`;
@@ -107,6 +108,31 @@ const ticket = (id, title, blockedBy, issue) => ({
   issue: issue ? { number: issue, url: `https://github.com/trama-ui/negozio/issues/${issue}`, at: at(28, 9) } : null,
 });
 
+/**
+ * Gives the Coordinator a move of its own on top of the Lavoro records: the mandate granted (the pending proposal
+ * answered), the team confirmed and a fifth slice ready, so the next move is "assegno S5". With continuous work off the
+ * status bar must say that the Coordinator waits for a message, not that the next step is its own.
+ */
+export function addCoordinatorMove(document) {
+  const now = at(28, 12);
+  for (const request of document.mandateRequests ?? []) if (!request.resolution) request.resolution = { kind: "granted", version: 1, resolvedAt: now };
+  document.mandate = {
+    version: 1,
+    objectives: ["Spedizioni e pagamenti"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["plan", "executeInWorktree"],
+    limits: [],
+    grantedAt: now,
+    status: "granted",
+    revocation: null,
+    history: [],
+  };
+  document.team.confirmedAt = document.team.confirmedAt ?? now;
+  document.plans.find((plan) => plan.id === PLAN).slicing.tickets.push(ticket("S5", "Ricevuta dell'ordine via email", [], null));
+  return document;
+}
+
 /** Writes the Lavoro records in `document`, the saved state of the project at `root` whose HEAD is `head`. */
 export function addWorkView(document, root, head) {
   document.goals = [
@@ -155,6 +181,8 @@ export function addWorkView(document, root, head) {
   );
   const merged = candidate("C-5A1E00G1", giulia, head, 10, []);
   merged.pullRequest = { url: "https://github.com/trama-ui/negozio/pull/40", number: 40, branch: "trama/a-5a1e00g1", at: at(28, 10), mergedAt: at(28, 11) };
+  // Two earlier candidates of Elena's work, replaced by her latest one: Lavoro folds them at the end with their count.
+  document.candidates.push(candidate("C-5A1E00E8", elena, head, 9, []), candidate("C-5A1E00E9", elena, head, 10, []));
   document.candidates.push(candidate("C-5A1E00E1", elena, head, 11, ["E-1", "E-2"]), merged);
   document.problems = {
     since: at(27, 9),

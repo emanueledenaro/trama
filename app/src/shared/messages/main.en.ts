@@ -1420,6 +1420,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.nowThen": "{now}, then I {next}.",
   "main.statusLine.waitingForYou": "Waiting for you to go on.",
   "main.statusLine.nextIsMine": "The next step is mine: {next}.",
+  "main.statusLine.continuousOff": "Continuous work is off: the Coordinator waits for a message from you.",
+  "main.statusLine.continuousOffNext": "With it on, the next step would be mine: {next}.",
   "main.statusLine.workStopped": "The work is stopped.",
   "main.statusLine.manyAgents": "{count} agents are at work",
   "main.statusLine.workingOn": "{names} work on {slices}",

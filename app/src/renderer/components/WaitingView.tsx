@@ -32,8 +32,9 @@ import { RequestedActionCard } from "@/components/chat/RequestedAction";
 /**
  * "Aspetta te" (issue #240): one place for everything that waits for the person, derived from the project's records.
  * Issue #331 puts it in the side bar: a summary, the first item open with its buttons on top, the others as compact
- * rows, and what the person decided today closed at the end. One line above the composer names the first item and
- * hides while the view is open; a waiting card in the chat, and in the views that used to answer it, leaves a reference.
+ * rows, and what the person decided today closed at the end. The bar above the composer (chat/WorkBar.tsx) names the
+ * first item and hides it while the view is open; a waiting card in the chat, and in the views that used to answer it,
+ * leaves a reference.
  */
 
 const NOTHING_WAITING: WaitingItem[] = [];
@@ -73,41 +74,6 @@ const KIND_ICONS: Record<WaitingKind, React.ComponentType<{ className?: string; 
 };
 
 /**
- * The line above the composer: the first item, the count and the window's one filled button, Decidi, which opens the
- * item in Aspetta te. It does not show while nothing waits, nor while the view is open, where the item's own buttons are.
- */
-export function WaitingSummary() {
-  const t = useT();
-  const items = useWaiting();
-  const open = useWaitingOpen();
-  const setInspector = useUi((s) => s.setInspector);
-  if (!items.length || open) return null;
-  const first = items[0]!;
-  return (
-    <div className="mx-auto mb-1.5 w-full max-w-[var(--app-chat-max-width)] min-w-0">
-      <div className="translucent-popup cta-row rounded-[0.875rem] py-1 pr-1 pl-3" data-testid="waiting-summary" data-waiting-key={first.key}>
-        <span className="mr-auto flex min-w-0 flex-1 items-center gap-2 text-ui-sm">
-          <IconHourglass className="size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
-          <span className="min-w-0 truncate">
-            <span className="font-medium text-foreground">{first.label}</span>
-            <Sep />
-            <span className="text-muted-foreground">
-              <ReferenceText text={first.title} />
-            </span>
-          </span>
-        </span>
-        <span className="shrink-0 text-ui-xs text-muted-foreground" data-testid="waiting-summary-count">
-          {t("waiting.view.count", { count: items.length })}
-        </span>
-        <Button size="sm" title={t("waiting.strip.decideHint")} onClick={() => setInspector({ kind: "waiting", key: first.key })}>
-          {t("waiting.strip.decide")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/**
  * The view in the side bar. The open item is the one the person asked for (a reference, the line above the composer),
  * else the first: the one that holds the most work. Answering here is the same as answering the card in the chat.
  */
@@ -122,10 +88,7 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
   }, [focusKey]);
   return (
     <div ref={list} data-testid="waiting-view" data-count={items.length}>
-      <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3" data-testid="waiting-view-summary">
-        <h4 className="text-ui-lg font-medium text-foreground">{items.length ? t("waiting.view.count", { count: items.length }) : t("waiting.view.none")}</h4>
-        <p className="mt-1 text-ui-sm text-muted-foreground">{items.length ? t("waiting.view.lead") : t("waiting.view.empty")}</p>
-      </section>
+      <WaitingStatus count={items.length} />
       {items.length === 0 ? (
         <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3">
           <p className="text-ui text-muted-foreground/70">{t("waiting.view.emptyList")}</p>
@@ -140,7 +103,42 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
   );
 }
 
-/** The open item: what it is, what it holds, then its card with the decision buttons at the top. */
+/**
+ * The status at the top of the view (UI wave of 29 September): one line with how many things wait and their order; how
+ * the view works folds behind "Come funziona", since the person reads it once. The count is in the header too, as on the
+ * icon of the activity bar.
+ */
+function WaitingStatus({ count }: { count: number }) {
+  const t = useT();
+  const [how, setHow] = useState(false);
+  return (
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-2.5" data-testid="waiting-view-summary">
+      <div className="flex min-w-0 items-start gap-2">
+        <p className={cn("min-w-0 flex-1 text-ui-sm", count ? "text-foreground" : "text-muted-foreground")}>
+          {count ? t("waiting.view.status", { count }) : t("waiting.view.none")}
+        </p>
+        {count ? (
+          <button
+            type="button"
+            aria-expanded={how}
+            onClick={() => setHow(!how)}
+            className="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-sm px-1 text-ui-xs text-muted-foreground transition-colors hover:bg-[var(--sidebar-accent)] hover:text-foreground"
+            data-testid="waiting-view-how"
+          >
+            {t("waiting.view.how")}
+            <IconChevronRight className={cn("size-3 shrink-0 transition-transform", how && "rotate-90")} stroke={1.8} />
+          </button>
+        ) : null}
+      </div>
+      {count === 0 || how ? <p className="mt-1 text-ui-xs text-muted-foreground">{count ? t("waiting.view.howText") : t("waiting.view.empty")}</p> : null}
+    </section>
+  );
+}
+
+/**
+ * The open item: what it holds, then its card with the decision buttons. The card is the one frame, set apart with the
+ * accent: no border around it and no second title, since the card already names what it is (UI wave of 29 September).
+ */
 function OpenItem({ item }: { item: WaitingItem }) {
   const t = useT();
   const blocksText = useBlocksText();
@@ -148,18 +146,18 @@ function OpenItem({ item }: { item: WaitingItem }) {
   return (
     <section
       role="listitem"
+      aria-label={item.label}
       data-waiting-key={item.key}
       data-testid="waiting-item"
       data-waiting-kind={item.kind}
       data-open="true"
-      className="border-b border-[color:var(--app-surface-divider)] px-2 pt-2"
+      className="border-b border-[color:var(--app-surface-divider)] px-3 pt-2.5 pb-1"
     >
-      <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--color-text-accent)_45%,transparent)] px-2 pt-2 pb-0.5">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-ui-sm">
-          <span className="font-medium text-foreground">{item.label}</span>
-          <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
-          {goal ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">{t("waiting.item.inGoal", { title: goal.title })}</span> : null}
-        </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-0.5 text-ui-xs" data-testid="waiting-item-meta">
+        <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
+        {goal ? <span className="min-w-0 truncate text-muted-foreground">{t("waiting.item.inGoal", { title: goal.title })}</span> : null}
+      </div>
+      <div className="waiting-open-card" data-testid="waiting-open-card">
         <WaitingCard item={item} />
       </div>
     </section>
@@ -245,11 +243,8 @@ function WaitingCard({ item }: { item: WaitingItem }) {
     case "confirmation":
       return <RequestedActionCard actionId={item.targetId} />;
     case "memory":
-      return proposal ? (
-        <div className="my-3">
-          <MemoryProposalCard proposal={proposal} />
-        </div>
-      ) : null;
+      // Its margins come from the open item's frame (index.css, .waiting-open-card).
+      return proposal ? <MemoryProposalCard proposal={proposal} /> : null;
   }
 }
 
