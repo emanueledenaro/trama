@@ -13,7 +13,7 @@ import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { extractJsonAnswer } from "./providers/types";
 import { t } from "./personLanguage";
-import { findAssignment } from "./team";
+import { findAssignment, findingsCannotReturn } from "./team";
 import { ITALIAN } from "@shared/i18n";
 
 /**
@@ -315,9 +315,9 @@ export function returnFindings(document: ProjectDocument, gate: CandidateGate): 
 
 /**
  * The gates whose findings still wait for their developer (W10): blocked, not resumed yet, the latest gate of the latest
- * candidate of work that is still completed. Trama tries each again when an event of the work may have freed it. Work
- * that later work replaced, or that Trama held for the person after too many blocks in a row (issue #389), does not
- * resume by itself.
+ * candidate of work that can take them (completed, failed, or stopped by Trama). Trama tries each again when an event
+ * of the work may have freed it. Work that later work replaced, or that Trama held for the Coordinator after too many
+ * blocks in a row (issue #389), does not resume by itself.
  */
 export function pendingReturns(document: ProjectDocument): CandidateGate[] {
   return (document.gates ?? []).filter((gate) => {
@@ -325,7 +325,8 @@ export function pendingReturns(document: ProjectDocument): CandidateGate[] {
     if (latestGate(document.gates, gate.candidateId)?.id !== gate.id) return false;
     const candidate = latestCandidate(document, gate.assignmentId);
     if (candidate?.id !== gate.candidateId || candidateSuperseded(document, candidate)) return false;
-    return findAssignment(document, gate.assignmentId)?.status === "completed";
+    const assignment = findAssignment(document, gate.assignmentId);
+    return assignment !== null && findingsCannotReturn(document, assignment) === null;
   });
 }
 
@@ -342,6 +343,10 @@ export function returnWaiting(code: string, message: string): string {
       return t("main.gate.waiting.noWorktree");
     case "specialist_removed":
       return t("main.gate.waiting.specialistRemoved");
+    case "cannot_resume":
+      return t("main.gate.waiting.stopped");
+    case "decision_under_review":
+      return t("main.gate.waiting.decisionUnderReview");
     default:
       return message;
   }

@@ -1199,6 +1199,10 @@ export const mainIt = {
     "La copia di lavoro dell'incarico non c'è più: serve un nuovo incarico.",
   "main.gate.waiting.specialistRemoved":
     "Lo sviluppatore non è più nel team: serve un nuovo incarico.",
+  "main.gate.waiting.stopped":
+    "Il lavoro è stato fermato su richiesta: il Coordinatore lo riprende nella sua copia di lavoro quando serve.",
+  "main.gate.waiting.decisionUnderReview":
+    "Una decisione del Patto su cui si basa il lavoro è in revisione: il lavoro riprende con la risposta.",
   "main.gate.unreadableAnswer":
     "Il revisore non ha restituito un rapporto leggibile.",
   "main.gate.malformedFinding":

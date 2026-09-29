@@ -1151,6 +1151,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The assignment's working copy is gone: a new assignment is needed.",
   "main.gate.waiting.specialistRemoved":
     "The developer is no longer in the team: a new assignment is needed.",
+  "main.gate.waiting.stopped":
+    "The work was stopped on request: the Coordinator resumes it in its working copy when it is time.",
+  "main.gate.waiting.decisionUnderReview":
+    "A Pact decision the work relies on is under review: the work resumes with the answer.",
   "main.gate.unreadableAnswer":
     "The reviewer did not return a readable report.",
   "main.gate.malformedFinding":

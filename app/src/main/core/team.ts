@@ -891,9 +891,33 @@ export function resumePausedAssignment(document: ProjectDocument, id: string, no
 }
 
 /**
- * The candidate gate sent the work back (W10): the completed work resumes in the same session and worktree with the
- * blocking findings. It waits while the developer works on something else, while the developers at work are at the
- * limit or while someone works on its modules.
+ * Why the gate's findings cannot take `assignment` up again, or null when they can (W10). Work that ended takes them,
+ * and so does work that failed or that Trama stopped, as when a Pact decision changed: its worktree is still the work.
+ * Work the person or the Coordinator stopped waits for them, and work that relies on a decision under review waits for
+ * the answer.
+ */
+export function findingsCannotReturn(document: ProjectDocument, assignment: SpecialistAssignment): TeamError | null {
+  if (assignment.status === "completed") return null;
+  if (assignment.status !== "stopped" && assignment.status !== "failed") {
+    return new TeamError("cannot_resume", `Assignment ${assignment.id} is not completed.`);
+  }
+  const stop = assignment.stops.at(-1);
+  const turn = assignment.turns.at(-1);
+  const lastStop = stop?.confirmedAt && (!turn || turn.startedAt <= stop.confirmedAt) ? stop : null;
+  if (assignment.status === "stopped" && lastStop && lastStop.requestedBy !== "Trama") {
+    return new TeamError("cannot_resume", `Assignment ${assignment.id} was stopped by ${lastStop.requestedBy}: it resumes only on their request.`);
+  }
+  const reviewed = Object.keys(assignment.decisionVersions ?? {}).filter((id) =>
+    document.decisionRequests.some((r) => isOpenQuestion(r) && r.revisesDecisionId === id),
+  );
+  if (reviewed.length) return new TeamError("decision_under_review", `Decision ${reviewed.join(", ")} of assignment ${assignment.id} is under review.`);
+  return null;
+}
+
+/**
+ * The candidate gate sent the work back (W10): the work resumes in the same session and worktree with the blocking
+ * findings, delegated against the Pact decisions as they are now. It waits while the developer works on something
+ * else, while the developers at work are at the limit or while someone works on its modules.
  */
 export function reopenForFindings(
   document: ProjectDocument,
@@ -903,7 +927,8 @@ export function reopenForFindings(
 ): SpecialistAssignment {
   const assignment = findAssignment(document, id);
   if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
-  if (assignment.status !== "completed") throw new TeamError("cannot_resume", `Assignment ${id} is not completed.`);
+  const problem = findingsCannotReturn(document, assignment);
+  if (problem) throw problem;
   if (assignment.workspaceRemovedAt || !assignment.workspace) throw new TeamError("no_worktree", `Assignment ${id} has no worktree left.`);
   const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
@@ -912,6 +937,7 @@ export function reopenForFindings(
   requireSquadRoom(document, specialist);
   requireIndependent(document, assignment.moduleIds, specialist.id);
   specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
+  refreshDecisionVersions(document, id);
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
     a.failure = null;
