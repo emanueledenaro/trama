@@ -11,8 +11,9 @@ const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
 // Issue #461: while this file exists, the fake Codex server replies to an unscripted turn with a plain, complete
 // sentence instead of its usual test-only echo, so the four README screenshots read like a real conversation. Only
-// the sections that produce those screenshots create it.
-const readmeShotsFlag = join(tmpdir(), "trama-ui-readme-shots.flag");
+// the sections that produce those screenshots create it. Its own randomly named directory keeps the path from being
+// guessed or raced by another local process, the same way dataDir does above.
+const readmeShotsFlag = join(await mkdtemp(join(tmpdir(), "trama-ui-readme-shots-")), "flag");
 // Each launch uses the same Trama data folder, so a second launch is a real reopening.
 const launch = async (env = {}) => {
   const app = await electron.launch({
