@@ -14,7 +14,7 @@ import { git } from "./process";
 export async function divergenceCounts(repository: string, ours: string, theirs: string): Promise<{ ahead: number; behind: number }> {
   const output = await git(["rev-list", "--left-right", "--count", `${ours}...${theirs}`, "--"], repository);
   const [ahead, behind] = output.trim().split(/\s+/).map(Number);
-  if (!Number.isInteger(ahead) || !Number.isInteger(behind)) throw new Error(`Conteggio dei commit non leggibile: ${output.trim()}`);
+  if (!Number.isInteger(ahead) || !Number.isInteger(behind)) throw new Error(`Unreadable commit count: ${output.trim()}`);
   return { ahead: ahead!, behind: behind! };
 }
 

@@ -97,11 +97,13 @@ export function progressKey(issueNumber: number, criteria: CriterionReport[], su
 
 export const progressMarker = (key: string) => `<!-- trama-progress:${key} -->`;
 
+// @model-text: a GitHub comment on the issue, project content that follows the project's rules, as progressComment below.
 const OUTCOME_LABEL: Record<CriterionOutcome, string> = { met: "soddisfatto", partial: "parziale", notMet: "non soddisfatto" };
 
 /**
  * The comment of a report on GitHub. `describe` names each piece of evidence for whoever reads the issue: a candidate
  * by its author and slice instead of its id; pull requests and commits stay as GitHub links them.
+ * @model-text: a GitHub comment on the issue, project content that follows the project's rules.
  */
 export function progressComment(
   key: string,

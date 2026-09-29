@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AuditFinding, FocusAudit, ProjectDocument } from "@shared/domain";
 import type { RepositoryModule } from "@shared/repository";
 import { beginAxes, beginLenses, closeAudit, openAudit } from "./audit";
@@ -12,12 +12,13 @@ import {
   findingModules,
   findingPactCard,
   FindingWorkError,
-  LOCAL_TICKET_REASON,
+  localTicketReason,
   publicationTarget,
   recordFindingTicket,
   recordPublication,
 } from "./findingWork";
 import { answerDecisionRequest, createDecisionRequest, grantMandate, revokeMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { restrictMandate } from "./projectMandate";
 import { assign, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
 
@@ -130,7 +131,7 @@ describe("finding to ticket", () => {
     const { document, audit } = project();
     const problem = recordFindingTicket(document, audit, item(audit, "standards-2"), null, at(6));
     expect(problem.issue).toBeNull();
-    expect(problem.placement).toMatchObject({ kind: "backlog", reason: LOCAL_TICKET_REASON });
+    expect(problem.placement).toMatchObject({ kind: "backlog", reason: localTicketReason() });
   });
 
   it("writes the proof and what Trama read in the issue, with names instead of ids", () => {
@@ -270,6 +271,25 @@ describe("report publication", () => {
     audit.status = "failed";
     expect(() => publicationTarget(document, audit)).toThrow("non è concluso");
     expect(findAssignment(document, audit.target.assignmentId)).not.toBeNull();
+  });
+});
+
+describe("findings in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the refusals, the Pact card and the report in English", () => {
+    setPersonLanguage("en");
+    const { document, audit } = project();
+    expect(() => assignFinding(document, audit, "standards-2", input())).toThrow("The finding is a hypothesis: its proof did not hold.");
+    const card = findingPactCard(document, audit, "standards-1", at(6));
+    expect(card.question).toBe("Is the finding «Rilievo standards-1» a trade-off to accept, or should it be fixed?");
+    expect(card.alternatives[1]!.consequence).toBe("The fix becomes an assignment within the mandate.");
+    const report = auditReportMarkdown(document, audit);
+    expect(report).toContain("## Deep review of Ada's candidate");
+    expect(report).toContain("### Real checks");
+    expect(recordFindingTicket(document, audit, item(audit, "standards-3"), null, at(7)).placement).toMatchObject({
+      reason: "GitHub is not connected: the finding stays in Trama's backlog, without an issue.",
+    });
   });
 });
 

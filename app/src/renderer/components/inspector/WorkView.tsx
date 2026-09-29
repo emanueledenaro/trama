@@ -7,14 +7,15 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 
 const ORDER: CandidateState[] = ["decided", "building", "verified", "superseded"];
 
-export function WorkView() {
+/** The candidates by state and the plans, a section of the Lavoro view (issue #332). */
+export function CandidateList() {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const candidates = project.document.candidates;
   const plans = project.document.plans;
   if (!candidates.length && !plans.length) {
     return (
-      <div className="p-4">
+      <div className="px-2">
         <EmptyNote>Nessun candidato.</EmptyNote>
       </div>
     );

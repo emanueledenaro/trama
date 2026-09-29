@@ -1,6 +1,7 @@
 import { candidateSuperseded } from "@shared/conflictScope";
 import type { Candidate, ConflictAssessment, ProjectDocument, WorktreeSession } from "@shared/domain";
 import { probeWorktrees } from "./conflicts";
+import { t } from "./personLanguage";
 import { findAssignment } from "./team";
 
 /**
@@ -85,9 +86,9 @@ export async function assessWorktreePair(document: ProjectDocument, pair: Worktr
       ...(result.status === "conflict" && Object.keys(result.lines).length ? { conflictingLines: result.lines } : {}),
       detail:
         classification === "overlap"
-          ? `Nessun conflitto testuale tra le due copie di lavoro, ma entrambe cambiano ${pair.sharedFiles.join(", ")}.`
+          ? t("main.conflicts.worktreeOverlap", { files: pair.sharedFiles.join(", ") })
           : result.status === "conflict"
-            ? "La fusione temporanea delle due copie di lavoro produce conflitti testuali: si risolvono prima dell'unione."
+            ? t("main.conflicts.worktreeConflict")
             : result.detail,
     };
   } catch (error) {

@@ -11,6 +11,7 @@ import type {
 } from "@shared/domain";
 import type { ProviderModel } from "@shared/codex";
 import { DEFAULT_TIME_BOX, type Discussion, isDiscussion, isDiscussionReason, MAX_TIME_BOX, MIN_TIME_BOX } from "@shared/discussions";
+import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { squadOf } from "@shared/squads";
@@ -40,19 +41,12 @@ const clip = (text: string, length = 4_000) => text.trim().slice(0, length);
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /** How a reason reads in the thread the agents read (Italian, data). */
+// @model-text: the thread as the agents read it.
 const REASON_TEXT: Record<DiscussionReason, string> = {
   estimate: "stima e divisione del lavoro",
   blocker: "blocco o dipendenza tra squadre",
   review: "revisione di un candidato",
   conflict: "conflitto",
-};
-
-/** The decision the chair records at the time box when nobody proposed one (Italian, data for the agents). */
-const NO_PROPOSAL: Record<DiscussionReason, string> = {
-  estimate: "Nessuna stima condivisa nel tempo massimo: vale la stima del piano e la squadra la rivede alla prossima pianificazione.",
-  blocker: "Nessuna proposta nel tempo massimo: il lavoro bloccato resta fermo e il Coordinatore riprende il blocco al prossimo giro.",
-  review: "Nessuna proposta nel tempo massimo: il candidato resta com'è e segue le verifiche di Trama.",
-  conflict: "Nessuna proposta nel tempo massimo: i due lavori restano separati e il Coordinatore riprende il conflitto al prossimo giro.",
 };
 
 export function requireDiscussion(document: ProjectDocument, id: string): Discussion {
@@ -125,11 +119,13 @@ export function openDiscussion(document: ProjectDocument, input: OpenDiscussionI
   };
   document.agentThreads ??= [];
   document.agentThreads.push(thread);
+  // @model-text: the first message, which the agents read; the person reads it from the catalog (event "opened").
   const chair = lead ? `${lead.name}, capo squadra di ${squad!.name}` : "il Coordinatore";
   post(
     thread,
     {
       author: { kind: "coordinator" },
+      // @model-text
       text: `Discussione su ${REASON_TEXT[input.reason]}: ${motive}\nTempo massimo ${minutes} minuti. Chiude ${chair} con una decisione; una scelta di prodotto va alla persona.`,
       event: { kind: "opened" },
     },
@@ -158,11 +154,11 @@ export function postToDiscussion(
  * The person writes in a discussion (Q32): the Coordinator passes the message on and records it in the thread, where the
  * agents read it at their next turn. A closed discussion takes no more messages: the person writes to the Coordinator.
  */
-export function personWrites(document: ProjectDocument, id: string, text: string, now = new Date()): AgentThreadMessage {
+export function personWrites(document: ProjectDocument, id: string, text: string, now = new Date(), language: Language = DEFAULT_LANGUAGE): AgentThreadMessage {
   const thread = requireDiscussion(document, id);
-  if (thread.discussion.status === "decided") throw new DiscussionError("closed", "La discussione è chiusa: scrivi al Coordinatore.");
+  if (thread.discussion.status === "decided") throw new DiscussionError("closed", translate(language, "main.discussions.closed"));
   const body = text.trim();
-  if (!body) throw new DiscussionError("invalid_arguments", "Scrivi il messaggio.");
+  if (!body) throw new DiscussionError("invalid_arguments", translate(language, "main.discussions.emptyMessage"));
   return post(thread, { author: { kind: "person" }, text: body, event: { kind: "forwarded" } }, now);
 }
 
@@ -192,6 +188,7 @@ export function decideDiscussion(
   const at = now.toISOString();
   state.status = "decided";
   state.outcome = { decision, by: outcome.by, how: outcome.how, at };
+  // @model-text: the closing message the agents read; the person reads it from the catalog (event "decided").
   const lead =
     outcome.how === "timeBox" ? "Tempo scaduto. Decisione" : outcome.how === "person" ? "Decisione della persona" : outcome.how === "withdrawn" ? "La persona ha ritirato la domanda" : "Decisione";
   post(thread, { author: outcome.by, text: `${lead}: ${decision}`, model: outcome.model ?? null, event: { kind: "decided", how: outcome.how } }, now);
@@ -209,6 +206,7 @@ export function escalateDiscussion(document: ProjectDocument, id: string, reques
     thread,
     {
       author: { kind: "coordinator" },
+      // @model-text: the person reads it from the catalog (event "toPerson").
       text: `La scelta è di prodotto e spetta alla persona: l'ho messa sulla scheda del Patto ${request.id} («${oneLine(request.question)}»). La discussione aspetta la sua risposta.`,
       event: { kind: "toPerson", decisionRequestId: request.id },
     },
@@ -218,19 +216,19 @@ export function escalateDiscussion(document: ProjectDocument, id: string, reques
 }
 
 /** The decision the chair adopts at the time box: the latest proposal in the thread, or the reason's fallback. */
-export function timeBoxDecision(thread: Discussion): string {
-  return thread.messages.findLast((m) => m.proposal)?.proposal ?? NO_PROPOSAL[thread.discussion.reason];
+export function timeBoxDecision(thread: Discussion, language: Language = DEFAULT_LANGUAGE): string {
+  return thread.messages.findLast((m) => m.proposal)?.proposal ?? translate(language, `main.discussions.noProposal.${thread.discussion.reason}`);
 }
 
 /**
  * The discussions whose time box ran out (Q16): the chair closes each with the latest proposal, or with the reason's
  * fallback when nobody proposed one. A discussion waiting for the person is not closed. Returns the closed ones.
  */
-export function closeOverdueDiscussions(document: ProjectDocument, now = new Date()): Discussion[] {
+export function closeOverdueDiscussions(document: ProjectDocument, now = new Date(), language: Language = DEFAULT_LANGUAGE): Discussion[] {
   const closed: Discussion[] = [];
   for (const thread of (document.agentThreads ?? []).filter(isDiscussion)) {
     if (thread.discussion.status !== "open" || Date.parse(thread.discussion.deadline) > now.getTime()) continue;
-    decideDiscussion(document, thread.id, { decision: timeBoxDecision(thread), by: chairOf(thread), how: "timeBox" }, now);
+    decideDiscussion(document, thread.id, { decision: timeBoxDecision(thread, language), by: chairOf(thread), how: "timeBox" }, now);
     closed.push(thread);
   }
   return closed;
@@ -371,6 +369,7 @@ export function chairInstructions(language: "it" | "en"): string {
 const timeOf = (iso: string) => iso.slice(11, 16);
 
 /** The thread as the agents read it at their turn (Italian, data). */
+// @model-text
 export function discussionPrompt(document: ProjectDocument, thread: Discussion, speaker: AgentThreadAuthor): string {
   const name = (author: AgentThreadAuthor) => {
     if (author.kind === "coordinator") return "Coordinatore";
