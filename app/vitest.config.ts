@@ -14,6 +14,7 @@ export default defineConfig({
     environment: "node",
     testTimeout: 20_000,
     // Tests wait for the whole candidate gate in the turn, as before ADR 0023; the test of the background gate shortens it.
-    env: { TRAMA_GATE_TURN_WAIT_MS: "600000" },
+    // The provider CLIs installed on the machine are never started by the tests, as on CI where there are none.
+    env: { TRAMA_GATE_TURN_WAIT_MS: "600000", TRAMA_PROVIDER_DISCOVERY: "off" },
   },
 });
