@@ -254,11 +254,22 @@ const dragFiles = (type) =>
   }, type);
 
 // B02, first launch (issue #354): the Benvenuto fills the editor area, and at its head the mark weaves in once, then
-// stays still. Nothing covers the window while it plays.
+// stays still. It sits in the Benvenuto's header and covers nothing: while it plays, the Benvenuto's first action is
+// the topmost thing at its own place. It ends by itself, under the 1.4 s cap plus the time a loaded machine takes to
+// paint; the frames below check the weave itself.
 const welcome = page.getByTestId("welcome");
 await welcome.waitFor();
 await welcome.getByTestId("launch-intro").waitFor({ timeout: 10_000 });
-await page.getByTestId("launch-intro").waitFor({ state: "detached", timeout: 1_500 });
+const uncovered = await welcome
+  .getByTestId("welcome-start-actions")
+  .getByRole("button")
+  .first()
+  .evaluate((link) => {
+    const box = link.getBoundingClientRect();
+    return link.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  });
+if (!uncovered) throw new Error("The launch intro covers the Benvenuto");
+await page.getByTestId("launch-intro").waitFor({ state: "detached", timeout: 3_000 });
 await welcome.getByTestId("welcome-mark").waitFor();
 const lookOf = () => page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLookTo = (provider, dark) =>

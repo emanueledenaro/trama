@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { cn } from "@/lib/cn";
-import { introPhase, nextIntroChange } from "@/lib/launchIntro";
+import { INTRO_MAX_MS, INTRO_WEAVE_MS, introPhase, nextIntroChange } from "@/lib/launchIntro";
 
 const reducedMotionQuery = () => window.matchMedia("(prefers-reduced-motion: reduce)");
+/** The longest the first launch waits for the window to show before the weave starts anyway. */
+const INTRO_START_WAIT_MS = 500;
 
 /**
  * The mark at the head of the Benvenuto (B02, issue #354). On the first launch its two ribbons weave into the "T",
@@ -27,21 +29,34 @@ export function LaunchIntro({ play, size = 64 }: { play: boolean; size?: number 
     return () => media.removeEventListener("change", update);
   }, []);
 
-  // The first launch is known only once the state is read, and the weave starts once the window shows: a hidden window
-  // runs neither its timers nor its animations on time, and the person would not see it.
+  // The first launch is known only once the state is read. The weave starts when the window shows, so the person sees
+  // it, or after a short wait at most, since a window may never report that it shows. With reduced motion the mark
+  // stays still. Once started it always ends: at the end of the weave, or at the cap if a timer or an animation is late.
   useEffect(() => {
-    if (!play) return;
+    if (!play || reducedMotionQuery().matches) return;
+    let started = false;
+    let cap: ReturnType<typeof setTimeout> | undefined;
     const begin = () => {
-      if (document.visibilityState !== "visible") return;
-      document.removeEventListener("visibilitychange", begin);
+      if (started) return;
+      started = true;
+      document.removeEventListener("visibilitychange", onShow);
       start.current = performance.now();
       setElapsed(0);
       setPlaying(true);
       setRun((n) => n + 1);
+      cap = setTimeout(() => setPlaying(false), INTRO_MAX_MS);
     };
-    begin();
-    document.addEventListener("visibilitychange", begin);
-    return () => document.removeEventListener("visibilitychange", begin);
+    const onShow = () => {
+      if (document.visibilityState === "visible") begin();
+    };
+    const fallback = setTimeout(begin, INTRO_START_WAIT_MS);
+    onShow();
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onShow);
+      clearTimeout(fallback);
+      if (cap) clearTimeout(cap);
+    };
   }, [play]);
 
   useEffect(() => {
@@ -64,16 +79,18 @@ export function LaunchIntro({ play, size = 64 }: { play: boolean; size?: number 
     };
   }, []);
 
-  // The weave has all its time: the Benvenuto is already usable around it.
-  const phase = held ? "playing" : playing ? introPhase({ elapsedMs: elapsed, readyAtMs: null, reducedMotion }) : "gone";
+  // The weave has all its time, and then the mark is simply still: nothing covers the Benvenuto, so no fade is needed.
+  const timing = { readyAtMs: INTRO_WEAVE_MS, reducedMotion };
+  const phase = held ? "playing" : playing && introPhase({ elapsedMs: elapsed, ...timing }) === "playing" ? "playing" : "gone";
 
   useEffect(() => {
     if (held || !playing || phase === "gone") return;
     const now = performance.now() - start.current;
-    const wait = nextIntroChange({ elapsedMs: now, readyAtMs: null, reducedMotion });
+    const wait = nextIntroChange({ elapsedMs: now, ...timing });
     if (wait === null) return;
     const timer = setTimeout(() => setElapsed(performance.now() - start.current), Math.max(0, wait));
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `timing` follows `reducedMotion`
   }, [held, playing, phase, reducedMotion, elapsed]);
 
   useEffect(() => {
