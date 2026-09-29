@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate, FoundProblem, ProjectDocument, ProjectGoal, SliceTicket, Specialist, SpecialistAssignment, WorkPlan } from "./domain";
 import { emptyDocument } from "../main/core/document";
-import { goalExampleProgress, goalGroups, goalState, issueWork, sliceRows, summaryGoal } from "./workOverview";
+import { goalExampleProgress, goalGroups, goalState, issueWork, sliceGroups, sliceRows, summaryGoal } from "./workOverview";
 
 const AT = "2026-09-28T10:00:00Z";
 
@@ -112,6 +112,44 @@ describe("the slices of Lavoro", () => {
       ["S2", "blocked", null, null, "G1"],
     ]);
     expect(rows[1]!.waitingFor).toEqual(["S1"]);
+  });
+
+  it("groups the slices by where they stand and orders the waiting ones along their chain", () => {
+    const document = project();
+    document.plans.push(
+      plan("P1", "R1", [
+        ticket("S1"),
+        ticket("S2", { blockedBy: ["S1"] }),
+        ticket("S3", { blockedBy: ["S2"] }),
+        ticket("S4", { blockedBy: ["S1"] }),
+        ticket("S5", { blockedBy: ["S3", "S4"] }),
+        ticket("S6"),
+        ticket("S7"),
+      ]),
+    );
+    const rows = sliceRows(document, {
+      P1: [
+        { id: "S1", state: "verifying", waitingFor: [], assignmentId: null },
+        { id: "S2", state: "blocked", waitingFor: ["S1"], assignmentId: null },
+        { id: "S3", state: "blocked", waitingFor: ["S2"], assignmentId: null },
+        { id: "S4", state: "blocked", waitingFor: ["S1"], assignmentId: null },
+        { id: "S5", state: "blocked", waitingFor: ["S3", "S4"], assignmentId: null },
+        { id: "S6", state: "ready", waitingFor: [], assignmentId: null },
+        { id: "S7", state: "done", waitingFor: [], assignmentId: null },
+      ],
+    });
+    const groups = sliceGroups(rows);
+    const ids = (list: typeof rows) => list.map((r) => r.ticket.id);
+    expect(ids(groups.active)).toEqual(["S1"]);
+    expect(ids(groups.ready)).toEqual(["S6"]);
+    expect(ids(groups.waiting)).toEqual(["S2", "S4", "S3", "S5"]);
+    expect(ids(groups.done)).toEqual(["S7"]);
+  });
+
+  it("does not loop on slices that wait for each other", () => {
+    const document = project();
+    document.plans.push(plan("P1", "R1", [ticket("S1", { blockedBy: ["S2"] }), ticket("S2", { blockedBy: ["S1"] })]));
+    expect(sliceGroups(sliceRows(document, undefined)).waiting.map((r) => r.ticket.id)).toEqual(["S1", "S2"]);
   });
 });
 

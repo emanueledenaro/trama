@@ -1,6 +1,7 @@
 // The records of the Lavoro view in the UI check (issue #332): a goal with its examples, a sprint of four slices with
-// who works on them, a candidate with two examples tried, a found problem in the backlog, and the divergence of the
-// project's branch from main. The check writes them in the saved state of a copy of the example project.
+// who works on them, a candidate with two examples tried and two earlier ones it replaced, a found problem in the
+// backlog, and the divergence of the project's branch from main. The check writes them in the saved state of a copy of
+// the example project.
 import { join } from "node:path";
 
 const at = (day, hour) => `2026-09-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00.000Z`;
@@ -155,6 +156,8 @@ export function addWorkView(document, root, head) {
   );
   const merged = candidate("C-5A1E00G1", giulia, head, 10, []);
   merged.pullRequest = { url: "https://github.com/trama-ui/negozio/pull/40", number: 40, branch: "trama/a-5a1e00g1", at: at(28, 10), mergedAt: at(28, 11) };
+  // Two earlier candidates of Elena's work, replaced by her latest one: Lavoro folds them at the end with their count.
+  document.candidates.push(candidate("C-5A1E00E8", elena, head, 9, []), candidate("C-5A1E00E9", elena, head, 10, []));
   document.candidates.push(candidate("C-5A1E00E1", elena, head, 11, ["E-1", "E-2"]), merged);
   document.problems = {
     since: at(27, 9),

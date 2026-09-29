@@ -1,4 +1,5 @@
 import {
+  IconAlertTriangle,
   IconChevronDown,
   IconChevronRight,
   IconCircleCheck,
@@ -7,6 +8,8 @@ import {
   IconExternalLink,
   IconGitBranch,
   IconGitPullRequest,
+  IconHourglass,
+  IconListCheck,
   IconMessageCircle,
   IconPlayerPause,
   IconPlus,
@@ -19,7 +22,7 @@ import { goalWorkSummary } from "@shared/goals";
 import type { MessageKey } from "@shared/i18n";
 import { problemBacklog } from "@shared/problems";
 import { sliceStatus } from "@shared/states";
-import { goalExampleProgress, goalGroups, issueWork, type SliceRow, sliceRows, summaryGoal } from "@shared/workOverview";
+import { goalExampleProgress, goalGroups, issueWork, type SliceRow, sliceGroups, sliceRows, summaryGoal } from "@shared/workOverview";
 import { AgentAvatar } from "@/components/AgentIdentity";
 import { GoalFilterMenu } from "@/components/chat/ChatView";
 import { ReferenceText } from "@/components/chat/ReferenceText";
@@ -29,6 +32,8 @@ import { Button } from "@/components/ui/button";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useWaiting } from "@/components/WaitingView";
+import { StatusLineIcon } from "@/components/workbench/StatusBar";
 import { GROUP_IMPACT_QUESTION } from "@/lib/askCoordinator";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
@@ -36,16 +41,16 @@ import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { GoalStateBadge } from "./GoalsView";
 import { EmptyNote } from "./Inspector";
-import { CandidateList } from "./WorkView";
+import { Fold, GroupLabel, META, ROW, ROW_MAIN } from "./WorkGroups";
+import { CandidateList, VerifiedCandidates } from "./WorkView";
 
 /** Where the Lavoro view opens: a shortcut or a link to goals, branches or issues brings that section into view. */
 export type WorkSection = "goals" | "slices" | "candidates" | "branches" | "issues";
 
-const ROW = "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-[var(--sidebar-accent)]";
-/** The part of a row that opens its detail, next to the row's own icon actions (never a button inside a button). */
-const ROW_MAIN = "flex min-w-0 flex-1 items-start gap-2 rounded-sm text-left outline-none focus-visible:ring-1 focus-visible:ring-ring";
 const ICON_BUTTON = "sidebar-icon-button inline-flex size-6 shrink-0 items-center justify-center rounded-md";
-const META = "block truncate text-ui-xs text-muted-foreground";
+/** A chip of the status at the top of Lavoro: what holds the work, one click from where it is answered. */
+const HOLD_CHIP =
+  "inline-flex h-6 max-w-full min-w-0 items-center gap-1 rounded-md px-2 text-ui-xs font-medium outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring";
 
 /** An icon button with its tooltip and its accessible name. */
 function IconAction({ label, onClick, children, pressed }: { label: string; onClick: () => void; children: React.ReactNode; pressed?: boolean }) {
@@ -107,37 +112,38 @@ function Section({
   );
 }
 
-/** A folded group inside a section: archived goals, the branches on GitHub, the news. */
-function Fold({ label, children, testId }: { label: string; children: React.ReactNode; testId?: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div data-testid={testId}>
-      <button
-        type="button"
-        aria-expanded={open}
-        className="flex h-7 w-full items-center gap-1 rounded-md px-2 text-left text-ui-sm text-muted-foreground hover:bg-[var(--sidebar-accent)] hover:text-foreground"
-        onClick={() => setOpen(!open)}
-      >
-        {open ? <IconChevronDown className="size-3.5 shrink-0" stroke={1.8} /> : <IconChevronRight className="size-3.5 shrink-0" stroke={1.8} />}
-        {label}
-      </button>
-      {open ? <div className="pl-2">{children}</div> : null}
-    </div>
-  );
-}
-
-/** The goal the chat is filtered on, as a menu, and how far the summed-up goal is: its examples tried on a candidate. */
-function Summary() {
+/**
+ * The status at the top of Lavoro (UI wave of 29 September): the goal, how far the work is, the Coordinator's next move
+ * and what holds the work, each one click from where it is answered. The goal is a menu that filters the chat; its
+ * progress is its examples tried on a candidate; the slices say how far the sprint is. The next move is the status
+ * line Trama computes from the records, the same as the status bar's.
+ */
+function Summary({ slices, planTitle, onShow }: { slices: SliceRow[]; planTitle: string | null; onShow: (section: WorkSection) => void }) {
   const t = useT();
   const document = useUi((s) => s.app!.project!.document);
   const filter = useUi((s) => s.dialogGoalId);
   const focusGoalId = useUi((s) => s.app?.project?.focus?.focus?.goalId ?? null);
+  const line = useUi((s) => s.app?.project?.statusLine ?? null);
+  const setInspector = useUi((s) => s.setInspector);
+  const waiting = useWaiting();
+  const divergence = document.branchDivergence ?? null;
   const goal = summaryGoal(document, filter, focusGoalId);
   const progress = goal ? goalExampleProgress(document, goal.id) : null;
   const percent = progress && progress.total ? Math.round((progress.tried / progress.total) * 100) : 0;
+  const groups = sliceGroups(slices);
+  const conflicts = divergence?.conflictingFiles.length ?? 0;
   return (
     <div aria-label={t("work.summary.label")} role="group" className="border-b border-[color:var(--app-surface-divider)] px-3 pt-2 pb-3" data-testid="work-summary">
       <GoalFilterMenu wide />
+      {!goal && planTitle ? (
+        // No goal at work, but a sprint goes on: its plan names the work.
+        <p className="flex min-w-0 items-center gap-1.5 text-ui text-foreground/90" data-testid="work-plan-title">
+          <IconListCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
+          <span className="min-w-0 truncate" title={planTitle}>
+            {planTitle}
+          </span>
+        </p>
+      ) : null}
       {goal && progress ? (
         progress.total ? (
           <>
@@ -156,9 +162,71 @@ function Summary() {
             {t("work.summary.noExamples", { title: goal.title })}
           </p>
         )
-      ) : (
+      ) : !planTitle ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">{t("work.summary.noGoal")}</p>
-      )}
+      ) : null}
+      {slices.length ? (
+        <p className="mt-1.5 truncate text-ui-sm text-muted-foreground" data-testid="work-slice-progress">
+          <span className="text-foreground/90">{t("work.status.slices", { done: groups.done.length, total: slices.length })}</span>
+          {groups.active.length ? (
+            <>
+              <Sep />
+              {t("work.status.active", { count: groups.active.length })}
+            </>
+          ) : null}
+          {groups.waiting.length ? (
+            <>
+              <Sep />
+              {t("work.status.waiting", { count: groups.waiting.length })}
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {line ? (
+        <p
+          className="mt-1.5 flex min-w-0 items-start gap-1.5 text-ui-sm"
+          title={line.reason ? `${line.text} ${line.reason}` : line.text}
+          data-testid="work-next"
+          data-state={line.state}
+        >
+          <span className="mt-[3px] flex size-3 shrink-0 items-center justify-center">
+            <StatusLineIcon line={line} />
+          </span>
+          <span className="min-w-0 line-clamp-2">
+            <span className="sr-only">{t("work.status.next")}: </span>
+            <span className={line.state === "idle" ? "text-muted-foreground" : "text-foreground"}>
+              <ReferenceText text={line.text} />
+            </span>
+            {line.reason ? (
+              <span className="text-muted-foreground">
+                {" "}
+                <ReferenceText text={line.reason} />
+              </span>
+            ) : null}
+          </span>
+        </p>
+      ) : null}
+      {waiting.length || conflicts ? (
+        // What holds the work, each chip opening where it is answered: Aspetta te, the branch and its conflict.
+        <div className="mt-2 flex flex-wrap gap-1.5" data-testid="work-held">
+          {waiting.length ? (
+            <button
+              type="button"
+              className={cn(HOLD_CHIP, "bg-[var(--color-background-button-secondary)] text-foreground hover:bg-[var(--sidebar-accent)]")}
+              onClick={() => setInspector({ kind: "waiting" })}
+            >
+              <IconHourglass className="size-3 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
+              <span className="truncate">{t("waiting.view.count", { count: waiting.length })}</span>
+            </button>
+          ) : null}
+          {conflicts ? (
+            <button type="button" className={cn(HOLD_CHIP, "bg-warning/10 text-warning hover:bg-warning/16 dark:bg-warning/16")} onClick={() => onShow("branches")}>
+              <IconAlertTriangle className="size-3 shrink-0" stroke={1.8} />
+              <span className="truncate">{t("workbench.status.conflicts", { count: conflicts })}</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -209,14 +277,22 @@ const SLICE_ICON: Partial<Record<SliceState, React.ReactNode>> = {
   paused: <IconPlayerPause className="size-3.5 text-muted-foreground" stroke={1.8} />,
 };
 
-function SliceItem({ row }: { row: SliceRow }) {
+type SliceGroup = "active" | "ready" | "waiting" | "done";
+
+/**
+ * One slice. Its group says where it stands, so only a slice in progress keeps its state badge (in progress, checking,
+ * suspended, waiting for an answer); a waiting slice says what it waits for on the right, on one line, so the chain of
+ * dependencies reads down the group. The goal shows only when the slices come from more than one plan.
+ */
+function SliceItem({ row, group, showGoal }: { row: SliceRow; group: SliceGroup; showGoal: boolean }) {
   const t = useT();
   const project = useUi((s) => s.app!.project!);
   const setInspector = useUi((s) => s.setInspector);
   const specialist = row.specialistId ? (project.document.team.specialists.find((s) => s.id === row.specialistId) ?? null) : null;
-  const goal = row.goalId ? project.document.goals?.find((g) => g.id === row.goalId) : null;
+  const goal = showGoal && row.goalId ? project.document.goals?.find((g) => g.id === row.goalId) : null;
   const status = sliceStatus(t, row.state, row.ticket);
-  const who = specialist ? specialist.name : row.state === "blocked" && row.waitingFor.length ? t("work.slices.waitingFor", { slices: row.waitingFor.join(", ") }) : t("work.slices.unassigned");
+  const waitsFor = group === "waiting" && row.waitingFor.length ? t("work.slices.waitingFor", { slices: row.waitingFor.join(", ") }) : null;
+  const who = specialist ? specialist.name : group === "ready" ? t("work.slices.unassigned") : null;
   const open = row.candidateId
     ? () => setInspector({ kind: "candidate", id: row.candidateId! })
     : specialist
@@ -233,17 +309,16 @@ function SliceItem({ row }: { row: SliceRow }) {
         <span className="block truncate text-ui text-foreground/90">
           {row.ticket.id} {row.ticket.title}
         </span>
-        <span className={META}>
-          {who}
-          {goal ? (
-            <>
-              <Sep />
-              {goal.title}
-            </>
-          ) : null}
-        </span>
+        {who || goal ? (
+          <span className={META}>
+            {who}
+            {who && goal ? <Sep /> : null}
+            {goal?.title}
+          </span>
+        ) : null}
       </span>
-      <Badge tone={status.tone}>{status.label}</Badge>
+      {group === "active" ? <Badge tone={status.tone}>{status.label}</Badge> : null}
+      {waitsFor ? <span className="mt-px shrink-0 text-ui-xs text-muted-foreground" data-testid="work-slice-waits">{waitsFor}</span> : null}
     </>
   );
   return open ? (
@@ -257,14 +332,37 @@ function SliceItem({ row }: { row: SliceRow }) {
   );
 }
 
+/**
+ * The slices of the sprint by where they stand (UI wave of 29 September): in progress, ready, waiting for other slices
+ * with the chain in order, and the done ones folded at the end, since they are history.
+ */
 function Slices({ rows }: { rows: SliceRow[] }) {
   const t = useT();
   if (!rows.length) return <EmptyNote>{t("work.slices.none")}</EmptyNote>;
+  const groups = sliceGroups(rows);
+  const showGoal = new Set(rows.map((row) => row.planId)).size > 1;
+  const items = (list: SliceRow[], group: SliceGroup) =>
+    list.map((row) => <SliceItem key={`${row.planId}:${row.ticket.id}`} row={row} group={group} showGoal={showGoal} />);
+  const open: [SliceGroup, SliceRow[]][] = [
+    ["active", groups.active],
+    ["ready", groups.ready],
+    ["waiting", groups.waiting],
+  ];
   return (
     <div className="flex flex-col gap-0.5">
-      {rows.map((row) => (
-        <SliceItem key={`${row.planId}:${row.ticket.id}`} row={row} />
-      ))}
+      {open.map(([group, list]) =>
+        list.length ? (
+          <div key={group} className="flex flex-col gap-0.5" data-testid={`work-slices-${group}`}>
+            <GroupLabel label={t(`work.slices.group.${group}`)} count={list.length} />
+            {items(list, group)}
+          </div>
+        ) : null,
+      )}
+      {groups.done.length ? (
+        <Fold label={t("work.slices.group.done", { count: groups.done.length })} testId="work-slices-done">
+          <div className="flex flex-col gap-0.5">{items(groups.done, "done")}</div>
+        </Fold>
+      ) : null}
     </div>
   );
 }
@@ -631,9 +729,11 @@ function Issues({ creating, onCreated, filter: chosen, onFilter }: { creating: b
 }
 
 /**
- * The Lavoro view (issue #332, ADR 0018): the goal in a summary, then goals, slices, candidates and plans, branches
- * and pull requests with the conflict against the default branch, and the issues with their backlog. It takes the
- * place of the old Obiettivi, Lavoro, Issue and the GitHub part of Gruppo; a row opens its detail in the side bar.
+ * The Lavoro view (issue #332, ADR 0018), in the order of the UI wave of 29 September: the status at the top (goal,
+ * progress, next move, what holds the work), then what asks the person for a move (the verified candidates), then the
+ * work going on (the slices by state), then the goals, the other candidates and plans with the replaced ones folded,
+ * branches and pull requests with the conflict against the default branch, and the issues with their backlog. It takes
+ * the place of the old Obiettivi, Lavoro, Issue and the GitHub part of Gruppo; a row opens its detail in the side bar.
  * `backlog` opens the issues on the backlog of the found problems, as Activity's rows do (issue #337).
  */
 export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; backlog?: boolean }) {
@@ -647,6 +747,7 @@ export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; 
   const slices = sliceRows(project.document, project.sliceViews);
   const firstPlan = slices.length ? project.document.plans.find((p) => p.id === slices[0]!.planId) : null;
   const onePlan = slices.length > 0 && slices.every((row) => row.planId === slices[0]!.planId);
+  const planTitle = onePlan && firstPlan ? (firstPlan.spec?.sections?.title ?? firstPlan.summary) : null;
   const toggle = (id: WorkSection) =>
     setClosed((current) => {
       const next = new Set(current);
@@ -654,22 +755,41 @@ export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; 
       else next.add(id);
       return next;
     });
-  // A shortcut to goals, branches or issues opens that section and brings it into view.
-  useEffect(() => {
-    if (!focus) return;
+  // Opens a section and brings it into view: a shortcut to goals, branches or issues, or a chip of the status.
+  const show = (section: WorkSection) => {
     setClosed((current) => {
-      if (!current.has(focus)) return current;
+      if (!current.has(section)) return current;
       const next = new Set(current);
-      next.delete(focus);
+      next.delete(section);
       return next;
     });
-    const frame = requestAnimationFrame(() => root.current?.querySelector(`[data-testid="work-section-${focus}"]`)?.scrollIntoView({ block: "start" }));
+    return requestAnimationFrame(() => root.current?.querySelector(`[data-testid="work-section-${section}"]`)?.scrollIntoView({ block: "start" }));
+  };
+  useEffect(() => {
+    if (!focus) return;
+    const frame = show(focus);
     return () => cancelAnimationFrame(frame);
+    // `show` only reads refs and setters: the effect follows the section asked for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus]);
   const openIssues = project.github.issues.filter((i) => i.state === "open").length;
+  const listedCandidates = project.document.candidates.filter((c) => {
+    const state = project.candidateReports[c.id]?.state;
+    return state === "building" || state === "decided";
+  }).length;
   return (
     <div ref={root} data-testid="work-overview">
-      <Summary />
+      <Summary slices={slices} planTitle={planTitle} onShow={show} />
+      <VerifiedCandidates />
+      <Section
+        id="slices"
+        title={planTitle ? t("work.slices.titleOf", { plan: planTitle }) : t("work.slices.title")}
+        count={slices.length || null}
+        open={!closed.has("slices")}
+        onToggle={() => toggle("slices")}
+      >
+        <Slices rows={slices} />
+      </Section>
       <Section
         id="goals"
         title={t("work.goals.title")}
@@ -685,18 +805,9 @@ export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; 
         <Goals />
       </Section>
       <Section
-        id="slices"
-        title={onePlan && firstPlan ? t("work.slices.titleOf", { plan: firstPlan.spec?.sections?.title ?? firstPlan.summary }) : t("work.slices.title")}
-        count={slices.length || null}
-        open={!closed.has("slices")}
-        onToggle={() => toggle("slices")}
-      >
-        <Slices rows={slices} />
-      </Section>
-      <Section
         id="candidates"
         title={t("work.candidates.title")}
-        count={project.document.candidates.length || null}
+        count={listedCandidates || null}
         open={!closed.has("candidates")}
         onToggle={() => toggle("candidates")}
       >

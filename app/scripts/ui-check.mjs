@@ -5380,14 +5380,29 @@ for (const row of await workView.getByTestId("work-goal").all()) {
 await workView.getByTestId("work-goal").filter({ hasText: "Spedizioni e pagamenti" }).getByText("Attivo", { exact: true }).waitFor();
 await workView.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).waitFor();
 await workView.getByTestId("work-section-goals").getByRole("button", { name: "Nuovo obiettivo" }).waitFor();
-// Slices: one row per slice with who, state and goal; a developer is its animated avatar, never a letter in a circle.
+// UI wave of 29 September: the status at the top says how far the sprint is and the next move; what holds the work is
+// one click away (Aspetta te, the conflict with main).
+await workView.getByTestId("work-slice-progress").getByText("1 di 4 fette fatte").waitFor();
+await workView.getByTestId("work-next").waitFor();
+await workView.getByTestId("work-held").getByRole("button", { name: "18 file in conflitto" }).waitFor();
+// Slices, grouped by where they stand: in progress with their state, then the waiting ones with what they wait for,
+// and the done ones folded at the end. A developer is its animated avatar, never a letter in a circle.
 const workSlices = workView.getByTestId("work-slice");
-if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
-const elenaSlice = workSlices.filter({ hasText: "S2 Spese di spedizione per zona" });
+if ((await workSlices.count()) !== 3) throw new Error(`Lavoro: ${await workSlices.count()} slices open instead of 3, the done one folded`);
+const elenaSlice = workView.getByTestId("work-slices-active").getByTestId("work-slice").filter({ hasText: "S2 Spese di spedizione per zona" });
 await elenaSlice.getByTestId("agent-bot").waitFor();
 await elenaSlice.getByText("In verifica", { exact: true }).waitFor();
-await workSlices.filter({ hasText: "S1 Soglie di spedizione gratuita" }).getByText("Fatta", { exact: true }).waitFor();
-await workSlices.filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+await workView.getByTestId("work-slices-waiting").getByTestId("work-slice").filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+const doneSlices = workView.getByTestId("work-slices-done");
+if ((await doneSlices.getAttribute("data-open")) !== "false") throw new Error("Lavoro: the done slices are open before the click");
+await doneSlices.getByRole("button", { name: "Fatte (1)" }).click();
+await doneSlices.locator('[data-testid="work-slice"][data-state="done"]').filter({ hasText: "S1 Soglie di spedizione gratuita" }).waitFor();
+if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
+await doneSlices.getByRole("button", { name: "Fatte (1)" }).click();
+// Candidates: the replaced ones fold at the end with their count, since they only tell the history.
+const replaced = workView.getByTestId("work-candidates-superseded");
+await replaced.getByRole("button", { name: "Sostituiti (2)" }).waitFor();
+if (await replaced.getByTestId("work-candidate").count()) throw new Error("Lavoro: the replaced candidates are open before the click");
 // Branch and pull requests: the divergence says the commits on each side and the conflicts; its files are one click away.
 const workBranch = workView.getByTestId("work-branch");
 await workBranch.getByText("13 commit avanti, 7 indietro rispetto a main").waitFor();
@@ -5430,6 +5445,11 @@ const workShots = async (name, scroll) => {
 await workShots("32-work-view", () => workView.getByTestId("work-summary").scrollIntoViewIfNeeded());
 await workShots("32a-work-view-branches", () => workView.getByTestId("work-section-branches").evaluate((node) => node.scrollIntoView({ block: "start" })));
 await workShots("32b-work-view-issues", () => workView.getByTestId("work-section-issues").evaluate((node) => node.scrollIntoView({ block: "start" })));
+// The side bar at its widest: the status at the top, the verified candidates, the slices by state and the folds.
+await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
+await workView.getByTestId("work-summary").scrollIntoViewIfNeeded();
+await themeShots("32c-work-view-side-bar-wide");
+await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
 // The status bar opens the same conflict with its files shown.
 await page.getByTestId("status-conflict").click();
 await page.getByTestId("branch-divergence").getByTestId("branch-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
