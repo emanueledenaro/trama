@@ -11,6 +11,7 @@ import {
   IconHourglass,
   IconMessageCircle,
   IconMessages,
+  IconPalette,
   IconPinned,
   IconUsers,
 } from "@tabler/icons-react";
@@ -33,6 +34,7 @@ import { AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
 import { type ModelChoice, ModelPicker } from "@/components/chat/ModelPicker";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Input, TextArea } from "@/components/ui/field";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
@@ -1098,10 +1100,87 @@ function SpecialistSettings({ specialist }: { specialist: Specialist }) {
         </div>
         <div data-testid="specialist-look">
           <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.settings.look")}</h5>
-          <AgentColorPicker specialist={specialist} />
+          <AgentLook specialist={specialist} />
         </div>
       </div>
     </InspectorSection>
+  );
+}
+
+/**
+ * The agent's look in one place: a summary in the settings and one button, "Personalizza aspetto", that opens everything
+ * the person can change about how the agent looks. Today that is the bot's color and the name; the panel is where new
+ * options go, so the settings page keeps its one row.
+ */
+function AgentLook({ specialist }: { specialist: Specialist }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const fixed = isFixedRole(specialist.role);
+  const canRename = specialist.status !== "removed" && !fixed;
+  const close = (next: boolean) => {
+    setOpen(next);
+    if (!next) setRenaming(false);
+  };
+  return (
+    <>
+      <div className="mt-1.5 flex items-center gap-3" data-testid="agent-look-summary">
+        <span className="agent-identity inline-flex size-10 shrink-0 items-center justify-center rounded-full" style={agentStyle({ color: specialist.color })}>
+          <AgentAvatar agent={specialist} activity="idle" size={32} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-ui-sm text-muted-foreground">{t("teams.look.summary", { color: colorName(t, specialist.color) })}</span>
+        <Button size="sm" variant="outline" aria-label={t("teams.look.customizeLabel", { name: specialist.name })} data-testid="agent-look-open" onClick={() => setOpen(true)}>
+          <IconPalette stroke={1.8} /> {t("teams.look.customize")}
+        </Button>
+      </div>
+      <Dialog
+        open={open}
+        onOpenChange={close}
+        title={t("teams.look.title", { name: specialist.name })}
+        description={t("teams.look.description")}
+        footer={
+          <Button size="sm" onClick={() => close(false)}>
+            {t("teams.look.done")}
+          </Button>
+        }
+      >
+        <div className="flex flex-col gap-5 pt-2" data-testid="agent-look-panel">
+          <section aria-label={t("teams.look.preview")} className="flex items-center gap-4 rounded-xl bg-[var(--color-background-elevated-secondary)] p-4" data-testid="agent-look-preview">
+            <span className="agent-identity inline-flex size-24 shrink-0 items-center justify-center rounded-2xl" style={agentStyle({ color: specialist.color })}>
+              <AgentAvatar agent={specialist} activity="idle" size={80} />
+            </span>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate text-ui-lg font-medium text-foreground">{specialist.name}</span>
+                <AgentTag agent={specialist} className="shrink-0 text-ui-sm" />
+              </div>
+              <p className="mt-0.5 text-ui-sm text-muted-foreground">{colorName(t, specialist.color)}</p>
+            </div>
+          </section>
+          <section>
+            <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.look.color")}</h5>
+            <AgentColorPicker specialist={specialist} />
+          </section>
+          <section data-testid="agent-look-name">
+            <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.look.name")}</h5>
+            {canRename ? (
+              renaming ? (
+                <RenameSpecialist specialist={specialist} onDone={() => setRenaming(false)} />
+              ) : (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground">{specialist.name}</span>
+                  <Button size="sm" variant="outline" onClick={() => setRenaming(true)}>
+                    {t("teams.person.rename")}
+                  </Button>
+                </div>
+              )
+            ) : (
+              <p className="mt-1.5 text-ui-sm text-muted-foreground">{t("teams.look.nameFixed")}</p>
+            )}
+          </section>
+        </div>
+      </Dialog>
+    </>
   );
 }
 
