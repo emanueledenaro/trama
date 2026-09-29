@@ -99,7 +99,13 @@ export function LaunchIntro({ play, size = 64 }: { play: boolean; size?: number 
 
   if (phase === "gone") {
     return (
-      <div className="flex shrink-0 items-center justify-center" style={{ width: size, height: size }} data-testid="welcome-mark">
+      <div
+        className="flex shrink-0 items-center justify-center"
+        style={{ width: size, height: size }}
+        data-testid="welcome-mark"
+        // The still mark says the weave ran on this launch, for a check that looks after it ended (issue #460).
+        data-woven={run > 0 ? "true" : undefined}
+      >
         <TramaMark size={size} />
       </div>
     );
