@@ -43,6 +43,33 @@ describe("worktrees", () => {
     await expect(prepareWorktree(repo, "Ada", root, { prefix: "wip" })).rejects.toThrow(/Nome di branch non valido/);
   });
 
+  it("starts a working copy from the base Trama gives, as the copy on GitHub the checkout lags, without moving the checkout", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await git(["init", "-b", "chore/pre-apertura"], repo, false);
+    await writeFile(join(repo, "a.txt"), "uno\n");
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    const local = (await git(["rev-parse", "HEAD"], repo)).trim();
+    // The realignment the person pushed from another clone, as a remote-tracking reference the checkout lags.
+    await git(["checkout", "-q", "-b", "other"], repo, false);
+    await writeFile(join(repo, "a.txt"), "riallineato\n");
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qam", "merge: integra main"], repo, false);
+    const remote = (await git(["rev-parse", "HEAD"], repo)).trim();
+    await git(["update-ref", "refs/remotes/origin/chore/pre-apertura", remote], repo, false);
+    await git(["checkout", "-q", "chore/pre-apertura"], repo, false);
+    await git(["branch", "-q", "-D", "other"], repo, false);
+
+    const root = await mkdtemp(join(tmpdir(), "trama-wt-"));
+    const session = await prepareWorktree(repo, "Riallinea", root, { prefix: "chore", baseSHA: remote });
+    expect(session.baseSHA).toBe(remote);
+    expect((await git(["rev-parse", "HEAD"], session.worktreeRoot)).trim()).toBe(remote);
+    // The person's checkout stays where it was.
+    expect((await git(["rev-parse", "HEAD"], repo)).trim()).toBe(local);
+    expect((await git(["status", "--porcelain"], repo)).trim()).toBe("");
+    // A base that is not a commit of the repository is refused.
+    await expect(prepareWorktree(repo, "Riallinea", root, { prefix: "chore", baseSHA: "0".repeat(40) })).rejects.toThrow();
+  });
+
   it("slugs names for branches", () => {
     expect(slug("Àda è qui!")).toBe("ada-e-qui");
   });

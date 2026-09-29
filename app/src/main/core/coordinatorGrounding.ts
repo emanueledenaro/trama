@@ -4,7 +4,7 @@ import { fixedBans } from "@shared/fixedBans";
 import { activeDelegation } from "@shared/delegation";
 import { ITALIAN, LANGUAGES, translate } from "@shared/i18n";
 import { autonomyLine } from "./autonomousCycle";
-import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
+import { inspectCandidate, type IntegrationHeads, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
 import { t } from "./personLanguage";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
 
@@ -148,7 +148,7 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
  * The state the Coordinator reads at the start of every turn (issue #269): the buttons the person sees, the mandate,
  * the plan of the work with its slices and the open candidates, computed now from the document. Pure. @model-text
  */
-export function currentStateText(document: ProjectDocument, requestId: string, headSHA: string | null = null): string {
+export function currentStateText(document: ProjectDocument, requestId: string, headSHA: IntegrationHeads = null): string {
   const buttons = availableButtons(document, requestId);
   const persons = buttons.filter((b) => b.actor === "person").map((b) => b.label);
   const lines = [
@@ -235,7 +235,7 @@ function planLines(document: ProjectDocument, requestId: string): string[] {
 }
 
 /** @model-text */
-function candidateLines(document: ProjectDocument, headSHA: string | null): string[] {
+function candidateLines(document: ProjectDocument, headSHA: IntegrationHeads): string[] {
   const assignments = document.team.specialists.flatMap((s) => s.assignments.map((a) => ({ assignment: a, specialist: s })));
   const open = assignments
     .map(({ assignment, specialist }) => ({ candidate: latestCandidate(document, assignment.id), specialist }))
@@ -259,7 +259,7 @@ const files = (list: string[]) => (list.length > FILES_SHOWN ? `${list.slice(0, 
  * `headSHA` is the checkout's current head, as the candidate reports use it: a candidate built on an older base is blocked.
  * @model-text
  */
-function candidateState(document: ProjectDocument, candidate: Candidate, headSHA: string | null): string {
+function candidateState(document: ProjectDocument, candidate: Candidate, headSHA: IntegrationHeads): string {
   const problems: string[] = [];
   for (const blocker of inspectCandidate(document, candidate, headSHA)) {
     switch (blocker.code) {

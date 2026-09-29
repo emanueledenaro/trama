@@ -279,9 +279,18 @@ export function recordEvidence(
   candidate.updatedAt = now.toISOString();
 }
 
-export function inspectCandidate(document: ProjectDocument, candidate: Candidate, headSHA: string | null): CandidateBlocker[] {
+/**
+ * The integration base a candidate is checked against: the checkout's head, or every head a candidate may still be built
+ * on (the checkout's head and the commits of the copy on the remote it lags by, see `readBranchBase`); null skips it.
+ */
+export type IntegrationHeads = string | readonly string[] | null;
+
+const builtOnCurrentHead = (candidate: Candidate, heads: IntegrationHeads) =>
+  heads === null || (typeof heads === "string" ? heads === candidate.baseSHA : heads.length === 0 || heads.includes(candidate.baseSHA));
+
+export function inspectCandidate(document: ProjectDocument, candidate: Candidate, headSHA: IntegrationHeads): CandidateBlocker[] {
   const blockers: CandidateBlocker[] = [];
-  if (headSHA && headSHA !== candidate.baseSHA) {
+  if (headSHA && !builtOnCurrentHead(candidate, headSHA)) {
     blockers.push({ code: "BASE_CHANGED", detail: "Rebuild and recheck the candidate on the current integration base." });
   }
   // The developer changed the worktree after the candidate (issue #388): it no longer describes the work to review.
@@ -359,7 +368,7 @@ export function contentFingerprint(document: ProjectDocument, candidate: Candida
   return createHash("sha256").update(`${candidate.snapshotId}\n${versions}\n${evidence}`).digest("hex");
 }
 
-export function candidateReport(document: ProjectDocument, candidate: Candidate, headSHA: string | null): CandidateReport {
+export function candidateReport(document: ProjectDocument, candidate: Candidate, headSHA: IntegrationHeads): CandidateReport {
   const blockers = inspectCandidate(document, candidate, headSHA);
   const fingerprint = contentFingerprint(document, candidate);
   const clearanceInvalidated = candidate.clearance !== null && candidate.clearance.fingerprint !== fingerprint;
@@ -393,7 +402,7 @@ export function recordTechnicalReview(
 }
 
 /** The Coordinator's green light: never a human review and never a merge. */
-export function clearCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
+export function clearCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: IntegrationHeads, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
   if (!candidate) throw new CandidateError("unknown_candidate", `Unknown candidate: ${candidateId}.`);
   if (candidateSuperseded(document, candidate)) {
@@ -475,7 +484,7 @@ export function supersedeCandidate(
 }
 
 /** The person's review of this exact candidate; it is required before publishing a pull request. */
-export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
+export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: IntegrationHeads, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
   if (!candidate) throw new CandidateError("unknown_candidate", t("main.candidates.unknown", { id: candidateId }));
   if (candidateSuperseded(document, candidate)) {

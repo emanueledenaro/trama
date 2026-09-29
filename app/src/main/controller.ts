@@ -383,8 +383,9 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
+import { type BranchBase, readBranchBase } from "./core/branchBase";
 import { assessConflict, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
@@ -945,7 +946,7 @@ export class TramaController {
       .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => {
-        const report = candidateReport(project.document, c, project.snapshot.headSHA);
+        const report = candidateReport(project.document, c, this.knownHeads(project));
         return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository), ...this.mergeView(project, c) }];
       }),
     );
@@ -2382,13 +2383,13 @@ export class TramaController {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
             return item ? { label: item.label, title: item.title } : null;
           },
-          headSHA: () => this.headSHA(current.rootPath),
+          headSHA: () => this.integrationHeads(current),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           runRequestedAction: (id) => this.runRequestedAction(current, id),
           delegationChanged: (delegation) => this.delegationChanged(current, delegation, current.runningRequestId),
           questionDecided: (questionId, decisionId) => this.questionDecided(current, questionId, decisionId),
           approveWithDelegation: async (candidateId) => {
-            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.headSHA(current.rootPath));
+            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.integrationHeads(current));
             this.changedIn(current);
             // Publishing and merging on GitHub go on in the background and tell their outcome in Activity: never in the turn.
             void this.integrateCandidates(current).catch((error) => this.fail(error));
@@ -2892,7 +2893,7 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
-      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
+      sections.push(currentStateText(document, request.id, this.knownHeads(project)));
       if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document, request.id));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
@@ -5202,6 +5203,9 @@ export class TramaController {
       let cwd = project.rootPath;
       // A diagnosis reads a candidate's worktree without writing to it (W11).
       if (needsWorktree(assignment) || assignment.workspace) {
+        // The project's branch is read on the remote first: work starts from the branch as it is there, and a correction
+        // finds the remote's latest commits to realign with (a working copy shares the checkout's references).
+        const base = await this.readBranchBase(project, true);
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
@@ -5213,6 +5217,7 @@ export class TramaController {
             prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),
             issue: relatedIssue(document, assignment),
             conventions,
+            baseSHA: base?.baseSHA ?? null,
           });
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, t("main.controller.worktreeReadyTitle"), workspace.branch, "info");
@@ -6349,6 +6354,32 @@ export class TramaController {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
 
+  /** The last reading of each project's branch against its copy on the remote, by project id. */
+  private readonly branchBases = new Map<string, BranchBase>();
+
+  /**
+   * Reads the project's branch against its copy on the remote, after a fetch of that one branch when `fetch` is true:
+   * before work starts in a working copy, before a candidate is published and with every reading of GitHub.
+   */
+  private async readBranchBase(project: ActiveProjectState, fetch: boolean): Promise<BranchBase | null> {
+    if (project.isDemo) return null;
+    const base = await readBranchBase(project.rootPath, { fetch }).catch(() => null);
+    if (base) this.branchBases.set(project.id, base);
+    return base;
+  }
+
+  /** The heads a candidate may be built on now: the checkout's head and the commits of the remote's copy it lags by. */
+  private async integrationHeads(project: ActiveProjectState): Promise<IntegrationHeads> {
+    const base = await this.readBranchBase(project, false);
+    return base ? base.currentHeads : await this.headSHA(project.rootPath);
+  }
+
+  /** The same heads from the last reading, while the checkout is still where it was; its head otherwise. */
+  private knownHeads(project: ActiveProjectState): IntegrationHeads {
+    const base = this.branchBases.get(project.id);
+    return base && base.headSHA === project.snapshot.headSHA ? base.currentHeads : project.snapshot.headSHA;
+  }
+
   /** Runs a read-only check in a candidate's worktree, in the sandbox, and captures the worktree as it is after the check. */
   private async runCandidateCheck(project: ActiveProjectState, workspace: WorktreeSession, check: ReadOnlyCheck) {
     await validateWorktree(workspace, this.worktreesRoot);
@@ -7269,7 +7300,7 @@ export class TramaController {
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new DomainError(t("main.controller.candidateNotFound"));
-    const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+    const report = candidateReport(document, candidate, await this.integrationHeads(project));
     if (report.state === "superseded") throw new DomainError(t("main.controller.candidateSuperseded"));
     if (report.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: report.blockers.map((b) => b.code).join(", ") }));
     if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError(t("main.controller.candidateNeedsApproval"));
@@ -7363,7 +7394,7 @@ export class TramaController {
   private async integrateCandidates(project: ActiveProjectState): Promise<void> {
     if (this.quitting || !project.stateWritable || project.isDemo) return;
     const document = project.document;
-    const head = await this.headSHA(project.rootPath);
+    const head = await this.integrationHeads(project);
     for (const candidate of document.candidates) {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
@@ -7415,7 +7446,7 @@ export class TramaController {
     try {
       const pull = candidate.pullRequest ?? (await this.publishCandidateNow(project, candidate, report));
       if (!pull.headSHA) throw new DomainError(t("main.controller.mergeUnknownHead", { number: `${pull.number}` }));
-      const now = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+      const now = candidateReport(document, candidate, await this.integrationHeads(project));
       const covered = contentFingerprint(document, candidate) === fingerprint && !now.blockers.length && !now.clearanceInvalidated && (by === "coordinator" || !now.approvalInvalidated);
       if (!covered) throw new DomainError(t("main.controller.mergeCandidateChanged"));
       const checks = await readPullRequestStatus(repository, pull.number).catch(() => null);
@@ -7523,7 +7554,7 @@ export class TramaController {
   /** The person's ok on an interface candidate: the approval, then Trama merges it when the green light holds (issue #247). */
   async approveCandidateByPerson(candidateId: string): Promise<void> {
     const project = this.requireProject();
-    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.headSHA(project.rootPath));
+    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.integrationHeads(project));
     this.changed();
     await this.integrateCandidates(project);
   }
@@ -7661,7 +7692,7 @@ export class TramaController {
     if (outOfRange.length) {
       throw new TicketRefusal("invalid_arguments", `The issue has ${items.length} criteria; unknown indexes: ${outOfRange.map((c) => c.index).join(", ")}.`);
     }
-    const head = await this.headSHA(project.rootPath);
+    const head = await this.integrationHeads(project);
     const candidates = new Map(
       document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
     );

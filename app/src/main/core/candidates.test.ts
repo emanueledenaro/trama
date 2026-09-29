@@ -40,6 +40,14 @@ function setup() {
 }
 
 describe("candidates", () => {
+  it("keeps current a candidate built on the copy on GitHub that the checkout lags, and stops one built on another base", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    // The checkout is at f1197f9 and lags chore/pre-apertura on GitHub: work built on GitHub's commits is current.
+    expect(candidateReport(document, candidate, ["f1197f9", "base", "9176e37"]).state).toBe("verified");
+    expect(candidateReport(document, candidate, ["f1197f9"]).blockers.map((b) => b.code)).toEqual(["BASE_CHANGED"]);
+  });
+
   it("moves from building to verified to decided and invalidates on change", () => {
     const { document, decision, candidate } = setup();
     expect(candidateReport(document, candidate, "base").blockers.map((b) => b.code)).toEqual(["EVIDENCE_MISSING"]);
