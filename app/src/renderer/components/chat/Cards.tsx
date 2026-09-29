@@ -273,9 +273,16 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
   );
 }
 
-export function MandateCard({ requestId }: { requestId: string }) {
+/**
+ * A mandate request. In Aspetta te (`placement="waiting"`, issue #331) the decision comes first: the reason, the buttons
+ * right under it, what changes from the mandate in force, and the full proposal closed below.
+ */
+export function MandateCard({ requestId, placement = "chat" }: { requestId: string; placement?: "chat" | "waiting" }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  // Null until the person opens or closes it: then it follows whether there is a mandate in force to compare with.
+  const [fullChoice, setFullOpen] = useState<boolean | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const request = project.document.mandateRequests.find((r) => r.id === requestId);
@@ -287,6 +294,58 @@ export function MandateCard({ requestId }: { requestId: string }) {
   const superseded = resolution?.kind === "superseded";
   // Only a pending proposal compares with the mandate in force: an answered one describes the past.
   const diff = resolution ? null : mandateProposalDiff(project.document, request);
+  const waitingFirst = placement === "waiting";
+  // A first mandate has nothing to compare with: the whole proposal shows, since it is what the person grants.
+  const fullOpen = fullChoice ?? !diff;
+  const decision = !resolution ? (
+    rejecting ? (
+      <div className="mt-3 space-y-2">
+        <TextArea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
+          aria-label="Motivo del rifiuto"
+          className="min-h-12"
+          autoFocus
+        />
+        <p className="text-ui-xs text-muted-foreground">
+          {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
+        </p>
+        <div className="cta-row">
+          <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+            Annulla
+          </Button>
+          <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
+            Rifiuta la proposta
+          </Button>
+        </div>
+      </div>
+    ) : (
+      <div className="cta-row mt-3">
+        <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+          Rifiuta la proposta
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
+          Correggi
+        </Button>
+        <Button
+          size="sm"
+          onClick={() =>
+            void act("mandate:grant", {
+              requestId,
+              objectives: request.objectives,
+              priorities: request.priorities,
+              scopeModuleIds: request.scopeModuleIds,
+              authorizedActions: request.authorizedActions,
+              limits: request.limits,
+            })
+          }
+        >
+          Concedi
+        </Button>
+      </div>
+    )
+  ) : null;
 
   return (
     <CardFrame
@@ -327,79 +386,48 @@ export function MandateCard({ requestId }: { requestId: string }) {
           Sostituita da una richiesta più recente: non si può più concedere.
         </p>
       ) : null}
+      {waitingFirst ? decision : null}
       {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
-      <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
-        <ItemList items={request.objectives} />
-      </Field>
-      {request.priorities.length ? (
-        <Field label="Priorità">
-          <ItemList items={request.priorities} />
-        </Field>
+      {waitingFirst ? (
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+          aria-expanded={fullOpen}
+          onClick={() => setFullOpen(!fullOpen)}
+          data-testid="mandate-full-toggle"
+        >
+          <IconChevronRight className={cn("size-3.5 transition-transform", fullOpen && "rotate-90")} />
+          {t("waiting.mandate.fullComparison")}
+        </button>
       ) : null}
-      <Field label="Perimetro">
-        <ItemList items={request.scopeModuleIds.map(moduleName)} />
-      </Field>
-      <Field label="Azioni autorizzate">
-        <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
-      </Field>
-      {request.limits.length ? (
-        <Field label="Limiti">
-          <ItemList items={request.limits} testId="mandate-limits" />
-        </Field>
+      {!waitingFirst || fullOpen ? (
+        <div data-testid="mandate-full">
+          <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
+            <ItemList items={request.objectives} />
+          </Field>
+          {request.priorities.length ? (
+            <Field label="Priorità">
+              <ItemList items={request.priorities} />
+            </Field>
+          ) : null}
+          <Field label="Perimetro">
+            <ItemList items={request.scopeModuleIds.map(moduleName)} />
+          </Field>
+          <Field label="Azioni autorizzate">
+            <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+          </Field>
+          {request.limits.length ? (
+            <Field label="Limiti">
+              <ItemList items={request.limits} testId="mandate-limits" />
+            </Field>
+          ) : null}
+          <FixedBansField />
+        </div>
       ) : null}
-      <FixedBansField />
       {resolution?.kind === "rejected" ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">Hai rifiutato la proposta. Il mandato in vigore non è cambiato.</p>
       ) : null}
-      {!resolution ? (
-        rejecting ? (
-          <div className="mt-3 space-y-2">
-            <TextArea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
-              aria-label="Motivo del rifiuto"
-              className="min-h-12"
-              autoFocus
-            />
-            <p className="text-ui-xs text-muted-foreground">
-              {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
-            </p>
-            <div className="cta-row">
-              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
-                Annulla
-              </Button>
-              <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
-                Rifiuta la proposta
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="cta-row mt-3">
-            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
-              Rifiuta la proposta
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
-              Correggi
-            </Button>
-            <Button
-              size="sm"
-              onClick={() =>
-                void act("mandate:grant", {
-                  requestId,
-                  objectives: request.objectives,
-                  priorities: request.priorities,
-                  scopeModuleIds: request.scopeModuleIds,
-                  authorizedActions: request.authorizedActions,
-                  limits: request.limits,
-                })
-              }
-            >
-              Concedi
-            </Button>
-          </div>
-        )
-      ) : null}
+      {waitingFirst ? null : decision}
     </CardFrame>
   );
 }
@@ -1390,18 +1418,22 @@ function DecisionLink({ id, version }: { id: string; version: number | undefined
   );
 }
 
-export function CandidateCard({ candidateId }: { candidateId: string }) {
+/**
+ * A candidate: in the chat and in Aspetta te as a card; in its editor tab (`layout="detail"`, issue #336) with the same
+ * parts in the order of the tab and `children` (the examples) between the checks and the decisions.
+ */
+export function CandidateCard({ candidateId, layout = "card", children }: { candidateId: string; layout?: "card" | "detail"; children?: React.ReactNode }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
-  // The inspector already showing this candidate has the diff right below: the button would do nothing (W12).
-  const diffOnScreen = useUi((s) => s.inspector?.kind === "candidate" && s.inspector.id === candidateId);
+  // The candidate's own tab has the diff below: the button would do nothing (W12).
+  const diffOnScreen = layout === "detail";
   const candidate = project.document.candidates.find((c) => c.id === candidateId);
   const report = project.candidateReports[candidateId];
   const [preview, setPreview] = useState<ActionResult<"candidate:previewPullRequest"> | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
-  const t = useT();
   if (!candidate || !report) return null;
   const state = candidateStatus(report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
@@ -1415,23 +1447,36 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
   // Issue #41: a destructive change the Coordinator stopped waits for the person's choice.
   const stop = candidate.merge?.status === "stopped" ? (candidate.merge.stop ?? null) : null;
-  return (
-    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
+  // The parts of the card, in the chat's order; the candidate's editor tab puts them in its own order (issue #336).
+  const whoLine = (
+    <>
       <p className="text-ui-sm text-muted-foreground">
         {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />
         <RecordName id={candidate.assignmentId} />
         <Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
+    </>
+  );
+  const supersededNote = (
+    <>
       {report.state === "superseded" ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded">
           Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno.
         </p>
       ) : null}
+    </>
+  );
+  const decisionsField = (
+    <>
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (
           <DecisionLink key={id} id={id} version={candidate.decisionVersions[id]} />
         ))}
       </Field>
+    </>
+  );
+  const checksFields = (
+    <>
       {candidate.testedSeams !== undefined ? <TestedSeamsField seams={candidate.testedSeams} /> : null}
       <Field label="Evidenze delle verifiche">
         <div className="space-y-0.5">
@@ -1445,6 +1490,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         return gate ? <GateField gate={gate} document={project.document} /> : null;
       })()}
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
+    </>
+  );
+  const blockersField = (
+    <>
       {report.blockers.length && report.state !== "superseded" ? (
         <Field label="Cosa manca">
           <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
@@ -1462,6 +1511,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </ul>
         </Field>
       ) : null}
+    </>
+  );
+  const otherWork = (
+    <>
       {(() => {
         const conflicts = (project.document.conflicts ?? []).filter(
           (a) => a.candidateId === candidate.id && a.classification !== "clean" && !explainedByDivergence(project.document, a) && !otherSideSuperseded(project.document, a),
@@ -1495,6 +1548,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <InterfaceShotsField candidate={candidate} />
         </Field>
       ) : null}
+    </>
+  );
+  const mergeLines = (
+    <>
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
@@ -1511,20 +1568,27 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <IconGitPullRequest className="size-3.5" /> Pull request #{candidate.pullRequest.number}
         </button>
       ) : null}
+    </>
+  );
+  const actions = (
+    <>
       <div className="cta-row mt-3">
         {diffOnScreen ? null : (
-          <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
+          <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id, diff: true })}>
             Apri il diff
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          // Focus mode opens this candidate's latest examination, or starts the first one, full screen (F01, F03).
-          onClick={() => void examineCandidate(candidateId)}
-        >
-          <IconFocus2 /> Esame approfondito
-        </Button>
+        {/* The candidate's tab has the examination as its own section, with its own action (issue #336). */}
+        {layout === "detail" ? null : (
+          <Button
+            size="sm"
+            variant="outline"
+            // The candidate's tab opens on its latest examination, or starts the first one (F01, issue #336).
+            onClick={() => void examineCandidate(candidateId)}
+          >
+            <IconFocus2 /> Esame approfondito
+          </Button>
+        )}
         {route === "person" && report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
             Approva questo candidato
@@ -1587,6 +1651,49 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </div>
         </div>
       ) : null}
+    </>
+  );
+  if (layout === "detail") {
+    // The tab of the candidate (issue #336): a header with the short title, state and who; on top what is missing to
+    // merge it and the main action; then the checks, the examples, the decisions and the examination; the diff closed.
+    return (
+      <div className="px-4 pt-4" data-testid="candidate-detail" data-candidate={candidate.id}>
+        <div className="flex items-start gap-2">
+          <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui-lg font-medium text-foreground" title={candidate.id} data-record-id={candidate.id}>
+            {record ? asTitle(record.short ?? record.label) : "Candidato"}
+          </h2>
+          <Badge tone={state.tone}>{state.label}</Badge>
+        </div>
+        {whoLine}
+        {supersededNote}
+        <section className="mt-3 rounded-xl border border-[color:var(--color-border)] bg-[var(--card)] px-3.5 py-3" data-testid="candidate-to-merge">
+          <h3 className="text-ui-sm font-medium text-muted-foreground">{t("candidate.toMerge")}</h3>
+          {report.blockers.length && report.state !== "superseded" ? null : (
+            <p className="mt-0.5 text-ui text-foreground/90">{merged ? t("candidate.toMerge.merged") : report.state === "superseded" ? t("candidate.toMerge.superseded") : t("candidate.toMerge.nothing")}</p>
+          )}
+          {blockersField}
+          {mergeLines}
+          {actions}
+        </section>
+        <div className="mt-1">
+          {checksFields}
+          {otherWork}
+        </div>
+        {children}
+        {decisionsField}
+      </div>
+    );
+  }
+  return (
+    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
+      {whoLine}
+      {supersededNote}
+      {decisionsField}
+      {checksFields}
+      {blockersField}
+      {otherWork}
+      {mergeLines}
+      {actions}
     </CardFrame>
   );
 }

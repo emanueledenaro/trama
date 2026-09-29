@@ -1,37 +1,53 @@
-import { IconFocus2 } from "@tabler/icons-react";
+import { IconFocus2, IconRotateClockwise } from "@tabler/icons-react";
 import { plainText } from "@shared/plainLanguage";
-import { RecordLabel, RecordName } from "@/components/chat/ReferenceText";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
-import { auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import type { MessageKey } from "@shared/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { RecordName } from "@/components/chat/ReferenceText";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
+import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
-export const AUDIT_STATUS_TEXT: Record<FocusAudit["status"], string> = {
-  checking: "Verifiche reali nella sandbox",
-  reviewing: "Esame degli assi Standards e Spec e delle lenti di Trama, in sola lettura",
-  verifying: "Verifica delle prove dei rilievi",
-  done: "Esame concluso",
-  failed: "Esame non riuscito",
+export const STATUS_TEXT: Record<FocusAudit["status"], MessageKey> = {
+  checking: "audit.status.checking",
+  reviewing: "audit.status.reviewing",
+  verifying: "audit.status.verifying",
+  done: "audit.status.done",
+  failed: "audit.status.failed",
 };
 
-export const isRunning = (audit: FocusAudit) => audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
-
-const findings = (n: number) => (n === 0 ? "Nessun rilievo" : n === 1 ? "1 rilievo" : `${n} rilievi`);
-
-export const FINDING_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
+export const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
   pending: "secondary",
   verified: "success",
   confirmed: "info",
   hypothesis: "warning",
 };
+
+export const isRunning = (audit: FocusAudit) => audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
+
+/**
+ * The technical side of an examination, closed (issue #336): the commands the model ran, the skills it received, the
+ * names of the models, the raw report. The person reads the verdict and the findings above it in plain Italian.
+ */
+function TechnicalDetail({ children, testId }: { children: React.ReactNode; testId?: string }) {
+  const t = useT();
+  return (
+    <details className="group/technical mt-1" data-testid={testId}>
+      <summary className="cursor-pointer list-none text-ui-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className="inline-block transition-transform group-open/technical:rotate-90">›</span> {t("audit.technical")}
+      </summary>
+      <div className="mt-1.5 space-y-1.5 border-l border-[color:var(--app-surface-divider)] pl-3">{children}</div>
+    </details>
+  );
+}
 
 /** What the person made of a finding (F04), each with a link to its record. */
 export function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
@@ -84,25 +100,34 @@ export function FindingActions({ auditId, finding }: { auditId: string; finding:
   );
 }
 
-/** One finding with its proof and how Trama verified it (F02): a hypothesis is shown as one, never as a fact. */
+/** One finding with its proof and its state (F02): a hypothesis is shown as one, never as a fact. */
 function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; auditId: string; actionable: boolean }) {
+  const t = useT();
   const { evidence } = finding;
   return (
     <li className="space-y-1 py-1.5" data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={FINDING_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
-        {finding.severity === "serious" ? <Badge tone="destructive">Grave</Badge> : null}
+        <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+        {finding.severity === "serious" ? <Badge tone="destructive">{t("audit.serious")}</Badge> : null}
         <span className="text-ui-sm text-foreground">{finding.title}</span>
       </div>
       <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
         Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence)}
       </p>
       {evidence?.kind === "reproduction" ? <p className="whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p> : null}
-      {finding.basis ? <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-basis">{finding.basis}</p> : null}
-      {finding.observed ? (
-        <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2 font-mono text-[11px] leading-[1.55] text-foreground/85">
-          {finding.observed}
-        </pre>
+      {finding.basis || finding.observed ? (
+        <TechnicalDetail>
+          {finding.basis ? (
+            <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-basis">
+              {finding.basis}
+            </p>
+          ) : null}
+          {finding.observed ? (
+            <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2 font-mono text-[11px] leading-[1.55] text-foreground/85">
+              {finding.observed}
+            </pre>
+          ) : null}
+        </TechnicalDetail>
       ) : null}
       {finding.followUps?.length ? (
         <ul className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="audit-finding-followups">
@@ -119,11 +144,12 @@ function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; a
 }
 
 function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit: FocusAudit }) {
-  if (axis.status === "waiting") return <EmptyNote>Parte dopo le verifiche reali.</EmptyNote>;
+  const t = useT();
+  if (axis.status === "waiting") return <EmptyNote>{t("audit.axis.waiting")}</EmptyNote>;
   if (axis.status === "running") {
     return (
       <p className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-        <Spinner /> In esame{axis.model ? <><Sep />{axis.model}</> : null}
+        <Spinner /> {t("audit.axis.running")}
       </p>
     );
   }
@@ -132,23 +158,17 @@ function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit:
       <div className="space-y-1">
         {/* The skill's own words ("no spec available") stay in the record; the person reads them in Italian (issue #270). */}
         <p className="text-ui text-foreground/85">{axis.report ? plainText(axis.report) : null}</p>
-        <p className="text-ui-sm text-muted-foreground">
-          {name !== "spec"
-            ? null
-            : audit.target.kind === "candidate"
-              ? "Il candidato non viene da una fetta di un piano né da una issue collegata all'incarico."
-              : "I commit dal punto fisso non citano una issue che Trama conosce."}
-        </p>
+        {name === "spec" ? (
+          <p className="text-ui-sm text-muted-foreground">{t(audit.target.kind === "candidate" ? "audit.axis.noSpec" : "audit.axis.noSpecCommits")}</p>
+        ) : null}
       </div>
     );
   }
-  if (axis.status === "failed") return <p className="text-ui-sm text-destructive">{axis.failure ?? "L'asse non ha prodotto un rapporto."}</p>;
+  if (axis.status === "failed") return <p className="text-ui-sm text-destructive">{axis.failure ?? t("audit.axis.failed")}</p>;
+  const count = axis.findings ?? 0;
   return (
     <div className="space-y-1.5">
-      <p className="text-ui-sm text-muted-foreground">
-        {findings(axis.findings ?? 0)}
-        {axis.model ? <><Sep />{axis.model}</> : null}
-      </p>
+      <p className="text-ui-sm text-muted-foreground">{count ? t("audit.findings", { count }) : t("audit.findings.none")}</p>
       {axis.items?.length ? (
         <ul className="divide-y divide-[color:var(--color-border)]" data-testid="audit-findings">
           {axis.items.map((finding) => (
@@ -156,154 +176,264 @@ function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit:
           ))}
         </ul>
       ) : null}
-      <div className="text-ui">
-        <ChatMarkdown text={axis.report ?? ""} plain />
-      </div>
+      {axis.report || axis.model ? (
+        <TechnicalDetail testId="audit-axis-report">
+          {axis.model ? <p className="text-ui-xs text-muted-foreground">{t("audit.model", { model: axis.model })}</p> : null}
+          <div className="text-ui">
+            <ChatMarkdown text={axis.report ?? ""} plain />
+          </div>
+        </TechnicalDetail>
+      ) : null}
     </div>
+  );
+}
+
+/** The verdict in one line, on top (issue #336): how the examination went and how many findings, by their state. */
+function Verdict({ audit }: { audit: FocusAudit }) {
+  const t = useT();
+  const running = isRunning(audit);
+  const total = auditFindings(audit).length;
+  const tally = findingTally(audit);
+  const lensLine = lensSummary(audit, t);
+  return (
+    <div className="space-y-1" data-testid="focus-audit-verdict">
+      <p
+        className={cn("flex flex-wrap items-center gap-1.5 text-ui", audit.status === "failed" ? "text-destructive" : "text-foreground")}
+        data-testid="focus-audit-status"
+      >
+        {running ? <Spinner /> : null}
+        <span className="font-medium">{t(STATUS_TEXT[audit.status])}</span>
+        {audit.status === "done" ? (
+          <>
+            <Sep />
+            {total ? t("audit.findings", { count: total }) : t("audit.findings.none")}
+          </>
+        ) : null}
+        {audit.finishedAt && !running ? (
+          <span className="text-ui-sm text-muted-foreground">
+            <Sep />
+            {formatRelativeTime(audit.finishedAt)}
+          </span>
+        ) : null}
+      </p>
+      {audit.status === "failed" && audit.failure ? <p className="text-ui-sm text-destructive">{audit.failure}</p> : null}
+      {audit.summary ? (
+        <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
+          {plainText(audit.summary)}
+        </p>
+      ) : null}
+      {audit.summary && lensLine ? (
+        <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-lens-summary">
+          {t("audit.lenses.summary", { summary: lensLine })}
+        </p>
+      ) : null}
+      {tally ? (
+        <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">
+          {t("audit.tally", { tally })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Where the report went on GitHub, or that publishing it is up to the person. */
+function Publication({ audit }: { audit: FocusAudit }) {
+  const t = useT();
+  const setInspector = useUi((s) => s.setInspector);
+  const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
+  return (
+    <div className="mt-3">
+      <h5 className="mb-1 text-ui-sm font-medium text-muted-foreground">{t("audit.publication.title")}</h5>
+      {audit.publication ? (
+        <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
+          {withNodes(t("audit.publication.done"), {
+            link: (
+              <button
+                type="button"
+                className="text-[var(--color-text-accent)] hover:underline"
+                onClick={() => setInspector(audit.publication!.kind === "issue" ? { kind: "issue", number: audit.publication!.number } : { kind: "pullRequest", number: audit.publication!.number })}
+              >
+                {t(audit.publication.kind === "issue" ? "audit.publication.issue" : "audit.publication.comment", { number: String(audit.publication.number) })}
+              </button>
+            ),
+          })}
+          <Sep />
+          {formatRelativeTime(audit.publication.at)}
+        </p>
+      ) : (
+        <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-publication">
+          {t(linked ? "audit.publication.optional" : "audit.publication.noGitHub")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The verdict, the real checks, the axes with their findings, Trama's lenses, the publication and the technical side. */
+function AuditBody({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
+  const t = useT();
+  return (
+    <>
+      <Verdict audit={audit} />
+      <div className="mt-3 space-y-3">
+        <div>
+          <h5 className="mb-1 text-ui-sm font-medium text-muted-foreground">{t("audit.checks")}</h5>
+          <div className="space-y-0.5" data-testid="focus-audit-checks">
+            {checks.map((check) => (
+              <EvidenceRow key={check} check={check} evidence={audit.checks.find((c) => c.check === check) ?? null} />
+            ))}
+          </div>
+        </div>
+        <div data-testid="audit-axis" data-axis="standards" data-status={audit.standards.status}>
+          <h5 className="mb-1 text-ui-sm font-medium text-muted-foreground">{t("audit.standards")}</h5>
+          <AxisBody axis={audit.standards} name="standards" audit={audit} />
+        </div>
+        <div data-testid="audit-axis" data-axis="spec" data-status={audit.spec.status}>
+          <h5 className="mb-1 flex items-center gap-2 text-ui-sm font-medium text-muted-foreground">
+            {t("audit.spec")}
+            {audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
+          </h5>
+          <AxisBody axis={audit.spec} name="spec" audit={audit} />
+        </div>
+        {/* Trama's lenses, marked as its additions to the skill (F05). */}
+        {auditLenses(audit).length ? (
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
+              <span className="font-medium">{t("audit.lenses.title")}</span>
+              <Sep />
+              {t("audit.lenses.note")}
+            </p>
+            <Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>
+          </div>
+        ) : null}
+        {auditLenses(audit).map(({ name, lens }) => (
+          <div key={name} data-testid="audit-lens" data-lens={name} data-status={lens.status}>
+            <h5 className="mb-1 flex items-center gap-2 text-ui-sm font-medium text-muted-foreground">
+              {t(LENS_TITLE_KEYS[name])}
+              <Badge tone="outline">{t("audit.lens.addedBy")}</Badge>
+            </h5>
+            <AxisBody axis={lens} name={name} audit={audit} />
+          </div>
+        ))}
+      </div>
+      {audit.status === "done" ? <Publication audit={audit} /> : null}
+      <TechnicalDetail testId="focus-audit-technical">
+        <p className="text-ui-sm text-muted-foreground">
+          {audit.target.kind === "candidate" ? t("audit.fixedPoint", { commit: audit.fixedPoint.slice(0, 10) }) : t("audit.fixedPointScoped", { point: fixedPointText(audit, t) })}
+          <Sep />
+          {t("audit.files", { count: audit.changedFiles.length })}
+        </p>
+        <p className="text-ui-sm text-muted-foreground">{t("audit.readOnly")}</p>
+      </TechnicalDetail>
+    </>
+  );
+}
+
+/** Starts a new examination of the candidate, or the first one, and brings it into view in the candidate's tab. */
+function startAudit(candidateId: string) {
+  void act("candidate:focusAudit", { candidateId }).then((id) => id && useUi.getState().setInspector({ kind: "candidate", id: candidateId, audit: id }));
+}
+
+/**
+ * The examination of a candidate as a section of its tab (issue #336, F01): the verdict in one line on top, then the
+ * real checks, the Standards and Spec findings with their proof and state (F02), and the technical side closed.
+ * Read-only: the examination does not change the code.
+ */
+export function AuditSection({ candidateId, auditId }: { candidateId: string; auditId?: string }) {
+  const t = useT();
+  const project = useUi((s) => s.app?.project)!;
+  const audits = (project.document.audits ?? []).filter((a) => a.target.kind === "candidate" && a.target.candidateId === candidateId);
+  const audit = (auditId ? audits.find((a) => a.id === auditId) : null) ?? audits.at(-1) ?? null;
+  const candidate = project.document.candidates.find((c) => c.id === candidateId);
+  const running = audit ? isRunning(audit) : false;
+  const linked = project.github.status === "ready" && project.github.repository !== null;
+  const action =
+    running || !candidate ? null : (
+      <div className="cta-row">
+        {audit?.status === "done" && linked && !audit.publication ? (
+          <Button size="xs" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+            {t("audit.publication.publish")}
+          </Button>
+        ) : null}
+        <Button size="xs" variant="outline" onClick={() => startAudit(candidateId)}>
+          {audit ? <IconRotateClockwise /> : <IconFocus2 />}
+          {audit ? t("audit.again") : t("audit.start")}
+        </Button>
+      </div>
+    );
+  if (!audit) {
+    return (
+      <InspectorSection title={t("audit.title")} aside={action}>
+        <EmptyNote>{t("audit.none")}</EmptyNote>
+      </InspectorSection>
+    );
+  }
+  const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
+  return (
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
+      <div className="mb-2 flex items-center gap-2">
+        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
+        {action}
+      </div>
+      <AuditBody audit={audit} checks={checks} />
+    </section>
   );
 }
 
 /**
- * The report of one focus mode examination in the inspector (F01), reopenable after the full-screen view (F03): the
- * real checks first, then the Standards and Spec reports of code-review kept apart, as the skill presents them, each
- * finding with its proof and its verification (F02), and what the person made of it (F04). Trama's lenses follow,
- * marked as Trama's additions (F05).
+ * Starts a new examination of the same target: a candidate's in its tab, a module or the project with the same fixed
+ * point, full screen (F03).
  */
-export function AuditView({ id }: { id: string }) {
-  const project = useUi((s) => s.app?.project)!;
-  const t = useT();
-  const setInspector = useUi((s) => s.setInspector);
-  const linked = project.github.status === "ready" && project.github.repository !== null;
-  const audit = (project.document.audits ?? []).find((a) => a.id === id);
-  if (!audit) return <div className="p-4"><EmptyNote>Esame non trovato.</EmptyNote></div>;
+export async function examineAgain(audit: FocusAudit): Promise<void> {
   const target = audit.target;
-  const candidate = target.kind === "candidate" ? project.document.candidates.find((c) => c.id === target.candidateId) : null;
+  if (target.kind === "candidate") return startAudit(target.candidateId);
+  const next = await act("focusMode:open", {
+    target: target.kind === "module" ? { kind: "module", moduleId: target.moduleId } : { kind: "project" },
+    fixedPoint: audit.fixedPointRef ?? audit.fixedPoint,
+  });
+  if (next) await act("focusMode:enter", { auditId: next });
+}
+
+/**
+ * The report of a module or the whole project (F03) in its own tab, after the full-screen view: the same parts as a
+ * candidate's section, with the way back to full screen as the primary action.
+ */
+function ScopedAuditSection({ audit }: { audit: FocusAudit }) {
+  const t = useT();
+  const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
   const running = isRunning(audit);
-  const tally = findingTally(audit);
-  const lenses = auditLenses(audit);
-  const lensLine = lensSummary(audit, t);
-  const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
-    <div data-testid="focus-audit" data-status={audit.status}>
-      <InspectorSection title="Bersaglio">
-        <p className="text-ui-sm text-foreground">
-          {target.kind === "candidate" ? (
-            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: target.candidateId })}>
-              <RecordLabel id={target.candidateId} />
-            </button>
-          ) : target.kind === "module" ? (
-            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "module", id: target.moduleId })}>
-              Modulo {target.moduleName}
-            </button>
-          ) : (
-            "L'intero progetto"
+    <section className="px-4 py-3" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
+          {t("audit.title")} {focusTargetOf(audit.target, null, t)}
+        </h4>
+        <div className="cta-row">
+          {audit.status === "done" && linked && !audit.publication ? (
+            <Button size="xs" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+              {t("audit.publication.publish")}
+            </Button>
+          ) : null}
+          {running ? null : (
+            <Button size="xs" variant="outline" onClick={() => void examineAgain(audit)}>
+              <IconRotateClockwise /> {t("audit.again")}
+            </Button>
           )}
-          <Sep />
-          punto fisso <span className="font-mono text-[11.5px]" title={audit.fixedPoint}>{fixedPointText(audit)}</span>
-          <Sep />
-          {audit.changedFiles.length === 1 ? "1 file" : `${audit.changedFiles.length} file`}
-        </p>
-        <p className="mt-1.5 flex items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
-          {running ? <Spinner /> : null}
-          {AUDIT_STATUS_TEXT[audit.status]}
-          {audit.finishedAt && !running ? <><Sep />{formatRelativeTime(audit.finishedAt)}</> : null}
-        </p>
-        {audit.status === "failed" && audit.failure ? <p className="mt-1 text-ui-sm text-destructive">{audit.failure}</p> : null}
-        <p className="mt-1.5 text-ui-sm text-muted-foreground">
-          Sola lettura: l'esame approfondito non cambia il codice. Le verifiche sono fatti. Un rilievo è verificato solo quando Trama ha ricontrollato la sua prova; un rilievo grave che Trama non può ricontrollare passa a un modello più forte; gli altri restano ipotesi.
-        </p>
-      </InspectorSection>
-      <InspectorSection title="Verifiche reali">
-        <div className="space-y-0.5" data-testid="focus-audit-checks">
-          {checks.map((check) => (
-            <EvidenceRow key={check} check={check} evidence={audit.checks.find((c) => c.check === check) ?? null} />
-          ))}
-        </div>
-      </InspectorSection>
-      <InspectorSection title="Standards">
-        <div data-testid="audit-axis" data-axis="standards" data-status={audit.standards.status}>
-          <AxisBody axis={audit.standards} name="standards" audit={audit} />
-        </div>
-      </InspectorSection>
-      <InspectorSection title="Spec" aside={audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}>
-        <div data-testid="audit-axis" data-axis="spec" data-status={audit.spec.status}>
-          <AxisBody axis={audit.spec} name="spec" audit={audit} />
-        </div>
-      </InspectorSection>
-      {lenses.length ? (
-        <InspectorSection title={t("audit.lenses.title")} aside={<Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>}>
-          <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
-            {t("audit.lenses.note")}
-          </p>
-        </InspectorSection>
-      ) : null}
-      {lenses.map(({ name, lens }) => (
-        <InspectorSection key={name} title={t(LENS_TITLE_KEYS[name])} aside={<Badge tone="outline">{t("audit.lens.addedBy")}</Badge>}>
-          <div data-testid="audit-lens" data-lens={name} data-status={lens.status}>
-            <AxisBody axis={lens} name={name} audit={audit} />
-          </div>
-        </InspectorSection>
-      ))}
-      {audit.summary ? (
-        <InspectorSection title="Sintesi">
-          <p className="text-ui-sm text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
-          {lensLine ? <p className="mt-1 text-ui-sm text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
-          {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
-        </InspectorSection>
-      ) : null}
-      {audit.status === "done" ? (
-        <InspectorSection title={t("audit.publication.title")}>
-          {audit.publication ? (
-            <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
-              {withNodes(t("audit.publication.done"), {
-                link: (
-                  <button
-                    type="button"
-                    className="text-[var(--color-text-accent)] hover:underline"
-                    onClick={() => setInspector(audit.publication!.kind === "issue" ? { kind: "issue", number: audit.publication!.number } : { kind: "pullRequest", number: audit.publication!.number })}
-                  >
-                    {t(audit.publication.kind === "issue" ? "audit.publication.issue" : "audit.publication.comment", { number: String(audit.publication.number) })}
-                  </button>
-                ),
-              })}
-              <Sep />
-              {formatRelativeTime(audit.publication.at)}
-            </p>
-          ) : (
-            <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-publication">
-              {t(linked ? "audit.publication.optional" : "audit.publication.noGitHub")}
-            </p>
-          )}
-        </InspectorSection>
-      ) : null}
-      <div className="cta-row px-4 py-3">
-        {audit.status === "done" && linked && !audit.publication ? (
-          <Button size="sm" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
-            {t("audit.publication.publish")}
+          <Button size="xs" onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
+            <IconFocus2 /> {t("focus.openFullScreen")}
           </Button>
-        ) : null}
-        <Button size="sm" variant="outline" onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
-          <IconFocus2 /> {t("focus.openFullScreen")}
-        </Button>
-        {running || (target.kind === "candidate" && !candidate) ? null : (
-          <Button size="sm" variant="outline" onClick={() => void examineAgain(audit)}>
-            Esamina di nuovo
-          </Button>
-        )}
+        </div>
       </div>
-    </div>
+      <AuditBody audit={audit} checks={audit.checks.map((c) => c.check)} />
+    </section>
   );
 }
 
-/** Starts a new examination of the same target, with the same fixed point for a module or the project, and shows it full screen. */
-export async function examineAgain(audit: FocusAudit): Promise<void> {
-  const target = audit.target;
-  const next =
-    target.kind === "candidate"
-      ? await act("candidate:focusAudit", { candidateId: target.candidateId })
-      : await act("focusMode:open", {
-          target: target.kind === "module" ? { kind: "module", moduleId: target.moduleId } : { kind: "project" },
-          fixedPoint: audit.fixedPointRef ?? audit.fixedPoint,
-        });
-  if (next) await act("focusMode:enter", { auditId: next });
+/** An examination opened by its id: a candidate's shows as the section of its candidate, a module's or the project's in its own tab. */
+export function AuditView({ id }: { id: string }) {
+  const t = useT();
+  const audit = useUi((s) => (s.app?.project?.document.audits ?? []).find((a) => a.id === id));
+  if (!audit) return <div className="p-4"><EmptyNote>{t("audit.notFound")}</EmptyNote></div>;
+  if (audit.target.kind !== "candidate") return <ScopedAuditSection audit={audit} />;
+  return <AuditSection candidateId={audit.target.candidateId} auditId={audit.id} />;
 }

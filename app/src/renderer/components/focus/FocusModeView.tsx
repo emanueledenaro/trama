@@ -6,7 +6,7 @@ import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, finding
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
-import { AUDIT_STATUS_TEXT, examineAgain, FINDING_TONE, FindingActions, FollowUpLine, isRunning } from "@/components/inspector/AuditView";
+import { examineAgain, FindingActions, FollowUpLine, isRunning, STATUS_TEXT, STATUS_TONE } from "@/components/inspector/AuditView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
@@ -125,7 +125,7 @@ function FindingButton({ finding, auditId, actionable, selected, onSelect }: { f
         )}
       >
         <span className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={FINDING_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+          <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
           {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
           <span className="text-ui text-foreground">{finding.title}</span>
         </span>
@@ -283,7 +283,7 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
     <div className="space-y-3" data-testid="focus-proof" data-finding={finding.id}>
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={FINDING_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+          <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
           {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
         </div>
         <p className="text-ui text-foreground">{finding.title}</p>
@@ -385,7 +385,7 @@ export function FocusModeView() {
           <span className="flex shrink-0 items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
             <Sep />
             {running ? <Spinner /> : null}
-            {AUDIT_STATUS_TEXT[audit.status]}
+            {t(STATUS_TEXT[audit.status])}
           </span>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">

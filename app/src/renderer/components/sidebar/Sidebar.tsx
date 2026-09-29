@@ -23,6 +23,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
+import { useWaiting } from "@/components/WaitingView";
 
 /** Row styling shared by every sidebar row. */
 export const SIDEBAR_ROW =
@@ -98,10 +99,12 @@ function SectionHeader({ label, children }: { label: string; children?: React.Re
 export function ProjectsView() {
   const t = useT();
   const app = useUi((s) => s.app)!;
-  const inspector = useUi((s) => s.inspector);
+  // The person of the team shown in the editor (issue #336) is the one marked in the list.
+  const shownDetail = useUi((s) => s.activeDetail);
   const setInspector = useUi((s) => s.setInspector);
   const setDialog = useUi((s) => s.setDialog);
   const project = app.project;
+  const waiting = useWaiting().length;
   const document = project?.document;
   const specialists = sidebarSpecialists(document?.team.specialists ?? []);
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
@@ -163,6 +166,17 @@ export function ProjectsView() {
                         {open ? <IconFolderOpen className="size-4" stroke={1.6} /> : <IconFolder className="size-4" stroke={1.6} />}
                       </LeadingIcon>
                       <span className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground/95">{recent.name}</span>
+                      {open && waiting ? (
+                        // The one counter of the window is Aspetta te's (issue #331), here on the open project too.
+                        <span
+                          className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-md bg-info/12 px-1 text-ui-xs font-medium text-info-foreground dark:bg-info/20"
+                          aria-label={t("workbench.view.waitingCount", { count: waiting })}
+                          title={t("workbench.view.waitingCount", { count: waiting })}
+                          data-testid="project-waiting-count"
+                        >
+                          {waiting}
+                        </span>
+                      ) : null}
                       {background ? (
                         <span
                           className="shrink-0 text-ui-xs text-muted-foreground"
@@ -265,7 +279,7 @@ export function ProjectsView() {
                           type="button"
                           data-testid="sidebar-agent"
                           onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
-                          className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
+                          className={cn(SIDEBAR_ROW, "pl-8", shownDetail === `detail:specialist:${specialist.id}` ? ROW_ACTIVE : ROW_IDLE)}
                         >
                           <AgentAvatar agent={specialist} size={24} className="-my-1 -ml-1" />
                           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui leading-5 text-foreground/95">

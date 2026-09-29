@@ -2,12 +2,12 @@ import { useEffect, useRef } from "react";
 import type { ProviderId } from "@shared/codex";
 import { chatComposer } from "@shared/goals";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
-import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { FocusModeView } from "@/components/focus/FocusModeView";
 import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Sash, useResizableHeight, useResizableWidth } from "@/lib/resizable";
 import { ActivityBar } from "@/components/workbench/ActivityBar";
+import { EditorArea } from "@/components/workbench/EditorArea";
 import { ActivityPanel } from "@/components/workbench/ActivityPanel";
 import { SideBar } from "@/components/workbench/SideBar";
 import { StatusBar } from "@/components/workbench/StatusBar";
@@ -53,6 +53,8 @@ export function App() {
   const t = useT();
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
+  // A module opens in an editor tab (issue #336): the exercise still sees it opened.
+  const openedModule = useUi((s) => s.editorFocus === "detail" && (s.activeDetail?.startsWith("detail:module:") ?? false));
   // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
   const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
   const welcomeOpen = useUi((s) => s.welcome !== null);
@@ -120,8 +122,8 @@ export function App() {
   useEffect(() => {
     if (!isDemo) return;
     if (inspector?.kind === "map" && !observed?.mapOpened) void act("exercise:observe", { step: "mapOpened" });
-    if (inspector?.kind === "module" && !observed?.moduleOpened) void act("exercise:observe", { step: "moduleOpened" });
-  }, [inspector, isDemo, observed?.mapOpened, observed?.moduleOpened]);
+    if ((inspector?.kind === "module" || openedModule) && !observed?.moduleOpened) void act("exercise:observe", { step: "moduleOpened" });
+  }, [inspector, openedModule, isDemo, observed?.mapOpened, observed?.moduleOpened]);
 
   if (!app) return null;
   const isMac = app.platform === "darwin";
@@ -166,10 +168,15 @@ export function App() {
               />
             ) : null}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <main className="chat-content-card @container/main relative z-[15] flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                {/* Full-screen focus mode (F03) takes the editor area, inside the window's bars and above the bottom panel, until the person leaves it. */}
-                {inFocus ? <FocusModeView /> : <ChatView />}
-              </main>
+              {inFocus ? (
+                // Full-screen focus mode on a module or the project (F03) takes the editor area, tabs included, inside the
+                // window's bars and above the bottom panel, until the person leaves it.
+                <main className="chat-content-card @container/main relative z-[15] flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <FocusModeView />
+                </main>
+              ) : (
+                <EditorArea />
+              )}
               {panelOpen ? (
                 <ActivityPanel
                   size={{

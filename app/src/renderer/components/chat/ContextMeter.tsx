@@ -8,7 +8,7 @@ import { PickerSelect } from "@/components/ui/picker";
 import { useLanguage, useT } from "@/lib/i18n";
 
 /**
- * Ring that shows how much of the Coordinator's context the session uses (ADR 0018): only the percent, the tokens on
+ * Ring that shows how much of the Coordinator's context the session uses (ADR 0019): only the percent, the tokens on
  * hover. The reading is the same for every provider and never goes past the window; an invalid one shows as not
  * available (issue #305). Past the threshold Trama reorders the context; "Riordina ora" does it on request.
  */
