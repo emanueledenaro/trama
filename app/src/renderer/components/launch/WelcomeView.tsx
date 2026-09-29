@@ -1,10 +1,24 @@
-import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { IconChevronDown, IconX } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  IconBrandGithub,
+  IconChevronDown,
+  IconCircleCheck,
+  IconFolder,
+  IconFolderOpen,
+  IconLayoutList,
+  IconPlus,
+  IconSchool,
+  IconTarget,
+  IconUsers,
+  IconX,
+} from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderId } from "@shared/codex";
-import { type GuideStepId, nextSetupStep, resumeSetupStep, SETUP_STEP_IDS, setupSteps, type StepState } from "@shared/onboarding";
+import type { ProjectOverview, RecentProject } from "@shared/domain";
+import { formatAgo, type MessageKey } from "@shared/i18n";
+import { type ExerciseId, isAllSet, learnRows, type LearnRow, recentProjectStatus, type StepState, type WelcomeStepId, welcomeSteps } from "@shared/onboarding";
 import { PROVIDERS } from "@shared/providers";
-import { TramaMark } from "@/components/brand/TramaMark";
+import { LaunchIntro } from "@/components/launch/LaunchIntro";
+import { useSeam } from "@/components/Seam";
 import { StepActions } from "@/components/onboarding/StepActions";
 import { StepIcon, stepStatusLabel } from "@/components/onboarding/StepRow";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -13,25 +27,217 @@ import { providerStatus } from "@/components/settings/SettingsView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
-import type { MessageKey, Translate } from "@shared/i18n";
 
 /** Codex and Claude come first; the other providers wait behind their toggle. */
 const MAIN_PROVIDERS: ProviderId[] = ["codex", "claudeAgent"];
+/** The Recenti block lists the last five; "Tutti i progetti" opens the rest. */
+const RECENT_COUNT = 5;
 
-/** The welcome's own title and lead for the setup steps; the other guide steps do not appear here. */
-const STEP_COPY: Partial<Record<GuideStepId, { title: MessageKey; lead: MessageKey }>> = {
-  provider: { title: "welcome.provider.title", lead: "welcome.provider.lead" },
-  github: { title: "welcome.github.title", lead: "welcome.github.lead" },
-  aiHero: { title: "welcome.aiHero.title", lead: "welcome.aiHero.lead" },
+const EXERCISE_COPY: Record<ExerciseId, { title: MessageKey; lead: MessageKey }> = {
+  first: { title: "welcome.learn.first", lead: "welcome.learn.firstLead" },
+  change: { title: "welcome.learn.change", lead: "welcome.learn.changeLead" },
+  revision: { title: "welcome.learn.revision", lead: "welcome.learn.revisionLead" },
+  conflict: { title: "welcome.learn.conflict", lead: "welcome.learn.conflictLead" },
 };
 
-const stepCopy = (t: Translate, id: GuideStepId) => {
-  const copy = STEP_COPY[id];
-  return copy ? { title: t(copy.title), lead: t(copy.lead) } : { title: "", lead: "" };
-};
+/** A block of the Benvenuto: a small heading and its rows, like the columns of the Welcome page of VS Code. */
+function Block({ id, title, aside, children }: { id: string; title: string; aside?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section aria-labelledby={`welcome-${id}`} data-testid={`welcome-${id}`} className="min-w-0">
+      <div className="flex min-h-7 items-center gap-2 pb-1.5">
+        <h2 id={`welcome-${id}`} className="min-w-0 flex-1 text-ui font-medium text-foreground">
+          {title}
+        </h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A way to start, written as a link: the Benvenuto keeps one filled button, the step Trama needs. */
+function StartLink({ icon, label, hint, onClick, disabled }: { icon: React.ReactNode; label: string; hint?: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <li>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className="group/start flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] disabled:pointer-events-none disabled:opacity-50"
+      >
+        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-[var(--color-text-accent)]">{icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-ui text-[var(--color-text-accent)] group-hover/start:underline">{label}</span>
+          {hint ? <span className="block text-ui-xs text-muted-foreground">{hint}</span> : null}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function StartBlock({ onClone }: { onClone: () => void }) {
+  const t = useT();
+  const app = useUi((s) => s.app)!;
+  const setDialog = useUi((s) => s.setDialog);
+  const setInspector = useUi((s) => s.setInspector);
+  const loading = Boolean(app.loadingProject);
+  const project = app.project && !app.project.isDemo ? app.project : null;
+  return (
+    <Block id="start" title={t("welcome.start.title")}>
+      {app.loadingProject ? (
+        <p className="flex items-center gap-2 px-2 pb-1.5 text-ui-sm text-muted-foreground" role="status">
+          <Spinner /> {t("welcome.start.opening", { name: app.loadingProject })}
+        </p>
+      ) : null}
+      <ul className="space-y-0.5" data-testid="welcome-start-actions">
+        <StartLink
+          icon={<IconFolderOpen className="size-4" stroke={1.7} />}
+          label={t("welcome.start.open")}
+          hint={t("welcome.start.openHint")}
+          disabled={loading}
+          onClick={() => void act("project:openDialog", undefined)}
+        />
+        <StartLink icon={<IconPlus className="size-4" stroke={1.7} />} label={t("welcome.start.create")} disabled={loading} onClick={() => setDialog("createProject")} />
+        <StartLink icon={<IconBrandGithub className="size-4" stroke={1.7} />} label={t("welcome.start.clone")} disabled={loading} onClick={onClone} />
+        <StartLink
+          icon={<IconSchool className="size-4" stroke={1.7} />}
+          label={t("welcome.start.example")}
+          hint={t("welcome.start.exampleHint")}
+          disabled={loading}
+          onClick={() => void act("project:openDemo", undefined).then(() => useUi.getState().closeWelcome())}
+        />
+        {project ? (
+          <StartLink
+            icon={<IconTarget className="size-4" stroke={1.7} />}
+            label={t("welcome.start.firstGoal")}
+            hint={t("welcome.start.firstGoalHint", { name: project.name })}
+            onClick={() => setInspector({ kind: "goals", create: true })}
+          />
+        ) : null}
+      </ul>
+    </Block>
+  );
+}
+
+function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOverview | null }) {
+  const t = useT();
+  const language = useLanguage();
+  const status = recentProjectStatus(t, entry);
+  const busy = (entry?.runningWork ?? 0) > 0;
+  const name = recent.isDemo ? t("welcome.start.example") : recent.name;
+  return (
+    <li className="group/recent relative" data-testid="recent-project">
+      <button
+        type="button"
+        onClick={() => void act("project:open", { path: recent.path })}
+        className="flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
+      >
+        <IconFolder className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.6} />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline gap-2 pr-6">
+            <span className="min-w-0 truncate text-ui text-[var(--color-text-accent)]">{name}</span>
+            <span className="ml-auto shrink-0 text-ui-xs text-muted-foreground/70">
+              {entry?.updatedAt
+                ? t("welcome.recent.lastWork", { ago: formatAgo(language, entry.updatedAt) })
+                : t("welcome.recent.opened", { ago: formatAgo(language, recent.lastOpenedAt) })}
+            </span>
+          </span>
+          <span className="block truncate font-mono text-ui-xs text-muted-foreground/70" title={recent.path}>
+            {recent.path}
+          </span>
+          {entry ? (
+            <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-muted-foreground">
+              <span className={cn("inline-flex items-center gap-1.5", busy && "text-[var(--color-text-accent)]")}>
+                {busy ? <span className="size-1.5 rounded-full bg-[var(--color-text-accent)]" aria-hidden /> : null}
+                {status.work.join(", ")}
+              </span>
+              {status.colleagues ? (
+                <span className="inline-flex items-center gap-1">
+                  <IconUsers className="size-3" stroke={1.8} aria-hidden />
+                  {status.colleagues}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
+      </button>
+      <Tooltip label={t("welcome.recent.forget", { name })}>
+        <button
+          type="button"
+          aria-label={t("welcome.recent.forget", { name })}
+          onClick={() => void act("project:forgetRecent", { id: recent.id })}
+          className="sidebar-icon-button absolute top-1.5 right-1.5 size-5 opacity-0 group-hover/recent:opacity-100 focus-visible:opacity-100"
+        >
+          <IconX className="size-3" />
+        </button>
+      </Tooltip>
+    </li>
+  );
+}
+
+function RecentBlock() {
+  const t = useT();
+  const app = useUi((s) => s.app)!;
+  const openView = useUi((s) => s.openView);
+  const [entries, setEntries] = useState<Map<string, ProjectOverview>>(new Map());
+  const recents = app.recentProjects.slice(0, RECENT_COUNT);
+  const hasRecents = recents.length > 0;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loaded = useRef(false);
+
+  // Re-read the summaries when the state changes, at most every half second, as the overview does: a parked
+  // project's agents may finish while the Benvenuto is open.
+  useEffect(() => {
+    if (!hasRecents) return;
+    let live = true;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(
+      () =>
+        void act("overview:read", undefined).then((result) => {
+          if (live && result) setEntries(new Map(result.map((entry) => [entry.id, entry])));
+        }),
+      loaded.current ? 500 : 0,
+    );
+    loaded.current = true;
+    return () => {
+      live = false;
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [app, hasRecents]);
+
+  return (
+    <Block
+      id="recent"
+      title={t("welcome.recent.title")}
+      aside={
+        hasRecents ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 text-ui-sm text-[var(--color-text-accent)] hover:underline"
+            onClick={() => openView("projects")}
+          >
+            <IconLayoutList className="size-3.5" stroke={1.8} />
+            {t("welcome.recent.all")}
+          </button>
+        ) : null
+      }
+    >
+      {hasRecents ? (
+        <ul className="space-y-0.5">
+          {recents.map((recent) => (
+            <RecentRow key={recent.id} recent={recent} entry={entries.get(recent.id) ?? null} />
+          ))}
+        </ul>
+      ) : (
+        <p className="px-2 text-ui-sm text-muted-foreground">{t("welcome.recent.none")}</p>
+      )}
+    </Block>
+  );
+}
 
 function ProviderList() {
   const t = useT();
@@ -41,14 +247,14 @@ function ProviderList() {
   const [hint, setHint] = useState<Partial<Record<ProviderId, string>>>({});
   const shown = PROVIDERS.filter((p) => others || MAIN_PROVIDERS.includes(p.id as ProviderId));
   return (
-    <div className="mt-4">
-      <ul className="divide-y divide-[color:var(--app-surface-divider)] rounded-xl border border-[color:var(--color-border)]" aria-label={t("welcome.providers")}>
+    <div>
+      <ul className="divide-y divide-[color:var(--app-surface-divider)] rounded-lg border border-[color:var(--color-border)]" aria-label={t("welcome.providers")}>
         {shown.map((provider) => {
           const id = provider.id as ProviderId;
           const state = providers[id];
           const status = providerStatus(t, language, state?.account ?? null, state?.checking ?? false);
           return (
-            <li key={id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2.5" data-provider-row={id}>
+            <li key={id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3 py-2" data-provider-row={id}>
               <ProviderIcon provider={id} className="size-4" />
               <span className="text-ui text-foreground">{provider.name}</span>
               {state?.checking ? <Spinner className="size-3" /> : null}
@@ -81,7 +287,7 @@ function ProviderList() {
         type="button"
         aria-expanded={others}
         onClick={() => setOthers(!others)}
-        className="mt-2 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+        className="mt-1.5 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
       >
         {others ? t("welcome.onlyMainProviders") : t("welcome.otherProviders", { count: PROVIDERS.length - MAIN_PROVIDERS.length })}
         <IconChevronDown className={cn("size-3.5 transition-transform", others && "rotate-180")} stroke={1.8} />
@@ -90,190 +296,303 @@ function ProviderList() {
   );
 }
 
-function StepProgress({ steps, current }: { steps: StepState[]; current: GuideStepId }) {
+const STEP_LEAD: Partial<Record<WelcomeStepId, MessageKey>> = {
+  provider: "welcome.provider.lead",
+  github: "welcome.github.lead",
+  aiHero: "welcome.aiHero.lead",
+};
+
+/** What unfolds under a step of Configura: how to take it, with its own actions on the right. */
+function StepBody({ step }: { step: StepState }) {
   const t = useT();
+  const cloneWaiting = useUi((s) => s.cloneAfterGitHub);
+  const setCloneAfterGitHub = useUi((s) => s.setCloneAfterGitHub);
+  const setDialog = useUi((s) => s.setDialog);
   return (
-    <ol className="flex items-center gap-1.5" aria-label={t("welcome.stepsLabel")}>
-      {steps.map((step, index) => (
-        <li
-          key={step.id}
-          aria-current={step.id === current ? "step" : undefined}
-          title={`${stepCopy(t, step.id as GuideStepId).title}: ${stepStatusLabel(t, step.status)}`}
-          className={cn(
-            "h-1 w-8 rounded-full bg-[var(--color-border-heavy)] transition-colors",
-            step.status === "done" && "bg-[color:var(--color-text-accent)]/50",
-            step.id === current && "bg-[var(--color-text-accent)]",
-          )}
-        >
-          <span className="sr-only">{t("welcome.stepStatus", { index: index + 1, status: stepStatusLabel(t, step.status) })}</span>
-        </li>
-      ))}
-    </ol>
+    <div className="space-y-2.5">
+      {STEP_LEAD[step.id as WelcomeStepId] ? <p className="text-ui-sm text-muted-foreground">{t(STEP_LEAD[step.id as WelcomeStepId]!)}</p> : null}
+      {step.id === "provider" ? <ProviderList /> : null}
+      {step.id === "github" && cloneWaiting ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-[var(--color-background-button-secondary)] px-3 py-2" data-testid="welcome-clone-waiting">
+          <p className="min-w-[12rem] flex-1 text-ui-xs text-muted-foreground">{t("welcome.github.cloneWaiting")}</p>
+          <div className="cta-row ml-auto">
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => {
+                setCloneAfterGitHub(false);
+                setDialog("cloneProject");
+              }}
+            >
+              {t("welcome.github.clonePublic")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <div className="cta-row">
+        <StepActions step={step} />
+      </div>
+    </div>
   );
 }
 
-function Hello({ steps, resuming, onStart, onClose }: { steps: StepState[]; resuming: boolean; onStart: () => void; onClose: () => void }) {
+/** The one action on the right of a step: Collega while it is to do, Cambia once done, Apri for the method. */
+function stepAction(t: ReturnType<typeof useT>, step: StepState): string {
+  if (step.status === "done") return t("welcome.action.change");
+  return step.id === "aiHero" ? t("welcome.action.open") : t("welcome.action.connect");
+}
+
+function StepLine({ step, open, primary, onToggle }: { step: StepState; open: boolean; primary: boolean; onToggle: () => void }) {
   const t = useT();
+  const id = step.id as WelcomeStepId;
+  const done = step.status === "done";
+  const bodyId = `welcome-step-${id}`;
   return (
-    <>
-      <TramaMark size={72} variant="tile" />
-      {/* The language comes first (issue #301): the system's is already selected, and the page changes at once. */}
-      <div
-        className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[color:var(--color-border)] px-3.5 py-2.5"
-        data-testid="welcome-language"
-      >
-        <div className="min-w-[12rem] flex-1">
-          <p className="text-ui-sm font-medium text-foreground">{t("language.label")}</p>
-          <p className="mt-0.5 text-ui-xs text-muted-foreground">{t("language.welcomeHint")}</p>
+    <li
+      data-step={id}
+      data-status={step.status}
+      data-testid="welcome-step"
+      className={cn("rounded-lg transition-colors", open && "bg-[var(--color-background-button-secondary)]")}
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2">
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          <StepIcon status={step.status} index={WELCOME_ORDER[id]} current={open} />
+        </span>
+        <div className="min-w-[10rem] flex-1">
+          <p className="flex items-baseline gap-2 text-ui text-foreground">
+            <span className="min-w-0 truncate">{step.title}</span>
+            {/* Optional only where it still matters: never beside a step already done (issue #354). */}
+            {step.optional && !done && id !== "language" ? <span className="shrink-0 text-ui-xs text-muted-foreground/70">{t("welcome.optional")}</span> : null}
+          </p>
+          <p className="mt-0.5 text-ui-xs text-muted-foreground" data-testid="welcome-step-detail">
+            {step.detail}
+          </p>
         </div>
-        <LanguageChoice />
-      </div>
-      <h1 className="mt-6 text-[28px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground sm:text-[32px]">{t("welcome.title")}</h1>
-      <p className="mt-3 text-ui-lg text-foreground/85">{t("welcome.tagline")}</p>
-      <p className="mt-2 text-ui text-muted-foreground">{t("welcome.intro")}</p>
-      <ol className="mt-6 space-y-1" aria-label={t("welcome.stepsLabel")}>
-        {steps.map((step, index) => (
-          <li key={step.id} className="flex items-center gap-2.5 py-1 text-ui">
-            <span className="flex size-4 items-center justify-center">
-              <StepIcon status={step.status} index={index} current={false} />
+        {id === "language" ? (
+          <LanguageChoice />
+        ) : (
+          <>
+            <span className={cn("shrink-0 text-ui-xs", done ? "text-success" : "text-muted-foreground")} data-testid="welcome-step-status">
+              {stepStatusLabel(t, step.status)}
             </span>
-            <span className="min-w-0 flex-1 truncate text-foreground/90">{stepCopy(t, step.id as GuideStepId).title}</span>
-            {step.optional ? <span className="text-ui-xs text-muted-foreground/70">{t("welcome.optional")}</span> : null}
-            <span className={cn("text-ui-xs", step.status === "done" ? "text-success" : "text-muted-foreground")}>{stepStatusLabel(t, step.status)}</span>
-          </li>
+            <Button
+              size="xs"
+              variant={primary ? "default" : "outline"}
+              aria-expanded={open}
+              aria-controls={bodyId}
+              onClick={onToggle}
+              className="min-w-[4.5rem]"
+            >
+              {stepAction(t, step)}
+            </Button>
+          </>
+        )}
+      </div>
+      {open && id !== "language" ? (
+        <div id={bodyId} className="px-2 pb-3 pl-9">
+          <StepBody step={step} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+const WELCOME_ORDER: Record<WelcomeStepId, number> = { language: 0, provider: 1, github: 2, aiHero: 3 };
+
+function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: WelcomeStepId | null; setOpen: (id: WelcomeStepId | null) => void }) {
+  const t = useT();
+  const done = steps.filter((s) => s.status === "done").length;
+  const providerPending = steps.find((s) => s.id === "provider")?.status !== "done";
+  return (
+    <Block
+      id="setup"
+      title={t("welcome.setup.title")}
+      aside={<span className="text-ui-xs text-muted-foreground">{t("welcome.setup.count", { done, total: steps.length })}</span>}
+    >
+      <ol className="space-y-0.5" aria-label={t("welcome.stepsLabel")}>
+        {steps.map((step) => (
+          <StepLine
+            key={step.id}
+            step={step}
+            open={open === step.id}
+            // One filled button in the Benvenuto: the provider, the one step Trama needs, while nothing is unfolded.
+            primary={step.id === "provider" && providerPending && open === null}
+            onToggle={() => setOpen(open === step.id ? null : (step.id as WelcomeStepId))}
+          />
         ))}
       </ol>
-      <div className="cta-row mt-8">
-        <Button variant="ghost" onClick={onClose}>
-          {t("welcome.skipSetup")}
-        </Button>
-        <Button onClick={onStart}>{resuming ? t("welcome.resume") : t("welcome.start")}</Button>
-      </div>
-    </>
+    </Block>
   );
 }
 
-function SetupStep({ step, index, total, onBack, onNext }: { step: StepState; index: number; total: number; onBack: () => void; onNext: () => void }) {
+function ExerciseLine({ row, index }: { row: LearnRow; index: number }) {
   const t = useT();
-  const id = step.id as GuideStepId;
-  const copy = stepCopy(t, id);
-  const last = index === total - 1;
-  const done = step.status === "done";
+  const setExercise = useUi((s) => s.setExercise);
+  const closeWelcome = useUi((s) => s.closeWelcome);
+  const copy = EXERCISE_COPY[row.id];
+  const label = row.status === "done" ? t("welcome.learn.redo") : row.status === "started" ? t("welcome.learn.resume") : t("welcome.learn.start");
   return (
-    <>
-      <div className="flex items-center gap-3">
-        <TramaMark size={28} />
-        <span className="text-ui-sm text-muted-foreground">{t("welcome.stepOf", { index: index + 1, total })}</span>
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2" data-exercise={row.id} data-status={row.status} data-testid="welcome-exercise">
+      <span className="flex size-4 shrink-0 items-center justify-center">
+        {row.status === "done" ? <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden /> : <StepIcon status="pending" index={index} current={row.status === "started"} />}
+      </span>
+      <div className="min-w-[10rem] flex-1">
+        <p className="text-ui text-foreground">{t(copy.title)}</p>
+        <p className="mt-0.5 text-ui-xs text-muted-foreground">{t(copy.lead)}</p>
       </div>
-      <h1 className="mt-5 text-[24px] leading-[1.2] font-normal tracking-[-0.01em] text-foreground">
-        {copy.title}
-        {step.optional ? <span className="ml-2 align-middle text-ui-sm text-muted-foreground/70">{t("welcome.optional")}</span> : null}
-      </h1>
-      <p className="mt-2 text-ui text-muted-foreground">{copy.lead}</p>
-      <div
-        className="mt-5 flex items-start gap-2.5 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-3"
-        data-testid="welcome-step-state"
-        data-status={step.status}
+      <span className={cn("shrink-0 text-ui-xs", row.status === "done" ? "text-success" : "text-muted-foreground")}>
+        {row.status === "done" ? t("step.status.done") : row.status === "started" ? t("welcome.learn.started") : t("step.status.pending")}
+      </span>
+      <Button
+        size="xs"
+        variant="outline"
+        className="min-w-[4.5rem]"
+        aria-label={`${label}: ${t(copy.title)}`}
+        // The exercise runs on the example project, in a panel beside its chat (C13, issue #354).
+        onClick={() =>
+          void act("exercise:start", { exercise: row.id }).then(() => {
+            setExercise(row.id);
+            closeWelcome();
+          })
+        }
       >
-        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
-          <StepIcon status={step.status} index={index} current />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className={cn("text-ui-sm font-medium", done ? "text-success" : "text-foreground")}>{stepStatusLabel(t, step.status)}</p>
-          <p className="mt-0.5 text-ui-sm text-muted-foreground">{step.detail}</p>
-        </div>
-      </div>
-      {id === "provider" ? <ProviderList /> : null}
-      <div className="cta-row mt-4">
-        <StepActions step={step} where="welcome" />
-      </div>
-      <div className="mt-8 flex items-center gap-2 border-t border-[color:var(--app-surface-divider)] pt-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          {t("welcome.back")}
-        </Button>
-        <div className="cta-row flex-1">
-          {done || step.status === "skipped" ? (
-            <Button size="sm" onClick={onNext}>
-              {last ? t("welcome.chooseProject") : t("welcome.continue")}
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => void act("onboarding:update", { skipStep: id }).then(onNext)}>
-              {step.optional ? t("welcome.postpone") : t("welcome.skipForNow")}
-            </Button>
-          )}
-        </div>
-      </div>
-    </>
+        {label}
+      </Button>
+    </li>
+  );
+}
+
+function LearnBlock() {
+  const t = useT();
+  const app = useUi((s) => s.app)!;
+  const rows = learnRows(app);
+  const done = rows.filter((row) => row.status === "done").length;
+  const allDone = done === rows.length;
+  const [shown, setShown] = useState(false);
+  return (
+    <Block
+      id="learn"
+      title={t("welcome.learn.title")}
+      aside={
+        allDone ? (
+          <button
+            type="button"
+            aria-expanded={shown}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 text-ui-sm text-muted-foreground hover:text-foreground"
+            onClick={() => setShown(!shown)}
+          >
+            {shown ? t("welcome.learn.hide") : t("welcome.learn.again")}
+            <IconChevronDown className={cn("size-3.5 transition-transform", shown && "rotate-180")} stroke={1.8} />
+          </button>
+        ) : null
+      }
+    >
+      {allDone && !shown ? (
+        <p className="flex items-center gap-2.5 px-2 py-1.5 text-ui text-foreground/85" data-testid="welcome-learn-done">
+          <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
+          {t("welcome.learn.doneCount", { count: done })}
+        </p>
+      ) : (
+        <>
+          <p className="px-2 pb-1 text-ui-xs text-muted-foreground">{t("welcome.learn.lead")}</p>
+          <ol className="space-y-0.5" aria-label={t("welcome.learn.title")}>
+            {rows.map((row, index) => (
+              <ExerciseLine key={row.id} row={row} index={index} />
+            ))}
+          </ol>
+        </>
+      )}
+    </Block>
+  );
+}
+
+/** Trama's mark at the head of the Benvenuto, stitched like the bots (W17), outside the mark's clear space. */
+function WelcomeMark({ play }: { play: boolean }) {
+  const seam = useSeam("logo", { radius: "18px" });
+  return (
+    <div className="relative flex size-[72px] shrink-0 items-center justify-center" data-testid="picker-mark">
+      <LaunchIntro play={play} size={52} />
+      {seam.stitch}
+    </div>
   );
 }
 
 /**
- * The welcome (B02): shown by itself on the first launch, then from the guide. A first page says what Trama
- * does; the configuration reuses the guide's steps and state (provider, GitHub, AI Hero), each one skippable
- * and resumable. At the end, or when closed, the project picker is underneath.
+ * The Benvenuto (B02, issue #354, ADR 0018): a page of the editor area, as the Welcome page of VS Code. Four blocks:
+ * Inizia and Recenti on the left, Configura and Impara on the right; one column in a narrow window. Without a project
+ * it is the only thing in the window; with one it opens beside the conversation and closes when the person wants.
+ * Every step keeps its real state: nothing is marked done by the page.
  */
 export function WelcomeView() {
-  const page = useUi((s) => s.welcome);
-  const setWelcome = useUi((s) => s.setWelcome);
-  const app = useUi((s) => s.app);
   const t = useT();
-  const steps = useMemo(() => (app ? setupSteps(app) : []), [app]);
+  const app = useUi((s) => s.app)!;
+  const welcomeStep = useUi((s) => s.welcomeStep);
+  const intro = useUi((s) => s.welcomeIntro);
+  const setCloneAfterGitHub = useUi((s) => s.setCloneAfterGitHub);
+  const setDialog = useUi((s) => s.setDialog);
+  const steps = useMemo(() => welcomeSteps(app), [app]);
+  const allSet = isAllSet(app);
+  const [open, setOpen] = useState<WelcomeStepId | null>(welcomeStep);
+  const root = useRef<HTMLDivElement>(null);
 
+  // The step the Benvenuto was opened on unfolds and comes into view.
   useEffect(() => {
-    if (page && page !== "hello" && useUi.getState().app?.gitHubCli.status === "unknown") void act("onboarding:checkGitHub", undefined);
-  }, [page]);
+    if (!welcomeStep) return;
+    setOpen(welcomeStep);
+    requestAnimationFrame(() => root.current?.querySelector(`[data-step="${welcomeStep}"]`)?.scrollIntoView({ block: "nearest" }));
+  }, [welcomeStep]);
 
-  if (!app) return null;
-  const close = () => {
-    setWelcome(null);
-    void act("onboarding:update", { welcomeClosed: true });
+  // GitHub CLI is read once, so the row never says "not connected" when it is only not checked yet (P10).
+  useEffect(() => {
+    if (useUi.getState().app?.gitHubCli.status === "unknown") void act("onboarding:checkGitHub", undefined);
+  }, []);
+
+  const openStep = (id: WelcomeStepId) => {
+    setOpen(id);
+    requestAnimationFrame(() => root.current?.querySelector(`[data-step="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   };
-  const index = !page || page === "hello" ? -1 : SETUP_STEP_IDS.indexOf(page);
-  // The person has been here before: the button says so. Either way it starts at the first step still open.
-  const resuming =
-    app.onboarding.welcomeClosedAt !== null ||
-    app.onboarding.skippedSteps.some((id) => SETUP_STEP_IDS.includes(id)) ||
-    app.onboarding.methodChoice !== null;
-  const step = index >= 0 ? steps[index]! : null;
+  // Cloning goes through GitHub CLI: without it the GitHub row unfolds, and the clone starts again once gh is ready.
+  const clone = () => {
+    if (app.gitHubCli.status === "ready") return setDialog("cloneProject");
+    setCloneAfterGitHub(true);
+    openStep("github");
+  };
 
-  // The shared dialog primitive keeps the focus inside, makes the window behind inert and gives the focus back.
   return (
-    <DialogPrimitive.Root open={page !== null} onOpenChange={(open) => (open ? null : close())}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Popup
-          aria-label={t("welcome.title")}
-          data-testid="welcome"
-          data-page={page ?? undefined}
-          className="chat-pane-enter fixed inset-0 z-[45] flex flex-col bg-[var(--color-background-surface)] text-foreground outline-none"
-        >
-          <div className="drag-region flex h-[46px] shrink-0 items-center justify-end gap-3 px-3 sm:px-5">
-            {step ? <StepProgress steps={steps} current={step.id as GuideStepId} /> : null}
-            <Button variant="ghost" size="icon-sm" aria-label={t("welcome.close")} onClick={close}>
-              <IconX className="size-4" />
-            </Button>
+    <div
+      ref={root}
+      className="chat-pane-enter @container/welcome relative min-h-0 flex-1 overflow-y-auto"
+      data-testid="welcome"
+      data-all-set={allSet ? "true" : "false"}
+    >
+      <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 sm:px-8 @min-[900px]/welcome:pt-12">
+        <header className="flex items-center gap-4">
+          <WelcomeMark play={intro} />
+          <div className="min-w-0">
+            <h1 className="font-display text-[30px] leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-[34px]">
+              {t("welcome.title")}
+            </h1>
+            <p className="mt-1.5 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto flex min-h-full w-full max-w-[34rem] flex-col justify-center px-4 pt-4 pb-12 sm:px-6">
-              {step ? (
-                <SetupStep
-                  key={step.id}
-                  step={step}
-                  index={index}
-                  total={SETUP_STEP_IDS.length}
-                  onBack={() => setWelcome(index === 0 ? "hello" : SETUP_STEP_IDS[index - 1]!)}
-                  onNext={() => {
-                    const next = nextSetupStep(step.id as GuideStepId);
-                    if (next) setWelcome(next);
-                    else close();
-                  }}
-                />
-              ) : page ? (
-                <Hello steps={steps} resuming={resuming} onStart={() => setWelcome(resumeSetupStep(app))} onClose={close} />
-              ) : null}
-            </div>
+        </header>
+        {allSet ? (
+          <p className="mt-5 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
+            <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
+            <span className="font-medium">{t("welcome.allSet.title")}</span>
+            <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
+          </p>
+        ) : null}
+        <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+          <div className="flex min-w-0 flex-col gap-8">
+            <StartBlock onClone={clone} />
+            <RecentBlock />
           </div>
-        </DialogPrimitive.Popup>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+          <div className="flex min-w-0 flex-col gap-8">
+            <SetupBlock steps={steps} open={open} setOpen={setOpen} />
+            <LearnBlock />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

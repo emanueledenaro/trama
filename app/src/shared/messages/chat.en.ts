@@ -453,7 +453,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.plan.approve": "Approve the plan and ask to build it",
 
   // Chat header, timeline and queue (ChatView)
-  "chat.view.exercises": "Exercises",
   "chat.view.demoProject": "Example project",
   "chat.view.onlyThisGoal": "Show only this goal",
   "chat.view.goalTag": "Goal: {title}",

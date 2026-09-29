@@ -5,6 +5,7 @@ import {
   IconGitBranch,
   IconGitCommit,
   IconGitPullRequest,
+  IconHome,
   IconLayoutList,
   IconMessageCircle,
   IconMessages,
@@ -25,7 +26,7 @@ import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { Sash, useResizableWidth } from "@/lib/resizable";
-import { type InspectorTarget, useUi } from "@/lib/store";
+import { type InspectorTarget, type MainView, useUi } from "@/lib/store";
 import {
   CONVERSATION_TAB,
   DETAIL_PANE_MIN_WIDTH,
@@ -155,13 +156,27 @@ function DetailTabButton({ tab, selected }: { tab: Extract<EditorTab, { kind: "d
   );
 }
 
-const MAIN_TABS: Record<"projects" | "settings", { label: MessageKey; icon: React.ReactNode }> = {
+const MAIN_TABS: Record<"projects" | "settings" | "welcome", { label: MessageKey; icon: React.ReactNode }> = {
   projects: { label: "workbench.view.projects", icon: <IconLayoutList className={ICON} stroke={1.7} /> },
   settings: { label: "workbench.view.settings", icon: <IconSettings className={ICON} stroke={1.7} /> },
+  welcome: { label: "welcome.tab", icon: <IconHome className={ICON} stroke={1.7} /> },
 };
 
 /** A row of tabs, 35 px as in VS Code; `selected` is the key of the tab on screen. */
-function TabStrip({ tabs, conversation, selected, label }: { tabs: EditorTab[]; conversation: boolean; selected: string; label: string }) {
+function TabStrip({
+  tabs,
+  conversation,
+  selected,
+  label,
+  pinnedWelcome = false,
+}: {
+  tabs: EditorTab[];
+  conversation: boolean;
+  selected: string;
+  label: string;
+  /** Without a project the Benvenuto is the window's first tab and does not close (issue #354). */
+  pinnedWelcome?: boolean;
+}) {
   const t = useT();
   return (
     <div
@@ -189,7 +204,7 @@ function TabStrip({ tabs, conversation, selected, label }: { tabs: EditorTab[]; 
             icon={MAIN_TABS[tab.kind].icon}
             label={t(MAIN_TABS[tab.kind].label)}
             selected={selected === tab.kind}
-            closable
+            closable={!(pinnedWelcome && tab.kind === "welcome")}
           />
         ),
       )}
@@ -219,7 +234,8 @@ function DetailPane({ target }: { target: InspectorTarget }) {
   );
 }
 
-const mainKey = (view: "dialog" | "overview" | "settings") => (view === "overview" ? "projects" : view === "settings" ? "settings" : CONVERSATION_TAB);
+const mainKey = (view: MainView, hasProject: boolean) =>
+  view === "overview" ? "projects" : view === "settings" ? "settings" : view === "welcome" || !hasProject ? "welcome" : CONVERSATION_TAB;
 
 /**
  * The editor area (issue #336, ADR 0018): the conversation is always the first tab and never closes; Progetti,
@@ -238,7 +254,11 @@ export function EditorArea() {
   const split = useSplitEditor();
   const detailWidth = useResizableWidth("trama.detailPaneWidth", { initial: detailPaneDefaultWidth, min: DETAIL_PANE_MIN_WIDTH, max: detailPaneMaxWidth });
   const detail = tabs.find((tab): tab is Extract<EditorTab, { kind: "detail" }> => tab.kind === "detail" && tabKey(tab) === activeDetail) ?? null;
-  const main = mainKey(mainView);
+  const main = mainKey(mainView, hasProject);
+  // Without a project there is no conversation: the Benvenuto is the first tab, and the only one until another opens.
+  const withoutProject: EditorTab[] = [{ kind: "welcome" }, ...tabs.filter((tab) => tab.kind !== "welcome")];
+  const stripTabs = hasProject ? tabs : withoutProject;
+  const showStrip = hasProject ? tabs.length > 0 : withoutProject.length > 1;
   const showDetail = Boolean(detail) && (split || focus === "detail");
   const label = t("workbench.editor.tabs");
 
@@ -285,7 +305,15 @@ export function EditorArea() {
       data-active-detail={activeDetail ?? undefined}
       data-covered={showDetail ? "true" : "false"}
     >
-      {tabs.length ? <TabStrip tabs={tabs} conversation selected={showDetail && detail ? tabKey(detail) : main} label={label} /> : null}
+      {showStrip ? (
+        <TabStrip
+          tabs={stripTabs}
+          conversation={hasProject}
+          pinnedWelcome={!hasProject}
+          selected={showDetail && detail ? tabKey(detail) : main}
+          label={label}
+        />
+      ) : null}
       {showDetail && detail ? (
         // Over the conversation the row of Aspetta te stays in view; over Progetti or Impostazioni the detail is alone.
         mainView === "dialog" && hasProject ? (

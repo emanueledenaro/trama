@@ -51,8 +51,8 @@ describe("translation catalogs (issue #301)", () => {
 
 describe("translate", () => {
   it("fills the placeholders and formats numbers for the language", () => {
-    expect(translate("it", "welcome.stepOf", { index: 1, total: 3 })).toBe("Passo 1 di 3");
-    expect(translate("en", "welcome.stepOf", { index: 1, total: 3 })).toBe("Step 1 of 3");
+    expect(translate("it", "welcome.setup.count", { done: 1, total: 3 })).toBe("1 su 3 fatti");
+    expect(translate("en", "welcome.setup.count", { done: 1, total: 3 })).toBe("1 of 3 done");
     expect(translate("it", "settings.connections.models", { count: 12000 })).toBe("12.000 modelli");
     expect(translate("en", "settings.connections.models", { count: 12000 })).toBe("12,000 models");
   });

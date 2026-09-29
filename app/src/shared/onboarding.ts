@@ -232,9 +232,16 @@ export function shouldAutoPrepareMethod(settings: AppState["settings"], onboardi
   return settings.autoPrepareMethod !== false && !onboarding.skippedSteps.includes("aiHero");
 }
 
-/** The welcome (B02) shows by itself once, on a clean first launch; afterwards the guide reopens it. */
-export function shouldShowWelcomeOnLaunch(app: AppState): boolean {
+// MARK: Benvenuto (B02, issue #354)
+
+/**
+ * The first launch: the state is read (settings, onboarding and recent projects) and Trama never showed the
+ * Benvenuto. Before `started` the state is the empty one the window gets while Trama starts, so it says nothing
+ * about the person: deciding on it showed the Benvenuto again with every step done (issue #354).
+ */
+export function isFirstLaunch(app: AppState): boolean {
   return (
+    app.started &&
     !app.onboarding.firstRunShownAt &&
     !app.onboarding.welcomeClosedAt &&
     !app.onboarding.dismissedAt &&
@@ -243,37 +250,59 @@ export function shouldShowWelcomeOnLaunch(app: AppState): boolean {
   );
 }
 
-// MARK: Welcome (B02)
+/** The rows of the Configura block, in order: the language first, then the steps that make Trama ready. */
+export type WelcomeStepId = "language" | "provider" | "github" | "aiHero";
+export const WELCOME_STEP_IDS: WelcomeStepId[] = ["language", "provider", "github", "aiHero"];
 
-/** The configuration the welcome walks through, in order: the same steps as the guide, not a second guide. */
-export const SETUP_STEP_IDS: GuideStepId[] = ["provider", "github", "aiHero"];
+/** The language is always chosen: the system's until the person picks one. */
+function languageStep(app: AppState): StepState {
+  const t = translator(app.language);
+  return { id: "language", title: t("welcome.step.language"), status: "done", detail: t("welcome.step.languageDetail"), optional: true };
+}
 
-/** The welcome's configuration steps with the guide's real state. */
-export function setupSteps(app: AppState): StepState[] {
+/** The Configura block's steps with the guide's real state: the same states, not a second guide. */
+export function welcomeSteps(app: AppState): StepState[] {
   const steps = guideSteps(app);
-  return SETUP_STEP_IDS.map((id) => steps.find((s) => s.id === id)!);
+  return [languageStep(app), ...WELCOME_STEP_IDS.slice(1).map((id) => steps.find((s) => s.id === id)!)];
+}
+
+/** Every step of Configura is done: the Benvenuto says "Tutto pronto" and never opens by itself. */
+export const isAllSet = (app: AppState): boolean => welcomeSteps(app).every((s) => s.status === "done");
+
+/** The step the Benvenuto points at when it opens: the first one neither done nor skipped, else none. */
+export function welcomeFocusStep(app: AppState): WelcomeStepId | null {
+  return resumeStep(welcomeSteps(app)) as WelcomeStepId | null;
 }
 
 /**
- * Where the welcome's configuration resumes: the first step neither done nor skipped, then the first one
- * skipped (resuming is taking it back), else the first step.
+ * Whether the Benvenuto opens by itself next to an open project (issue #354): only when no provider is connected,
+ * and only once the state is read and the providers checked. "wait" until then; the optional steps never open it.
  */
-export function resumeSetupStep(app: AppState): GuideStepId {
-  const steps = setupSteps(app);
-  const id = resumeStep(steps) ?? steps.find((s) => s.status === "skipped")?.id ?? SETUP_STEP_IDS[0]!;
-  return id as GuideStepId;
+export function welcomeLaunchDecision(app: AppState): "wait" | "open" | "stay" {
+  if (!app.started || !app.project) return "wait";
+  const provider = providerStep(app).status;
+  if (provider === "checking") return "wait";
+  return provider === "done" || hasWaitingProvider(app) ? "stay" : "open";
 }
 
-/** The step after `id` in the welcome, or null at the end, where the project picker follows. */
-export function nextSetupStep(id: GuideStepId): GuideStepId | null {
-  const index = SETUP_STEP_IDS.indexOf(id);
-  return index >= 0 ? (SETUP_STEP_IDS[index + 1] ?? null) : null;
+/**
+ * A provider at its usage limit is connected: it waits for its quota, and the status line says so. It is not a
+ * missing provider, so it never opens the Benvenuto or takes the composer's send away.
+ */
+const hasWaitingProvider = (app: AppState): boolean => Object.values(app.providers).some((state) => state?.account?.kind === "blocked");
+
+/** Whether the composer offers "Collega un provider" instead of sending: the providers are checked and none is connected. */
+export const needsProvider = (app: AppState): boolean => providerStep(app).status === "pending" && !hasWaitingProvider(app);
+
+/** One exercise in the Impara block: done, started on the example project, or still to do. */
+export interface LearnRow {
+  id: ExerciseId;
+  status: "done" | "started" | "todo";
 }
 
-/** What fills the window once the state is read: the welcome, the project picker, or the open project. */
-export function launchScreen(app: AppState): "welcome" | "picker" | "project" {
-  if (app.project) return "project";
-  return shouldShowWelcomeOnLaunch(app) ? "welcome" : "picker";
+export function learnRows(app: AppState): LearnRow[] {
+  const started = app.project?.isDemo ? (app.project.document.exercises?.startedAt ?? {}) : {};
+  return EXERCISE_IDS.map((id) => ({ id, status: app.onboarding.completedExercises[id] ? "done" : started[id] ? "started" : "todo" }));
 }
 
 // MARK: Exercises
@@ -459,7 +488,7 @@ export function parseRepositoryInput(input: string): string | null {
 }
 
 /**
- * What a recent project's row says about it in the picker, from the overview's records only: the work and the
+ * What a recent project's row says about it in the Benvenuto, from the overview's records only: the work and the
  * colleagues. Nothing is inferred when a record is missing.
  */
 export function recentProjectStatus(t: Translate, entry: ProjectOverview | null): { work: string[]; colleagues: string | null } {
