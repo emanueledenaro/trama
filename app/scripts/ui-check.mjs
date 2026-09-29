@@ -1233,7 +1233,7 @@ await personTab.getByTestId("specialist-squad").getByText(/^Squadra .+, sviluppa
   const reset = settings.getByRole("button", { name: "Lascia la scelta al Coordinatore", exact: true });
   if ((await reset.innerText()).trim()) throw new Error("Leaving the model to the Coordinator is not an icon");
   await reset.hover();
-  await page.getByRole("tooltip").getByText("Lascia la scelta al Coordinatore").waitFor();
+  await page.locator(".translucent-popup").filter({ hasText: "Lascia la scelta al Coordinatore" }).first().waitFor();
   await expectNoRawIds(settings, "The agent's settings");
   await settings.scrollIntoViewIfNeeded();
   await themeShots("04e6-agent-settings");
