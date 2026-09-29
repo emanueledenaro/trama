@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -46,7 +46,7 @@ describe("focus mode on a candidate (F01)", () => {
     process.env.FAKE_CODEX_LOG = log;
     // A light model in the catalogue: the axes run on it, and the Coordinator's model is the stronger one (F02).
     process.env.FAKE_CODEX_LIGHT_MODEL = "gpt-5.5-mini";
-    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    const repo = await realpath(await mkdtemp(join(tmpdir(), "trama-repo-")));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
     await git(["init", "-b", "main"], repo, false);
     await git(["add", "."], repo, false);
@@ -264,7 +264,7 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;
     process.env.FAKE_CODEX_LIGHT_MODEL = "gpt-5.5-mini";
-    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    const repo = await realpath(await mkdtemp(join(tmpdir(), "trama-repo-")));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
     // Without Package.swift the checkout's checks are git's own: the fake Codex runs checks for real, and a runner with
     // Swift would build and test the package before the axes open.
