@@ -5,6 +5,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
+import { addWorkView } from "./work-view-fixture.mjs";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
@@ -1605,7 +1606,9 @@ await goalReference.first().waitFor();
 await page.getByTestId("chat-goal-tag").filter({ hasText: goalTitle }).last().scrollIntoViewIfNeeded();
 if ((await page.getByLabel("Messaggio al Coordinatore").inputValue()) !== "Bozza che resta nella chat") throw new Error("The chat's draft changed with the filter");
 await shot("10f-single-chat-dark");
-await page.getByTestId("chat-filter").click();
+// Issue #332: the goal filter is the button at the top of Lavoro, with the menu of the goals.
+await openView("Lavoro");
+await page.getByTestId("work-summary").getByTestId("chat-filter").click();
 await page.getByRole("menuitem", { name: goalTitle }).waitFor();
 await shot("10g-chat-filter-menu-dark");
 await page.keyboard.press("Escape");
@@ -1620,10 +1623,13 @@ await page.getByRole("menuitem", { name: goalTitle }).click();
 await page.getByTestId("dialog-title").filter({ hasText: goalTitle }).waitFor();
 if (await page.getByText("Ho letto lo studio").count()) throw new Error("The goal filter shows messages outside the goal");
 await shot("10h-chat-filtered-light");
+// Filtered on the goal, the summary counts its examples tried on a candidate.
+await page.getByTestId("work-summary").getByTestId("work-goal-progress").waitFor();
 await page.getByTestId("chat-filter").click();
 await page.getByRole("menuitem", { name: "Tutta la chat" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor();
 await page.getByLabel("Messaggio al Coordinatore").fill("");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
@@ -1788,8 +1794,9 @@ await page.getByRole("button", { name: "Interrompi" }).click();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 if (await page.getByText("Questo messaggio resta in coda").count()) throw new Error("The deleted queued message reached the chat");
 // An empty goal dialog is deleted after a confirmation; a goal with history is archived and restored.
-await openView("Lavoro", "Obiettivi");
-await page.getByRole("button", { name: "Nuovo obiettivo" }).click();
+// Issue #332: Lavoro is one view; its goals section has "Nuovo obiettivo" as an icon.
+await openView("Lavoro");
+await page.getByTestId("side-bar").getByRole("button", { name: "Nuovo obiettivo" }).click();
 await page.getByLabel("Titolo dell'obiettivo").fill("Obiettivo creato per sbaglio");
 await page.getByLabel("Risultato atteso").fill("Nessuno: è un doppione.");
 await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
@@ -1810,9 +1817,12 @@ const goalRow = page.getByTestId("sidebar-goal").filter({ hasText: goalTitle });
 await goalRow.hover();
 await goalRow.getByRole("button", { name: `Archivia ${goalTitle}` }).click();
 await goalRow.waitFor({ state: "detached" });
-await openView("Lavoro", "Obiettivi");
+await openView("Lavoro");
 const inspectorPanel = page.getByTestId("side-bar");
-await inspectorPanel.getByText("Archiviati (1)").waitFor();
+// Issue #332: archived goals are folded at the end of the goals of Lavoro, with one state each.
+await inspectorPanel.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).click();
+const archivedRow = inspectorPanel.getByTestId("work-goals-archived").getByTestId("work-goal").filter({ hasText: goalTitle });
+if ((await archivedRow.getByTestId("goal-state").allTextContents()).join("|") !== "Archiviato") throw new Error("An archived goal shows more than one state");
 await shot("14e-goal-archived");
 await inspectorPanel.getByRole("button", { name: new RegExp(goalTitle) }).click();
 await inspectorPanel.getByRole("button", { name: "Ripristina" }).click();
@@ -1871,7 +1881,7 @@ if (!(await composer().inputValue()).includes("Aggiornami sul lavoro di ") || /A
 await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
-await openView("Lavoro", "Candidati");
+await openView("Lavoro");
 // Issue #272: Lavoro names the plan as its chat card does, and a finished candidate never reads "In costruzione".
 {
   const workPanel = page.getByTestId("side-bar");
@@ -2088,7 +2098,7 @@ await page.getByText("Prima proposta di mandato").first().waitFor({ timeout: 20_
 await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Seconda proposta di mandato]");
 await page.keyboard.press("Enter");
 // Issue #271: the superseded request is one line; the line opens its card.
-const supersededLine = page.getByTestId("settled-card").filter({ hasText: "Superata" }).filter({ hasText: "Prima proposta di mandato" });
+const supersededLine = page.getByTestId("settled-card").filter({ hasText: "Sostituita" }).filter({ hasText: "Prima proposta di mandato" });
 await supersededLine.waitFor({ timeout: 20_000 });
 await openSettled(supersededLine);
 const supersededNote = page.getByTestId("superseded-mandate");
@@ -2342,38 +2352,53 @@ console.log("reopened goal", goalId);
 // native, so the project opens through the same action as a recent project in the sidebar.
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), githubProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-negozio" }).waitFor({ timeout: 30_000 });
-await openView("Lavoro", "Issue");
+await openView("Lavoro");
 const issuesPanel = page.getByTestId("side-bar");
+// Issue #332: the issues are a section of Lavoro, each with what Trama does with it.
+await issuesPanel.getByTestId("work-issue").filter({ hasText: "Il pulsante Annulla non fa niente" }).getByText("nessun lavoro").waitFor({ timeout: 30_000 });
 await issuesPanel.getByRole("button", { name: /Il pulsante Annulla non fa niente/ }).click({ timeout: 30_000 });
 await issuesPanel.getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
 await expectAsked("@issue:7 «Il pulsante Annulla non fa niente»", "Issue, Chiedi al Coordinatore");
 if (await page.getByRole("button", { name: "Invia al Coordinatore" }).isDisabled()) throw new Error("The question about the issue cannot be sent");
 await shot("15a-issue-ask");
 await composer().fill("");
-// W12, Gruppo: following the repository shows the monitor at work; the impact question waits in the composer. In a
-// narrow window the inspector floats over the chat, so it steps aside to leave the question in view.
-await openView("Lavoro", "Gruppo");
+// W12, Gruppo dissolved (issue #332): following the repository in the background is in Impostazioni, Monitor, and
+// Lavoro then says it is followed; who works on what is in Squadre; the impact question is in Lavoro.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
+await page.getByTestId("settings").getByRole("button", { name: "Osserva", exact: true }).click();
+await page.getByTestId("settings").getByRole("button", { name: "Togli", exact: true }).waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await openView("Lavoro");
 const groupPanel = page.getByTestId("side-bar");
-await groupPanel.getByRole("button", { name: "Segui in background" }).click();
-await groupPanel.getByText("Monitor attivo").waitFor({ timeout: 10_000 });
-// G02, decision 9a: a colleague who does not use Trama appears with what GitHub shows, their pull request and branch;
-// a branch nobody explains stays apart.
-const githubOnly = groupPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
+await groupPanel.getByTestId("work-github").getByText("seguito in background").waitFor({ timeout: 10_000 });
+if (await groupPanel.getByRole("button", { name: "Segui in background" }).count()) throw new Error("Lavoro still offers Segui in background, which is in Impostazioni, Monitor");
+// The GitHub part of Gruppo: the colleague's pull request is in Lavoro, with its details and Apri su GitHub as an icon.
+const colleaguePull = groupPanel.getByTestId("work-pull").filter({ hasText: "#12 Annullo degli ordini dal riepilogo" });
+await colleaguePull.waitFor({ timeout: 20_000 });
+await colleaguePull.getByText(/collega/).waitFor();
+await colleaguePull.getByRole("button", { name: "Apri su GitHub" }).waitFor();
+// G02, decision 9a: a colleague who does not use Trama appears in Squadre with what GitHub shows, their pull request
+// and branch; a branch nobody explains stays apart.
+await openView("Squadre");
+const boardPanel = page.getByTestId("side-bar");
+const githubOnly = boardPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
 await githubOnly.getByText("#12 Annullo degli ordini dal riepilogo").waitFor({ timeout: 20_000 });
 await githubOnly.getByText("feature/annullo-ordini").waitFor();
 await githubOnly.getByText(/^su GitHub/).waitFor();
-await groupPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
-await groupPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
+await boardPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
+await boardPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
 await shot("15b-group-follow");
+await openView("Lavoro");
 await page.setViewportSize({ width: 720, height: 640 });
 await groupPanel.getByRole("button", { name: "Chiedi al Coordinatore l'impatto" }).click();
-await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Gruppo, Chiedi al Coordinatore l'impatto");
+await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Lavoro, Chiedi al Coordinatore l'impatto");
 // Issue #330: the side bar is attached and no longer floats over the chat, so it stays open and leaves the question
 // in view beside it.
 {
   const question = await composer().boundingBox();
   const side = await groupPanel.boundingBox();
-  if (!question || !side || question.x < side.x + side.width || question.x + question.width > 720) throw new Error("The question is not in view beside Gruppo at 720x640");
+  if (!question || !side || question.x < side.x + side.width || question.x + question.width > 720) throw new Error("The question is not in view beside Lavoro at 720x640");
 }
 await shot("15c-group-ask-narrow");
 await composer().fill("");
@@ -2608,8 +2633,9 @@ await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_0
 await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
 await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
-// Issue #389: the correction replaced the failed candidate, so its card settles as one "Superato" line; the line opens it.
-const supersededLines = page.getByTestId("settled-card").filter({ hasText: "Superato" });
+// Issue #389: the correction replaced the failed candidate, so its card settles as one "Sostituito" line (issue #332:
+// "Superato" became "Sostituito" for replaced work); the line opens it.
+const supersededLines = page.getByTestId("settled-card").filter({ hasText: "Sostituito" });
 await supersededLines.first().waitFor({ timeout: 20_000 });
 for (const line of await supersededLines.all()) {
   if (await failedCard.isVisible().catch(() => false)) break;
@@ -3449,9 +3475,10 @@ const narrowProblems = await typographyOverflow();
 if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
 await shot("16d2-typography-narrow");
 await page.setViewportSize({ width: 1280, height: 820 });
-// G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
-// "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
-await openView("Lavoro", "Gruppo");
+// G02: who works on what, in Squadre since Gruppo dissolved (issue #332). One row per person and per agent, with
+// identity, active branch, "anche su", the request, the files and the freshness; the person's own switch is in
+// Impostazioni, Presenza, on the right.
+await openView("Squadre");
 const presencePanel = page.getByTestId("group-board");
 const rows = presencePanel.locator('[data-testid="group-row"]');
 const adaRow = rows.filter({ hasText: "Ada (tu)" });
@@ -3468,11 +3495,19 @@ await liaRow.getByTestId("agent-tag").getByText("[Interfaccia]").waitFor();
 await liaRow.getByText("trama/lia-rimborsi").waitFor();
 await liaRow.getByText("Schermata dei rimborsi").waitFor();
 await liaRow.getByText(/^inattivo da 1[2-9] min$/).waitFor();
-const ownSwitch = page.getByTestId("side-bar").getByRole("switch", { name: "Condividi la presenza", checked: true });
-await ownSwitch.waitFor();
-const groupInspector = await page.getByTestId("side-bar").boundingBox();
-const switchBox = await ownSwitch.boundingBox();
-if (!groupInspector || !switchBox || switchBox.x < groupInspector.x + groupInspector.width / 2) throw new Error("Gruppo: the sharing switch is not on the right");
+if (await page.getByTestId("side-bar").getByRole("switch", { name: "Condividi la presenza" }).count()) throw new Error("Squadre repeats the sharing switch of Impostazioni, Presenza");
+await page.getByTestId("side-bar").getByTestId("group-presence-line").waitFor();
+await page.getByRole("button", { name: "Impostazioni" }).click();
+{
+  const ownSwitch = page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true });
+  await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
+  await ownSwitch.waitFor();
+  const settingsBox = await page.getByTestId("settings").boundingBox();
+  const switchBox = await ownSwitch.boundingBox();
+  if (!settingsBox || !switchBox || switchBox.x < settingsBox.x + settingsBox.width / 2) throw new Error("Presenza: the sharing switch is not on the right");
+}
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await openView("Squadre");
 // W16: the agent of a colleague who is idle sleeps: same body and color, eyes closed, and Z's rising above it.
 const liaBot = liaRow.getByTestId("agent-bot");
 if ((await liaBot.getAttribute("data-move")) !== "sleep") throw new Error("An idle colleague's agent does not sleep");
@@ -3499,8 +3534,8 @@ await shot("16d-presence-group-wide");
 await page.getByTestId("side-bar").getByRole("button", { name: "Larghezza normale" }).click();
 await page.setViewportSize({ width: 720, height: 640 });
 await page.waitForTimeout(400);
-if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll in Gruppo at 720x640");
-if (await page.getByTestId("side-bar").evaluate((node) => node.scrollWidth > node.clientWidth + 1)) throw new Error("Gruppo overflows the inspector at 720x640");
+if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll in Squadre at 720x640");
+if (await page.getByTestId("side-bar").evaluate((node) => node.scrollWidth > node.clientWidth + 1)) throw new Error("Who works on what overflows the side bar at 720x640");
 await shot("16e-presence-group-narrow");
 await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Impostazioni" }).click();
@@ -4016,9 +4051,9 @@ await primaryLast(divergenceNotice.locator(".cta-row"), "Divergence notice");
 const settledLines = page.getByTestId("settled-card");
 const divergenceCards = settledLines.filter({ hasText: "Nell'avviso del progetto" });
 if ((await divergenceCards.count()) !== 2) throw new Error(`Divergence: ${await divergenceCards.count()} conflicts with main still shown on their own`);
-const supersededConflict = settledLines.filter({ hasText: "Due incarichi del team" }).filter({ hasText: "Superato" });
+const supersededConflict = settledLines.filter({ hasText: "Due incarichi del team" }).filter({ hasText: "Sostituito" });
 if ((await supersededConflict.count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
-const replacedLine = settledLines.filter({ hasText: /^Candidato / }).filter({ hasText: "Superato" });
+const replacedLine = settledLines.filter({ hasText: /^Candidato / }).filter({ hasText: "Sostituito" });
 if ((await replacedLine.count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
 await replacedLine.getByRole("button", { name: /^Apri: / }).click();
 await replacedLine.getByTestId("candidate-superseded").waitFor();
@@ -4029,21 +4064,128 @@ if (await page.getByRole("main").getByText(/colleg[ah]i?\b/).count()) throw new 
 if (await page.getByText("Conflitto con C-AC540E8F").count()) throw new Error("Divergence: the newer candidate still conflicts with the replaced one");
 await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();
 await openDivergence();
-for (const dark of [false, true]) {
-  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
-  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`25a-branch-divergence-${dark ? "dark" : "light"}`);
-}
-await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
+// Issue #332: the files in conflict are one click away from the status bar: the notice opens with them shown.
 await divergenceNotice.getByTestId("branch-divergence-files").getByText("vercel.json").waitFor();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`25b-branch-divergence-files-${dark ? "dark" : "light"}`);
 }
+await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
+await divergenceNotice.getByTestId("branch-divergence-files").waitFor({ state: "detached" });
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`25a-branch-divergence-${dark ? "dark" : "light"}`);
+}
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #332: Lavoro is one view in the side bar. At the top the goal filter and how many of the goal's examples were
+// tried; then goals with one state each, the slices of the sprint with who works on them (their animated avatars), the
+// candidates and plans, the project's branch with its conflict against main and the files one click away, the pull
+// requests with their CI and Apri su GitHub as an icon, and the issues with what Trama does with each. A copy of the
+// example project with a GitHub remote read by the fake GitHub CLI, and the records of scripts/work-view-fixture.mjs.
+const workProject = await mkdtemp(join(tmpdir(), "trama-ui-lavoro-"));
+await cp(resolve("resources/DemoProject"), workProject, { recursive: true });
+const workGit = (...args) => execFileSync("git", ["-C", workProject, ...args], { encoding: "utf8" });
+workGit("init", "-q", "-b", "main");
+workGit("add", ".");
+workGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+workGit("checkout", "-q", "-b", "chore/pre-apertura");
+workGit("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
+const workHead = workGit("rev-parse", "HEAD").trim();
+const workEnv = { PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", FAKE_GH_WORK: "1" };
+({ app, page } = await launch(workEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+{
+  let workPath = null;
+  for (const file of await readdir(join(dataDir, "Projects"))) {
+    if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-lavoro-")) workPath = join(dataDir, "Projects", file);
+  }
+  if (!workPath) throw new Error("Lavoro: the project's state was not saved");
+  const document = addWorkView(JSON.parse(await readFile(workPath, "utf8")), workProject, workHead);
+  const conflictFiles = Array.from({ length: 18 }, (_, index) => `app/checkout/${["carrello", "spedizioni", "pagamenti"][index % 3]}-${index + 1}.ts`);
+  document.branchDivergence = { branch: "chore/pre-apertura", defaultBranch: "main", headSHA: workHead, remoteSHA: "4df3c14a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e", ahead: 13, behind: 7, conflictingFiles: conflictFiles, checkedAt: "2026-09-28T12:00:00.000Z" };
+  await writeFile(workPath, JSON.stringify(document));
+}
+({ app, page } = await launch(workEnv));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.setViewportSize({ width: 1280, height: 800 });
+await openView("Lavoro");
+const workView = page.getByTestId("side-bar").getByTestId("work-overview");
+await workView.waitFor();
+if ((await page.getByTestId("side-bar").getByRole("tab").count()) !== 0) throw new Error("Lavoro still splits its sections into tabs");
+// Summary: the goal of the work, with its examples tried on a candidate.
+await workView.getByTestId("work-goal-progress").filter({ hasText: "2 di 4 esempi di «Spedizioni e pagamenti» provati" }).waitFor({ timeout: 20_000 });
+await workView.getByTestId("work-summary").getByTestId("chat-filter").waitFor();
+// Goals: one state each, never "Aperto" and "Archiviato" together; archived goals are folded at the end.
+for (const row of await workView.getByTestId("work-goal").all()) {
+  if ((await row.getByTestId("goal-state").count()) !== 1) throw new Error(`Lavoro: a goal has more than one state: ${await row.innerText()}`);
+}
+await workView.getByTestId("work-goal").filter({ hasText: "Spedizioni e pagamenti" }).getByText("Attivo", { exact: true }).waitFor();
+await workView.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).waitFor();
+await workView.getByTestId("work-section-goals").getByRole("button", { name: "Nuovo obiettivo" }).waitFor();
+// Slices: one row per slice with who, state and goal; a developer is its animated avatar, never a letter in a circle.
+const workSlices = workView.getByTestId("work-slice");
+if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
+const elenaSlice = workSlices.filter({ hasText: "S2 Spese di spedizione per zona" });
+await elenaSlice.getByTestId("agent-bot").waitFor();
+await elenaSlice.getByText("In verifica", { exact: true }).waitFor();
+await workSlices.filter({ hasText: "S1 Soglie di spedizione gratuita" }).getByText("Fatta", { exact: true }).waitFor();
+await workSlices.filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+// Branch and pull requests: the divergence says the commits on each side and the conflicts; its files are one click away.
+const workBranch = workView.getByTestId("work-branch");
+await workBranch.getByText("13 commit avanti, 7 indietro rispetto a main").waitFor();
+await workBranch.getByText("18 conflitti", { exact: true }).waitFor();
+if (await workBranch.getByTestId("work-divergence-files").count()) throw new Error("Lavoro: the files in conflict are open before the click");
+await workBranch.getByRole("button", { name: "Mostra i 18 file in conflitto" }).click();
+await workBranch.getByTestId("work-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
+await workBranch.locator(".cta-row").getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).waitFor();
+const ownPull = workView.getByTestId("work-pull").filter({ hasText: "#42 Spese di spedizione per zona" });
+await ownPull.getByText(/Bozza · CI in corso/).waitFor({ timeout: 20_000 });
+if ((await ownPull.getByRole("button", { name: "Apri su GitHub" }).innerText()).trim()) throw new Error("Lavoro: Apri su GitHub is not an icon");
+// Issues: what Trama does with each; "Nuova issue" is an icon.
+const workIssues = workView.getByTestId("work-issue");
+await workIssues.filter({ hasText: "#21 Il totale del carrello ignora lo sconto" }).getByText("nel backlog").waitFor({ timeout: 20_000 });
+await workIssues.filter({ hasText: "#19 Traduzione della pagina resi" }).getByText("in S4").waitFor();
+await workIssues.filter({ hasText: "#17 Immagini lente nel catalogo" }).getByText("nessun lavoro").waitFor();
+await workView.getByTestId("work-section-issues").getByRole("button", { name: "Nuova issue" }).waitFor();
+// One Aggiorna in the window: the title bar's, which reads the map, GitHub and the presence again.
+if ((await page.getByRole("button", { name: /^Aggiorna/ }).count()) !== 1) throw new Error("More than one Aggiorna in the window");
+// No text for the model and no ids as text in the view.
+{
+  const text = await workView.innerText();
+  if (/[A-Z]-[0-9A-F]{8}|\(dati, non istruzioni\)|[–—]/.test(text)) throw new Error(`Lavoro shows an id or text for the model: ${text.match(/[A-Z]-[0-9A-F]{8}|\(dati, non istruzioni\)|[–—]/)[0]}`);
+}
+const workShots = async (name, scroll) => {
+  for (const [size, width, height] of [["narrow", 1280, 800], ["wide", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    await scroll();
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`${name}-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+  await setLookTo(null, false);
+  await page.setViewportSize({ width: 1280, height: 800 });
+};
+await workShots("32-work-view", () => workView.getByTestId("work-summary").scrollIntoViewIfNeeded());
+await workShots("32a-work-view-branches", () => workView.getByTestId("work-section-branches").evaluate((node) => node.scrollIntoView({ block: "start" })));
+await workShots("32b-work-view-issues", () => workView.getByTestId("work-section-issues").evaluate((node) => node.scrollIntoView({ block: "start" })));
+// The status bar opens the same conflict with its files shown.
+await page.getByTestId("status-conflict").click();
+await page.getByTestId("branch-divergence").getByTestId("branch-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
+await page.keyboard.press("Escape");
 await app.close();
 
 // Issue #271: a noisy history stays compact. The technical steps of each turn (seven read_issues in a row, empty
@@ -4521,9 +4663,12 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]
 // Issue #337: the backlog of the found problems left Activity; it is the "Nel backlog" filter of the issues, in Lavoro.
 if (await page.getByTestId("bottom-panel").getByTestId("problem-backlog").count()) throw new Error("The backlog is still in Activity");
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
-await openView("Lavoro", "Issue");
+// Issue #332: Lavoro is one view; the backlog is the "Nel backlog" filter of its Issue section.
+await openView("Lavoro");
+await page.getByTestId("work-section-issues").getByRole("radio", { name: /^Nel backlog/ }).click();
 const localBacklog = page.getByTestId("side-bar").getByTestId("problem-backlog");
 await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 30_000 });
+if (await page.getByTestId("activity-log").count()) throw new Error("Activity is still open under the backlog");
 await localBacklog.scrollIntoViewIfNeeded();
 await lookShots("27c-found-problem-local-backlog");
 await app.close();
@@ -5268,9 +5413,7 @@ await app.close();
 // Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
 ({ app, page } = await launch());
 await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
-// Issue #330: the overview opens from the Projects view.
-await openView("Progetti");
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 const priority = page.getByTestId("overview-priority");
 await priority.waitFor({ timeout: 10_000 });
 await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
@@ -5291,8 +5434,7 @@ await themeShots("39a-overview-priority");
 await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
 await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
 await page.waitForTimeout(1_500);
-await openView("Progetti");
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 await priority.waitFor();
 let reopened39 = await priorityNames();
 for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
@@ -5309,4 +5451,55 @@ await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
 await sharedPicker.scrollIntoViewIfNeeded();
 await noHorizontalScroll("shared developers");
 await themeShots("39b-shared-developers");
+
+// Issue #301: the texts the main process writes follow the person's language at once, without a restart: the status
+// line, the Activity rows and the notices of the Coordinator in English, in light and dark, with the actions in their
+// place on the right and no text running out of its line.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.waitForFunction(() => document.documentElement.lang === "en");
+await page.getByRole("button", { name: /^(Impostazioni|Settings)$/ }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+const englishLine = page.getByTestId("status-line");
+if (await page.locator('[data-testid="status-line"][data-paused="true"]').count()) {
+  await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
+  await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
+}
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: true }));
+await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
+await englishLine.getByRole("button", { name: /^(Attività|Activity)$/ }).click();
+const englishActivity = page.getByTestId("activity-log");
+await englishActivity.waitFor();
+await themeShots("41-main-en");
+await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused: running turns finish/).waitFor({ timeout: 10_000 });
+// The rows already in Activity keep the language they were written in; what the main process writes now is English.
+const italianWords = /[àèìòù]|\b(?:il|la|non|che|della|nel|Coordinatore|Concedi|Rivedi|Conferma|Lavoro del progetto)\b/;
+const englishTexts = [
+  await englishLine.getByTestId("status-line-text").innerText(),
+  // Issue #330: in the status bar the person's move is a text button and the Coordinator's actions are icons.
+  ...(await englishLine.locator("button:not([aria-label])").allInnerTexts()),
+  ...(await page.getByTestId("focus-title").allInnerTexts()),
+];
+const stillItalian = englishTexts.filter((text) => italianWords.test(text));
+if (stillItalian.length) throw new Error(`Main texts still in Italian after the switch: ${stillItalian.join(" | ")}`);
+await noHorizontalScroll("main texts in English");
+const englishLayout = await englishLine.evaluate((line) => {
+  const box = line.getBoundingClientRect();
+  const text = line.querySelector('[data-testid="status-line-text"]');
+  return {
+    buttonsOutside: [...line.querySelectorAll("button")].filter((button) => {
+      const b = button.getBoundingClientRect();
+      return b.width > 0 && (b.left < box.left - 1 || b.right > box.right + 1 || button.scrollWidth > button.clientWidth + 1);
+    }).length,
+    textOutside: text ? text.getBoundingClientRect().right > box.right + 1 : false,
+  };
+});
+if (englishLayout.buttonsOutside) throw new Error(`${englishLayout.buttonsOutside} status line actions do not fit in English`);
+if (englishLayout.textOutside) throw new Error("The English status line text runs out of the line");
+// The last action sits on the right, as in Italian.
+const englishLast = await englishLine.getByRole("button").last().boundingBox();
+const englishBox = await englishLine.boundingBox();
+if (!englishLast || !englishBox || englishBox.x + englishBox.width - (englishLast.x + englishLast.width) > 2) throw new Error("The last action of the English status line is not on the right");
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.waitForFunction(() => document.documentElement.lang === "it");
 await app.close();

@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { CandidateBlocker, PactDemo, ProjectDocument } from "@shared/domain";
 import { decide } from "./pact";
+import { t } from "./personLanguage";
 
 export const DEMO_DECISION_ID = "DEMO-ORDINI";
+// @model-text: the example decision is persisted in the project's Pact and compared with the stored value.
 const DEMO_VALUE = "Gli ordini pagati entrano in revisione senza cambiare pagamento e disponibilità.";
 const CHECKS = ["stato-ordine", "pagamento", "disponibilita"];
 
@@ -15,6 +17,7 @@ export function requestCancellation(paid: boolean, shipped: boolean, stock: numb
 
 export function runPactDemo(document: ProjectDocument): PactDemo {
   if (!document.decisions.some((d) => d.id === DEMO_DECISION_ID)) {
+    // @model-text: example content persisted in the project's Pact, as the decision above.
     decide(document, {
       id: DEMO_DECISION_ID,
       value: DEMO_VALUE,
@@ -52,14 +55,14 @@ export function inspectPactDemo(document: ProjectDocument, demo: PactDemo, requi
     if (evidence.result === "notRun") blockers.push({ code: "CHECK_NOT_RUN", detail: evidence.check });
   }
   if (requireApproval && (!demo.approval || demo.approval.decisionVersion !== version)) {
-    blockers.push({ code: "HUMAN_APPROVAL_REQUIRED", detail: "Approva questa esatta versione." });
+    blockers.push({ code: "HUMAN_APPROVAL_REQUIRED", detail: t("main.pactDemo.approvalRequired") });
   }
   return blockers;
 }
 
 export function approvePactDemo(document: ProjectDocument, actor: string): void {
   const demo = document.pactDemo;
-  if (!demo) throw new Error("Esegui prima lo scenario.");
-  if (inspectPactDemo(document, demo, false).length) throw new Error("Lo scenario non è verificato.");
+  if (!demo) throw new Error(t("main.pactDemo.runFirst"));
+  if (inspectPactDemo(document, demo, false).length) throw new Error(t("main.pactDemo.notVerified"));
   demo.approval = { actor, decisionVersion: demo.decisionVersion, at: new Date().toISOString() };
 }
