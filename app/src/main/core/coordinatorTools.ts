@@ -62,6 +62,7 @@ import {
   refusalMessage,
   removeSpecialist,
   renameSpecialist,
+  releaseProblem,
   requestStop,
   resumeProblem,
   resumeWithInstructions,
@@ -643,6 +644,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "release_worktree",
+    description:
+      "Within the mandate (executeInWorktree), free the working copy of work that is over, so copies do not pile up: work merged, superseded or replaced by work in another copy. assignment is the assignment (A-…) or a candidate (C-…) of that copy; reason is one line for the person. Trama frees the copy of merged work by itself. It refuses a copy someone works or waits in, one with a candidate still open, and one whose removal would lose uncommitted changes or unpublished commits: that removal is the person's, from the work's card.",
+    properties: { assignment: text, reason: text },
+    required: ["assignment", "reason"],
+    readOnly: false,
+  },
+  {
     name: "commit_merge",
     description:
       "Within the mandate (executeInWorktree), record the merge a developer resolved and left without a commit in its working copy, as a realignment of a branch with main: Trama writes the merge commit with both parents and a valid Conventional Commits message, and pushes nothing. assignment is the assignment (A-…) or its candidate (C-…); message is optional, Trama writes one otherwise. Trama refuses work still at work, a merge with files still in conflict or conflict markers, and a resolution that adds a secret or a sensitive file. The candidate stays valid: committing changes no file. Use it instead of opening new work when the merge is done and only the commit is missing.",
@@ -864,6 +873,8 @@ export interface ToolContext {
    * message rules and no push; throws MergeError, or CommitMessageError for a message Trama refuses. Absent where Trama writes none.
    */
   concludeMerge?(assignmentId: string, message: string | null): Promise<{ commit: string; mergedHead: string; message: string }>;
+  /** Removes an assignment's working copy when that loses nothing; throws with the reason otherwise. Absent where Trama removes none. */
+  releaseWorktree?(assignmentId: string): Promise<{ branchDeleted: boolean }>;
   /** Runs a required check on a candidate's worktree and records the evidence. */
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
   /**
@@ -1711,6 +1722,24 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.startAssignment(handed.id);
         const status = target.id === assignment.specialistId ? "resumed" : "handedOver";
         return toolSuccess({ assignmentID: handed.id, specialistID: target.id, status, replacesAssignmentID: assignment.id, branch: handed.workspace!.branch });
+      }
+      case "release_worktree": {
+        const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
+        const assignment = findAssignment(document, named) ?? findAssignment(document, findCandidate(document, named)?.assignmentId ?? "");
+        if (!assignment) return toolFailure("unknown_assignment", `There is no assignment or candidate ${named}.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        const problem = releaseProblem(document, assignment);
+        if (problem) return toolFailure(problem.code, problem.message);
+        if (!context.releaseWorktree) return toolFailure("unavailable", "Trama cannot remove working copies here.");
+        try {
+          const { branchDeleted } = await context.releaseWorktree(assignment.id);
+          context.changed();
+          return toolSuccess({ assignmentID: assignment.id, status: "released", branchDeleted });
+        } catch (error) {
+          // Trama removes nothing that would lose work: uncommitted changes or commits not published stay with the person.
+          return toolFailure("not_released", `${(error as Error).message} Removing it would lose work: the person removes it from the work's card if they agree.`);
+        }
       }
       case "commit_merge": {
         const named = typeof args.assignment === "string" ? args.assignment.trim() : "";

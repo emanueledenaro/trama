@@ -21,7 +21,7 @@ import {
 } from "./gate";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
-import { assign, confirmTeam, endTurn, findSpecialist, proposeTeam, recordWorkspace, requestStop } from "./team";
+import { assign, confirmTeam, endTurn, findSpecialist, mergedWorktrees, proposeTeam, recordWorkspace, requestStop } from "./team";
 import { MergeError } from "./workspace";
 
 /**
@@ -343,6 +343,67 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     };
     const merge = await runCoordinatorTool("commit_merge", { assignment: marco.id }, tools);
     expect(merge.content[0]!.text).toContain("not_in_mandate");
+  });
+});
+
+describe("working copies do not pile up", () => {
+  it("frees by itself the working copy of merged work nobody continues in", () => {
+    const document = shop();
+    const marco = realignment(document);
+    const candidate = blockedCandidate(document, marco, 2);
+    expect(mergedWorktrees(document)).toEqual([]);
+    candidate.pullRequest = { url: "u", number: 7, branch: marco.workspace!.branch, headSHA: "h", at: at(4).toISOString(), mergedAt: at(5).toISOString() };
+    expect(mergedWorktrees(document).map((a) => a.id)).toEqual([marco.id]);
+    // Work that continues in the same copy keeps it.
+    request(document, "r2", 6);
+    const bea = assign(
+      document,
+      { specialist: "Bea", kind: "agreedTicket", objective: "Altro", issueNumber: null, exercise: null, moduleIds: ["src/app"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "i", workspace: marco.workspace },
+      document.mandate!.version,
+      "r2",
+      at(6),
+    );
+    expect(mergedWorktrees(document)).toEqual([]);
+    endTurn(document, bea.id, null, { kind: "completed", text: "Fatto" }, at(7));
+    nextCandidate(document, bea, 8);
+    expect(mergedWorktrees(document)).toEqual([]);
+    // A copy already removed is not freed again.
+    marco.workspaceRemovedAt = bea.workspaceRemovedAt = at(9).toISOString();
+    expect(mergedWorktrees(document)).toEqual([]);
+  });
+
+  it("lets the Coordinator free a working copy that holds no open work (release_worktree), never one at work or with an open candidate", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    const { context: tools } = context(document);
+    const freed: string[] = [];
+    tools.releaseWorktree = async (id) => {
+      freed.push(id);
+      if (freed.length === 2) throw new Error("La copia di lavoro ha modifiche non registrate.");
+      return { branchDeleted: false };
+    };
+    const call = async (assignment: string) => {
+      const result = await runCoordinatorTool("release_worktree", { assignment, reason: "Lavoro superato" }, tools);
+      return { error: result.isError === true, text: result.content[0]!.text };
+    };
+    expect(await call(marco.id)).toMatchObject({ error: true, text: expect.stringContaining("assignment_running") });
+    const open = blockedCandidate(document, marco, 2);
+    expect(await call(marco.id)).toMatchObject({ error: true, text: expect.stringContaining("open_candidate") });
+    // Superseded by a correction in another copy: the old copy can go.
+    request(document, "r2", 3);
+    const correction = assign(
+      document,
+      { specialist: "Bea", kind: "agreedTicket", objective: "Correzione", issueNumber: 24, exercise: null, moduleIds: ["src/app"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "i", replaces: [marco.id] },
+      document.mandate!.version,
+      "r2",
+      at(3),
+    );
+    expect(candidateSuperseded(document, open)).toBe(true);
+    expect(correction.workspace).toBeNull();
+    expect(parse(await runCoordinatorTool("release_worktree", { assignment: open.id, reason: "Lavoro superato" }, tools))).toMatchObject({ assignmentID: marco.id, status: "released" });
+    // Trama's own refusal, as for uncommitted changes, reaches the Coordinator.
+    expect(await call(marco.id)).toMatchObject({ error: true, text: expect.stringContaining("modifiche non registrate") });
+    expect(freed).toEqual([marco.id, marco.id]);
   });
 });
 

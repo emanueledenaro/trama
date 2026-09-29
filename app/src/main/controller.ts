@@ -292,6 +292,8 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  mergedWorktrees,
+  worktreeSharers,
   reopenForFindings,
   resumePausedAssignment,
   stopOrphanedAssignments,
@@ -2340,6 +2342,7 @@ export class TramaController {
           },
           conventions: () => readProjectConventions(current.rootPath),
           concludeMerge: (assignmentId, message) => this.concludeAssignmentMerge(current, assignmentId, message, current.runningRequestId),
+          releaseWorktree: (assignmentId) => this.freeWorktree(current, assignmentId),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
@@ -5844,14 +5847,33 @@ export class TramaController {
 
   /** The person removes the worktree of finished work; refused when it would lose work (T08). */
   async removeAssignmentWorktree(assignmentId: string): Promise<void> {
-    const project = this.requireProject();
+    await this.freeWorktree(this.requireProject(), assignmentId);
+  }
+
+  /**
+   * Frees the working copies of merged work nobody continues in (the branch and the merge are on GitHub), so they do not
+   * pile up. A copy git refuses to remove stays: nothing that would lose work goes.
+   */
+  private async freeMergedWorktrees(project: ActiveProjectState): Promise<void> {
+    for (const assignment of mergedWorktrees(project.document)) {
+      const root = assignment.workspace!.worktreeRoot;
+      if (this.worktreesKept.has(root)) continue;
+      // Tried once per session: a copy git keeps, as one with files of its own, is not tried at every reading.
+      await this.freeWorktree(project, assignment.id).catch(() => this.worktreesKept.add(root));
+    }
+  }
+
+  /** The working copies of merged work that could not be freed in this session. */
+  private readonly worktreesKept = new Set<string>();
+
+  /** Removes the working copy of `assignmentId` and of the work that shares it, when that loses nothing (T08). */
+  private async freeWorktree(project: ActiveProjectState, assignmentId: string): Promise<{ branchDeleted: boolean }> {
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(t("main.controller.noWorktreeToRemove"));
     if (isActive(assignment)) throw new DomainError(t("main.controller.stopBeforeRemovingWorktree"));
-    // A fix of a candidate works in the candidate's worktree (W11): the worktree goes only when all of them stopped.
-    const sharing = project.document.team.specialists
-      .flatMap((s) => s.assignments)
-      .filter((a) => a.workspace?.worktreeRoot === assignment.workspace!.worktreeRoot && !a.workspaceRemovedAt);
+    // A fix of a candidate works in the candidate's worktree (W11), a correction or a hand-over in the work's: the
+    // worktree goes only when all of them stopped.
+    const sharing = worktreeSharers(project.document, assignment);
     if (sharing.some(isActive)) throw new DomainError(t("main.controller.worktreeInUse"));
     const published = project.document.candidates.some((c) => sharing.some((a) => a.id === c.assignmentId) && c.pullRequest);
     const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
@@ -5870,7 +5892,8 @@ export class TramaController {
       new Date(),
       { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
     );
-    this.changed();
+    this.changedIn(project);
+    return { branchDeleted };
   }
 
   /** The person changes the provider or model of a stopped assignment (ADR 0009). */
@@ -7160,6 +7183,8 @@ export class TramaController {
         this.integrating.delete(candidate.id);
       }
     }
+    // Merged work leaves its working copy: it would only pile up.
+    await this.freeMergedWorktrees(project);
   }
 
   /**

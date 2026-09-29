@@ -30,6 +30,7 @@ import { ITALIAN, LANGUAGES, translator } from "@shared/i18n";
 import { catalogOffers, PROVIDERS, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { cloudWorking } from "@shared/workPlace";
+import { candidateSuperseded } from "@shared/conflictScope";
 import { readDeveloperReport } from "./implementation";
 import { pendingQuestion, pendingState } from "./developerQuestions";
 import { t } from "./personLanguage";
@@ -943,6 +944,53 @@ export function correctionWorktree(document: ProjectDocument, replaces: string[]
   if (!replaced) return null;
   const busy = all.some((a) => isActive(a) && a.workspace?.worktreeRoot === replaced.workspace!.worktreeRoot);
   return busy ? null : { workspace: replaced.workspace!, assignmentId: replaced.id };
+}
+
+/** The assignments that share `assignment`'s working copy and still have it: a correction or a hand-over continues in it. */
+function sharingWorktree(document: ProjectDocument, assignment: SpecialistAssignment): SpecialistAssignment[] {
+  const root = assignment.workspace?.worktreeRoot;
+  if (!root || assignment.workspaceRemovedAt) return [];
+  return document.team.specialists.flatMap((s) => s.assignments).filter((a) => a.workspace?.worktreeRoot === root && !a.workspaceRemovedAt);
+}
+
+/**
+ * The working copies Trama frees by itself, one assignment each: the latest candidate made in them was merged and
+ * nobody works or waits in them. The branch and the merge are on GitHub, so nothing is lost.
+ */
+export function mergedWorktrees(document: ProjectDocument): SpecialistAssignment[] {
+  const seen = new Set<string>();
+  const freed: SpecialistAssignment[] = [];
+  for (const assignment of document.team.specialists.flatMap((s) => s.assignments)) {
+    const sharing = sharingWorktree(document, assignment);
+    const root = assignment.workspace?.worktreeRoot;
+    if (!root || !sharing.length || seen.has(root)) continue;
+    seen.add(root);
+    if (sharing.some((a) => isActive(a) || a.status === "paused")) continue;
+    const ids = new Set(sharing.map((a) => a.id));
+    const latest = document.candidates.filter((c) => ids.has(c.assignmentId)).at(-1);
+    if (latest?.pullRequest?.mergedAt) freed.push(sharing.at(-1)!);
+  }
+  return freed;
+}
+
+/**
+ * Why the Coordinator cannot free `assignment`'s working copy (release_worktree), or null: someone works or waits in it,
+ * or a candidate made in it is still open. Trama still refuses a copy whose removal would lose changes.
+ */
+export function releaseProblem(document: ProjectDocument, assignment: SpecialistAssignment): TeamError | null {
+  const sharing = sharingWorktree(document, assignment);
+  if (!sharing.length) return new TeamError("no_worktree", `Assignment ${assignment.id} has no working copy left.`);
+  const busy = sharing.find((a) => isActive(a) || a.status === "paused");
+  if (busy) return new TeamError("assignment_running", `Assignment ${busy.id} works or waits in this working copy.`);
+  const ids = new Set(sharing.map((a) => a.id));
+  const open = document.candidates.find((c) => ids.has(c.assignmentId) && !c.pullRequest?.mergedAt && !candidateSuperseded(document, c));
+  if (open) return new TeamError("open_candidate", `Candidate ${open.id} of this working copy is still open: merge it or supersede it first.`);
+  return null;
+}
+
+/** The assignments whose working copy goes with `assignment`'s when it is removed. */
+export function worktreeSharers(document: ProjectDocument, assignment: SpecialistAssignment): SpecialistAssignment[] {
+  return sharingWorktree(document, assignment);
 }
 
 /**
