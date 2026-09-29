@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import { chatComposer } from "@shared/goals";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
 import { Dialogs } from "@/components/Dialogs";
+import { FocusModeView } from "@/components/focus/FocusModeView";
 import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Sash, useResizableHeight, useResizableWidth } from "@/lib/resizable";
 import { ActivityBar } from "@/components/workbench/ActivityBar";
@@ -126,6 +127,8 @@ export function App() {
 
   if (!app) return null;
   const isMac = app.platform === "darwin";
+  // Full-screen focus mode (F03) takes the whole window for the project on screen, until the person leaves it.
+  const inFocus = app.project !== null && app.focusMode?.projectId === app.project.id;
 
   return (
     <TooltipProvider delay={500}>
@@ -165,7 +168,15 @@ export function App() {
               />
             ) : null}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <EditorArea />
+              {inFocus ? (
+                // Full-screen focus mode on a module or the project (F03) takes the editor area, tabs included, inside the
+                // window's bars and above the bottom panel, until the person leaves it.
+                <main className="chat-content-card @container/main relative z-[15] flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <FocusModeView />
+                </main>
+              ) : (
+                <EditorArea />
+              )}
               {panelOpen ? (
                 <ActivityPanel
                   size={{

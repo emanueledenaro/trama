@@ -735,4 +735,8 @@ export const sharedIt = {
 
   // Squad changes (A11)
   "shared.activity.outcome.undone": "Annullata",
+
+  // Focus mode on a module or the project (issue #327)
+  "shared.reference.auditModule": "esame del modulo",
+  "shared.reference.auditProject": "esame del progetto",
 } satisfies Record<string, string>;

@@ -100,6 +100,9 @@ export interface ActionMap {
   /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
   "requestedAction:confirm": [{ id: string }, void];
   "requestedAction:decline": [{ id: string }, void];
+  /** The person withdraws the full delegation from the Mandate view, or has seen a choice made with it (issue #423). */
+  "delegation:revoke": [void, void];
+  "delegation:seen": [{ id: string }, void];
   "mandate:reject": [{ requestId: string; reason: string }, void];
   /** The person corrects a step the Coordinator took by itself within the mandate, in their own words (A06). */
   "autonomousStep:correct": [{ stepId: string; note: string }, boolean];
@@ -152,6 +155,16 @@ export interface ActionMap {
   "candidate:shot": [{ candidateId: string; index: number }, string];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */
   "candidate:focusAudit": [{ candidateId: string }, string];
+  /**
+   * Opens focus mode on a module or the whole project from a fixed point the person chose (F03). A point that does not
+   * exist or an empty diff is an error. Returns the examination's id.
+   */
+  "focusMode:open": [{ target: { kind: "module"; moduleId: string } | { kind: "project" }; fixedPoint: string }, string];
+  /** Revisions to suggest as the fixed point: default branches ahead of which HEAD is, the last tag, a few steps back. */
+  "focusMode:fixedPoints": [void, string[]];
+  /** Shows an examination in the full-screen focus mode; notifications wait until the person leaves it (F03). */
+  "focusMode:enter": [{ auditId: string }, void];
+  "focusMode:exit": [void, void];
   /** Turns a finding of focus mode into work (F04): a ticket, an assignment within the mandate or a Pact card. */
   "finding:followUp": [{ auditId: string; findingId: string; kind: "ticket" | "assignment" | "pactCard" }, void];
   /** Publishes the report of a finished focus mode on GitHub, only when the person asks (F04). */

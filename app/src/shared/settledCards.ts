@@ -74,7 +74,9 @@ export function settledCard(t: Translate, document: ProjectDocument, row: Timeli
       if (request.withdrawal) return { title, subject: request.question, answer: null, outcome: { label: t("shared.settled.withdrawn"), tone: "secondary" } };
       const outcome = request.outcome!;
       const chosen = outcome.alternativeIndex === null ? outcome.answer : (request.alternatives[outcome.alternativeIndex]?.behavior ?? outcome.answer);
-      return { title, subject: request.question, answer: chosen, outcome: { label: t("shared.settled.decided"), tone: "success" } };
+      // Decided by the Coordinator with the person's full delegation (issue #423): the line says so, for the review.
+      const label = outcome.byDelegation ? t("delegation.decision.badge") : t("shared.settled.decided");
+      return { title, subject: request.question, answer: chosen, outcome: { label, tone: "success" } };
     }
     case "mandate": {
       const request = document.mandateRequests.find((r) => r.id === id);

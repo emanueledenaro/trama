@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
 import type { RecapRecord } from "./domain";
 import type { Translate } from "./i18n";
 
@@ -42,5 +43,7 @@ export function asksForRecap(text: string): boolean {
 /** The title of the recap's card in the chat. */
 export function recapTitle(t: Translate, recap: Pick<RecapRecord, "reason" | "milestones">): string {
   if (recap.reason === "request") return t("shared.recap.title");
+  // The person is back after the Coordinator worked with the full delegation (issue #423).
+  if (recap.reason === "return") return t("recap.return.title");
   return t("shared.recap.milestones", { count: recap.milestones.length });
 }

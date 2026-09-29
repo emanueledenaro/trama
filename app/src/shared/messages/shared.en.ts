@@ -736,4 +736,8 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
 
   // Squad changes (A11)
   "shared.activity.outcome.undone": "Undone",
+
+  // Focus mode on a module or the project (issue #327)
+  "shared.reference.auditModule": "module deep review",
+  "shared.reference.auditProject": "project deep review",
 };

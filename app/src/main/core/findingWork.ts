@@ -76,9 +76,18 @@ function sourceOf(finding: AuditFinding): { of: string; name: string } {
   return { of: t("main.findingWork.source.axisOf", { axis }), name: t("main.findingWork.source.axis", { axis }) };
 }
 
-/** The candidate as the person reads it: "candidato di Luca", by the developer who wrote it (issue #270). */
+/** The candidate an examination read, or null for a module or the whole project (F03). */
+export const auditCandidateId = (audit: FocusAudit): string | null => (audit.target.kind === "candidate" ? audit.target.candidateId : null);
+
+/**
+ * What was examined as the person reads it, after "sul": "candidato di Luca", by the developer who wrote it (issue
+ * #270), or "modulo Orders" and "progetto" for a module or the whole project (F03).
+ */
 export function candidateName(document: ProjectDocument, audit: FocusAudit): string {
-  const work = findAssignment(document, audit.target.assignmentId);
+  const target = audit.target;
+  if (target.kind === "module") return t("main.findingWork.moduleNamed", { name: target.moduleName });
+  if (target.kind === "project") return t("main.findingWork.project");
+  const work = findAssignment(document, target.assignmentId);
   const author = work ? document.team.specialists.find((s) => s.id === work.specialistId)?.name : null;
   return author ? t("main.findingWork.candidateOf", { author }) : t("main.findingWork.candidateReviewed");
 }
@@ -179,7 +188,8 @@ export function assignFinding(document: ProjectDocument, audit: FocusAudit, find
     throw new FindingWorkError(t("main.findingWork.hypothesis"));
   }
   if (!isTeamConfirmed(document)) throw new FindingWorkError(t("main.findingWork.teamNotConfirmed"));
-  const candidate = findCandidate(document, audit.target.candidateId);
+  const candidateId = auditCandidateId(audit);
+  const candidate = candidateId ? findCandidate(document, candidateId) : null;
   const candidateWork = candidate ? findAssignment(document, candidate.assignmentId) : null;
   const moduleIds = findingModules(finding, candidateWork, input.modules);
   if (!moduleIds.length) throw new FindingWorkError(t("main.findingWork.noModule"));
@@ -257,7 +267,7 @@ export function assignFinding(document: ProjectDocument, audit: FocusAudit, find
 export function findingPactCard(document: ProjectDocument, audit: FocusAudit, findingId: string, now = new Date()): DecisionRequest {
   const finding = actionableFinding(audit, findingId);
   requireNoFollowUp(finding, "pactCard");
-  const candidate = findCandidate(document, audit.target.candidateId);
+  const candidate = (auditCandidateId(audit) ? findCandidate(document, auditCandidateId(audit)!) : null);
   const work = candidate ? findAssignment(document, candidate.assignmentId) : null;
   const proof = evidenceLabel(t, finding.evidence);
   const request = createDecisionRequest(
@@ -335,7 +345,8 @@ export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit
 export function publicationTarget(document: ProjectDocument, audit: FocusAudit): { kind: "pullRequestComment"; number: number; url: string } | { kind: "issue" } {
   if (audit.status !== "done") throw new FindingWorkError(t("main.findingWork.publishNotDone"));
   if (audit.publication) throw new FindingWorkError(t("main.findingWork.alreadyPublished"));
-  const pull = findCandidate(document, audit.target.candidateId)?.pullRequest;
+  const candidateId = auditCandidateId(audit);
+  const pull = (candidateId ? findCandidate(document, candidateId) : null)?.pullRequest;
   return pull && !pull.mergedAt ? { kind: "pullRequestComment", number: pull.number, url: pull.url } : { kind: "issue" };
 }
 

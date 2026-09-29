@@ -2,6 +2,7 @@ import { IconChevronRight, IconHourglass } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
 import { fixedBans } from "@shared/fixedBans";
+import { DelegationSection } from "@/components/chat/Delegation";
 import type { Translate } from "@shared/i18n";
 import { waitingItemFor } from "@shared/waitingForYou";
 import { MandateCard } from "@/components/chat/Cards";
@@ -217,6 +218,7 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
           </div>
         ) : null}
       </div>
+      <DelegationSection />
       {granted ? (
         <DisclosureSection
           title={t("rules.mandate.goals")}

@@ -72,6 +72,10 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
       return target ? t("main.statusLine.running.verifyTarget", { target }) : t("main.statusLine.running.verifyWork");
     case "answerQuestion":
       return t("main.statusLine.running.answerQuestion");
+    case "decideWithDelegation":
+      return t("delegation.move.decide.running");
+    case "takeTicket":
+      return t("delegation.move.ticket.running");
   }
 }
 
@@ -86,6 +90,10 @@ function nextPhrase(move: CoordinatorMove, target: string | null): string {
       return target ? t("main.statusLine.next.verifyTarget", { target }) : t("main.statusLine.next.verifyWork");
     case "answerQuestion":
       return t("main.statusLine.next.answerQuestion");
+    case "decideWithDelegation":
+      return t("delegation.move.decide.next");
+    case "takeTicket":
+      return t("delegation.move.ticket.next");
   }
 }
 

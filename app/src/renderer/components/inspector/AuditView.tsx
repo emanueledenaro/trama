@@ -1,7 +1,7 @@
 import { IconFocus2, IconRotateClockwise } from "@tabler/icons-react";
 import { plainText } from "@shared/plainLanguage";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
-import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { RecordName } from "@/components/chat/ReferenceText";
@@ -16,7 +16,7 @@ import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
-const STATUS_TEXT: Record<FocusAudit["status"], MessageKey> = {
+export const STATUS_TEXT: Record<FocusAudit["status"], MessageKey> = {
   checking: "audit.status.checking",
   reviewing: "audit.status.reviewing",
   verifying: "audit.status.verifying",
@@ -24,14 +24,14 @@ const STATUS_TEXT: Record<FocusAudit["status"], MessageKey> = {
   failed: "audit.status.failed",
 };
 
-const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
+export const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
   pending: "secondary",
   verified: "success",
   confirmed: "info",
   hypothesis: "warning",
 };
 
-const isRunning = (audit: FocusAudit) => audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
+export const isRunning = (audit: FocusAudit) => audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
 
 /**
  * The technical side of an examination, closed (issue #336): the commands the model ran, the skills it received, the
@@ -50,7 +50,7 @@ function TechnicalDetail({ children, testId }: { children: React.ReactNode; test
 }
 
 /** What the person made of a finding (F04), each with a link to its record. */
-function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
+export function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
   const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const link = (label: string, onClick: () => void) => (
@@ -72,7 +72,7 @@ function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
  * From a finding to work (F04): a ticket, the correction as an assignment within the mandate, or a Pact card when the
  * finding is a trade-off. Only a finding whose proof held becomes an assignment; each action is offered once.
  */
-function FindingActions({ auditId, finding }: { auditId: string; finding: AuditFinding }) {
+export function FindingActions({ auditId, finding }: { auditId: string; finding: AuditFinding }) {
   const t = useT();
   const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
   const done = new Set((finding.followUps ?? []).map((f) => f.kind));
@@ -158,7 +158,9 @@ function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit:
       <div className="space-y-1">
         {/* The skill's own words ("no spec available") stay in the record; the person reads them in Italian (issue #270). */}
         <p className="text-ui text-foreground/85">{axis.report ? plainText(t, axis.report) : null}</p>
-        {name === "spec" ? <p className="text-ui-sm text-muted-foreground">{t("audit.axis.noSpec")}</p> : null}
+        {name === "spec" ? (
+          <p className="text-ui-sm text-muted-foreground">{t(audit.target.kind === "candidate" ? "audit.axis.noSpec" : "audit.axis.noSpecCommits")}</p>
+        ) : null}
       </div>
     );
   }
@@ -267,52 +269,11 @@ function Publication({ audit }: { audit: FocusAudit }) {
   );
 }
 
-/** Starts a new examination of the candidate, or the first one, and brings it into view in the candidate's tab. */
-function startAudit(candidateId: string) {
-  void act("candidate:focusAudit", { candidateId }).then((id) => id && useUi.getState().setInspector({ kind: "candidate", id: candidateId, audit: id }));
-}
-
-/**
- * The examination of a candidate as a section of its tab (issue #336, F01): the verdict in one line on top, then the
- * real checks, the Standards and Spec findings with their proof and state (F02), and the technical side closed.
- * Read-only: the examination does not change the code.
- */
-export function AuditSection({ candidateId, auditId }: { candidateId: string; auditId?: string }) {
+/** The verdict, the real checks, the axes with their findings, Trama's lenses, the publication and the technical side. */
+function AuditBody({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
   const t = useT();
-  const project = useUi((s) => s.app?.project)!;
-  const audits = (project.document.audits ?? []).filter((a) => a.target.candidateId === candidateId);
-  const audit = (auditId ? audits.find((a) => a.id === auditId) : null) ?? audits.at(-1) ?? null;
-  const candidate = project.document.candidates.find((c) => c.id === candidateId);
-  const running = audit ? isRunning(audit) : false;
-  const linked = project.github.status === "ready" && project.github.repository !== null;
-  const action =
-    running || !candidate ? null : (
-      <div className="cta-row">
-        {audit?.status === "done" && linked && !audit.publication ? (
-          <Button size="xs" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
-            {t("audit.publication.publish")}
-          </Button>
-        ) : null}
-        <Button size="xs" variant="outline" onClick={() => startAudit(candidateId)}>
-          {audit ? <IconRotateClockwise /> : <IconFocus2 />}
-          {audit ? t("audit.again") : t("audit.start")}
-        </Button>
-      </div>
-    );
-  if (!audit) {
-    return (
-      <InspectorSection title={t("audit.title")} aside={action}>
-        <EmptyNote>{t("audit.none")}</EmptyNote>
-      </InspectorSection>
-    );
-  }
-  const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
-      <div className="mb-2 flex items-center gap-2">
-        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
-        {action}
-      </div>
+    <>
       <Verdict audit={audit} />
       <div className="mt-3 space-y-3">
         <div>
@@ -358,20 +319,121 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
       {audit.status === "done" ? <Publication audit={audit} /> : null}
       <TechnicalDetail testId="focus-audit-technical">
         <p className="text-ui-sm text-muted-foreground">
-          {t("audit.fixedPoint", { commit: audit.fixedPoint.slice(0, 10) })}
+          {audit.target.kind === "candidate" ? t("audit.fixedPoint", { commit: audit.fixedPoint.slice(0, 10) }) : t("audit.fixedPointScoped", { point: fixedPointText(t, audit) })}
           <Sep />
           {t("audit.files", { count: audit.changedFiles.length })}
         </p>
         <p className="text-ui-sm text-muted-foreground">{t("audit.readOnly")}</p>
       </TechnicalDetail>
+    </>
+  );
+}
+
+/** Starts a new examination of the candidate, or the first one, and brings it into view in the candidate's tab. */
+function startAudit(candidateId: string) {
+  void act("candidate:focusAudit", { candidateId }).then((id) => id && useUi.getState().setInspector({ kind: "candidate", id: candidateId, audit: id }));
+}
+
+/**
+ * The examination of a candidate as a section of its tab (issue #336, F01): the verdict in one line on top, then the
+ * real checks, the Standards and Spec findings with their proof and state (F02), and the technical side closed.
+ * Read-only: the examination does not change the code.
+ */
+export function AuditSection({ candidateId, auditId }: { candidateId: string; auditId?: string }) {
+  const t = useT();
+  const project = useUi((s) => s.app?.project)!;
+  const audits = (project.document.audits ?? []).filter((a) => a.target.kind === "candidate" && a.target.candidateId === candidateId);
+  const audit = (auditId ? audits.find((a) => a.id === auditId) : null) ?? audits.at(-1) ?? null;
+  const candidate = project.document.candidates.find((c) => c.id === candidateId);
+  const running = audit ? isRunning(audit) : false;
+  const linked = project.github.status === "ready" && project.github.repository !== null;
+  const action =
+    running || !candidate ? null : (
+      <div className="cta-row">
+        {audit?.status === "done" && linked && !audit.publication ? (
+          <Button size="xs" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+            {t("audit.publication.publish")}
+          </Button>
+        ) : null}
+        <Button size="xs" variant="outline" onClick={() => startAudit(candidateId)}>
+          {audit ? <IconRotateClockwise /> : <IconFocus2 />}
+          {audit ? t("audit.again") : t("audit.start")}
+        </Button>
+      </div>
+    );
+  if (!audit) {
+    return (
+      <InspectorSection title={t("audit.title")} aside={action}>
+        <EmptyNote>{t("audit.none")}</EmptyNote>
+      </InspectorSection>
+    );
+  }
+  const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
+  return (
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
+      <div className="mb-2 flex items-center gap-2">
+        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
+        {action}
+      </div>
+      <AuditBody audit={audit} checks={checks} />
     </section>
   );
 }
 
-/** An examination opened by its id: it shows as the section of its candidate. */
+/**
+ * Starts a new examination of the same target: a candidate's in its tab, a module or the project with the same fixed
+ * point, full screen (F03).
+ */
+export async function examineAgain(audit: FocusAudit): Promise<void> {
+  const target = audit.target;
+  if (target.kind === "candidate") return startAudit(target.candidateId);
+  const next = await act("focusMode:open", {
+    target: target.kind === "module" ? { kind: "module", moduleId: target.moduleId } : { kind: "project" },
+    fixedPoint: audit.fixedPointRef ?? audit.fixedPoint,
+  });
+  if (next) await act("focusMode:enter", { auditId: next });
+}
+
+/**
+ * The report of a module or the whole project (F03) in its own tab, after the full-screen view: the same parts as a
+ * candidate's section, with the way back to full screen as the primary action.
+ */
+function ScopedAuditSection({ audit }: { audit: FocusAudit }) {
+  const t = useT();
+  const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
+  const running = isRunning(audit);
+  return (
+    <section className="px-4 py-3" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
+          {t("audit.title")} {focusTargetOf(t, audit.target)}
+        </h4>
+        <div className="cta-row">
+          {audit.status === "done" && linked && !audit.publication ? (
+            <Button size="xs" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+              {t("audit.publication.publish")}
+            </Button>
+          ) : null}
+          {running ? null : (
+            <Button size="xs" variant="outline" onClick={() => void examineAgain(audit)}>
+              <IconRotateClockwise /> {t("audit.again")}
+            </Button>
+          )}
+          <Button size="xs" onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
+            <IconFocus2 /> {t("focus.openFullScreen")}
+          </Button>
+        </div>
+      </div>
+      <AuditBody audit={audit} checks={audit.checks.map((c) => c.check)} />
+    </section>
+  );
+}
+
+/** An examination opened by its id: a candidate's shows as the section of its candidate, a module's or the project's in its own tab. */
 export function AuditView({ id }: { id: string }) {
   const t = useT();
   const audit = useUi((s) => (s.app?.project?.document.audits ?? []).find((a) => a.id === id));
   if (!audit) return <div className="p-4"><EmptyNote>{t("audit.notFound")}</EmptyNote></div>;
+  if (audit.target.kind !== "candidate") return <ScopedAuditSection audit={audit} />;
   return <AuditSection candidateId={audit.target.candidateId} auditId={audit.id} />;
 }

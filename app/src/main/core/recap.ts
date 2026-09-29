@@ -233,6 +233,12 @@ export function writeRecap(
     doing: statusLine(document, input.runningRequestId).text,
     needs: waitingForYou(ITALIAN, document, input.sources).map((item) => ({ key: item.key, label: item.label, title: item.title })),
   };
+  // What the Coordinator decided with the full delegation since the last recap, with its doubts (issue #423).
+  const since = lastRecapAt(document);
+  const delegated = (document.delegatedChoices ?? [])
+    .filter((c) => since === null || c.at > since)
+    .map(({ id, kind, subject, choice, doubt }) => ({ id, kind, subject, choice, doubt }));
+  if (delegated.length) recap.delegated = delegated;
   const ledger = markTold(document, input.milestones.map((m) => m.key));
   ledger.recaps = [...ledger.recaps, recap].slice(-KEPT_RECAPS);
   return recap;

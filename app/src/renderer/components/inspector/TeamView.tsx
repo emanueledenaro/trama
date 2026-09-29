@@ -39,7 +39,7 @@ import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { useT } from "@/lib/i18n";
-import { act, useUi } from "@/lib/store";
+import { act, examineCandidate, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
 import { GroupBoardSection } from "./GroupBoard";
@@ -776,14 +776,10 @@ function useAssignmentCandidate(assignmentId: string) {
 function NowSection({ assignment }: { assignment: SpecialistAssignment | null }) {
   const t = useT();
   const setInspector = useUi((s) => s.setInspector);
-  const audits = useUi((s) => s.app?.project?.document.audits);
   const candidate = useAssignmentCandidate(assignment?.id ?? "");
+  // Focus mode opens this candidate's latest examination, or starts the first one, full screen (F01, F03).
   const examine = () => {
-    if (!candidate) return;
-    // Focus mode opens the latest examination of this candidate, or starts the first one (F01).
-    const latest = (audits ?? []).filter((a) => a.target.candidateId === candidate.id).at(-1);
-    if (latest) setInspector({ kind: "audit", id: latest.id });
-    else void act("candidate:focusAudit", { candidateId: candidate.id }).then((next) => next && setInspector({ kind: "audit", id: next }));
+    if (candidate) void examineCandidate(candidate.id);
   };
   return (
     <InspectorSection

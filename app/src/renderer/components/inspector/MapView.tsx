@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconExternalLink, IconFileText, IconFolder, IconMessageCircle, IconShieldCheck } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle, IconShieldCheck } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { act, useUi } from "@/lib/store";
@@ -19,6 +19,7 @@ export function ModulesList() {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const openFocusStart = useUi((s) => s.openFocusStart);
   const { snapshot } = project;
   const marks = project.overlaps?.modules ?? {};
   const mandate = project.document.mandate;
@@ -45,6 +46,11 @@ export function ModulesList() {
           ))}
         </ul>
       ) : null}
+      <div className="cta-row mt-3">
+        <Button size="sm" variant="outline" className="max-w-full" title={t("focus.openProject")} onClick={() => openFocusStart({ kind: "project" })}>
+          <IconFocus2 stroke={1.8} /> <span className="truncate">{t("focus.openProject")}</span>
+        </Button>
+      </div>
       {snapshot.modules.length === 0 ? <EmptyNote>{t("rules.modules.empty")}</EmptyNote> : null}
       <div className="-mx-2 mt-2 flex flex-col gap-0.5" role="listbox" aria-label={t("rules.modules.title")} onKeyDown={moveFocusWithArrows}>
         {snapshot.modules.map((module) => (
@@ -82,6 +88,7 @@ export function ModuleView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
+  const openFocusStart = useUi((s) => s.openFocusStart);
   const [dependenciesOpen, setDependenciesOpen] = useState(false);
   const module = project.snapshot.modules.find((m) => m.id === id);
   const fileMarks = project.overlaps?.files ?? {};
@@ -101,6 +108,9 @@ export function ModuleView({ id }: { id: string }) {
           {inMandate ? t("rules.module.inMandate") : t("rules.module.outOfMandate")}
         </p>
         <div className="cta-row mt-3">
+          <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "module", moduleId: module.id })}>
+            <IconFocus2 stroke={1.8} /> {t("focus.openModule")}
+          </Button>
           <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
             <IconMessageCircle stroke={1.8} /> {t("rules.module.ask")}
           </Button>

@@ -72,7 +72,11 @@ async function interruptOnceSentOrQuit(document: ProjectDocument, requestId: str
 
 const automaticRequests = (document: ProjectDocument) => document.requests.filter((r) => r.step?.by === "trama");
 
+/** What Trama asked the host about the computer's sleep (issue #423), in order. */
+const keepAwake: boolean[] = [];
+
 async function setup() {
+  keepAwake.length = 0;
   const data = await mkdtemp(join(tmpdir(), "trama-data-"));
   const project = await mkdtemp(join(tmpdir(), "trama-project-"));
   await cp(join(root, "resources/DemoProject"), project, { recursive: true });
@@ -88,6 +92,7 @@ async function setup() {
     aiHeroResourceDirectory: join(root, "resources/AIHero"),
       demoResourceDirectory: join(root, "resources/DemoProject"),
     codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    setKeepAwake: (awake) => void keepAwake.push(awake),
   });
   await controller.start();
   await until(() => state?.codex.account?.kind === "chatgpt");
@@ -1852,6 +1857,43 @@ describe("TramaController", () => {
     expect(choice).toMatchObject({ text: "Confermo: Cancello feature/old" });
     expect(choice).not.toHaveProperty("composer");
     expect(activityLog(translator("it"), document.requests, document.events, [], [], [], [], [], document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
+  });
+
+
+  it("works on its own with the full delegation, keeps the computer awake and tells the person when they come back (issue #423)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[delega:fai tutto tu in automatico] Stanotte fai tutto tu in automatico", null, null, null);
+    expect(document.delegations).toMatchObject([{ revokedAt: null, request: { quote: "fai tutto tu in automatico" } }]);
+    // The delegation brings a mandate over every module and action: the whole cycle is the Coordinator's.
+    expect(document.mandate).toMatchObject({ status: "granted", authorizedActions: expect.arrayContaining(["plan", "executeInWorktree", "integrateCandidate"]) });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "delegation" && e.content.title === "granted")).toBe(true);
+
+    // A grilling question waits for the person: with the delegation the Coordinator answers it with its recommendation.
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    await until(() => document.decisionRequests.length > 0 && document.decisionRequests.every((q) => q.outcome !== null), 20_000);
+    expect(document.decisionRequests[0]!.outcome).toMatchObject({ byDelegation: { choiceId: expect.any(String) } });
+    expect(document.delegatedChoices?.filter((c) => c.kind === "decision").length).toBe(document.decisionRequests.length);
+    expect(document.requests.some((r) => r.step?.by === "trama" && r.step.move === "decideWithDelegation")).toBe(true);
+    expect(keepAwake.at(-1)).toBe(true);
+
+    // The person comes back after a while: the recap says what the Coordinator decided, with the doubt.
+    controller!.personAway(Date.now() - 60_000);
+    controller!.personReturned(30_000);
+    const recap = document.recap?.recaps.at(-1);
+    expect(recap).toMatchObject({ reason: "return" });
+    expect(recap?.delegated?.[0]).toMatchObject({ kind: "decision", doubt: "Non so se vale anche per gli ordini pagati con un buono" });
+    expect(document.events.findLast((e) => e.content.type === "card" && e.content.kind === "recap")?.content).toMatchObject({ title: "Mentre non c'eri" });
+    // A short absence, or nothing new, writes no recap.
+    controller!.personAway(Date.now() - 1_000);
+    controller!.personReturned(30_000);
+    expect(document.recap?.recaps.at(-1)).toBe(recap);
+
+    // Withdrawn from the Mandate view: the chat says so, and the computer may sleep again.
+    controller!.revokeDelegation();
+    expect(document.delegations?.[0]?.revokedBy).toEqual({ kind: "view" });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "delegation" && e.content.title === "revoked")).toBe(true);
+    expect(keepAwake.at(-1)).toBe(false);
   });
 
 });
