@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { plainConflictReference } from "@shared/plainLanguage";
 import { candidateSuperseded, explainedByDivergence, replacedBy } from "@shared/conflictScope";
-import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
+import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, SpecialistAssignment, TechnicalReview } from "@shared/domain";
 import { blockingFindings, latestGate } from "@shared/gate";
 import { workRequests } from "@shared/grilling";
 import { shortId } from "@shared/ids";
@@ -164,17 +164,46 @@ export type TurnCandidate =
   | { kind: "refused"; reason: "emptyWorktree" | "unmerged" | "published" | "notAuthorized" | "invalid"; previous: Candidate; message: string };
 
 /**
+ * The candidate that work correcting earlier work continues (issue #389): the newest candidate among the work it
+ * replaces, followed back through work that never had one. A correction is another assignment in the same working
+ * copy, but one work has one line of candidates. Null when nothing it replaces has a candidate, or when that candidate
+ * is a pull request already: the correction is then other work, for the Coordinator to declare.
+ */
+function correctedCandidate(document: ProjectDocument, assignment: SpecialistAssignment): Candidate | null {
+  const all = document.team.specialists.flatMap((s) => s.assignments);
+  const seen = new Set<string>([assignment.id]);
+  const queue = [...(assignment.replaces ?? [])];
+  let newest: Candidate | null = null;
+  for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const earlier = all.find((a) => a.id === id);
+    if (!earlier) continue;
+    const candidate = latestCandidate(document, id);
+    if (candidate && (!newest || candidate.declaredAt > newest.declaredAt)) newest = candidate;
+    queue.push(...(earlier.replaces ?? []));
+  }
+  return newest && !newest.pullRequest ? newest : null;
+}
+
+/**
  * Records the worktree as it is after a developer's turn and keeps the candidate in step with it (issue #388): when
  * the turn changed the worktree after the latest candidate, Trama declares the new candidate from it, bound to the
- * same Pact decisions, open choices and external effects. A candidate that lags the worktree is never reviewed.
+ * same Pact decisions, open choices and external effects. A candidate that lags the worktree is never reviewed. A
+ * correction of earlier work, another assignment in the same working copy, continues that work's candidate the same
+ * way: the Coordinator does not declare it again, nor pick the decisions again (issue #389).
  */
 export function candidateAfterTurn(document: ProjectDocument, assignmentId: string, review: WorkspaceReview, now = new Date()): TurnCandidate {
   const assignment = findAssignment(document, assignmentId);
   if (!assignment) throw new CandidateError("unknown_assignment", `Unknown assignment: ${assignmentId}.`);
   assignment.worktreeSnapshot = { snapshotId: review.snapshotId, at: now.toISOString() };
-  const previous = latestCandidate(document, assignment.id);
+  const own = latestCandidate(document, assignment.id);
+  const previous = own ?? correctedCandidate(document, assignment);
   if (!previous) return { kind: "none" };
-  if (previous.snapshotId === review.snapshotId) return { kind: "current", candidate: previous };
+  if (previous.snapshotId === review.snapshotId) {
+    // A correction that left the copy as the earlier candidate captured it has made nothing of its own yet.
+    return own ? { kind: "current", candidate: previous } : { kind: "none" };
+  }
   if (previous.pullRequest) {
     return { kind: "refused", reason: "published", previous, message: `Candidate ${previous.id} is already pull request #${previous.pullRequest.number}.` };
   }

@@ -281,6 +281,68 @@ describe("candidates", () => {
       expect(document.candidates).toEqual([]);
     });
 
+    /** A blocked candidate, then a correction of its work in the same copy: new work that replaces the first (issue #389). */
+    function withCorrection(chain = 1) {
+      const context = setup();
+      const { document, candidate } = context;
+      grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["executeInWorktree"], limits: [] });
+      candidate.unresolvedChoices = ["Il colore del bottone"];
+      candidate.externalEffects = ["Scrive nel registro"];
+      const first = findAssignment(document, candidate.assignmentId)!;
+      const works = [first];
+      for (let i = 0; i < chain; i++) {
+        const work = assign(
+          document,
+          { specialist: "Ada", kind: "agreedTicket", objective: "o", issueNumber: null, exercise: null, moduleIds: ["m"], dependencies: [], model: "gpt", tools: ["edits"], requiredChecks: ["git_status"], instructions: "correggi", replaces: [works.at(-1)!.id] },
+          1,
+          null,
+          // Later than the first work: a correction is newer work, and two clocks read in one millisecond tie.
+          new Date(Date.now() + 60_000 * (i + 1)),
+        );
+        beginTurn(document, work.id, `t-${i}`, "gpt");
+        endTurn(document, work.id, `t-${i}`, { kind: "completed", text: "Corretto" });
+        works.push(work);
+      }
+      return { ...context, first, correction: works.at(-1)! };
+    }
+
+    it("continues the candidate of the work a correction replaces: same decisions, no new pick by the Coordinator", () => {
+      const { document, decision, candidate, correction } = withCorrection();
+      // The correction ended and has no candidate of its own: Trama declares it from the worktree, as after any turn.
+      const outcome = candidateAfterTurn(document, correction.id, worktree("snap-2"), new Date(Date.now() + 3_600_000));
+      expect(outcome).toMatchObject({ kind: "declared", previous: { id: candidate.id } });
+      const fresh = latestCandidate(document, correction.id)!;
+      expect(fresh).toMatchObject({
+        assignmentId: correction.id,
+        snapshotId: "snap-2",
+        requiredDecisionIds: [decision.id],
+        unresolvedChoices: ["Il colore del bottone"],
+        externalEffects: ["Scrive nel registro"],
+        declaredBy: "trama",
+        evidence: {},
+        technicalReview: null,
+      });
+      // The first candidate is replaced by the correction's: the person can no longer approve it.
+      expect(candidateReport(document, candidate, "base").state).toBe("superseded");
+    });
+
+    it("follows a chain of corrections back to the candidate, also through work that never had one", () => {
+      const { document, decision, candidate, correction } = withCorrection(2);
+      expect(latestCandidate(document, correction.id)).toBeNull();
+      expect(candidateAfterTurn(document, correction.id, worktree("snap-2"))).toMatchObject({ kind: "declared", previous: { id: candidate.id } });
+      expect(latestCandidate(document, correction.id)!.requiredDecisionIds).toEqual([decision.id]);
+    });
+
+    it("leaves a correction whose worktree is still the candidate's, or whose candidate is published, to the Coordinator", () => {
+      const same = withCorrection();
+      expect(candidateAfterTurn(same.document, same.correction.id, worktree("snap"))).toEqual({ kind: "none" });
+      expect(same.document.candidates).toHaveLength(1);
+      const published = withCorrection();
+      published.candidate.pullRequest = { number: 7, url: "https://github.com/x/y/pull/7", headRef: "b", createdAt: "2026-09-28T16:00:00Z" } as never;
+      expect(candidateAfterTurn(published.document, published.correction.id, worktree("snap-2"))).toEqual({ kind: "none" });
+      expect(published.document.candidates).toHaveLength(1);
+    });
+
     it("says why it cannot declare, and a candidate that lags the worktree is never cleared or approved", () => {
       const cases = [
         { reason: "notAuthorized", prepare: (document: ReturnType<typeof setup>["document"]) => revokeMandate(document, "stop") },
