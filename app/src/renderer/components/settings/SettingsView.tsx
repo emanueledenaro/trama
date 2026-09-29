@@ -1,3 +1,4 @@
+import { discussionModelSetting } from "@shared/discussions";
 import {
   IconBrain,
   IconBrandGithub,
@@ -573,6 +574,7 @@ function MethodSection() {
       </Group>
       <DevelopersAtWorkGroup />
       <WorkPlaceGroup />
+      <DiscussionModelGroup />
     </>
   );
 }
@@ -709,6 +711,43 @@ function WorkPlaceGroup() {
                   )}
                 >
                   {t(`workPlace.setting.${value}`)}
+                </button>
+              ))}
+            </div>
+          ) : null
+        }
+      />
+    </Group>
+  );
+}
+
+/** The model of the discussions between agents (A12, Q17): the provider's lightest by default, or the role's. */
+function DiscussionModelGroup() {
+  const t = useT();
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = project && project.stateWritable;
+  const setting = project ? discussionModelSetting(project.document) : null;
+  return (
+    <Group title={t("settings.discussions.title")} note={t("settings.discussions.note")}>
+      <Row
+        label={project ? t("settings.discussions.inProject", { name: project.name }) : t("settings.discussions.inOpenProject")}
+        description={!project ? t("settings.discussions.openProject") : t(`settings.discussions.${setting!}.description`)}
+        control={
+          usable ? (
+            <div role="radiogroup" aria-label={t("settings.discussions.inOpenProject")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="discussion-model">
+              {(["light", "role"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={setting === value}
+                  onClick={() => void act("project:settings", { discussionModel: value })}
+                  className={cn(
+                    "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
+                    setting === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t(`settings.discussions.${value}`)}
                 </button>
               ))}
             </div>

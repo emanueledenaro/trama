@@ -81,6 +81,7 @@ export interface ActionMap {
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
   /** Withdraws an open question with a reason; the Coordinator reads it as the person's message (W03). */
   "decision:withdraw": [{ requestId: string; reason: string }, void];
+  "discussion:write": [{ threadId: string; text: string }, void];
   "mandate:grant": [
     {
       requestId: string | null;
