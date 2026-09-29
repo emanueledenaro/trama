@@ -22,6 +22,8 @@ Il piano già approvato resta P02 con selettore coerente, UX00 con approvazione 
 
 L'attribuzione dei file ripresi è in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). In breve: memoria `MEMORY.md` e `USER.md` con i limiti e i controlli originali; ricerca nei dialoghi con ranking BM25 riprodotto senza SQLite; skill con batch atomici e modifica fuzzy; revisione dell'esperienza separata con i prompt originali; manutenzione settimanale delle skill. La vista Memoria mostra e corregge tutto.
 
+Dal 29 settembre 2026 una sezione piena al 90% offre Riordina: parte una revisione di quella sezione, con le sue note e la lingua della persona. La revisione gira come quelle automatiche: ciò che cambia o toglie diventa una proposta in Aspetta te, e le note restano come sono finché la persona non la applica. Una nota scritta in un'altra lingua rispetto a quella della persona porta la scritta «In inglese» o «In italiano» e non viene toccata.
+
 ## Mappa iniziale del sorgente
 
 Analisi delegata a gpt-5.6-luna con ragionamento medium, sulla versione fissata. L'analisi è statica e non costituisce una prova di esecuzione. Comportamenti da portare e verificare:
