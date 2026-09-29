@@ -6,10 +6,33 @@ import { CursorRuntime, cursorProfile, parseCursorModels, parseCursorStatus } fr
 import { DevinRuntime, devinProfile, parseDevinModels, resolveDevinAuthMethod, validateDevinApiServerUrl } from "./devin";
 import { DroidRuntime, droidProfile, resolveDroidAuthMethod } from "./droid";
 import { GrokRuntime, grokHookResponse, grokProfile, parseGrokModels, resolveGrokAuthMethod } from "./grok";
+import { classifyProviderFailure } from "@shared/providerFailure";
+import { setPersonLanguage } from "../../personLanguage";
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the sign-in errors in English, still read as a missing sign-in", () => {
+    setPersonLanguage("en");
+    expect(() => resolveGrokAuthMethod(["xai.api_key"], false)).toThrow("Missing API key for Grok: set XAI_API_KEY or run `grok login`.");
+    expect(() => resolveDroidAuthMethod([], false)).toThrow("Droid is not logged in: run `droid` to sign in or set FACTORY_API_KEY.");
+    expect(() => resolveDevinAuthMethod([], false)).toThrow("Devin offers no sign-in method without a browser (methods offered: none). Update Devin.");
+    expect(classifyProviderFailure("Missing API key for Grok: set XAI_API_KEY or run `grok login`.").kind).toBe("signIn");
+    expect(classifyProviderFailure("Droid is not logged in: run `droid` to sign in or set FACTORY_API_KEY.").kind).toBe("signIn");
+  });
+
+  it("writes the Cursor status in English", () => {
+    setPersonLanguage("en");
+    expect(parseCursorStatus("unknown command", 1)).toEqual({
+      kind: "unavailable",
+      message: "This version of Cursor Agent cannot report its sign-in status. Update cursor-agent.",
+    });
+  });
 });
 
 /** A fake CLI answering `--version` and one more subcommand. */

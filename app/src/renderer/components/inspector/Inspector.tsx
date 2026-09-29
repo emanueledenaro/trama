@@ -6,9 +6,8 @@ import { AgentThreadView } from "./AgentThreadView";
 import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
-import { GroupView } from "./GroupView";
-import { WorkView } from "./WorkView";
-import { IssueDetail, IssuesView } from "./IssuesView";
+import { WorkOverview } from "./WorkOverview";
+import { IssueDetail } from "./IssuesView";
 import { MandateView } from "./MandateView";
 import { MemoryView } from "./MemoryView";
 import { SpecialistView, SquadsView } from "./TeamView";
@@ -36,9 +35,9 @@ export const TITLES = {
   agentThread: "Chat tra agenti",
   candidate: "Candidato",
   audit: "Esame approfondito",
-  group: "Il lavoro del gruppo",
+  group: "Lavoro",
   work: "Lavoro",
-  issues: "Issue del progetto",
+  issues: "Lavoro",
   issue: "Issue",
   pullRequest: "Pull request",
   commit: "Commit",
@@ -113,14 +112,15 @@ export function InspectorBody({ target }: { target: InspectorTarget }) {
       {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
       {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
       {target.kind === "audit" ? <AuditView id={target.id} /> : null}
-      {target.kind === "group" ? <GroupView /> : null}
-      {target.kind === "work" ? <WorkView /> : null}
-      {target.kind === "issues" ? <IssuesView key={target.backlog ? "backlog" : "issues"} backlog={target.backlog} /> : null}
+      {/* Lavoro is one view (issue #332): goals, branches and issues are its sections, opened and brought into view. */}
+      {target.kind === "work" ? <WorkOverview /> : null}
+      {target.kind === "group" ? <WorkOverview focus="branches" /> : null}
+      {target.kind === "issues" ? <WorkOverview key={target.backlog ? "backlog" : "issues"} focus="issues" backlog={target.backlog} /> : null}
       {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
       {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}
       {target.kind === "commit" ? <CommitView sha={target.sha} /> : null}
       {target.kind === "branch" ? <BranchView name={target.name} /> : null}
-      {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
+      {target.kind === "goals" ? target.create ? <GoalsView key="create" create /> : <WorkOverview focus="goals" /> : null}
       {target.kind === "goal" ? <GoalView key={`${target.id}:${String(target.edit)}`} id={target.id} edit={target.edit} /> : null}
     </>
   );

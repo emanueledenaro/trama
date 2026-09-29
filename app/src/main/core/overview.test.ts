@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PresenceEntry, PresenceRecord, PresenceView } from "@shared/presence";
-import { activeColleagues } from "./overview";
+import type { RecentProject } from "@shared/domain";
+import { emptyDocument } from "./document";
+import { activeColleagues, summarizeProject } from "./overview";
+import { setPersonLanguage } from "./personLanguage";
 
 const now = new Date("2026-09-26T12:00:00.000Z");
 const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString();
@@ -22,5 +25,22 @@ describe("recent project colleagues", () => {
     // Read as active an hour ago, but the heartbeat is stale now.
     const stale = entry({ updatedAt: minutesAgo(60), lastActivityAt: minutesAgo(60) });
     expect(activeColleagues(view([active, idle, closed, stale]), now)).toBe(2);
+  });
+});
+
+describe("overview reasons in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("uses the singular and the plural of the language", () => {
+    const recent: RecentProject = { id: "a", name: "Alfa", path: "/tmp/Alfa", isDemo: true, lastOpenedAt: "2026-09-23T10:00:00.000Z" };
+    const input = { source: "live" as const, selected: false, candidateReports: [], ci: { passing: 0, failing: 1, pending: 0 } };
+    setPersonLanguage("en");
+    const english = summarizeProject(recent, emptyDocument("a"), { ...input, runningAssignments: 2, waitingForCapacity: 1 });
+    expect(english.name).toBe("Example project");
+    expect(english.reasons).toEqual(["2 assignments in progress", "1 assignment waits for a free developer", "CI red on 1 pull request"]);
+    setPersonLanguage("it");
+    const italian = summarizeProject(recent, emptyDocument("a"), { ...input, runningAssignments: 1, waitingForCapacity: 2 });
+    expect(italian.name).toBe("Progetto di esempio");
+    expect(italian.reasons).toEqual(["1 incarico in corso", "2 incarichi aspettano uno sviluppatore libero", "CI rossa su 1 pull request"]);
   });
 });

@@ -39,6 +39,7 @@ import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
+import { GroupBoardSection } from "./GroupBoard";
 import { MergeProposalCard, MergeSquad, RenameSquad, type SquadEdit, SplitSquad, SquadMenu } from "./SquadChanges";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
@@ -321,6 +322,8 @@ export function SquadsView() {
     <>
       <SquadsSummary />
       {team.squadMerge ? <MergeProposalCard key={team.squadMerge.id} proposal={team.squadMerge} /> : null}
+      {/* Who works on what, from the old Gruppo view (issue #332): the people and agents on the repository, with their presence. */}
+      <GroupBoardSection />
       {pending ? (
         <InspectorSection title={t("teams.pendingProposal")}>
           <TeamProposalCard proposalId={pending.id} />

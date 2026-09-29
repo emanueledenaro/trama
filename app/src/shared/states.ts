@@ -56,7 +56,7 @@ export const CANDIDATE_STATE: Record<CandidateState, StateLabel> = {
   building: { label: "Non ancora pronto", tone: "secondary" },
   verified: { label: "Verificato", tone: "info" },
   decided: { label: "Deciso", tone: "success" },
-  superseded: { label: "Superato", tone: "secondary" },
+  superseded: { label: "Sostituito", tone: "secondary" },
 };
 
 /** Blockers that only wait for Trama to finish checking, or to run the reviewers again (as workPhase.ts): nothing to fix yet. */
@@ -85,7 +85,7 @@ export function planStatus(plan: Pick<WorkPlan, "status" | "slicing" | "spec">):
     case "failed":
       return idle("Non riuscito", "destructive");
     case "superseded":
-      return idle("Superato", "secondary");
+      return idle("Sostituito", "secondary");
     case "ready":
       switch (plan.slicing?.status) {
         case "drafting":

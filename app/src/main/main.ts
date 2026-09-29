@@ -2,9 +2,10 @@ import { release } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
-import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, type MessageKey, translate } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
+import { t } from "./core/personLanguage";
 
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -28,7 +29,7 @@ const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ??
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
     window?.webContents.send("trama:state", state);
-    // The menu's Informazioni su Trama follows the interface language.
+    // The menu follows the interface language: it is built again only when the language changes.
     if (app.isReady() && state.language !== menuLanguage) buildMenu(state.language);
   },
   openExternal: (url) => shell.openExternal(url),
@@ -115,17 +116,17 @@ async function chooseFolder(title: string): Promise<string | null> {
 type Handler<K extends ActionName> = (payload: ActionMap[K][0]) => Promise<ActionMap[K][1]> | ActionMap[K][1];
 const handlers: { [K in ActionName]: Handler<K> } = {
   "project:openDialog": async () => {
-    const path = await chooseFolder("Apri progetto");
+    const path = await chooseFolder(t("main.dialog.openProject"));
     if (path) await controller.openProject(path);
   },
   "project:open": ({ path }) => controller.openProject(path),
   "project:openDemo": () => controller.openDemo(),
   "project:create": async ({ name, idea }) => {
-    const parent = await chooseFolder("Scegli la cartella");
+    const parent = await chooseFolder(t("main.dialog.chooseFolder"));
     if (parent) await controller.createProject(parent, name, idea);
   },
   "project:clone": async ({ repository }) => {
-    const parent = await chooseFolder("Scegli dove clonare il progetto");
+    const parent = await chooseFolder(t("main.dialog.chooseCloneFolder"));
     if (parent) await controller.cloneProject(parent, repository);
   },
   "project:close": () => controller.closeProject(),
@@ -260,6 +261,7 @@ let menuLanguage: Language | null = null;
 function buildMenu(language: Language): void {
   menuLanguage = language;
   const about = translate(language, "menu.about");
+  const label = (key: MessageKey): string => translate(language, key);
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -268,74 +270,74 @@ function buildMenu(language: Language): void {
             submenu: [
               { role: "about" as const, label: about },
               { type: "separator" as const },
-              { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
+              { label: label("main.menu.settings"), accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
               { type: "separator" as const },
-              { role: "hide" as const, label: "Nascondi Trama" },
-              { role: "hideOthers" as const, label: "Nascondi altre" },
-              { role: "unhide" as const, label: "Mostra tutte" },
+              { role: "hide" as const, label: label("main.menu.hide") },
+              { role: "hideOthers" as const, label: label("main.menu.hideOthers") },
+              { role: "unhide" as const, label: label("main.menu.showAll") },
               { type: "separator" as const },
-              { role: "quit" as const, label: "Esci da Trama" },
+              { role: "quit" as const, label: label("main.menu.quitTrama") },
             ],
           },
         ]
       : []),
     {
-      label: "Archivio",
+      label: label("main.menu.file"),
       submenu: [
-        { label: "Apri progetto…", accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
-        { label: "Apri progetto di esempio", click: () => void controller.openDemo().catch(() => undefined) },
-        { label: "Crea un progetto…", click: () => sendMenu("createProject") },
+        { label: label("main.menu.openProject"), accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
+        { label: label("main.menu.openDemo"), click: () => void controller.openDemo().catch(() => undefined) },
+        { label: label("main.menu.createProject"), click: () => sendMenu("createProject") },
         { type: "separator" },
         // Through the window, so the menu item confirms the rescan like the header button does (W12).
-        { label: "Aggiorna progetto", accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
-        ...(isMac ? [] : [{ type: "separator" as const }, { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
-        ...(isMac ? [{ role: "close" as const, label: "Chiudi finestra" }] : [{ role: "quit" as const, label: "Esci" }]),
+        { label: label("main.menu.refreshProject"), accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
+        ...(isMac ? [] : [{ type: "separator" as const }, { label: label("main.menu.settings"), accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
+        ...(isMac ? [{ role: "close" as const, label: label("main.menu.closeWindow") }] : [{ role: "quit" as const, label: label("main.menu.quit") }]),
       ],
     },
     {
-      label: "Composizione",
+      label: label("main.menu.edit"),
       submenu: [
-        { role: "undo", label: "Annulla" },
-        { role: "redo", label: "Ripeti" },
+        { role: "undo", label: label("main.menu.undo") },
+        { role: "redo", label: label("main.menu.redo") },
         { type: "separator" },
-        { role: "cut", label: "Taglia" },
-        { role: "copy", label: "Copia" },
-        { role: "paste", label: "Incolla" },
-        { role: "selectAll", label: "Seleziona tutto" },
+        { role: "cut", label: label("main.menu.cut") },
+        { role: "copy", label: label("main.menu.copy") },
+        { role: "paste", label: label("main.menu.paste") },
+        { role: "selectAll", label: label("main.menu.selectAll") },
       ],
     },
     {
-      label: "Vista",
+      label: label("main.menu.view"),
       submenu: [
-        { label: "Scrivi al Coordinatore", accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
-        { label: "Mostra o nascondi la barra laterale", accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
-        { label: "Mostra dettagli", accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
+        { label: label("main.menu.focusComposer"), accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
+        { label: label("main.menu.toggleSidebar"), accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
+        { label: label("main.menu.toggleInspector"), accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
         { type: "separator" },
-        { label: "Mappa", accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
-        { label: "Patto", accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
-        { label: "Mandato", accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
-        { label: "Issue", accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
-        { label: "Team", accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
-        { label: "Lavoro", accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
-        { label: "Gruppo", accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
-        { label: "Memoria", accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
+        { label: label("main.menu.map"), accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
+        { label: label("main.menu.pact"), accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
+        { label: label("main.menu.mandate"), accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
+        { label: label("main.menu.issues"), accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
+        { label: label("main.menu.team"), accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
+        { label: label("main.menu.work"), accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
+        { label: label("main.menu.group"), accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
+        { label: label("main.menu.memory"), accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
         { type: "separator" },
-        { role: "resetZoom", label: "Dimensione reale" },
-        { role: "zoomIn", label: "Ingrandisci" },
-        { role: "zoomOut", label: "Riduci" },
+        { role: "resetZoom", label: label("main.menu.resetZoom") },
+        { role: "zoomIn", label: label("main.menu.zoomIn") },
+        { role: "zoomOut", label: label("main.menu.zoomOut") },
         { type: "separator" },
-        { role: "togglefullscreen", label: "Schermo intero" },
-        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: "Strumenti per sviluppatori" }]),
+        { role: "togglefullscreen", label: label("main.menu.fullScreen") },
+        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: label("main.menu.devTools") }]),
       ],
     },
-    { role: "windowMenu", label: "Finestra" },
+    { role: "windowMenu", label: label("main.menu.window") },
     {
       role: "help",
-      label: "Aiuto",
+      label: label("main.menu.help"),
       submenu: [
-        { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
-        { label: "Guida introduttiva", click: () => sendMenu("guide") },
-        { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
+        { label: label("main.menu.welcome"), click: () => sendMenu("welcome") },
+        { label: label("main.menu.guide"), click: () => sendMenu("guide") },
+        { label: label("main.menu.exercises"), click: () => sendMenu("exercises") },
         // Windows and Linux have no application menu: Informazioni su Trama opens the section of Impostazioni.
         ...(isMac ? [] : [{ type: "separator" as const }, { label: about, click: () => sendMenu("about") }]),
       ],

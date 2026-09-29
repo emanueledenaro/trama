@@ -218,7 +218,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
 
   if (row.interrupted) {
     // An interrupted turn is not an error: same place, neutral colors, the reason when there is one, and Riprendi (C11).
-    const detail = /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null;
+    const detail = /^(?:turno interrotto|turn interrupted)\.?$/i.test(row.message.trim()) ? null : row.message || null;
     return (
       <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-3.5 py-3">
         <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />

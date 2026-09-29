@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, ProjectDocument } from "@shared/domain";
 import { setPaused } from "./continuousWork";
-import { ASSIGNMENT_CRASH_NOTE, ASSIGNMENT_QUIT_NOTE, CRASH_NOTE, emptyDocument, QUIT_NOTE } from "./document";
+import { ASSIGNMENT_CRASH_NOTE, ASSIGNMENT_QUIT_NOTE, CRASH_NOTE, closingNote, emptyDocument, QUIT_NOTE } from "./document";
 import { grantMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { providerWaitLine, reopeningResume, stoppedByClosing, untilText } from "./resumeWork";
 import { resumeInput } from "./specialistBriefing";
 import { statusLine } from "./statusLine";
@@ -192,5 +193,48 @@ describe("providerWaitLine: the status line while a provider limit holds the wor
     // In Pause the Pause says it: nothing starts anyway.
     setPaused(document, true, at(1).toISOString());
     expect(statusLine(document, null, wait, now)).toMatchObject({ paused: true, providerWait: null });
+  });
+});
+
+describe("providerWaitLine in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("says what the Coordinator waits for, and until when, in English", () => {
+    setPersonLanguage("en");
+    const now = at(0);
+    const line = providerWaitLine({ provider: "ChatGPT", reason: "temporaryLimit", until: new Date(2026, 8, 28, 15, 30).toISOString() }, now);
+    expect(line.text).toMatch(/^Waiting for the ChatGPT limit to end, expected at 03:30\sPM\.$/);
+    expect(line.reason).toBe("No turn starts until then. Then I resume on my own.");
+    expect(providerWaitLine({ provider: "Claude", reason: "quotaExhausted", until: null }, now).text).toBe("Waiting for the Claude quota to unlock: the provider does not say when.");
+    expect(untilText(new Date(2026, 9, 3, 15, 30).toISOString(), now)).toMatch(/^on October 3 at 03:30\sPM$/);
+  });
+});
+
+describe("closing notes in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the notes in English and still takes up the work after a restart", () => {
+    setPersonLanguage("en");
+    expect(closingNote("quit")).toBe("Trama was closed while the Coordinator was working.");
+    const document = granted();
+    request(document, "r1", "interrupted", closingNote("quit"));
+    expect(reopeningResume(document, true).turn).toEqual({ requestId: "r1", kind: "resume" });
+    request(document, "r2", "interrupted", closingNote("crash"));
+    expect(reopeningResume(document, true).turn).toEqual({ requestId: "r2", kind: "resume" });
+    const assignment = working(document);
+    const specialist = document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignment.id))!;
+    requestStop(document, specialist.id, "Trama", closingNote("assignmentQuit"), false, at(4));
+    endTurn(document, assignment.id, null, { kind: "interrupted" }, at(4));
+    expect(stoppedByClosing(assignment)).toBe(true);
+  });
+
+  it("recognizes the Italian notes after the person switches to English", () => {
+    const document = granted();
+    request(document, "r1", "interrupted", QUIT_NOTE);
+    const assignment = working(document);
+    quit(document, assignment.id);
+    setPersonLanguage("en");
+    expect(reopeningResume(document, true).turn).toEqual({ requestId: "r1", kind: "resume" });
+    expect(stoppedByClosing(assignment)).toBe(true);
   });
 });
