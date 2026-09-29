@@ -50,7 +50,7 @@ Trama puts one **Coordinator** between you and the agents:
 - **Nine providers, every role.** Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi behind one runtime interface. Antigravity now works in every role, not only for developers: read-only for the Coordinator, planners, reviewers and checks, edits only inside a developer's own worktree. Each adapter reads context usage the way its provider actually reports it; a reading outside the provider's real window shows as unavailable instead of a wrong number ([#318](https://github.com/emanueledenaro/trama/pull/318)).
 - **Understandable provider and GitHub errors.** A rate limit, an expired quota, a missing login or an unreachable provider get a plain explanation and the matching action, retry, change model or provider, add your key, log in again, never a raw error payload. On a temporary limit the Coordinator and specialists wait with a growing backoff and resume the work themselves.
 - **A publishing standard.** Trama reads a project's own conventions first (`AGENTS.md`, `CONTRIBUTING.md`, commitlint config, existing branch prefixes) and falls back to Conventional Commits and Conventional Branch. It writes the commit message and branch name itself, and publishes a candidate only when it is verified, the message is valid, no secrets or sensitive files are staged, `git diff --check` is clean, the linked issue exists and no Pact question is still open ([its ADR](docs/adr/0016-conventional-commits-e-standard-di-pubblicazione.md)).
-- **A guided first run, in your language.** A brief animated intro leads into a Welcome flow that opens with your language, Italian or English, then connecting a provider, GitHub and the AI Hero method, each step skippable and resumable later; the same choice lives in Settings, General. The project picker then lists your recents with their phase, blockers and active colleagues, next to opening a folder, cloning from GitHub or trying the sample project.
+- **A guided first run, in your language.** Welcome is a tab of the editor, next to the Conversation once a project is open, with four blocks: Start (open, create or clone a project, try the sample, or formulate your first goal), Recent (your last five projects, with phase, blockers and active colleagues), Configure (language first, then provider, GitHub and the AI Hero method, each step skippable and resumable) and Learn (four guided exercises). Without a project Welcome is the only thing in the window; reopen it anytime from the Help menu, the project name or Settings ([#404](https://github.com/emanueledenaro/trama/pull/404)). A brief animated intro plays once, in Welcome's own header, at the very first launch.
 - **Editorial typography, a native feel.** Chat messages, cards and markdown content are set in Newsreader; the interface stays in Inter, code in JetBrains Mono, all three bundled with the app so nothing loads over the network ([verification log](docs/verifiche/tipografia-editoriale-2026-09-28.md)). Panel separators follow VS Code's own sash, no line at rest, a 1px border, the provider's accent only on hover or drag, and the app's own woven-ribbon icon shows on macOS, Windows and Linux, packaged or run from source.
 - **Checks Trama runs itself.** `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` and `node_typecheck`, with Node checks in a sandbox that allows only local networking.
 - **Goals with examples.** Outcomes with accepted and rejected examples that tasks, candidates and decisions link to explicitly.
@@ -60,21 +60,36 @@ Trama puts one **Coordinator** between you and the agents:
 <table>
   <tr>
     <td width="33%"><img src="docs/images/readme/decision.png" alt="A decision card with two alternatives and a free answer field"></td>
-    <td width="33%"><img src="docs/images/readme/team.png" alt="The Team panel listing fixed roles and developers by moment"></td>
+    <td width="33%"><img src="docs/images/readme/team.png" alt="The Squads panel: who works on what, with a squad's lead, developer and QA"></td>
     <td width="33%"><img src="docs/images/readme/focus-mode.png" alt="Focus mode on a candidate, with its real checks and the Standards and Spec review"></td>
   </tr>
   <tr>
     <td align="center"><sub>A decision card: a concrete case, alternatives with examples, or your own words.</sub></td>
-    <td align="center"><sub>The team, moment by moment.</sub></td>
+    <td align="center"><sub>Squads, moment by moment.</sub></td>
     <td align="center"><sub>Focus mode: real checks first, then Standards and Spec in parallel.</sub></td>
   </tr>
 </table>
 
-The app interface is in Italian, except the first-launch language choice and most of the Settings page, which also ship in English ([#303](https://github.com/emanueledenaro/trama/pull/303)); provider capabilities, the Clean Code rules and the presence checks in Settings stay Italian even when English is selected, and so does the rest of the interface. Most of the documentation in `docs/` is in Italian.
+The app interface follows the language you choose, Italian or English: the choice at first launch and in Settings ([#303](https://github.com/emanueledenaro/trama/pull/303)) now carries through the Coordinator's own process, the shared logic behind cards and Activity, and the whole chat ([#375](https://github.com/emanueledenaro/trama/pull/375), [#365](https://github.com/emanueledenaro/trama/pull/365), [#361](https://github.com/emanueledenaro/trama/pull/361)). A few panels outside those slices still show Italian regardless of the language chosen: the sidebar, the project dialogs, the search palette, the onboarding exercises panel, and some inspector fields such as the Pact's reason field, the goal card's own buttons and the "Aspetta te" title. Most of the documentation in `docs/` is in Italian.
 
 ## Quick start
 
-There is no signed release yet, so Trama runs from source.
+**Download**
+
+The latest release is on the [Releases page](https://github.com/emanueledenaro/trama/releases/latest).
+
+| Platform | File |
+| --- | --- |
+| macOS Apple Silicon | `Trama-0.2.0-arm64.dmg` |
+| macOS Intel | `Trama-0.2.0-x64.dmg` |
+| Windows | `Trama-0.2.0-x64.exe` (NSIS installer) |
+| Linux | `Trama-0.2.0-x86_64.AppImage` |
+
+Packages are not signed or notarized yet, so the operating system warns you before it lets you run one: macOS Gatekeeper says it cannot verify the developer (right-click the app, Open, or System Settings, Privacy & Security, Open anyway); Windows SmartScreen shows "Windows protected your PC" (More info, then Run anyway); the Linux AppImage carries no signature and needs `chmod +x` before it runs.
+
+Check what you downloaded against the release's `SHA256SUMS.txt`: `sha256sum -c SHA256SUMS.txt --ignore-missing` on Linux, `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` on macOS, `Get-FileHash .\Trama-0.2.0-x64.exe` on Windows, compared by hand against that file's line.
+
+**Or run from source**
 
 **Requirements**
 
@@ -94,12 +109,11 @@ npm run dev
 
 **First steps**
 
-1. On first launch, the Welcome flow asks you to connect a provider, optionally GitHub, and set up the AI Hero method; skip or resume any step later from the Help (Aiuto) menu.
-2. From the project picker, open a folder, clone one from GitHub, or try the sample project.
-3. Read the Coordinator's study of the project and confirm the developers it proposes.
-4. Send a request. Pick a module as context with `@` or a skill with `/`.
-5. Answer the rounds of questions and the mandate card. Only your answers enter the Pact and the mandate.
-6. Follow the focus bar for the task in focus and the queue behind it. Inside the mandate, the Coordinator keeps moving between rounds on its own, and merges a clear-cut candidate itself; you step in for product decisions, the mandate, the team and anything that changes the interface.
+1. On first launch, Welcome opens as a tab: pick your language, then Start to open a folder, clone from GitHub or try the sample project; Configure connects a provider, GitHub and the AI Hero method, each step skippable and resumable from Welcome, the Help menu or Settings.
+2. Read the Coordinator's study of the project and confirm the developers it proposes.
+3. Send a request. Pick a module as context with `@` or a skill with `/`.
+4. Answer the rounds of questions and the mandate card. Only your answers enter the Pact and the mandate.
+5. Follow the focus bar for the task in focus and the queue behind it. Inside the mandate, the Coordinator keeps moving between rounds on its own, and merges a clear-cut candidate itself; you step in for product decisions, the mandate, the team and anything that changes the interface.
 
 ## How it works
 
@@ -190,22 +204,21 @@ npm run dist        # package with electron-builder
 
 </details>
 
-CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, build and `ui-check` on Ubuntu with Node 22. [CodeQL](.github/workflows/codeql.yml) and a [dependency check](.github/workflows/dependencies.yml) with a license policy run on every pull request. The [`release.yml`](.github/workflows/release.yml) workflow builds packages for macOS, Windows and Linux on every `v*` tag; they are signed and notarized only when the signing secrets are set. Versions come from Conventional Commits and are listed in [CHANGELOG.md](CHANGELOG.md); the release steps are in [CONTRIBUTING.md](CONTRIBUTING.md#releases). `main` is a protected branch: changes land through a pull request, never a direct push.
+CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, build and `ui-check` on Ubuntu with Node 22. [CodeQL](.github/workflows/codeql.yml) and a [dependency check](.github/workflows/dependencies.yml) with a license policy run on every pull request. Versions follow [the versioning policy](docs/agents/versioning.md): `release-prepare.yml` computes the next version from Conventional Commits, writes [CHANGELOG.md](CHANGELOG.md) and opens the release pull request; once it merges, `release-publish.yml` builds the packages for macOS, Windows and Linux with `release.yml`, attaches them with their checksums to a GitHub release and creates the `vX.Y.Z` tag. Packages are signed and notarized only when the signing secrets are set. `main` is a protected branch: changes land through a pull request, never a direct push.
 
 ## Status and known limits
 
-- **In progress.** The window redesign to match VS Code's layout, a versioning policy with signed installers for macOS, Windows and Linux, and the rest of the English translation beyond the first-launch and Settings choice are underway; track them on the [roadmap](https://github.com/emanueledenaro/trama/issues/193).
 - **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204)).
 - **Candidate gate.** Verified with the fake Codex only, not yet with a real model ([verification log](docs/verifiche/w10-cancello-candidato-2026-09-27.md)). The regression guardian compares the build and test checks the candidate requires, not a suite the assignment did not name. The messages between reviewers and developers are recorded in the developer's work; their own threads come with [#144](https://github.com/emanueledenaro/trama/issues/144).
 - **Pull requests and merges.** Publishing and the merge of a clear-cut candidate are both tested with a fake `gh` only; no real pull request has been opened or merged from the app on GitHub ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)). Recognizing an interface change relies on file paths, so a UI file with an unusual name or path could be missed.
-- **Language.** English ships for the first-launch choice and most of the Settings page ([#303](https://github.com/emanueledenaro/trama/pull/303)); provider capabilities, the Clean Code rules, the presence checks in Settings and the rest of the interface are still Italian.
+- **Language.** English now covers the Coordinator's own process, the shared logic and the chat ([#303](https://github.com/emanueledenaro/trama/pull/303), [#375](https://github.com/emanueledenaro/trama/pull/375), [#365](https://github.com/emanueledenaro/trama/pull/365), [#361](https://github.com/emanueledenaro/trama/pull/361)); the sidebar, the project dialogs, the search palette, the onboarding exercises panel and a few inspector fields, the Pact's reason field, the goal card's own buttons and the "Aspetta te" title among them, still show Italian regardless of the language chosen.
 - **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox. The Linux `bubblewrap` path is coded but not tested on a real Linux machine.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
 - **Presence.** Verified against a local bare remote and, once, directly against GitHub. A remote other than GitHub or a local folder, and a repository whose CI triggers on any push, are not verified.
 - **Distribution.** No signed or notarized package has been produced yet.
 - **Planning docs.** Some documents in `docs/` still describe the SwiftUI version.
 
-The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
+The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron.md), in [GitHub Issues](https://github.com/emanueledenaro/trama/issues) and on the [roadmap](https://github.com/emanueledenaro/trama/issues/193). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
 
 ## Contributing
 
@@ -213,7 +226,7 @@ Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) be
 
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), for example `feat(app): add the search palette`.
 - Branches follow [Conventional Branch](https://conventionalbranch.org/): `feature/`, `bugfix/` or `hotfix/` with a short English description.
-- Source code, comments and commit messages are in English. The interface, issues and pull requests are in Italian.
+- Source code, comments and commit messages are in English. The interface follows the language you choose ([known gaps above](#status-and-known-limits)); documentation, issues and pull requests are in Italian.
 - `main` is protected: only a pull request with green CI gets merged.
 - Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Questions go to [SUPPORT.md](SUPPORT.md); security problems are reported privately as described in [SECURITY.md](SECURITY.md).
