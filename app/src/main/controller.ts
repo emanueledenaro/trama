@@ -559,7 +559,7 @@ function forgetCoordinatorThread(document: ProjectDocument): void {
   document.coordinator.practicesSent = null;
   document.coordinator.referencesSent = null;
   document.coordinator.contextWarnedAt = null;
-  // A new session starts with an empty context: a reorder owed to the old thread no longer applies (ADR 0018).
+  // A new session starts with an empty context: a reorder owed to the old thread no longer applies (ADR 0019).
   document.coordinator.pendingRollover = null;
 }
 
@@ -2393,7 +2393,7 @@ export class TramaController {
         // A model change during the study replaced this runtime: the new opening still needs the handover.
         if (this.runtime !== runtime) return;
         document.coordinator.pendingHandover = null;
-        // The new session is ready: only now the old thread is left behind (ADR 0018).
+        // The new session is ready: only now the old thread is left behind (ADR 0019).
         if (handover?.rollover) this.recordRollover(document, handover.rollover);
       }
       if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
@@ -2415,7 +2415,7 @@ export class TramaController {
     }
   }
 
-  /** Where a worktree stands for a specialist's new thread (ADR 0018): its commits beyond the base and the changed files. */
+  /** Where a worktree stands for a specialist's new thread (ADR 0019): its commits beyond the base and the changed files. */
   private async worktreeState(assignment: SpecialistAssignment): Promise<{ branch: string | null; commits: string[]; changedFiles: string[] }> {
     const workspace = assignment.workspace;
     if (!workspace) return { branch: null, commits: [], changedFiles: [] };
@@ -2451,7 +2451,7 @@ export class TramaController {
     transcript: string | null = null,
     /** An Ask Trama "/clear" (M07): the study's chronology of the conversation stays out too. */
     cleared = false,
-    /** A context reorder (ADR 0018): `transcript` is Trama's context summary. */
+    /** A context reorder (ADR 0019): `transcript` is Trama's context summary. */
     summary = false,
   ) {
     const document = project.document;
@@ -2599,7 +2599,7 @@ export class TramaController {
       if (this.starting) await this.starting.attempt.catch(() => undefined);
       if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
     }
-    // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0018).
+    // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0019).
     this.rolloverIfDue(project);
     const attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
     const document = project.document;
@@ -2874,7 +2874,7 @@ export class TramaController {
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
-      // Past the threshold the context is reordered now, between turns: the queued messages go to the new session (ADR 0018).
+      // Past the threshold the context is reordered now, between turns: the queued messages go to the new session (ADR 0019).
       this.rolloverIfDue(project);
       // The person's queued messages go first; otherwise the work may go on by itself (W04).
       if (!this.dispatchQueued()) this.continueAfterTurn(project, request.id);
@@ -3525,12 +3525,12 @@ export class TramaController {
   private coordinatorCompacted(project: ActiveProjectState): void {
     this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
     project.document.coordinator.memorySentToThread = null;
-    // The provider compacted as a fallback within the turn: the context has room again (ADR 0018).
+    // The provider compacted as a fallback within the turn: the context has room again (ADR 0019).
     project.document.coordinator.pendingRollover = null;
   }
 
   /**
-   * A reading past the project's threshold marks the reorder Trama owes the Coordinator (ADR 0018). It never happens
+   * A reading past the project's threshold marks the reorder Trama owes the Coordinator (ADR 0019). It never happens
    * during a turn: the end of the turn, or the next message, makes it. The study of a new session never marks one.
    */
   private checkContextThreshold(project: ActiveProjectState): void {
@@ -3549,7 +3549,7 @@ export class TramaController {
     this.changed();
   }
 
-  /** "Riordina ora" in the context meter (ADR 0018): now between turns, at the end of the turn while one runs. */
+  /** "Riordina ora" in the context meter (ADR 0019): now between turns, at the end of the turn while one runs. */
   reorderContext(): void {
     const project = this.requireProject();
     const coordinator = project.document.coordinator;
@@ -3560,7 +3560,7 @@ export class TramaController {
   }
 
   /**
-   * Makes the reorder Trama owes the Coordinator, only between turns (ADR 0018): Trama writes the context summary from
+   * Makes the reorder Trama owes the Coordinator, only between turns (ADR 0019): Trama writes the context summary from
    * its records, keeps it in Activity and opens a new session that receives it with the study and the memory. The old
    * thread is kept until the new session is ready. Returns whether the reorder started.
    */
@@ -3604,7 +3604,7 @@ export class TramaController {
     return true;
   }
 
-  /** The new session is ready (ADR 0018): one line in the chat, right after the summary, opens it. */
+  /** The new session is ready (ADR 0019): one line in the chat, right after the summary, opens it. */
   private recordRollover(document: ProjectDocument, rollover: ContextRollover): void {
     const t = translator(this.state.language);
     const card = appendEvent(document, "trama", {
@@ -3620,7 +3620,7 @@ export class TramaController {
   }
 
   /**
-   * The new session could not open (ADR 0018): the Coordinator goes back to its thread, and the provider compacts it
+   * The new session could not open (ADR 0019): the Coordinator goes back to its thread, and the provider compacts it
    * as a fallback where it can. Without a compaction the reorder stays owed and Trama tries again at the next message.
    */
   private async rolloverFailed(project: ActiveProjectState, runtime: CoordinatorRuntime | null, rollover: ContextRollover): Promise<void> {
@@ -4013,6 +4013,9 @@ export class TramaController {
             priority,
             waitingForCapacity: this.capacityQueue.filter((r) => r.projectId === project.id && this.waitsForCapacity(r)).length,
             ci: project.isDemo ? null : ciSummary(project.github.snapshot ?? (await this.savedGitHubSnapshot(recent))),
+            // The same Aspetta te and status line the open project shows (issue #336).
+            waiting: project.waiting,
+            status: project.statusLine,
           }),
         );
         continue;
@@ -4661,7 +4664,7 @@ export class TramaController {
         ? developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, nativeInput)
         : null;
       const baseInstructions = duty?.instructions ?? specialistInstructions(project.name, specialist, assignment, this.state.language);
-      // A resumed work whose last turn passed the threshold goes on in a new thread with a brief of its worktree (ADR 0018).
+      // A resumed work whose last turn passed the threshold goes on in a new thread with a brief of its worktree (ADR 0019).
       const threshold = document.coordinator.contextThreshold ?? DEFAULT_CONTEXT_THRESHOLD;
       const lastPercent = assignment.turns.at(-1)?.contextPercent ?? null;
       const reorder = resumed && assignment.threadId !== null && lastPercent !== null && lastPercent >= threshold;

@@ -8,6 +8,7 @@ import {
   IconLayoutBottombar,
   IconLayoutList,
   IconLayoutSidebar,
+  IconLayoutSidebarRight,
   IconPencilPlus,
   IconRefresh,
   IconSearch,
@@ -20,6 +21,8 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
+import { SPLIT_EDITOR_MIN_VIEWPORT } from "@/lib/workbench";
+import { useViewportWidth } from "./EditorArea";
 
 const ICON_BUTTON =
   "no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent aria-pressed:text-foreground";
@@ -133,6 +136,9 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
   const toggleSidebar = useUi((s) => s.toggleSidebar);
   const togglePanel = useUi((s) => s.togglePanel);
   const setDialog = useUi((s) => s.setDialog);
+  const splitEditor = useUi((s) => s.splitEditor);
+  const toggleSplitEditor = useUi((s) => s.toggleSplitEditor);
+  const splitAvailable = useViewportWidth() >= SPLIT_EDITOR_MIN_VIEWPORT;
   const name = project ? (project.isDemo ? t("workbench.title.demoProject") : project.name) : null;
   return (
     <header
@@ -194,6 +200,21 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
               onClick={togglePanel}
             >
               <IconLayoutBottombar className="size-4" stroke={1.7} />
+            </button>
+          </Tooltip>
+        ) : null}
+        {splitAvailable ? (
+          // The split editor (issue #336): in a wide window the details sit beside the conversation, or cover it.
+          <Tooltip label={splitEditor ? t("workbench.editor.unsplit") : t("workbench.editor.split")}>
+            <button
+              type="button"
+              className={cn(ICON_BUTTON, splitEditor && HEADER_CHIP_ACTIVE)}
+              aria-label={t("workbench.editor.split")}
+              aria-pressed={splitEditor}
+              data-testid="split-editor-toggle"
+              onClick={toggleSplitEditor}
+            >
+              <IconLayoutSidebarRight className="size-4" stroke={1.7} />
             </button>
           </Tooltip>
         ) : null}

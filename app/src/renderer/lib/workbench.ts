@@ -123,6 +123,77 @@ export const sideBarDefaultWidth = (viewport: number) => (viewport >= 1500 ? 340
 /** The widest the side bar gets: the conversation keeps CHAT_MIN_WIDTH beside it. */
 export const sideBarMaxWidth = (viewport: number) => Math.max(SIDE_BAR_MIN_WIDTH, Math.min(720, viewport - ACTIVITY_BAR_WIDTH - CHAT_MIN_WIDTH));
 
+// Issue #336 (B07): the editor area has tabs, as in VS Code. The conversation is always the first and never closes; a
+// detail opens in a tab of its own next to it, and so do Progetti and Impostazioni. From about 1500 px the details
+// sit beside the conversation in a split editor; below that a tab covers the conversation.
+
+/** The details that open as editor tabs instead of in the side bar. Lists, tabs and forms stay in the side bar. */
+export const EDITOR_KINDS: ReadonlySet<TargetKind> = new Set<TargetKind>([
+  "specialist",
+  "agentThread",
+  "candidate",
+  "audit",
+  "decision",
+  "goal",
+  "issue",
+  "pullRequest",
+  "commit",
+  "branch",
+  "module",
+  "file",
+]);
+
+export const opensInEditor = (target: InspectorTarget): boolean => EDITOR_KINDS.has(target.kind);
+
+/** A tab of the editor area besides the conversation. */
+export type EditorTab = { kind: "projects" } | { kind: "settings" } | { kind: "detail"; target: InspectorTarget };
+
+export const CONVERSATION_TAB = "conversation";
+
+/** The identity of a detail: reopening the same record brings back its tab instead of opening another. */
+export function detailKey(target: InspectorTarget): string {
+  switch (target.kind) {
+    case "issue":
+    case "pullRequest":
+      return `${target.kind}:${target.number}`;
+    case "commit":
+      return `commit:${target.sha}`;
+    case "branch":
+      return `branch:${target.name}`;
+    case "file":
+      return `file:${target.path}`;
+    case "specialist":
+    case "agentThread":
+    case "candidate":
+    case "audit":
+    case "decision":
+    case "goal":
+    case "module":
+      return `${target.kind}:${target.id}`;
+    default:
+      return target.kind;
+  }
+}
+
+export const tabKey = (tab: EditorTab): string => (tab.kind === "detail" ? `detail:${detailKey(tab.target)}` : tab.kind);
+
+/** From this window width the details sit beside the conversation (issue #336: "da circa 1500 px"). */
+export const SPLIT_EDITOR_MIN_VIEWPORT = 1500;
+export const DETAIL_PANE_MIN_WIDTH = 360;
+
+/** The detail pane's default width beside the conversation: 440 px, 520 from a 1900 px window. */
+export const detailPaneDefaultWidth = (viewport: number) => (viewport >= 1900 ? 520 : 440);
+
+/**
+ * The widest the detail pane gets: the conversation keeps CHAT_MIN_WIDTH beside it, next to the activity bar and a
+ * side bar of its default width.
+ */
+export const detailPaneMaxWidth = (viewport: number) =>
+  Math.max(DETAIL_PANE_MIN_WIDTH, Math.min(900, viewport - ACTIVITY_BAR_WIDTH - sideBarDefaultWidth(viewport) - CHAT_MIN_WIDTH));
+
+/** Whether the details sit beside the conversation: a wide window and the person's switch on. */
+export const splitsEditor = (viewport: number, switchOn: boolean) => switchOn && viewport >= SPLIT_EDITOR_MIN_VIEWPORT;
+
 /** The title bar and the status bar: the editor and the bottom panel share the height left between them. */
 export const WINDOW_BARS_HEIGHT = 46 + 24;
 /** The lowest the bottom panel gets: its header and a few rows. */
