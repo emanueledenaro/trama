@@ -45,8 +45,10 @@ export type ButtonProps = React.ComponentProps<"button"> & VariantProps<typeof b
  */
 const FilledContext = createContext(true);
 
+/** A scope inside one that forbids filled buttons forbids them too. */
 export function FilledScope({ allowed, children }: { allowed: boolean; children: React.ReactNode }) {
-  return <FilledContext.Provider value={allowed}>{children}</FilledContext.Provider>;
+  const outer = useContext(FilledContext);
+  return <FilledContext.Provider value={outer && allowed}>{children}</FilledContext.Provider>;
 }
 
 export function Button({ className, variant, size, type = "button", ...props }: ButtonProps) {

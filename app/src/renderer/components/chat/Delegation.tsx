@@ -1,8 +1,9 @@
-import { IconMoon, IconSparkles } from "@tabler/icons-react";
+import { IconEye, IconMoon, IconSparkles } from "@tabler/icons-react";
 import type { RecapDelegated } from "@shared/domain";
 import { activeDelegation, choiceKindLabel, delegationLine } from "@shared/delegation";
 import { formatDate } from "@shared/i18n";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -98,6 +99,8 @@ export function DelegatedChoices({ choices }: { choices: RecapDelegated[] }) {
         return null;
     }
   };
+  // One filled button for the zone (issue #338): "Ho visto" of the first choice still to review; the others are outlines.
+  const firstToReview = choices.find((choice) => !seen.has(choice.id))?.id ?? null;
   return (
     <ul className="divide-y divide-[color:var(--app-surface-divider)]" data-testid="recap-delegated">
       {choices.map((choice) => (
@@ -113,17 +116,16 @@ export function DelegatedChoices({ choices }: { choices: RecapDelegated[] }) {
             </span>
             {choice.doubt ? <span className="block text-muted-foreground">{t("recap.delegated.doubt", { doubt: choice.doubt })}</span> : null}
           </span>
-          {review(choice) ? (
-            <Button size="xs" variant="ghost" onClick={review(choice)!}>
-              {t("recap.delegated.review")}
-            </Button>
-          ) : null}
+          {/* Opening what the choice acts on is secondary: an icon with its name. */}
+          {review(choice) ? <IconButton label={t("recap.delegated.review")} icon={<IconEye />} onClick={review(choice)!} /> : null}
           {seen.has(choice.id) ? (
             <Badge tone="secondary">{t("recap.delegated.reviewed")}</Badge>
           ) : (
-            <Button size="xs" onClick={() => void act("delegation:seen", { id: choice.id })}>
-              {t("recap.delegated.seen")}
-            </Button>
+            <FilledScope allowed={choice.id === firstToReview}>
+              <Button size="xs" onClick={() => void act("delegation:seen", { id: choice.id })}>
+                {t("recap.delegated.seen")}
+              </Button>
+            </FilledScope>
           )}
         </li>
       ))}
