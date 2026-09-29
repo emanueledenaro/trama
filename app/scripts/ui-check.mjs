@@ -3615,6 +3615,58 @@ if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was to
 await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("22c-recap-milestone");
 if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a slice while continuous work was off");
+// A13: the squad's backlog in the Squads view. S2 and S3 wait there in the Coordinator's order, each with its reason;
+// the person moves S3 up and their place wins, with the sign of the person's place. Narrow and wide, light and dark.
+// Given back to the Coordinator's order, S2 is on top again, so the free developer takes S2 below.
+{
+  await openView("Squadre");
+  // The window was opened again since the Squads view was first checked: the side bar of this one.
+  const squadsBar = page.getByTestId("side-bar");
+  await squadsBar.getByTestId("squad-backlog").filter({ hasText: /in cima S2 / }).waitFor({ timeout: 20_000 });
+  // Fixed by position: once open, the toggle no longer names the top item.
+  const backlogIndex = (await squadsBar.getByTestId("squad-backlog").allInnerTexts()).findIndex((text) => /in cima S2 /.test(text));
+  const backlog = squadsBar.getByTestId("squad-backlog").nth(backlogIndex);
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
+  await backlog.getByTestId("squad-backlog-toggle").click();
+  const backlogKeys = () => backlog.getByTestId("backlog-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-key")?.split(":").at(-1)));
+  if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The backlog is not in the Coordinator's order: ${await backlogKeys()}`);
+  for (const item of await backlog.getByTestId("backlog-item").all()) {
+    if (!(await item.getByTestId("backlog-reason").innerText()).trim()) throw new Error("A backlog item has no reason");
+  }
+  await backlog.getByRole("button", { name: /^Sposta su S3 / }).click();
+  await backlog.locator('[data-testid="backlog-item"][data-placed="person"]').first().waitFor();
+  if ((await backlogKeys()).join() !== "S3,S2") throw new Error(`The person's move did not win: ${await backlogKeys()}`);
+  const placed = backlog.locator('[data-testid="backlog-item"]').first();
+  await placed.getByTestId("backlog-reason").getByText(/^Posizione scelta da te/).waitFor();
+  const moveDown = await placed.getByRole("button", { name: /^Sposta giù S3 / }).boundingBox();
+  const release = await placed.getByTestId("backlog-release").boundingBox();
+  const row = await placed.boundingBox();
+  if (!moveDown || !release || !row || release.x > moveDown.x || row.x + row.width - (moveDown.x + moveDown.width) > 60) throw new Error("The backlog's buttons are not on the right of the row");
+  const backlogSize = page.viewportSize();
+  for (const [width, height] of [
+    [1280, 800],
+    [1680, 1050],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await backlog.evaluate((node) => node.scrollIntoView({ block: "center" }));
+    await noHorizontalScroll(`squad backlog ${width}x${height}`);
+    await themeShots(`22c1-squad-backlog-${width}x${height}`);
+  }
+  await page.setViewportSize(backlogSize);
+  // The same backlog in English: the title, the Coordinator's reasons and the person's place come from the catalog.
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 items").waitFor();
+  await placed.getByTestId("backlog-reason").getByText("Place chosen by you", { exact: true }).waitFor();
+  await backlog.getByTestId("backlog-item").nth(1).getByTestId("backlog-reason").getByText("Ready, in the order of the breakdown").waitFor();
+  await backlog.evaluate((node) => node.scrollIntoView({ block: "center" }));
+  await shot("22c1-squad-backlog-english");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
+  await placed.getByTestId("backlog-release").click();
+  await backlog.locator('[data-testid="backlog-item"][data-placed="person"]').waitFor({ state: "detached" });
+  if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The item did not go back to the Coordinator's order: ${await backlogKeys()}`);
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
@@ -4493,6 +4545,191 @@ for (const dark of [false, true]) {
 }
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #421: on the shop project Marco's newest candidate was stopped by two older versions of the same work, verified
+// and never merged, taken as other work on the same files. The person asks the Coordinator to close them; it supersedes
+// each one by itself: the chat shows one "Superato" line with the reason that opens the card, Activity keeps the use,
+// and the old candidate's item leaves Aspetta te. The newest is no longer stopped. Both themes.
+const shopProject = await mkdtemp(join(tmpdir(), "trama-ui-superati-"));
+await cp(resolve("resources/DemoProject"), shopProject, { recursive: true });
+const shopGit = (...args) => execFileSync("git", ["-C", shopProject, ...args], { encoding: "utf8" });
+shopGit("init", "-q", "-b", "main");
+shopGit("add", ".");
+shopGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+const shopHead = shopGit("rev-parse", "HEAD").trim();
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), shopProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let shopPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-superati-")) shopPath = join(dataDir, "Projects", file);
+}
+if (!shopPath) throw new Error("Superseded: the project's state was not saved");
+const [oldestId, olderId, newestId] = ["C-5E0A0003", "C-5E0A0008", "C-5E0A0013"];
+{
+  const document = JSON.parse(await readFile(shopPath, "utf8"));
+  const at = (hour) => `2026-09-29T${String(hour).padStart(2, "0")}:00:00.000Z`;
+  const work = (id, hour) => ({
+    id,
+    specialistId: "S-MARCO",
+    requestId: null,
+    kind: "agreedTicket",
+    objective: "Catalogo con i soli prodotti disponibili",
+    issueNumber: null,
+    exercise: null,
+    moduleIds: ["src/app"],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(hour),
+    status: "completed",
+    workspace: { sourceRoot: shopProject, worktreeRoot: join(shopProject, "..", `wt-${id}`), branch: `feature/${id.toLowerCase()}`, baseSHA: shopHead },
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Fatto.",
+    failure: null,
+    updatedAt: at(hour),
+    lastUpdate: "",
+    reportedStatus: "completed",
+  });
+  const versions = [work("A-5E0A0003", 9), work("A-5E0A0008", 10), work("A-5E0A0013", 11)];
+  document.team.specialists.push({
+    id: "S-MARCO",
+    name: "Marco",
+    competence: "Next.js",
+    reason: "",
+    moduleIds: ["src/app"],
+    role: "developer",
+    origin: "teamProposal",
+    color: "green",
+    tag: "Catalogo",
+    createdAt: at(8),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(11),
+    lastUpdate: "",
+    removal: null,
+    assignments: versions,
+  });
+  const candidate = (id, assignment, snapshotId, hour) => ({
+    id,
+    assignmentId: assignment.id,
+    specialistId: "S-MARCO",
+    snapshotId,
+    baseSHA: shopHead,
+    diff: "",
+    changedFiles: ["src/app/prodotti/page.tsx"],
+    touchedModules: ["src/app"],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["git_status"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(hour),
+    updatedAt: at(hour),
+    evidence: { git_status: { check: "git_status", result: "pass", command: "git status", output: "", snapshotId, decisionVersions: {}, recordedAt: at(hour) } },
+    technicalReview: { id: `R-${id.slice(2)}`, reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Bene", at: at(hour) },
+    clearance: null,
+    humanApproval: null,
+    pullRequest: null,
+  });
+  const [oldest, older, newest] = [candidate(oldestId, versions[0], "snap-3", 9), candidate(olderId, versions[1], "snap-8", 10), candidate(newestId, versions[2], "snap-13", 11)];
+  document.candidates.push(oldest, older, newest);
+  const collision = (other) => ({
+    id: `snap-13:worktree:${other.snapshotId}`,
+    candidateId: newest.id,
+    snapshotId: newest.snapshotId,
+    classification: "conflict",
+    detail: "La fusione temporanea produce conflitti testuali.",
+    checkedAt: at(12),
+    remoteSHA: "",
+    references: [`${other.id} di Marco (feature/${other.assignmentId.toLowerCase()})`],
+    otherCandidateId: other.id,
+    otherSnapshotId: other.snapshotId,
+    conflictingFiles: ["src/app/prodotti/page.tsx"],
+  });
+  document.conflicts = [collision(oldest), collision(older)];
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (kind, referenceId) => ({ id: `E-sup-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(12), content: { type: "card", kind, title: kind, detail: null, referenceId } });
+  document.events.push(...[oldest, older, newest].map((c) => card("candidate", c.id)), ...document.conflicts.map((a) => card("conflict", a.id)));
+  await writeFile(shopPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), shopProject);
+const shopState = () => page.evaluate(async () => (await window.trama.getState()).project);
+const waitingKeys = async () => (await shopState()).waiting.map((item) => item.key);
+await page.getByTestId("waiting-summary").waitFor({ timeout: 30_000 });
+{
+  const before = await shopState();
+  if (before.candidateReports[newestId].state !== "building") throw new Error("Superseded: the newest candidate is not stopped by the older versions");
+  if (before.candidateReports[newestId].blockers.filter((b) => b.code === "WORKTREE_CONFLICT").length !== 2) throw new Error("Superseded: the newest candidate does not collide with both older versions");
+  const keys = before.waiting.map((item) => item.key);
+  if (!keys.includes(`candidate:${oldestId}`) || !keys.includes(`candidate:${olderId}`)) throw new Error(`Superseded: the older versions do not wait in Aspetta te: ${keys}`);
+}
+await send(`Chiudi le versioni vecchie. [superato:${oldestId}:${newestId}]`);
+await page.getByText(/^Ho chiuso il candidato /).last().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await send(`[superato:${olderId}:${newestId}]`);
+for (let tries = 0; (await waitingKeys()).includes(`candidate:${olderId}`); tries++) {
+  if (tries > 60) throw new Error("Superseded: the second older version still waits in Aspetta te");
+  await page.waitForTimeout(500);
+}
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+{
+  const after = await shopState();
+  for (const id of [oldestId, olderId]) {
+    if (after.candidateReports[id].state !== "superseded") throw new Error(`Superseded: ${id} is not superseded`);
+    if (after.waiting.some((item) => item.targetId === id)) throw new Error(`Superseded: ${id} still waits in Aspetta te`);
+  }
+  if (after.candidateReports[newestId].state !== "verified") throw new Error(`Superseded: the newest candidate is still stopped: ${after.candidateReports[newestId].blockers.map((b) => b.code)}`);
+  if (after.document.candidates.length < 3) throw new Error("Superseded: a superseded candidate left the history");
+}
+// The chat: each use is one "Superato" line with the reason, and the line opens the candidate's card.
+const declaredLine = page.getByTestId("settled-card").filter({ has: page.getByRole("button", { name: `Apri: Candidato ${oldestId}` }) }).filter({ hasText: "Superato" });
+await declaredLine.last().waitFor({ timeout: 20_000 });
+if (!(await declaredLine.last().innerText()).includes("È una versione vecchia dello stesso lavoro")) throw new Error("Superseded: the line does not say why");
+await declaredLine.last().scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`18f1-candidate-superseded-line-${dark ? "dark" : "light"}`);
+}
+await declaredLine.last().getByRole("button", { name: `Apri: Candidato ${oldestId}` }).click();
+const supersededNoteCard = page.locator('[data-testid="candidate-superseded"][data-declared="coordinator"]').last();
+await supersededNoteCard.waitFor({ timeout: 10_000 });
+if (!(await supersededNoteCard.innerText()).includes("Superato dal candidato")) throw new Error("Superseded: the card does not name the newer candidate");
+const supersededOpenCard = page.locator(".chat-card", { has: supersededNoteCard });
+if (await supersededOpenCard.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("Superseded: the superseded candidate can still be approved");
+await supersededNoteCard.evaluate((note) => note.scrollIntoView({ block: "center" }));
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`18f2-candidate-superseded-card-${dark ? "dark" : "light"}`);
+}
+await page.getByRole("button", { name: `Chiudi: Candidato ${oldestId}` }).first().click();
+// Activity keeps each use, with the reason and the item that left Aspetta te.
+await page.getByTestId("status-bar").getByRole("button", { name: "Attività", exact: true }).click();
+const supersedeRows = page.getByTestId("bottom-panel").getByTestId("activity-supersede");
+await supersedeRows.first().waitFor({ timeout: 10_000 });
+if ((await supersedeRows.count()) !== 2) throw new Error(`Superseded: ${await supersedeRows.count()} rows in Activity instead of 2`);
+const supersedeRow = supersedeRows.filter({ hasText: "Candidato superato dal Coordinatore" }).last();
+await supersedeRow.getByTestId("activity-row-toggle").click();
+const supersedeDetail = await supersedeRow.getByTestId("activity-row-detail").innerText();
+if (!supersedeDetail.includes("Tolto da Aspetta te: Candidato da guardare")) throw new Error(`Superseded: Activity does not say which item left Aspetta te: ${supersedeDetail}`);
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`18f3-candidate-superseded-activity-${dark ? "dark" : "light"}`);
+}
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 

@@ -1435,7 +1435,8 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
   if (!candidate || !report) return null;
-  const state = candidateStatus(report);
+  // A candidate the Coordinator declared superseded (issue #421) reads "Superato", like its line in the chat.
+  const state = report.state === "superseded" && candidate.supersession ? { label: t("supersession.outcome"), tone: "secondary" as const } : candidateStatus(report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
   const approved = candidate.humanApproval && !report.approvalInvalidated;
   const quality = report.quality ?? [];
@@ -1460,8 +1461,12 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const supersededNote = (
     <>
       {report.state === "superseded" ? (
-        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded">
-          Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno.
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded" data-declared={candidate.supersession ? "coordinator" : undefined}>
+          {candidate.supersession ? (
+            <ReferenceText text={t("supersession.card", { id: candidate.supersession.byCandidateId, reason: candidate.supersession.reason })} />
+          ) : (
+            "Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno."
+          )}
         </p>
       ) : null}
     </>
