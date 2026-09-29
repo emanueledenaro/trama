@@ -6,6 +6,7 @@ import { emptyDocument } from "./document";
 import { createGoal } from "./goals";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { setPaused } from "./continuousWork";
+import { grantDelegation, revokeDelegation } from "./fullDelegation";
 import { translate } from "@shared/i18n";
 import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON, PAUSED_SENTENCE, statusLine } from "./statusLine";
@@ -314,6 +315,37 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     expect(statusLine(idle, null)).toMatchObject({ paused: true, state: "waiting", text: PAUSED_SENTENCE });
     setPaused(idle, false, at(6).toISOString());
     expect(statusLine(idle, null)).toMatchObject({ paused: false, text: NOTHING_GOING_ON });
+  });
+});
+
+describe("statusLine with the full delegation (issue #423)", () => {
+  function delegate(document: ProjectDocument) {
+    const text = "Fai tutto tu, io vado a dormire";
+    document.events.push({ id: "E-person", sequence: document.events.length + 1, origin: "person", requestId: null, createdAt: at(0).toISOString(), content: { type: "personMessage", text, moduleId: null, moduleName: null, composer: true } });
+    grantDelegation(document, { quote: text, tickets: false }, at(0));
+  }
+
+  it("says what the Coordinator does next instead of waiting for the person on a mandate request", () => {
+    const document = confirmed();
+    delegate(document);
+    createMandateRequest(document, { requestId: "r2", reason: "Serve anche docs/", objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(statusLine(document, null)).toMatchObject({ state: "next", text: "Il prossimo passo è mio: preparo il piano." });
+    // Without the delegation the request is the person's, and it holds the work.
+    revokeDelegation(document, { kind: "view" });
+    expect(statusLine(document, null)).toMatchObject({ state: "waiting", text: "Aspetto te per andare avanti." });
+  });
+
+  it("says it decides with the delegation what waits for the person, and does not wait for them while it decides", () => {
+    const document = emptyDocument("p");
+    delegate(document);
+    request(document, "r1");
+    grill(document, "r1");
+    mandate(document);
+    expect(statusLine(document, null)).toMatchObject({ state: "next", text: "Il prossimo passo è mio: decido con la tua delega." });
+    // The person can still answer: the card's button stays.
+    expect(statusLine(document, null).action).toMatchObject({ move: "answerQuestions" });
+    const deciding = request(document, "r2", { state: "running", step: { move: "decideWithDelegation", by: "trama" } });
+    expect(statusLine(document, deciding.id).text).toBe("Sto decidendo con la tua delega.");
   });
 });
 

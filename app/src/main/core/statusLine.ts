@@ -5,7 +5,8 @@ import { isActive } from "./team";
 import { translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 import { type ProviderWait, providerWaitLine } from "./resumeWork";
-import { holdsWork } from "./continuousWork";
+import { delegatedHolds, delegationTakes, holdsWork } from "./continuousWork";
+import { activeDelegation } from "@shared/delegation";
 
 /**
  * The Coordinator's status line (Q6): one sentence that says what the Coordinator does now and what it does next, as in
@@ -176,15 +177,21 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
 
   // The next move of the task in focus: the person's first, since the work waits for it; else the Coordinator's own. A
   // person's move that holds none of the Coordinator's (a candidate or a plan to look at) waits beside its next move.
+  // With the full delegation (ADR 0022) the Coordinator first decides what waits for the person, and a mandate request
+  // no longer holds the work: the line says what it does, not that it waits.
   const firstPersonMove = state?.moves.find((m) => m.actor === "person") ?? null;
+  const personMoves = state?.moves.filter((m) => m.actor === "person" && !delegationTakes(document, m)) ?? [];
+  const decides = state !== null && turn?.move !== "decideWithDelegation" && activeDelegation(document) !== null && delegatedHolds(document, state);
   const coordinatorMove = state?.moves.find((m) => m.actor === "coordinator" && m.move !== turn?.move) ?? null;
-  const personHolds = !coordinatorMove || state!.moves.some((m) => m.actor === "person" && holdsWork(state!, m.move));
-  const personMove = personHolds ? firstPersonMove : null;
+  const personHolds = (!coordinatorMove && !decides) || personMoves.some((m) => holdsWork(state!, m.move));
+  const personMove = personHolds ? (personMoves[0] ?? null) : null;
   const next = personMove
     ? t("main.statusLine.next.waitForYou")
-    : coordinatorMove && isCoordinatorMove(coordinatorMove.move)
-      ? nextPhrase(coordinatorMove.move, moveTarget(document, coordinatorMove.move, state!))
-      : null;
+    : decides
+      ? nextPhrase("decideWithDelegation", null)
+      : coordinatorMove && isCoordinatorMove(coordinatorMove.move)
+        ? nextPhrase(coordinatorMove.move, moveTarget(document, coordinatorMove.move, state!))
+        : null;
 
   // The button: the step the Coordinator declared (or Trama's stalled move) while nothing runs in the dialog, else the person's move.
   const busyHere = running !== null && latest !== null && (running.goalId ?? null) === (latest.goalId ?? null);

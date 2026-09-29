@@ -7,7 +7,7 @@ import { contentFingerprint, inspectCandidate } from "./candidates";
 import { ticketWorked } from "./fullDelegation";
 import { focusView } from "./focus";
 import { isActive } from "./team";
-import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
+import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type MoveOption, type WorkState, workRequests, workState } from "./workPhase";
 import { type MessageKey, translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 
@@ -42,18 +42,31 @@ function awaitsPersonsOk(document: ProjectDocument, candidate: Candidate): boole
   return touchesInterface(candidate.changedFiles) && !approved && !candidate.humanRejection;
 }
 
+/** Whether the person's move is a choice the "Decidi con la delega" move makes (issue #423): a product decision, or a candidate that waits for their ok. */
+function decidedWithDelegation(document: ProjectDocument, move: Pick<MoveOption, "actor" | "move" | "targetId">): boolean {
+  if (move.actor !== "person") return false;
+  if (move.move === "answerQuestions") return true;
+  const candidate = move.move === "reviewCandidate" ? document.candidates.find((c) => c.id === move.targetId) : undefined;
+  return candidate !== undefined && awaitsPersonsOk(document, candidate);
+}
+
 /**
  * Whether the work waits for a choice of the person the full delegation lets the Coordinator make (issue #423): a
  * product decision, or a candidate that waits for the person's ok. The mandate and the team are covered by the full
  * mandate the delegation brings.
  */
-function delegatedHolds(document: ProjectDocument, state: Pick<WorkState, "moves">): boolean {
-  return state.moves.some((m) => {
-    if (m.actor !== "person") return false;
-    if (m.move === "answerQuestions") return true;
-    const candidate = m.move === "reviewCandidate" ? document.candidates.find((c) => c.id === m.targetId) : undefined;
-    return candidate !== undefined && awaitsPersonsOk(document, candidate);
-  });
+export function delegatedHolds(document: ProjectDocument, state: Pick<WorkState, "moves">): boolean {
+  return state.moves.some((m) => decidedWithDelegation(document, m));
+}
+
+/**
+ * Whether the full delegation in force takes the person's move off the person (ADR 0022): the choices the Coordinator
+ * decides with it, and a mandate request, which the full mandate the delegation brings makes moot. Without the
+ * delegation every move of the person stays theirs.
+ */
+export function delegationTakes(document: ProjectDocument, move: Pick<MoveOption, "actor" | "move" | "targetId">): boolean {
+  if (move.actor !== "person" || !activeDelegation(document)) return false;
+  return move.move === "grantMandate" || decidedWithDelegation(document, move);
 }
 
 /**
@@ -158,11 +171,11 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
   // With the delegation, which brings the full mandate (ADR 0022), a mandate request no longer holds the work.
-  const holds = (move: NextMove) => holdsWork(state, move) && !(move === "grantMandate" && activeDelegation(document));
+  const holds = (m: MoveOption) => holdsWork(state, m.move) && !delegationTakes(document, m);
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
   // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).
-  if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
+  if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m))) return null;
   const move = option.move as CoordinatorMove;
   // The round tries again a move the latest automatic turns of the dialog made or tried, a few times at most: a move
   // that keeps failing does not loop every five minutes, and one that failed once is not left alone. A new event does.
