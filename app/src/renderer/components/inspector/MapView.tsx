@@ -1,117 +1,123 @@
-import { IconArrowLeft, IconExternalLink, IconFileText, IconFolder, IconMessageCircle } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle, IconShieldCheck } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { act, useUi } from "@/lib/store";
 import { moduleQuestion } from "@/lib/askCoordinator";
 import { OverlapMarkSign, OverlapRow } from "@/components/OverlapNotice";
-import { EmptyNote, InspectorSection } from "./Inspector";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useT } from "@/lib/i18n";
+import { DisclosureSection, EmptyNote, InspectorSection } from "./Inspector";
 
 const ROW =
   "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)]";
 
-export function MapView() {
+/**
+ * The modules of the project (issue #334): the map of today as the Moduli section of Mandato. Each module says whether
+ * it is in the mandate and who works on it now; a module opens its detail.
+ */
+export function ModulesList() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const openFocusStart = useUi((s) => s.openFocusStart);
   const { snapshot } = project;
   const marks = project.overlaps?.modules ?? {};
+  const mandate = project.document.mandate;
+  const inMandate = new Set(mandate?.status === "granted" ? mandate.scopeModuleIds : []);
   return (
-    <>
-      <InspectorSection title="Struttura rilevata">
-        <p className="text-ui text-foreground/90">
-          {project.isDemo ? "Negozio di esempio" : snapshot.name}: {snapshot.totalFileCount} file sorgente in {snapshot.modules.length} moduli.
+    <div data-testid="modules">
+      <p className="text-ui-sm text-foreground/90">
+        {t("rules.modules.structure", {
+          name: project.isDemo ? t("rules.modules.demoName") : snapshot.name,
+          files: snapshot.totalFileCount,
+          modules: snapshot.modules.length,
+        })}
+      </p>
+      <p className="mt-1 text-ui-xs text-muted-foreground">{t("rules.modules.folders")}</p>
+      {Object.keys(marks).length ? (
+        <p className="mt-1 text-ui-xs text-muted-foreground" data-testid="map-overlap-legend">
+          {t("rules.modules.overlapLegend")}
         </p>
-        <p className="mt-1 text-ui-sm text-muted-foreground">
-          I moduli seguono le cartelle del repository e non provano una responsabilità architetturale.
-        </p>
-        {Object.keys(marks).length ? (
-          <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="map-overlap-legend">
-            Accanto ai moduli compare chi ci lavora ora: grigio se lo tocca solo un collega, blu se è anche il tuo modulo, giallo se toccate gli stessi
-            file, rosso se la prova di unione trova un conflitto.
-          </p>
-        ) : null}
-        {snapshot.warnings.length ? (
-          <ul className="mt-2 list-disc space-y-0.5 pl-4 text-ui-sm text-warning">
-            {snapshot.warnings.slice(0, 5).map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        ) : null}
-      </InspectorSection>
-      <InspectorSection title="Moduli">
-        {snapshot.modules.length === 0 ? <EmptyNote>Nessun file sorgente riconosciuto.</EmptyNote> : null}
-        <div className="-mx-2 flex flex-col gap-0.5" role="listbox" aria-label="Moduli" onKeyDown={moveFocusWithArrows}>
-          {snapshot.modules.map((module) => (
-            <button
-              key={module.id}
-              type="button"
-              role="option"
-              aria-selected={false}
-              className={ROW}
-              onClick={() => setInspector({ kind: "module", id: module.id })}
-            >
-              <IconFolder className="size-4 shrink-0 text-muted-foreground" stroke={1.6} />
-              <span className="min-w-0 flex-1 truncate">{module.name}</span>
-              <OverlapMarkSign mark={marks[module.id]} />
-              <span className="shrink-0 text-ui-xs text-muted-foreground/70">{module.files.length} file</span>
-            </button>
+      ) : null}
+      {snapshot.warnings.length ? (
+        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-ui-sm text-warning">
+          {snapshot.warnings.slice(0, 5).map((w) => (
+            <li key={w}>{w}</li>
           ))}
-        </div>
-      </InspectorSection>
-    </>
+        </ul>
+      ) : null}
+      <div className="cta-row mt-3">
+        <Button size="sm" variant="outline" className="max-w-full" title={t("focus.openProject")} onClick={() => openFocusStart({ kind: "project" })}>
+          <IconFocus2 stroke={1.8} /> <span className="truncate">{t("focus.openProject")}</span>
+        </Button>
+      </div>
+      {snapshot.modules.length === 0 ? <EmptyNote>{t("rules.modules.empty")}</EmptyNote> : null}
+      <div className="-mx-2 mt-2 flex flex-col gap-0.5" role="listbox" aria-label={t("rules.modules.title")} onKeyDown={moveFocusWithArrows}>
+        {snapshot.modules.map((module) => (
+          <button
+            key={module.id}
+            type="button"
+            role="option"
+            aria-selected={false}
+            className={ROW}
+            data-in-mandate={inMandate.has(module.id) ? "true" : "false"}
+            onClick={() => setInspector({ kind: "module", id: module.id })}
+          >
+            <IconFolder className="size-4 shrink-0 text-muted-foreground" stroke={1.6} />
+            <span className="min-w-0 flex-1 truncate">{module.name}</span>
+            {inMandate.has(module.id) ? (
+              <Tooltip label={t("rules.modules.inMandate")}>
+                <span className="inline-flex shrink-0 items-center text-[var(--color-text-accent)]" data-testid="module-in-mandate">
+                  <IconShieldCheck className="size-3.5" stroke={1.8} aria-hidden />
+                  <span className="sr-only">{t("rules.modules.inMandate")}</span>
+                </span>
+              </Tooltip>
+            ) : null}
+            <OverlapMarkSign mark={marks[module.id]} />
+            <span className="shrink-0 text-ui-xs text-muted-foreground/70">{t("rules.modules.files", { count: module.files.length })}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
+/** A module (issue #334): its files first, then who works on it, with the detected dependencies in a closed section. */
 export function ModuleView({ id }: { id: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
+  const openFocusStart = useUi((s) => s.openFocusStart);
+  const [dependenciesOpen, setDependenciesOpen] = useState(false);
   const module = project.snapshot.modules.find((m) => m.id === id);
   const fileMarks = project.overlaps?.files ?? {};
   const moduleOverlaps = (project.overlaps?.items ?? []).filter((item) => item.modules.some((m) => m.id === id));
-  if (!module) return <div className="p-4"><EmptyNote>Il modulo non esiste più dopo l'ultima scansione.</EmptyNote></div>;
+  if (!module) return <div className="p-4"><EmptyNote>{t("rules.module.gone")}</EmptyNote></div>;
   const inMandate = project.document.mandate?.status === "granted" && project.document.mandate.scopeModuleIds.includes(module.id);
   return (
     <>
       <div className="px-4 pt-3">
         <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "map" })}>
-          <IconArrowLeft className="size-3.5" /> Mappa
+          <IconArrowLeft className="size-3.5" /> {t("rules.module.back")}
         </button>
         <h3 className="mt-2 text-ui-lg font-medium text-foreground">{module.name}</h3>
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{module.relativePath}</p>
+        <p className="mt-2 text-ui text-foreground/90">{module.summary}</p>
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="module-mandate">
+          {inMandate ? t("rules.module.inMandate") : t("rules.module.outOfMandate")}
+        </p>
         <div className="cta-row mt-3">
+          <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "module", moduleId: module.id })}>
+            <IconFocus2 stroke={1.8} /> {t("focus.openModule")}
+          </Button>
           <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
-            <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore su questo modulo
+            <IconMessageCircle stroke={1.8} /> {t("rules.module.ask")}
           </Button>
         </div>
       </div>
-      <InspectorSection title="Panoramica">
-        <p className="text-ui text-foreground/90">{module.summary}</p>
-        <p className="mt-1 text-ui-sm text-muted-foreground">{inMandate ? "Il modulo rientra nel mandato." : "Il modulo non rientra nel mandato attuale."}</p>
-      </InspectorSection>
-      {moduleOverlaps.length ? (
-        <InspectorSection title="Colleghi al lavoro qui">
-          <div data-testid="module-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
-            {moduleOverlaps.map((item) => (
-              <OverlapRow key={item.id} item={item} />
-            ))}
-          </div>
-        </InspectorSection>
-      ) : null}
-      <InspectorSection title="Dipendenze rilevate">
-        {module.dependencies.length ? (
-          <div className="flex flex-wrap gap-1">
-            {module.dependencies.map((d) => (
-              <span key={d} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                {d}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <EmptyNote>Nessuna dipendenza rilevata.</EmptyNote>
-        )}
-      </InspectorSection>
-      <InspectorSection title={`File (${module.files.length})`}>
-        <div className="-mx-2 flex flex-col gap-0.5">
+      <InspectorSection title={`${t("rules.module.files")} (${module.files.length})`}>
+        <div className="-mx-2 flex flex-col gap-0.5" data-testid="module-files">
           {module.files.map((file) => (
             <button key={file.id} type="button" className={ROW} onClick={() => setInspector({ kind: "file", path: file.relativePath })}>
               <IconFileText className="size-3.5 shrink-0 text-muted-foreground" stroke={1.7} />
@@ -122,6 +128,34 @@ export function ModuleView({ id }: { id: string }) {
           ))}
         </div>
       </InspectorSection>
+      {moduleOverlaps.length ? (
+        <InspectorSection title={t("rules.module.colleagues")}>
+          <div data-testid="module-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
+            {moduleOverlaps.map((item) => (
+              <OverlapRow key={item.id} item={item} />
+            ))}
+          </div>
+        </InspectorSection>
+      ) : null}
+      <DisclosureSection
+        title={t("rules.module.dependencies")}
+        count={module.dependencies.length}
+        open={dependenciesOpen}
+        onToggle={() => setDependenciesOpen(!dependenciesOpen)}
+        testId="module-dependencies"
+      >
+        {module.dependencies.length ? (
+          <div className="flex flex-wrap gap-1">
+            {module.dependencies.map((d) => (
+              <span key={d} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                {d}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <EmptyNote>{t("rules.module.noDependencies")}</EmptyNote>
+        )}
+      </DisclosureSection>
     </>
   );
 }

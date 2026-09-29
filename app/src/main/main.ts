@@ -1,10 +1,11 @@
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
+import { t } from "./core/personLanguage";
 import { type MenuCommand, menuTemplate } from "./menu";
 
 app.setName("Trama");
@@ -28,6 +29,11 @@ function surfaceColor(): string {
 
 // The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
+/** The power save blocker the full delegation holds (issue #423), or null. */
+let keepAwakeId: number | null = null;
+/** How long the person stays away before Trama tells them what it did with the delegation; TRAMA_RETURN_AFTER_MS for checks. */
+const RETURN_AFTER_MS = Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000);
+
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
     window?.webContents.send("trama:state", state);
@@ -53,6 +59,14 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
   systemLanguages: () => {
     const override = process.env.TRAMA_SYSTEM_LANGUAGE;
     return override ? [override] : [...app.getPreferredSystemLanguages(), app.getLocale()];
+  },
+  // The full delegation keeps the computer awake while there is open work (issue #423); without it, the usual sleep.
+  setKeepAwake: (awake) => {
+    if (awake && keepAwakeId === null) keepAwakeId = powerSaveBlocker.start("prevent-app-suspension");
+    if (!awake && keepAwakeId !== null) {
+      powerSaveBlocker.stop(keepAwakeId);
+      keepAwakeId = null;
+    }
   },
   setOpenAtLogin: (enabled) => {
     if (process.platform === "linux") return;
@@ -97,7 +111,11 @@ function createWindow(): void {
   window.on("closed", () => {
     window = null;
   });
-  window.on("focus", () => void controller.refreshCodex());
+  window.on("focus", () => {
+    void controller.refreshCodex();
+    controller.personReturned(RETURN_AFTER_MS);
+  });
+  window.on("blur", () => controller.personAway());
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -118,17 +136,17 @@ async function chooseFolder(title: string): Promise<string | null> {
 type Handler<K extends ActionName> = (payload: ActionMap[K][0]) => Promise<ActionMap[K][1]> | ActionMap[K][1];
 const handlers: { [K in ActionName]: Handler<K> } = {
   "project:openDialog": async () => {
-    const path = await chooseFolder("Apri progetto");
+    const path = await chooseFolder(t("main.dialog.openProject"));
     if (path) await controller.openProject(path);
   },
   "project:open": ({ path }) => controller.openProject(path),
   "project:openDemo": () => controller.openDemo(),
   "project:create": async ({ name, idea }) => {
-    const parent = await chooseFolder("Scegli la cartella");
+    const parent = await chooseFolder(t("main.dialog.chooseFolder"));
     if (parent) await controller.createProject(parent, name, idea);
   },
   "project:clone": async ({ repository }) => {
-    const parent = await chooseFolder("Scegli dove clonare il progetto");
+    const parent = await chooseFolder(t("main.dialog.chooseCloneFolder"));
     if (parent) await controller.cloneProject(parent, repository);
   },
   "project:close": () => controller.closeProject(),
@@ -174,6 +192,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "mandate:revoke": ({ reason }) => controller.revokeMandate(reason),
   "mandate:restrict": (input) => controller.restrictMandate(input),
   "fixedBan:acknowledge": ({ id }) => controller.acknowledgeFixedBan(id),
+  "requestedAction:confirm": ({ id }) => controller.confirmRequestedAction(id),
+  "requestedAction:decline": ({ id }) => controller.declineRequestedAction(id),
+  "delegation:revoke": () => controller.revokeDelegation(),
+  "delegation:seen": ({ id }) => controller.markDelegatedChoiceSeen(id),
   "mandate:reject": ({ requestId, reason }) => controller.rejectMandateRequest(requestId, reason),
   "autonomousStep:correct": ({ stepId, note }) => controller.correctAutonomousStep(stepId, note),
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
@@ -183,7 +205,15 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "assignment:cloudCheck": ({ assignmentId }) => controller.checkCloudSession(assignmentId),
   "assignment:changeProvider": ({ assignmentId, provider, model }) => controller.changeAssignmentProvider(assignmentId, provider, model),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
+  "squad:rename": ({ squadId, name }) => controller.renameSquadByPerson(squadId, name),
+  "squad:merge": ({ intoId, fromId, keepIds }) => controller.mergeSquadsByPerson(intoId, fromId, keepIds),
+  "squad:split": ({ squadId, moduleIds, developerIds, name }) => controller.splitSquadByPerson(squadId, moduleIds, developerIds, name),
+  "squad:undo": ({ changeId }) => controller.undoSquadChangeByPerson(changeId),
+  "squad:confirmMerge": ({ proposalId, keepIds }) => controller.confirmSquadMergeByPerson(proposalId, keepIds),
+  "squad:dismissMerge": ({ proposalId }) => controller.dismissSquadMergeByPerson(proposalId),
   "specialist:rename": ({ specialistId, name }) => controller.renameSpecialistByPerson(specialistId, name),
+  "backlog:move": ({ squadId, key, to }) => controller.moveBacklogItemByPerson(squadId, key, to),
+  "backlog:release": ({ squadId, key }) => controller.releaseBacklogItemByPerson(squadId, key),
   "specialist:setColor": ({ specialistId, color }) => controller.setSpecialistColorByPerson(specialistId, color),
   "automaticWork:start": (request) => controller.startAutomaticWork(request),
   "pactDemo:run": () => controller.runPactDemo(),
@@ -193,6 +223,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:declineMerge": ({ candidateId }) => controller.declineMergeByPerson(candidateId),
   "candidate:shot": ({ candidateId, index }) => controller.interfaceShot(candidateId, index),
   "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
+  "focusMode:open": ({ target, fixedPoint }) => controller.startScopedFocusAudit(target, fixedPoint),
+  "focusMode:fixedPoints": () => controller.focusFixedPoints(),
+  "focusMode:enter": async ({ auditId }) => controller.enterFocusMode(auditId),
+  "focusMode:exit": async () => controller.exitFocusMode(),
   "finding:followUp": ({ auditId, findingId, kind }) => controller.followUpFinding(auditId, findingId, kind),
   "audit:publish": ({ auditId }) => controller.publishAuditReport(auditId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),

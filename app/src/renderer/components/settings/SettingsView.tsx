@@ -5,6 +5,7 @@ import {
   IconChevronDown,
   IconDeviceDesktop,
   IconEye,
+  IconListDetails,
   IconMoon,
   IconPlugConnected,
   IconRefresh,
@@ -16,26 +17,31 @@ import {
 import { useEffect, useState } from "react";
 import type { ProviderAccount } from "@shared/codex";
 import type { GitHubCliState } from "@shared/onboarding";
-import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
+import type { ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
+import { MAX_ACTIVE_SQUADS, MAX_DEVELOPERS_PER_SQUAD, MIN_SQUAD_LIMIT, squadLimits } from "@shared/squads";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, sharedDevelopers } from "@shared/parallel";
 import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
-import { Badge, TextArea } from "@/components/ui/field";
-import { RuleLabel } from "@/components/chat/RuleLabel";
-import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
+import { Badge } from "@/components/ui/field";
+import { Toggle } from "@/components/ui/toggle";
+import { Tooltip } from "@/components/ui/tooltip";
+import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
 import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
+
+/** The sections of the app (issue #336), apart from those of the open project. */
+const APP_SECTIONS: SettingsSection[] = ["general", "connections"];
 
 const SECTIONS: { id: SettingsSection; label: MessageKey; icon: React.ReactNode }[] = [
   { id: "general", label: "settings.section.general", icon: <IconSettings stroke={1.7} /> },
@@ -52,6 +58,7 @@ export function SettingsView() {
   const section = useUi((s) => s.settingsSection);
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
+  const projectName = useUi((s) => (s.app?.project ? (s.app.project.isDemo ? null : s.app.project.name) : null));
   const t = useT();
   return (
     <div
@@ -65,22 +72,31 @@ export function SettingsView() {
         aria-label={t("settings.sections")}
         className="flex shrink-0 gap-0.5 overflow-x-auto [scrollbar-width:none] border-b border-[color:var(--app-surface-divider)] px-3 py-2 @2xl/chat:w-52 @2xl/chat:flex-col @2xl/chat:overflow-visible @2xl/chat:border-r @2xl/chat:border-b-0 @2xl/chat:px-2 @2xl/chat:py-4"
       >
-        {SECTIONS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            aria-current={section === entry.id ? "page" : undefined}
-            onClick={() => openSettings(entry.id)}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
-              section === entry.id
-                ? "bg-[var(--sidebar-selected)] text-foreground"
-                : "text-foreground/80 hover:bg-[var(--sidebar-accent)] hover:text-foreground",
-            )}
-          >
-            {entry.icon}
-            <span className="truncate">{t(entry.label)}</span>
-          </button>
+        {/* The app's sections, then the project's (issue #336). */}
+        {[
+          { title: t("settings.group.app"), entries: SECTIONS.filter((entry) => APP_SECTIONS.includes(entry.id)) },
+          { title: projectName ? t("settings.group.projectOf", { name: projectName }) : t("settings.group.project"), entries: SECTIONS.filter((entry) => !APP_SECTIONS.includes(entry.id)) },
+        ].map((group) => (
+          <div key={group.title} className="flex shrink-0 gap-0.5 @2xl/chat:mb-3 @2xl/chat:flex-col" role="group" aria-label={group.title}>
+            <span className="hidden truncate px-2 pb-1 text-ui-xs text-muted-foreground @2xl/chat:block">{group.title}</span>
+            {group.entries.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                aria-current={section === entry.id ? "page" : undefined}
+                onClick={() => openSettings(entry.id)}
+                className={cn(
+                  "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
+                  section === entry.id
+                    ? "bg-[var(--sidebar-selected)] text-foreground"
+                    : "text-foreground/80 hover:bg-[var(--sidebar-accent)] hover:text-foreground",
+                )}
+              >
+                {entry.icon}
+                <span className="truncate">{t(entry.label)}</span>
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -137,24 +153,6 @@ function Row({ label, description, control, children }: { label: React.ReactNode
       </div>
       {children}
     </div>
-  );
-}
-
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-[18px] w-[30px] shrink-0 cursor-pointer items-center rounded-full transition-colors",
-        checked ? "bg-[var(--color-text-accent)]" : "bg-[var(--color-border-heavy)]",
-      )}
-    >
-      <span className={cn("inline-block size-[14px] rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[14px]" : "translate-x-[2px]")} />
-    </button>
   );
 }
 
@@ -274,13 +272,33 @@ const GITHUB_STATUS: Record<GitHubCliState["status"], MessageKey> = {
   error: "github.status.error",
 };
 
-/** The Capacità button of a provider row, the same for every provider (issue #71). */
+/** The Capacità button of a provider row, the same for every provider (issue #71), as an icon with its tooltip (issue #336). */
 function CapabilityToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const t = useT();
   return (
-    <Button variant="ghost" size="xs" aria-expanded={open} onClick={onToggle}>
-      {t("settings.provider.capabilities")} <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
-    </Button>
+    <Tooltip label={t("settings.provider.capabilities")}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={t("settings.provider.capabilities")}
+        aria-expanded={open}
+        className={cn(open && "bg-[var(--color-background-button-secondary)] text-foreground")}
+        onClick={onToggle}
+      >
+        <IconListDetails />
+      </Button>
+    </Tooltip>
+  );
+}
+
+/** Checks a connection again, as an icon with its tooltip (issue #336). */
+function CheckButton({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <Tooltip label={label}>
+      <Button variant="ghost" size="icon-xs" aria-label={label} disabled={disabled} onClick={onClick}>
+        <IconRefresh />
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -305,6 +323,20 @@ function ConnectionsSection() {
   const language = useLanguage();
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
+  const capabilities = useUi((s) => s.app?.project?.github.capabilities ?? null);
+  // What the account can do in the open project's repository, which Issue showed before Lavoro (issue #332).
+  const access = !capabilities
+    ? null
+    : capabilities.status === "ready"
+      ? [
+          capabilities.login ? t("github.access.login", { login: capabilities.login }) : t("github.access.gh"),
+          capabilities.private === null ? null : capabilities.private ? t("github.access.private") : t("github.access.public"),
+          capabilities.canPush ? t("github.access.canPush") : t("github.access.readOnly"),
+          capabilities.rateRemaining !== null ? t("github.access.rate", { count: capabilities.rateRemaining }) : null,
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : capabilities.message;
   // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
   useEffect(() => {
     if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
@@ -350,6 +382,7 @@ function ConnectionsSection() {
             <>
               <Badge tone={status.tone}>{status.label}</Badge>
               <CapabilityToggle open={codexOpen} onToggle={() => setCodexOpen(!codexOpen)} />
+              <CheckButton label={t("settings.provider.checkOf", { name: "ChatGPT" })} onClick={() => void act("codex:refresh", undefined)} />
               {account?.kind === "signedOut" ? (
                 <Button size="sm" onClick={() => void act("codex:login", undefined)}>
                   {t("settings.connections.signInChatGpt")}
@@ -366,20 +399,26 @@ function ConnectionsSection() {
               <IconBrandGithub className="size-4" stroke={1.7} /> GitHub
             </span>
           }
-          description={<GitHubCliDescription state={gitHubCli} />}
+          description={
+            <>
+              <GitHubCliDescription state={gitHubCli} />
+              {access ? (
+                <span className="mt-1 block" data-testid="github-access">
+                  {t("settings.connections.githubAccess", { access })}
+                </span>
+              ) : null}
+            </>
+          }
           control={
             <>
               <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
                 {t(GITHUB_STATUS[gitHubCli.status])}
               </Badge>
-              <Button
-                variant="outline"
-                size="xs"
+              <CheckButton
+                label={t("settings.connections.checkAgain")}
                 disabled={gitHubCli.status === "checking"}
                 onClick={() => void act("onboarding:checkGitHub", undefined)}
-              >
-                {t("settings.connections.checkAgain")}
-              </Button>
+              />
             </>
           }
         />
@@ -393,6 +432,10 @@ function ConnectionsSection() {
   );
 }
 
+/**
+ * The GitHub account of the open project's repository: who is signed in, the repository's visibility, whether the
+ * account can push and the API requests left. It was in Issue until issue #336.
+ */
 function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
@@ -431,9 +474,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
         <>
           <Badge tone={status.tone}>{status.label}</Badge>
           <CapabilityToggle open={open} onToggle={() => setOpen(!open)} />
-          <Button variant="ghost" size="xs" onClick={() => void act("providers:refresh", { provider: id })}>
-            {t("settings.provider.check")}
-          </Button>
+          <CheckButton label={t("settings.provider.checkOf", { name: provider.name })} onClick={() => void act("providers:refresh", { provider: id })} />
           {state?.account?.kind === "signedOut" ? (
             <Button
               variant="outline"
@@ -529,7 +570,7 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
-      <ParallelDevelopersGroup />
+      <DevelopersAtWorkGroup />
       <WorkPlaceGroup />
     </>
   );
@@ -538,63 +579,86 @@ function MethodSection() {
 /** The shared limit's choices (issue #39): the small numbers one by one, then the larger steps. */
 const SHARED_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
 
-const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
+const range = (min: number, max: number) => Array.from({ length: max - min + 1 }, (_, index) => min + index);
+const PARALLEL_OPTIONS = range(MIN_PARALLEL_DEVELOPERS, MAX_PARALLEL_DEVELOPERS_SETTING);
+const PER_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_DEVELOPERS_PER_SQUAD);
+const ACTIVE_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_ACTIVE_SQUADS);
 
-/** W08: how many developers work at the same time in the open project; three unless the person changes it. */
-function ParallelDevelopersGroup() {
-  const project = useUi((s) => s.app?.project ?? null);
-  const usable = project && !project.isDemo && project.stateWritable;
-  const limit = project ? parallelDevelopers(project.document) : null;
-  const t = useT();
-  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
+/** One limit as a row of numbers to pick from. */
+function LimitPicker({ label, testId, options, value, onPick }: { label: string; testId: string; options: number[]; value: number | null; onPick: (value: number) => void }) {
   return (
-    <Group title={t("settings.parallel.title")} note={t("settings.parallel.note")}>
-      <Row
-        label={project ? t("settings.parallel.inProject", { name: project.name }) : t("settings.parallel.inOpenProject")}
-        description={!project ? t("settings.parallel.openProject") : project.isDemo ? t("settings.parallel.demo") : t("settings.parallel.default")}
-        control={
-          usable ? (
-            <div role="radiogroup" aria-label={t("settings.parallel.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="parallel-developers">
-              {PARALLEL_OPTIONS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={limit === value}
-                  onClick={() => void act("project:settings", { parallelDevelopers: value })}
-                  className={cn(
-                    "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
-                    limit === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          ) : null
-        }
-      />
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={testId}>
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={value === option}
+          onClick={() => onPick(option)}
+          className={cn(
+            "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+            value === option ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The limits of developers at work, from the widest (W08, #346, A10 Q22): in all projects, in the open project, per
+ * squad and squads together. A developer starts only when every one of them allows it; each has one control.
+ */
+function DevelopersAtWorkGroup() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = Boolean(project && !project.isDemo && project.stateWritable);
+  const limits = project ? squadLimits(project.document) : null;
+  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
+  const t = useT();
+  const unavailable = !project ? t("settings.squads.openProject") : project.isDemo ? t("settings.squads.demo") : null;
+  const setProject = (setting: "parallelDevelopers" | "developersPerSquad" | "activeSquads") => (value: number) => void act("project:settings", { [setting]: value });
+  return (
+    <Group title={t("settings.parallel.title")} note={t("settings.squads.note")}>
       <Row
         label={t("settings.parallel.shared")}
         description={t("settings.parallel.sharedDescription")}
         control={
-          <div role="radiogroup" aria-label={t("settings.parallel.sharedLabel")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="shared-developers">
-            {SHARED_OPTIONS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={shared === value}
-                onClick={() => void act("settings:update", { sharedDevelopers: value })}
-                className={cn(
-                  "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
-                  shared === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
+          <LimitPicker
+            label={t("settings.parallel.sharedLabel")}
+            testId="shared-developers"
+            options={SHARED_OPTIONS}
+            value={shared}
+            onPick={(value) => void act("settings:update", { sharedDevelopers: value })}
+          />
+        }
+      />
+      <Row
+        label={project ? t("settings.parallel.inProject", { name: project.name }) : t("settings.parallel.inOpenProject")}
+        description={unavailable ?? t("settings.parallel.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.parallel.projectLabel")} testId="parallel-developers" options={PARALLEL_OPTIONS} value={limits.project} onPick={setProject("parallelDevelopers")} />
+          ) : null
+        }
+      />
+      <Row
+        label={t("settings.squads.developers")}
+        description={unavailable ?? t("settings.squads.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.squads.developers")} testId="squad-limit-developersPerSquad" options={PER_SQUAD_OPTIONS} value={limits.developersPerSquad} onPick={setProject("developersPerSquad")} />
+          ) : null
+        }
+      />
+      <Row
+        label={t("settings.squads.active")}
+        description={unavailable ?? t("settings.squads.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.squads.active")} testId="squad-limit-activeSquads" options={ACTIVE_SQUAD_OPTIONS} value={limits.activeSquads} onPick={setProject("activeSquads")} />
+          ) : null
         }
       />
     </Group>
@@ -654,93 +718,59 @@ function WorkPlaceGroup() {
   );
 }
 
-/** Trama's Clean Code standard for the open project (Q03, ADR 0016): each rule on or off, and the person's note. */
+/**
+ * The code standard moved to Regole (issue #334): it applies to the open project, so the rules and the note live with
+ * the mandate and the Pact. Settings keeps this way there.
+ */
 function StandardSection() {
   const project = useUi((s) => s.app?.project ?? null);
-  const settings = project?.document.cleanCode;
-  const [note, setNote] = useState<string | null>(null);
-  const saved = settings?.note ?? "";
-  const draft = note ?? saved;
-  const on = new Set(activeRules(settings).map((rule) => rule.id));
+  const setInspector = useUi((s) => s.setInspector);
   const t = useT();
   return (
     <>
       <PageHeader title={t("settings.section.standard")} description={t("settings.standard.description", { version: CLEAN_CODE_VERSION })} />
-      {!project ? (
-        <Group>
+      <Group>
+        {!project ? (
           <Row label={<span className="text-muted-foreground">{t("settings.standard.openProject")}</span>} />
-        </Group>
-      ) : (
-        <div data-testid="clean-code-settings">
-          <Group
-            title={t("settings.standard.rulesFor", { name: project.name })}
-            note={t("settings.standard.note", { source: CLEAN_CODE_SOURCE })}
-          >
-            {CLEAN_CODE_RULES.map((rule) => (
-              <Row
-                key={rule.id}
-                label={
-                  <span className="flex items-center gap-2">
-                    <RuleLabel rule={rule} />
-                    {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
-                  </span>
-                }
-                description={rule.summary}
-                control={
-                  <Toggle checked={on.has(rule.id)} label={rule.label} onChange={(enabled) => void act("project:cleanCode", { rule: rule.id, enabled })} />
-                }
-              />
-            ))}
-          </Group>
-          <Group title={t("settings.standard.adaptation")} note={t("settings.standard.adaptationNote")}>
-            <div className="px-4 py-3">
-              <TextArea
-                aria-label={t("settings.standard.noteLabel")}
-                rows={3}
-                value={draft}
-                placeholder={t("settings.standard.notePlaceholder")}
-                onChange={(event) => setNote(event.target.value)}
-              />
-              <div className="cta-row mt-2">
-                <Button size="sm" variant="ghost" disabled={draft === saved} onClick={() => setNote(null)}>
-                  {t("settings.cancel")}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={draft === saved}
-                  onClick={() => void act("project:cleanCode", { note: draft }).then(() => setNote(null))}
-                >
-                  {t("settings.save")}
-                </Button>
-              </div>
-            </div>
-          </Group>
-        </div>
-      )}
+        ) : (
+          <Row
+            label={<span className="text-muted-foreground">{t("settings.standard.moved")}</span>}
+            control={
+              <Button size="sm" variant="outline" data-testid="standard-open-rules" onClick={() => setInspector({ kind: "standard" })}>
+                {t("settings.standard.open")}
+              </Button>
+            }
+          />
+        )}
+      </Group>
     </>
   );
 }
 
-/** What the Coordinator's learning may do (ADR 0014). */
+/**
+ * The learning switches moved to Memoria, in Come impara (issue #335): they live next to the reviews and the upkeep
+ * they turn on and off. Settings keeps this way there.
+ */
 function LearningSection() {
-  const saved = useUi((s) => s.app?.settings.learning);
-  const learning = { ...DEFAULT_LEARNING_SETTINGS, ...(saved ?? {}) };
-  const set = (change: Partial<LearningSettings>) => void act("settings:update", { learning: change });
+  const project = useUi((s) => s.app?.project ?? null);
+  const setInspector = useUi((s) => s.setInspector);
   const t = useT();
   return (
     <>
-      <PageHeader title={t("settings.learning.title")} description={t("settings.learning.description")} />
-      <Group note={t("settings.learning.note")}>
-        <ToggleRow label={t("settings.learning.memory")} checked={learning.memory} onChange={(value) => set({ memory: value })} />
-        <ToggleRow
-          label={t("settings.learning.userProfile")}
-          description={t("settings.learning.userProfileDescription")}
-          checked={learning.userProfile}
-          onChange={(value) => set({ userProfile: value })}
-        />
-        <ToggleRow label={t("settings.learning.backgroundReview")} checked={learning.backgroundReview} onChange={(value) => set({ backgroundReview: value })} />
-        <ToggleRow label={t("settings.learning.curator")} checked={learning.curator} onChange={(value) => set({ curator: value })} />
-        <ToggleRow label={t("settings.learning.consolidate")} checked={learning.consolidate} onChange={(value) => set({ consolidate: value })} />
+      <PageHeader title={t("settings.section.learning")} description={t("settings.learning.description")} />
+      <Group>
+        {!project ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.learning.openProject")}</span>} />
+        ) : (
+          <Row
+            label={<span className="text-muted-foreground">{t("settings.learning.moved")}</span>}
+            control={
+              <Button size="sm" variant="outline" data-testid="learning-open-memory" onClick={() => setInspector({ kind: "memory", howItLearns: true })}>
+                {t("settings.learning.open")}
+              </Button>
+            }
+          />
+        )}
       </Group>
     </>
   );

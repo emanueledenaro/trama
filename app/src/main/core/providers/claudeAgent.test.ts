@@ -26,7 +26,8 @@ import {
   parseMcpToolName,
   usageLimitFromRateLimit,
 } from "./claudeAgent";
-import { isInside } from "./types";
+import { HOST_TOOL_TIMEOUT_MS, isInside } from "./types";
+import { setPersonLanguage } from "../personLanguage";
 
 const ok = (stdout: string, code = 0) => ({ stdout, stderr: "", code });
 const identity = (root: string, path: string) => isInside(root, resolve(path));
@@ -125,6 +126,28 @@ describe("usage limits", () => {
     const block = usageLimitFromRateLimit({ status: "rejected", resetsAt: 4_102_444_800 });
     expect(block?.until).toBe("2100-01-01T00:00:00.000Z");
     expect(block?.message).toMatch(/limite di utilizzo/);
+  });
+});
+
+describe("texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the usage limit and its reset time in English", () => {
+    setPersonLanguage("en");
+    const block = usageLimitFromRateLimit({ status: "rejected", resetsAt: 4_102_444_800 });
+    expect(block?.message).toMatch(/^You have reached your Claude usage limit\. Try again after (January|December) .+\.$/);
+  });
+
+  it("writes the sign-in status failures in English", () => {
+    setPersonLanguage("en");
+    expect(parseClaudeAuthStatus({ stdout: "", stderr: "unknown command", code: 1 })).toEqual({
+      status: "unknown",
+      message: "This version of Claude Code has no `claude auth status`. Update Claude Code.",
+    });
+    expect(parseClaudeAuthStatus({ stdout: "", stderr: "", code: 3 })).toEqual({
+      status: "unknown",
+      message: "Cannot check the Claude sign-in. The command exited with code 3.",
+    });
   });
 });
 
@@ -284,7 +307,9 @@ describe("query options", () => {
       policy: { cwd: "/work", writableRoot: "/work", hostServer: "trama" },
       outputSchema: { type: "object" },
     });
-    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: 120_000 });
+    // review_candidate waits for the whole gate: two minutes cut it off in the audit (issue #389).
+    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: HOST_TOOL_TIMEOUT_MS });
+    expect(HOST_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(30 * 60_000);
     expect(typeof (options.mcpServers?.trama as { instance?: { connect?: unknown } }).instance?.connect).toBe("function");
     expect(options.allowedTools).toEqual(["mcp__trama"]);
     expect(options.resume).toBe("22222222-2222-4222-8222-222222222222");

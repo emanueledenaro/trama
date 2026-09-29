@@ -3,11 +3,13 @@ import type { ProviderId } from "@shared/codex";
 import { chatComposer } from "@shared/goals";
 import { translator } from "@shared/i18n";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
-import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
+import { FocusModeView } from "@/components/focus/FocusModeView";
 import { WelcomeView } from "@/components/launch/WelcomeView";
-import { Sash, useResizableWidth } from "@/lib/resizable";
+import { Sash, useResizableHeight, useResizableWidth } from "@/lib/resizable";
 import { ActivityBar } from "@/components/workbench/ActivityBar";
+import { EditorArea } from "@/components/workbench/EditorArea";
+import { ActivityPanel } from "@/components/workbench/ActivityPanel";
 import { SideBar } from "@/components/workbench/SideBar";
 import { StatusBar } from "@/components/workbench/StatusBar";
 import { TitleBar } from "@/components/workbench/TitleBar";
@@ -16,7 +18,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
-import { SIDE_BAR_MIN_WIDTH, SIDE_BAR_VIEWS, type SideBarView, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
+import { CONVERSATION_TAB, PANEL_MIN_HEIGHT, SIDE_BAR_MIN_WIDTH, SIDE_BAR_VIEWS, SPLIT_EDITOR_MIN_VIEWPORT, type SideBarView, panelDefaultHeight, panelMaxHeight, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -57,9 +59,18 @@ export function App() {
   const t = useT();
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
+  // A module opens in an editor tab (issue #336): the exercise still sees it opened.
+  const openedModule = useUi((s) => s.editorFocus === "detail" && (s.activeDetail?.startsWith("detail:module:") ?? false));
   // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
   const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
   const welcomeOpen = useUi((s) => s.welcome !== null);
+  // The bottom panel with Activity: 200 px, 260 from a 1500 px wide window, remembered; the editor keeps its height above (issue #337).
+  const panelOpen = useUi((s) => s.panelOpen && Boolean(s.app?.project));
+  const panel = useResizableHeight("trama.panelHeight", {
+    initial: () => panelDefaultHeight(window.innerWidth),
+    min: PANEL_MIN_HEIGHT,
+    max: panelMaxHeight,
+  });
 
   useEffect(() => {
     void window.trama.getState().then(setApp);
@@ -85,8 +96,18 @@ export function App() {
       else if (!ui.app?.project) ui.setToast(translator(ui.app?.language)("menu.needsProject"), "info");
       else if (command === "focusComposer") ui.focusComposer();
       else if (command === "refreshProject") void refreshProject();
-      // Activity opens in the side bar until the bottom panel arrives (B08), as the title bar's toggle does.
-      else if (command === "togglePanel") ui.setInspector(ui.sidebarOpen && ui.inspector?.kind === "activity" ? null : { kind: "activity" });
+      // The conversation's tab comes forward with the composer, as its icon in the activity bar does (issue #336).
+      else if (command === "view:conversation") {
+        ui.focusTab(CONVERSATION_TAB);
+        ui.focusComposer();
+      }
+      // Activity in the bottom panel, as the title bar's toggle (issue #337).
+      else if (command === "togglePanel") ui.togglePanel();
+      // The split editor needs a wide window, as the title bar's toggle that only shows there (issue #336).
+      else if (command === "toggleSplitEditor") {
+        if (window.innerWidth >= SPLIT_EDITOR_MIN_VIEWPORT) ui.toggleSplitEditor();
+        else ui.setToast(translator(ui.app?.language)("menu.splitNeedsWidth"), "info");
+      }
       else if (command.startsWith("view:")) {
         const view = command.slice("view:".length) as SideBarView;
         if (SIDE_BAR_VIEWS.includes(view)) openMenuView(ui, view);
@@ -120,11 +141,13 @@ export function App() {
   useEffect(() => {
     if (!isDemo) return;
     if (inspector?.kind === "map" && !observed?.mapOpened) void act("exercise:observe", { step: "mapOpened" });
-    if (inspector?.kind === "module" && !observed?.moduleOpened) void act("exercise:observe", { step: "moduleOpened" });
-  }, [inspector, isDemo, observed?.mapOpened, observed?.moduleOpened]);
+    if ((inspector?.kind === "module" || openedModule) && !observed?.moduleOpened) void act("exercise:observe", { step: "moduleOpened" });
+  }, [inspector, openedModule, isDemo, observed?.mapOpened, observed?.moduleOpened]);
 
   if (!app) return null;
   const isMac = app.platform === "darwin";
+  // Full-screen focus mode (F03) takes the whole window for the project on screen, until the person leaves it.
+  const inFocus = app.project !== null && app.focusMode?.projectId === app.project.id;
 
   return (
     <TooltipProvider delay={500}>
@@ -163,9 +186,30 @@ export function App() {
                 onDragChange={sidebar.setResizing}
               />
             ) : null}
-            <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
-              <ChatView />
-            </main>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {inFocus ? (
+                // Full-screen focus mode on a module or the project (F03) takes the editor area, tabs included, inside the
+                // window's bars and above the bottom panel, until the person leaves it.
+                <main className="chat-content-card @container/main relative z-[15] flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <FocusModeView />
+                </main>
+              ) : (
+                <EditorArea />
+              )}
+              {panelOpen ? (
+                <ActivityPanel
+                  size={{
+                    height: panel.height,
+                    min: panel.bounds.min,
+                    max: panel.bounds.max,
+                    setHeight: panel.setHeight,
+                    reset: panel.reset,
+                    resizing: panel.resizing,
+                    setResizing: panel.setResizing,
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
         <StatusBar />

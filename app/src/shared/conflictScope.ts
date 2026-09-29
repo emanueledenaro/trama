@@ -11,11 +11,12 @@ const assignmentsOf = (document: ProjectDocument) => document.team.specialists.f
 
 /**
  * Later work replaces `assignment` when it delivers the same slice or, outside slices, the same issue: a correction or
- * a new attempt. Other work on the same modules, by the same developer or another, does not replace it: two open
- * candidates there are the case the worktree comparison is for.
+ * a new attempt. So does work Trama recorded as its correction (issue #389). Other work on the same modules, by the
+ * same developer or another, does not replace it: two open candidates there are the case the worktree comparison is for.
  */
 export function replacedBy(assignment: SpecialistAssignment, later: SpecialistAssignment): boolean {
   if (later.id === assignment.id || !(later.createdAt > assignment.createdAt)) return false;
+  if (later.replaces?.includes(assignment.id)) return true;
   if (assignment.slice || later.slice) {
     return Boolean(assignment.slice && later.slice && later.slice.planId === assignment.slice.planId && later.slice.sliceId === assignment.slice.sliceId);
   }
@@ -24,10 +25,12 @@ export function replacedBy(assignment: SpecialistAssignment, later: SpecialistAs
 
 /**
  * A candidate is superseded when a newer candidate of the same assignment exists or when later work replaced its
- * assignment. A merged candidate is done, not superseded.
+ * assignment, and when the Coordinator declared it superseded by a newer candidate of the same work (issue #421). A
+ * merged candidate is done, not superseded.
  */
 export function candidateSuperseded(document: ProjectDocument, candidate: Candidate): boolean {
   if (candidate.pullRequest?.mergedAt) return false;
+  if (candidate.supersession) return true;
   if (document.candidates.filter((c) => c.assignmentId === candidate.assignmentId).at(-1)?.id !== candidate.id) return true;
   const all = assignmentsOf(document);
   const assignment = all.find((a) => a.id === candidate.assignmentId);

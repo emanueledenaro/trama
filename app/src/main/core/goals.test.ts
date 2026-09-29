@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Candidate, CandidateReport, GitHubSnapshot, ProjectDocument, RecentProject } from "@shared/domain";
 import { waitingForYou } from "@shared/waitingForYou";
 import {
@@ -26,6 +26,8 @@ import { ciSummary, orderByAttention, summarizeProject, unreadableProject } from
 import { createDecisionRequest, decide, DomainError, grantMandate } from "./pact";
 import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
+import { setPersonLanguage } from "./personLanguage";
+import { statusLine } from "./statusLine";
 
 const input = {
   title: "Revisione degli ordini",
@@ -486,6 +488,32 @@ describe("projects overview (UX03)", () => {
     expect(unreadableProject(recent("b", "Bravo"), null, 3)).toMatchObject({ priority: 3, waitingForCapacity: 0, ci: null });
   });
 
+  it("shows what the Coordinator does and the same count as Aspetta te (issue #336)", () => {
+    const document = emptyDocument("a");
+    document.decisionRequests.push({
+      id: "Q-1",
+      requestId: null,
+      category: "product",
+      question: "Cosa succede a un ordine pagato annullato?",
+      concreteCase: "c",
+      alternatives: [],
+      revisesDecisionId: null,
+      askedAt: "",
+      outcome: null,
+    });
+    const live = { selected: true, candidateReports: [], source: "live" as const, runningAssignments: 0 };
+    const items = waitingForYou(document);
+    const entry = summarizeProject(recent("a", "Alfa"), document, live);
+    expect(items.length).toBeGreaterThan(0);
+    expect(entry.waiting).toEqual({ count: items.length, first: { key: items[0]!.key, label: items[0]!.label, title: items[0]!.title } });
+    expect(entry.coordinator).toMatchObject({ text: statusLine(document, null).text, state: statusLine(document, null).state });
+    // The open project passes its own Aspetta te and status line: the overview shows those, not a second reading.
+    const shown = summarizeProject(recent("a", "Alfa"), document, { ...live, waiting: [], status: { ...statusLine(document, null), text: "Riallineo il branch." } });
+    expect(shown.waiting).toEqual({ count: 0, first: null });
+    expect(shown.coordinator?.text).toBe("Riallineo il branch.");
+    expect(unreadableProject(recent("b", "Bravo"), null)).toMatchObject({ coordinator: null, waiting: { count: 0, first: null } });
+  });
+
   it("orders projects by attention with a stable order on ties", () => {
     const quiet = emptyDocument("a");
     const waiting = emptyDocument("b");
@@ -715,5 +743,17 @@ describe("archiving and deleting goals (W03)", () => {
     }
     expect(projectGoals(document)).toHaveLength(5);
     expect(() => deleteEmptyGoal(document, "G-00000000")).toThrow(/non trovato/);
+  });
+});
+
+describe("goal errors in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("refuses in the person's language, with the numbers of the language", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    expect(() => createGoal(document, { title: " ", outcome: "o", examples: [] })).toThrow("A goal needs a title.");
+    expect(() => createGoal(document, { title: "t", outcome: "x".repeat(4_001), examples: [] })).toThrow("The expected outcome is longer than 4,000 characters.");
+    expect(() => archiveGoal(document, "G-00000000")).toThrow("Goal G-00000000 not found.");
   });
 });

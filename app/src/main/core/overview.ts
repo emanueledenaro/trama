@@ -1,7 +1,9 @@
-import type { AttentionReason, CandidateReport, GitHubSnapshot, ProjectDocument, ProjectOverview, RecentProject } from "@shared/domain";
+import type { AttentionReason, CandidateReport, GitHubSnapshot, ProjectDocument, ProjectOverview, RecentProject, StatusLineView } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
 import { presenceFreshness, type PresenceView } from "@shared/presence";
-import { type WaitingKind, waitingForYou } from "@shared/waitingForYou";
+import { t } from "./personLanguage";
+import { type WaitingItem, type WaitingKind, waitingForYou } from "@shared/waitingForYou";
+import { statusLine } from "./statusLine";
 import { currentAssignment } from "./team";
 
 const ORDER: (AttentionReason | "unreadable" | null)[] = ["decision", "blocked", "approval", "running", "unreadable", null];
@@ -24,6 +26,10 @@ export function summarizeProject(
     priority?: number;
     waitingForCapacity?: number;
     ci?: ProjectOverview["ci"];
+    /** The project's Aspetta te as the open project shows it; computed from the document when not given. */
+    waiting?: WaitingItem[];
+    /** The project's status line as the open project shows it; computed from the document when not given. */
+    status?: StatusLineView | null;
   },
 ): ProjectOverview {
   // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision. The
@@ -48,14 +54,14 @@ export function summarizeProject(
   const waitingForCapacity = input.waitingForCapacity ?? 0;
   const ci = input.ci ?? null;
   const reasons: string[] = [];
-  if (openDecisions) reasons.push(`${openDecisions} ${openDecisions === 1 ? "decisione richiesta" : "decisioni richieste"}`);
-  if (openMandates) reasons.push(`${openMandates} ${openMandates === 1 ? "richiesta di mandato" : "richieste di mandato"}`);
-  if (openTeams) reasons.push(`${openTeams} ${openTeams === 1 ? "proposta di team" : "proposte di team"}`);
-  if (blockedWork) reasons.push(`${blockedWork} ${blockedWork === 1 ? "lavoro fermo o fallito" : "lavori fermi o falliti"}`);
-  if (toApprove) reasons.push(`${toApprove} ${toApprove === 1 ? "risultato da approvare" : "risultati da approvare"}`);
-  if (runningWork) reasons.push(`${runningWork} ${runningWork === 1 ? "incarico in corso" : "incarichi in corso"}`);
-  if (waitingForCapacity) reasons.push(`${waitingForCapacity} ${waitingForCapacity === 1 ? "incarico aspetta" : "incarichi aspettano"} uno sviluppatore libero`);
-  if (ci?.failing) reasons.push(`CI rossa su ${ci.failing} pull request`);
+  if (openDecisions) reasons.push(t("main.overview.decisions", { count: openDecisions }));
+  if (openMandates) reasons.push(t("main.overview.mandates", { count: openMandates }));
+  if (openTeams) reasons.push(t("main.overview.teams", { count: openTeams }));
+  if (blockedWork) reasons.push(t("main.overview.blocked", { count: blockedWork }));
+  if (toApprove) reasons.push(t("main.overview.toApprove", { count: toApprove }));
+  if (runningWork) reasons.push(t("main.overview.running", { count: runningWork }));
+  if (waitingForCapacity) reasons.push(t("main.overview.waitingForCapacity", { count: waitingForCapacity }));
+  if (ci?.failing) reasons.push(t("main.overview.ciFailing", { count: ci.failing }));
   const attention: AttentionReason | null = pendingDecisions
     ? "decision"
     : blockedWork
@@ -67,7 +73,7 @@ export function summarizeProject(
           : null;
   return {
     id: recent.id,
-    name: recent.isDemo ? "Progetto di esempio" : recent.name,
+    name: recent.isDemo ? t("main.overview.demoName") : recent.name,
     path: recent.path,
     isDemo: recent.isDemo,
     source: input.source,
@@ -85,14 +91,27 @@ export function summarizeProject(
     priority: input.priority ?? 0,
     waitingForCapacity,
     ci,
+    coordinator: coordinatorLine(input.status ?? statusLine(document, null)),
+    waiting: waitingSummary(input.waiting ?? waiting),
   };
+}
+
+/** The status line in the overview: its text and state, without the person's move (issue #336). */
+function coordinatorLine(line: StatusLineView): ProjectOverview["coordinator"] {
+  return { text: line.text, state: line.state, paused: line.paused };
+}
+
+/** The same count as Aspetta te and its first item, the one the project's row shows (issue #336). */
+function waitingSummary(items: WaitingItem[]): ProjectOverview["waiting"] {
+  const first = items[0];
+  return { count: items.length, first: first ? { key: first.key, label: first.label, title: first.title } : null };
 }
 
 /** A recent project whose state could not be read, or that was never saved. */
 export function unreadableProject(recent: RecentProject, error: string | null, priority = 0): ProjectOverview {
   return {
     id: recent.id,
-    name: recent.isDemo ? "Progetto di esempio" : recent.name,
+    name: recent.isDemo ? t("main.overview.demoName") : recent.name,
     path: recent.path,
     isDemo: recent.isDemo,
     source: error ? "unreadable" : "notSaved",
@@ -110,6 +129,8 @@ export function unreadableProject(recent: RecentProject, error: string | null, p
     priority,
     waitingForCapacity: 0,
     ci: null,
+    coordinator: null,
+    waiting: { count: 0, first: null },
   };
 }
 

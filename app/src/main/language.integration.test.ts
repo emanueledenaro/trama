@@ -55,4 +55,16 @@ describe("interface language (issue #301)", () => {
     await expect(controller.updateSettings({ language: "fr" as never })).rejects.toThrow();
     expect(controller.snapshot.language).toBe("it");
   });
+
+  it("writes the controller's refusals in the person's language", async () => {
+    const controller = await start(await mkdtemp(join(tmpdir(), "trama-language-")), ["en-US"]);
+    await expect(controller.updateSettings({ language: "fr" as never })).rejects.toThrow("Language not available.");
+    await expect(controller.updateSettings({ sharedDevelopers: 2.5 })).rejects.toThrow("The number of shared developers must be a whole number.");
+    await expect(controller.prioritizeProject("missing", "up")).rejects.toThrow("The project is not among the recent ones.");
+    await expect(controller.startExercise("missing" as never)).rejects.toThrow("Unknown exercise.");
+
+    await controller.updateSettings({ language: "it" });
+    await expect(controller.updateSettings({ sharedDevelopers: 2.5 })).rejects.toThrow("Il numero di sviluppatori condivisi deve essere un numero intero.");
+    await expect(controller.prioritizeProject("missing", "up")).rejects.toThrow("Il progetto non è tra quelli recenti.");
+  });
 });

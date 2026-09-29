@@ -14,6 +14,7 @@ import { TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { CHECKS } from "./checks";
+import { t } from "./personLanguage";
 import { findAssignment } from "./team";
 
 /**
@@ -28,7 +29,7 @@ import { findAssignment } from "./team";
  * the backlog. Without GitHub the problem stays in Trama as a backlog item. The choices are in Activity.
  */
 
-const short = (sha: string | null | undefined) => (sha ? sha.slice(0, 7) : "sconosciuto");
+const short = (sha: string | null | undefined) => (sha ? sha.slice(0, 7) : t("main.problems.unknownCommit"));
 const clip = (text: string, limit: number) => (text.length > limit ? `…${text.slice(-limit)}` : text);
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
 /** The file of a finding without its line: `src/a.ts:12` is `src/a.ts`. */
@@ -60,15 +61,19 @@ function findings(document: ProjectDocument): Finding[] {
     found.push({
       source: `failure:${failure.id}`,
       key: `check:${failure.check}`,
-      title: `La verifica ${checkTitle(failure.check)} non passa sul branch del progetto`,
+      title: t("main.problems.checkTitle", { check: checkTitle(failure.check) }),
       detail: [
-        `La verifica ${failure.title} (\`${failure.command}\`) non passa sul checkout del progetto al commit ${short(failure.version)}${failure.regression ? ", e prima passava" : ""}.`,
-        `Uscita della verifica:\n\n\`\`\`\n${clip(failure.output, 3_000)}\n\`\`\``,
+        t(failure.regression ? "main.problems.checkoutDetailRegression" : "main.problems.checkoutDetail", {
+          check: failure.title,
+          command: failure.command,
+          commit: short(failure.version),
+        }),
+        t("main.problems.checkOutput", { output: clip(failure.output, 3_000) }),
       ].join("\n\n"),
       evidence: {
         kind: "check",
         reference: failure.id,
-        label: `Verifica ${failure.title} rossa sul checkout al commit ${short(failure.version)} (${failure.id})`,
+        label: t("main.problems.checkoutEvidence", { check: failure.title, commit: short(failure.version), id: failure.id }),
       },
       at: failure.at,
     });
@@ -81,15 +86,15 @@ function findings(document: ProjectDocument): Finding[] {
       found.push({
         source: `gate:${gate.id}:check:${row.check}`,
         key: `check:${row.check}`,
-        title: `La verifica ${checkTitle(row.check)} non passa sul branch del progetto`,
+        title: t("main.problems.checkTitle", { check: checkTitle(row.check) }),
         detail: [
-          `La verifica \`${row.check}\` non passa sul candidato ${gate.candidateId} e nemmeno sulla sua base, il commit ${short(gate.baseSHA)}: il candidato non l'ha causata.`,
-          ...(row.baseOutput ? [`Uscita sulla base:\n\n\`\`\`\n${clip(row.baseOutput, 3_000)}\n\`\`\``] : []),
+          t("main.problems.gateDetail", { check: row.check, candidate: gate.candidateId, commit: short(gate.baseSHA) }),
+          ...(row.baseOutput ? [t("main.problems.baseOutput", { output: clip(row.baseOutput, 3_000) })] : []),
         ].join("\n\n"),
         evidence: {
           kind: "check",
           reference: gate.id,
-          label: `Verifica ${checkTitle(row.check)} rossa anche sulla base ${short(gate.baseSHA)} del candidato ${gate.candidateId} (${gate.id})`,
+          label: t("main.problems.gateEvidence", { check: checkTitle(row.check), commit: short(gate.baseSHA), candidate: gate.candidateId, id: gate.id }),
         },
         at: finishedAt,
       });
@@ -104,13 +109,13 @@ function findings(document: ProjectDocument): Finding[] {
           source: `gate:${gate.id}:finding:${review.role}:${index}`,
           key: `finding:${review.role}:${fileOf(finding.file)}:${normalize(finding.title)}`,
           title: finding.title,
-          detail: [`${name} ha trovato questo problema in \`${finding.file}\`, un file che il candidato ${gate.candidateId} non cambia.`, finding.detail]
+          detail: [t("main.problems.findingDetail", { name, file: finding.file, candidate: gate.candidateId }), finding.detail]
             .filter(Boolean)
             .join("\n\n"),
           evidence: {
             kind: "finding",
             reference: gate.id,
-            label: `Rilievo di ${name} sul candidato ${gate.candidateId} (${gate.id})`,
+            label: t("main.problems.findingEvidence", { name, candidate: gate.candidateId, id: gate.id }),
           },
           at: review.finishedAt ?? finishedAt,
         });
@@ -181,8 +186,8 @@ export const problemMarker = (key: string) => `<!-- trama-problem: ${key.replace
 export function problemIssueBody(problem: FoundProblem): string {
   return [
     problem.detail,
-    `**Prova:** ${problem.evidence.label}.`,
-    "Il Coordinatore di Trama ha aperto questa issue da solo, perché il problema è fuori dal lavoro in corso. Il bug triage la smista con `triage`.",
+    t("main.problems.issueEvidence", { evidence: problem.evidence.label }),
+    t("main.problems.issueOpenedAlone"),
     problemMarker(problem.key),
   ].join("\n\n");
 }
@@ -298,8 +303,8 @@ export function workingAssignment(document: ProjectDocument, problem: FoundProbl
 
 function triageNote(assignment: SpecialistAssignment | null): string {
   const outcome = assignment?.duty?.outcome;
-  if (outcome?.kind === "triage") return `Triage: ${outcome.state} (${TRIAGE_STATE_LABEL[outcome.state]}).`;
-  return assignment ? `Il triage ${assignment.id} non ha dato un esito leggibile.` : "La issue era già aperta: il triage segue le regole delle issue nuove.";
+  if (outcome?.kind === "triage") return t("main.problems.triageOutcome", { state: outcome.state, label: TRIAGE_STATE_LABEL[outcome.state] });
+  return assignment ? t("main.problems.triageUnreadable", { id: assignment.id }) : t("main.problems.issueAlreadyOpen");
 }
 
 /**
@@ -317,19 +322,20 @@ export function placeProblems(document: ProjectDocument, now = new Date()): Foun
     if (!work && problem.placement) continue;
     const note = triageNote(triage);
     const placement: ProblemPlacement = work
-      ? { kind: "assignment", assignmentId: work.id, at: now.toISOString(), reason: `${note} L'incarico ${work.id} lavora già su questo problema.` }
-      : { kind: "backlog", at: now.toISOString(), reason: `${note} Nessun incarico lavora su questo problema: resta nel backlog.` };
+      ? { kind: "assignment", assignmentId: work.id, at: now.toISOString(), reason: t("main.problems.placedOnAssignment", { note, id: work.id }) }
+      : { kind: "backlog", at: now.toISOString(), reason: t("main.problems.placedInBacklog", { note }) };
     problem.placement = placement;
     placed.push(problem);
   }
   return placed;
 }
 
-export const LOCAL_BACKLOG_REASON = "GitHub non è collegato: il problema resta nel backlog di Trama, senza issue.";
+/** Why a problem stays in Trama's backlog without GitHub, in the person's language. */
+export const localBacklogReason = (): string => t("main.problems.localBacklog");
 
 /** Without GitHub the problems that wait for an issue become backlog items in Trama. Returns them. */
 export function keepInLocalBacklog(document: ProjectDocument, now = new Date()): FoundProblem[] {
   const kept = problemsWithoutIssue(document);
-  for (const problem of kept) problem.placement = { kind: "backlog", at: now.toISOString(), reason: LOCAL_BACKLOG_REASON };
+  for (const problem of kept) problem.placement = { kind: "backlog", at: now.toISOString(), reason: localBacklogReason() };
   return kept;
 }

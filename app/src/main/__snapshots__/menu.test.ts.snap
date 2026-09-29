@@ -33,15 +33,17 @@ Edit
   ---
   Select All role=selectAll
 View
-  Waiting for you [CmdOrCtrl+1] -> send:view:waiting
-  Work [CmdOrCtrl+2] -> send:view:work
-  Squads [CmdOrCtrl+3] -> send:view:teams
-  Rules [CmdOrCtrl+4] -> send:view:rules
-  Memory [CmdOrCtrl+5] -> send:view:memory
+  Coordinator [CmdOrCtrl+1] -> send:view:conversation
+  Waiting for you [CmdOrCtrl+2] -> send:view:waiting
+  Work [CmdOrCtrl+3] -> send:view:work
+  Squads [CmdOrCtrl+4] -> send:view:teams
+  Rules [CmdOrCtrl+5] -> send:view:rules
+  Memory [CmdOrCtrl+6] -> send:view:memory
   Projects -> send:view:projects
   ---
   Show or Hide the Side Bar [CmdOrCtrl+B] -> send:toggleSidebar
   Show or Hide the Activity Panel [CmdOrCtrl+J] -> send:togglePanel
+  Show the Details Beside or Over the Conversation [CmdOrCtrl+\\] -> send:toggleSplitEditor
   Write to the Coordinator [CmdOrCtrl+L] -> send:focusComposer
   ---
   Actual Size role=resetZoom
@@ -97,15 +99,17 @@ Composizione
   ---
   Seleziona tutto role=selectAll
 Vista
-  Aspetta te [CmdOrCtrl+1] -> send:view:waiting
-  Lavoro [CmdOrCtrl+2] -> send:view:work
-  Squadre [CmdOrCtrl+3] -> send:view:teams
-  Regole [CmdOrCtrl+4] -> send:view:rules
-  Memoria [CmdOrCtrl+5] -> send:view:memory
+  Coordinatore [CmdOrCtrl+1] -> send:view:conversation
+  Aspetta te [CmdOrCtrl+2] -> send:view:waiting
+  Lavoro [CmdOrCtrl+3] -> send:view:work
+  Squadre [CmdOrCtrl+4] -> send:view:teams
+  Regole [CmdOrCtrl+5] -> send:view:rules
+  Memoria [CmdOrCtrl+6] -> send:view:memory
   Progetti -> send:view:projects
   ---
   Mostra o nascondi la barra laterale [CmdOrCtrl+B] -> send:toggleSidebar
   Mostra o nascondi il pannello Attività [CmdOrCtrl+J] -> send:togglePanel
+  Affianca o sovrapponi i dettagli alla conversazione [CmdOrCtrl+\\] -> send:toggleSplitEditor
   Scrivi al Coordinatore [CmdOrCtrl+L] -> send:focusComposer
   ---
   Dimensione reale role=resetZoom
@@ -151,15 +155,17 @@ exports[`application menu (issue #345) > prints the template on linux in en 1`] 
   ---
   Select All role=selectAll
 &View
-  Waiting for you [CmdOrCtrl+1] -> send:view:waiting
-  Work [CmdOrCtrl+2] -> send:view:work
-  Squads [CmdOrCtrl+3] -> send:view:teams
-  Rules [CmdOrCtrl+4] -> send:view:rules
-  Memory [CmdOrCtrl+5] -> send:view:memory
+  Coordinator [CmdOrCtrl+1] -> send:view:conversation
+  Waiting for you [CmdOrCtrl+2] -> send:view:waiting
+  Work [CmdOrCtrl+3] -> send:view:work
+  Squads [CmdOrCtrl+4] -> send:view:teams
+  Rules [CmdOrCtrl+5] -> send:view:rules
+  Memory [CmdOrCtrl+6] -> send:view:memory
   Projects -> send:view:projects
   ---
   Show or Hide the Side Bar [CmdOrCtrl+B] -> send:toggleSidebar
   Show or Hide the Activity Panel [CmdOrCtrl+J] -> send:togglePanel
+  Show the Details Beside or Over the Conversation [CmdOrCtrl+\\] -> send:toggleSplitEditor
   Write to the Coordinator [CmdOrCtrl+L] -> send:focusComposer
   ---
   Actual Size role=resetZoom
@@ -205,15 +211,17 @@ exports[`application menu (issue #345) > prints the template on linux in it 1`] 
   ---
   Seleziona tutto role=selectAll
 &Visualizza
-  Aspetta te [CmdOrCtrl+1] -> send:view:waiting
-  Lavoro [CmdOrCtrl+2] -> send:view:work
-  Squadre [CmdOrCtrl+3] -> send:view:teams
-  Regole [CmdOrCtrl+4] -> send:view:rules
-  Memoria [CmdOrCtrl+5] -> send:view:memory
+  Coordinatore [CmdOrCtrl+1] -> send:view:conversation
+  Aspetta te [CmdOrCtrl+2] -> send:view:waiting
+  Lavoro [CmdOrCtrl+3] -> send:view:work
+  Squadre [CmdOrCtrl+4] -> send:view:teams
+  Regole [CmdOrCtrl+5] -> send:view:rules
+  Memoria [CmdOrCtrl+6] -> send:view:memory
   Progetti -> send:view:projects
   ---
   Mostra o nascondi la barra laterale [CmdOrCtrl+B] -> send:toggleSidebar
   Mostra o nascondi il pannello Attività [CmdOrCtrl+J] -> send:togglePanel
+  Affianca o sovrapponi i dettagli alla conversazione [CmdOrCtrl+\\] -> send:toggleSplitEditor
   Scrivi al Coordinatore [CmdOrCtrl+L] -> send:focusComposer
   ---
   Dimensione reale role=resetZoom
@@ -259,15 +267,17 @@ exports[`application menu (issue #345) > prints the template on win32 in en 1`] 
   ---
   Select All role=selectAll
 &View
-  Waiting for you [CmdOrCtrl+1] -> send:view:waiting
-  Work [CmdOrCtrl+2] -> send:view:work
-  Squads [CmdOrCtrl+3] -> send:view:teams
-  Rules [CmdOrCtrl+4] -> send:view:rules
-  Memory [CmdOrCtrl+5] -> send:view:memory
+  Coordinator [CmdOrCtrl+1] -> send:view:conversation
+  Waiting for you [CmdOrCtrl+2] -> send:view:waiting
+  Work [CmdOrCtrl+3] -> send:view:work
+  Squads [CmdOrCtrl+4] -> send:view:teams
+  Rules [CmdOrCtrl+5] -> send:view:rules
+  Memory [CmdOrCtrl+6] -> send:view:memory
   Projects -> send:view:projects
   ---
   Show or Hide the Side Bar [CmdOrCtrl+B] -> send:toggleSidebar
   Show or Hide the Activity Panel [CmdOrCtrl+J] -> send:togglePanel
+  Show the Details Beside or Over the Conversation [CmdOrCtrl+\\] -> send:toggleSplitEditor
   Write to the Coordinator [CmdOrCtrl+L] -> send:focusComposer
   ---
   Actual Size role=resetZoom
@@ -313,15 +323,17 @@ exports[`application menu (issue #345) > prints the template on win32 in it 1`] 
   ---
   Seleziona tutto role=selectAll
 &Visualizza
-  Aspetta te [CmdOrCtrl+1] -> send:view:waiting
-  Lavoro [CmdOrCtrl+2] -> send:view:work
-  Squadre [CmdOrCtrl+3] -> send:view:teams
-  Regole [CmdOrCtrl+4] -> send:view:rules
-  Memoria [CmdOrCtrl+5] -> send:view:memory
+  Coordinatore [CmdOrCtrl+1] -> send:view:conversation
+  Aspetta te [CmdOrCtrl+2] -> send:view:waiting
+  Lavoro [CmdOrCtrl+3] -> send:view:work
+  Squadre [CmdOrCtrl+4] -> send:view:teams
+  Regole [CmdOrCtrl+5] -> send:view:rules
+  Memoria [CmdOrCtrl+6] -> send:view:memory
   Progetti -> send:view:projects
   ---
   Mostra o nascondi la barra laterale [CmdOrCtrl+B] -> send:toggleSidebar
   Mostra o nascondi il pannello Attività [CmdOrCtrl+J] -> send:togglePanel
+  Affianca o sovrapponi i dettagli alla conversazione [CmdOrCtrl+\\] -> send:toggleSplitEditor
   Scrivi al Coordinatore [CmdOrCtrl+L] -> send:focusComposer
   ---
   Dimensione reale role=resetZoom

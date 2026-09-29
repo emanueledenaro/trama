@@ -130,22 +130,25 @@ describe("application menu (issue #345)", () => {
     expect(macHelp.some((item) => item.role === "about")).toBe(false);
   });
 
-  it("leads the View menu to the views of the activity bar, with Cmd/Ctrl+1-5", () => {
+  it("leads the View menu to the views of the activity bar, with Cmd/Ctrl+1-6", () => {
     for (const platform of PLATFORMS) {
       const { template, calls } = build(platform, "it");
       const view = submenu(template.find((item) => item.label === "Vista" || item.label === "&Visualizza")!);
-      const views = view.slice(0, 6).map((item) => [item.label, item.accelerator ?? null, clickOf(item, calls)]);
+      const views = view.slice(0, 7).map((item) => [item.label, item.accelerator ?? null, clickOf(item, calls)]);
       expect(views).toEqual([
-        ["Aspetta te", "CmdOrCtrl+1", "send:view:waiting"],
-        ["Lavoro", "CmdOrCtrl+2", "send:view:work"],
-        ["Squadre", "CmdOrCtrl+3", "send:view:teams"],
-        ["Regole", "CmdOrCtrl+4", "send:view:rules"],
-        ["Memoria", "CmdOrCtrl+5", "send:view:memory"],
+        ["Coordinatore", "CmdOrCtrl+1", "send:view:conversation"],
+        ["Aspetta te", "CmdOrCtrl+2", "send:view:waiting"],
+        ["Lavoro", "CmdOrCtrl+3", "send:view:work"],
+        ["Squadre", "CmdOrCtrl+4", "send:view:teams"],
+        ["Regole", "CmdOrCtrl+5", "send:view:rules"],
+        ["Memoria", "CmdOrCtrl+6", "send:view:memory"],
         ["Progetti", null, "send:view:projects"],
       ]);
       const byLabel = (label: string) => view.find((item) => item.label === label)!;
       expect([byLabel("Mostra o nascondi la barra laterale").accelerator, clickOf(byLabel("Mostra o nascondi la barra laterale"), calls)]).toEqual(["CmdOrCtrl+B", "send:toggleSidebar"]);
       expect([byLabel("Mostra o nascondi il pannello Attività").accelerator, clickOf(byLabel("Mostra o nascondi il pannello Attività"), calls)]).toEqual(["CmdOrCtrl+J", "send:togglePanel"]);
+      const split = byLabel("Affianca o sovrapponi i dettagli alla conversazione");
+      expect([split.accelerator, clickOf(split, calls)]).toEqual(["CmdOrCtrl+\\", "send:toggleSplitEditor"]);
       expect([byLabel("Scrivi al Coordinatore").accelerator, clickOf(byLabel("Scrivi al Coordinatore"), calls)]).toEqual(["CmdOrCtrl+L", "send:focusComposer"]);
       expect(view.filter((item) => item.role).map((item) => item.role)).toEqual(["resetZoom", "zoomIn", "zoomOut", "togglefullscreen"]);
     }
@@ -169,9 +172,9 @@ describe("application menu (issue #345)", () => {
         }
       }
     }
-    // Every view command is a view of the activity bar.
+    // Every view command is a view of the activity bar: the conversation or a view of the side bar.
     for (const command of MENU_COMMANDS.filter((command) => command.startsWith("view:"))) {
-      expect(SIDE_BAR_VIEWS).toContain(command.slice("view:".length));
+      expect(["conversation", ...SIDE_BAR_VIEWS]).toContain(command.slice("view:".length));
     }
   });
 

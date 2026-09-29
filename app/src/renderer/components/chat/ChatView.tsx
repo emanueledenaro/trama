@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconSchool, IconTarget, IconTrash, IconChevronDown, IconCheck, IconX } from "@tabler/icons-react";
+import { IconSchool, IconTarget, IconTrash, IconChevronDown, IconCheck } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
@@ -10,10 +10,9 @@ import { SettingsView } from "@/components/settings/SettingsView";
 import { useSeam } from "@/components/Seam";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { useT } from "@/lib/i18n";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { act, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { ProjectPicker } from "@/components/launch/ProjectPicker";
@@ -43,40 +42,13 @@ export function ExercisesChip() {
   );
 }
 
-/** The editor's header over the overview and the settings, which open in place of the conversation (issue #330). */
-function EditorHeader() {
-  const t = useT();
-  const mainView = useUi((s) => s.mainView);
-  const hasProject = useUi((s) => Boolean(s.app?.project));
-  const closeSettings = useUi((s) => s.closeSettings);
-  const setMainView = useUi((s) => s.setMainView);
-  if (mainView === "dialog") return null;
-  return (
-    <div className="chat-surface-divider flex h-[35px] shrink-0 items-center gap-2 px-4">
-      <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground">
-        {mainView === "overview" ? t("workbench.title.overview") : t("workbench.view.settings")}
-      </h2>
-      {hasProject ? (
-        <Tooltip label={t("workbench.editor.close")}>
-          <button
-            type="button"
-            aria-label={t("workbench.editor.close")}
-            className="sidebar-icon-button size-6 rounded-md"
-            onClick={() => (mainView === "settings" ? closeSettings() : setMainView("dialog"))}
-          >
-            <IconX className="size-3.5" />
-          </button>
-        </Tooltip>
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * The goal filter of the chat (U01): the whole chat or the messages and events of one goal. It only changes what the
  * chat shows and what the next message is about; the Coordinator, the composer and the draft stay the same.
  */
-export function GoalFilterMenu() {
+/** The goal the chat is filtered on, with the menu of the goals; `wide` shows the title whatever the width (issue #332). */
+export function GoalFilterMenu({ wide = false }: { wide?: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const filter = useUi((s) => s.dialogGoalId);
   const openDialog = useUi((s) => s.openDialog);
@@ -87,15 +59,19 @@ export function GoalFilterMenu() {
   if (!options.length) return null;
   return (
     <Menu>
-      <MenuTrigger aria-label="Filtra la chat per obiettivo" data-testid="chat-filter" className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE)}>
-        <IconTarget className="size-3.5 opacity-70" stroke={1.8} />
-        <span className="hidden max-w-[12rem] truncate @min-[520px]/chat:inline">{current ? current.title : "Tutta la chat"}</span>
-        <IconChevronDown className="size-3 opacity-60" stroke={1.8} />
+      <MenuTrigger
+        aria-label={t("work.summary.filter")}
+        data-testid="chat-filter"
+        className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE, wide && "max-w-full min-w-0 text-ui text-foreground/90")}
+      >
+        <IconTarget className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
+        <span className={cn("truncate", wide ? "min-w-0" : "hidden max-w-[12rem] @min-[520px]/chat:inline")}>{current ? current.title : t("work.summary.wholeChat")}</span>
+        <IconChevronDown className="size-3 shrink-0 opacity-60" stroke={1.8} />
       </MenuTrigger>
-      <MenuPopup align="end">
+      <MenuPopup align={wide ? "start" : "end"}>
         <MenuItem onClick={() => openDialog(null)}>
           <span className="flex size-4 items-center justify-center">{current ? null : <IconCheck className="size-3.5" stroke={1.8} />}</span>
-          <span className="flex-1">Tutta la chat</span>
+          <span className="flex-1">{t("work.summary.wholeChat")}</span>
         </MenuItem>
         {options.map((goal) => (
           <MenuItem key={goal.id} onClick={() => openDialog(goal.id)}>
@@ -325,14 +301,17 @@ function Timeline() {
   );
 }
 
-/** The editor area (issue #330): the conversation with the Coordinator, or the overview or the settings in its place. */
-export function ChatView() {
+/**
+ * The main tab of the editor area (issue #330): the conversation with the Coordinator, or the overview or the settings.
+ * `cover` is a detail tab that covers the conversation in a narrow window (issue #336): it lies over the timeline, the
+ * row of Aspetta te stays in view below it, and the timeline and the composer stay mounted, hidden, with the draft.
+ */
+export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const project = useUi((s) => s.app?.project);
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
   return (
-    <div className="@container/chat relative flex min-w-0 flex-1 flex-col">
-      <EditorHeader />
+    <div className="@container/chat relative flex min-h-0 min-w-0 flex-1 flex-col">
       {mainView === "overview" ? (
         <OverviewView />
       ) : mainView === "settings" ? (
@@ -341,13 +320,20 @@ export function ChatView() {
         <>
           <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
-            <Timeline key={goalId ?? "all"} />
+            {/* Under a covering tab the timeline stays mounted, out of sight, and keeps its place in the chat. */}
+            <div className={cn("flex min-h-0 flex-1 flex-col", cover && "invisible")} aria-hidden={cover ? true : undefined}>
+              <Timeline key={goalId ?? "all"} />
+            </div>
+            {cover ? <div className="absolute inset-0 flex flex-col pb-14">{cover}</div> : null}
+            {/* The exercise guides the person through the details too: it stays over a covering tab. */}
             <ExercisePanel />
             {/* The status bar sits right below: 8 px keep the composer off it and leave the conversation 580 px at 1280x800 (issue #330). */}
             <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
               <div className="pointer-events-auto">
                 <WaitingSummary />
-                <Composer />
+                <div hidden={Boolean(cover)}>
+                  <Composer />
+                </div>
               </div>
             </div>
           </div>

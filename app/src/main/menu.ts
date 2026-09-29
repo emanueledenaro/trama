@@ -6,9 +6,10 @@ import { type Language, type MessageKey, translator } from "@shared/i18n";
 
 export type MenuPlatform = "darwin" | "win32" | "linux";
 
-/** The views of the activity bar the View menu opens, in the bar's order (see `SideBarView` in the renderer). Their
- * items carry the command as id, so a check can find them whatever the language. */
-export const MENU_VIEWS = ["waiting", "work", "teams", "rules", "memory"] as const;
+/** The views of the activity bar the View menu opens, in the bar's order: the conversation with the Coordinator, then
+ * the views of the side bar (see `SideBarView` in the renderer). Their items carry the command as id, so a check can
+ * find them whatever the language. */
+export const MENU_VIEWS = ["conversation", "waiting", "work", "teams", "rules", "memory"] as const;
 
 /** What a menu item asks the window to do; the renderer handles each command in `App.tsx`. */
 export type MenuCommand =
@@ -19,6 +20,7 @@ export type MenuCommand =
   | "focusComposer"
   | "toggleSidebar"
   | "togglePanel"
+  | "toggleSplitEditor"
   | "welcome"
   | "guide"
   | "exercises"
@@ -32,6 +34,7 @@ export const MENU_COMMANDS: MenuCommand[] = [
   "focusComposer",
   "toggleSidebar",
   "togglePanel",
+  "toggleSplitEditor",
   "welcome",
   "guide",
   "exercises",
@@ -61,6 +64,7 @@ export interface MenuOptions {
 }
 
 const VIEW_KEYS: Record<(typeof MENU_VIEWS)[number], MessageKey> = {
+  conversation: "workbench.view.conversation",
   waiting: "workbench.view.waiting",
   work: "workbench.view.work",
   teams: "workbench.view.teams",
@@ -77,7 +81,7 @@ export function menuTemplate({ platform, language, packaged, actions }: MenuOpti
   // Windows and Linux underline a letter of each section for Alt; macOS has no such keys.
   const section = (mac: MessageKey, other: MessageKey) => t(isMac ? mac : other);
   const send = (command: MenuCommand) => () => actions.send(command);
-  const settings: MenuItemConstructorOptions = { label: t("menu.settings"), accelerator: "CmdOrCtrl+,", click: send("settings") };
+  const settings: MenuItemConstructorOptions = { id: "settings", label: t("menu.settings"), accelerator: "CmdOrCtrl+,", click: send("settings") };
   // macOS shows its own About panel; Windows and Linux have none, so there it opens the About of the settings.
   const about: MenuItemConstructorOptions = isMac
     ? { id: "about", role: "about", label: t("menu.about") }
@@ -152,6 +156,7 @@ export function menuTemplate({ platform, language, packaged, actions }: MenuOpti
       separator,
       { id: "toggleSidebar", label: t("menu.toggleSidebar"), accelerator: "CmdOrCtrl+B", click: send("toggleSidebar") },
       { id: "togglePanel", label: t("menu.togglePanel"), accelerator: "CmdOrCtrl+J", click: send("togglePanel") },
+      { id: "toggleSplitEditor", label: t("menu.toggleSplitEditor"), accelerator: "CmdOrCtrl+\\", click: send("toggleSplitEditor") },
       { id: "focusComposer", label: t("menu.focusComposer"), accelerator: "CmdOrCtrl+L", click: send("focusComposer") },
       separator,
       { role: "resetZoom", label: t("menu.resetZoom") },

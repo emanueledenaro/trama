@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Candidate, CoordinatorRequest, ProjectDocument, RequestStep, SliceView, WorkPlan } from "@shared/domain";
 import { asksForRecap, recapTitle } from "@shared/recap";
 import { emptyDocument } from "./document";
 import { createMandateRequest } from "./pact";
 import { markTold, MAX_DONE, milestones, newMilestones, writeRecap } from "./recap";
+import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON } from "./statusLine";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute)).toISOString();
@@ -210,5 +211,51 @@ describe("the content of a recap", () => {
     const asked = recap(document, 2, "request");
     expect(asked.needs).toEqual([{ key: `mandate:${mandate.id}`, label: "Mandato", title: "Serve il mandato per lavorare sugli ordini." }]);
     expect(asked.milestones).toEqual([]);
+  });
+});
+
+describe("the recap of the full delegation (issue #423)", () => {
+  it("tells what the Coordinator decided with the delegation since the last recap, with the doubts", () => {
+    const document = emptyDocument("p");
+    const choice = (id: string, at: string) => ({
+      id,
+      delegationId: "FD-1",
+      kind: "decision" as const,
+      subject: "Chi vede la revisione?",
+      choice: "Anche il cliente",
+      doubt: id === "DC-2" ? "Non so per i buoni" : null,
+      targetId: "Q-1",
+      at,
+      seenAt: null,
+    });
+    document.delegatedChoices = [choice("DC-1", "2026-09-29T01:00:00.000Z")];
+    const first = writeRecap(document, { id: "R1", at: "2026-09-29T02:00:00.000Z", reason: "request", milestones: [], runningRequestId: null, sources: {} });
+    expect(first.delegated).toEqual([{ id: "DC-1", kind: "decision", subject: "Chi vede la revisione?", choice: "Anche il cliente", doubt: null }]);
+    document.delegatedChoices.push(choice("DC-2", "2026-09-29T03:00:00.000Z"));
+    const back = writeRecap(document, { id: "R2", at: "2026-09-29T07:00:00.000Z", reason: "return", milestones: [], runningRequestId: null, sources: {} });
+    expect(back.delegated?.map((c) => [c.id, c.doubt])).toEqual([["DC-2", "Non so per i buoni"]]);
+    const quiet = writeRecap(document, { id: "R3", at: "2026-09-29T08:00:00.000Z", reason: "request", milestones: [], runningRequestId: null, sources: {} });
+    expect(quiet).not.toHaveProperty("delegated");
+    expect(recapTitle({ reason: "return", milestones: [] })).toBe("Mentre non c'eri");
+    expect(recapTitle({ reason: "return", milestones: [] }, "en")).toBe("While you were away");
+  });
+});
+
+describe("a recap in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("tells the moves and the issues in English, and reads a reason written in Italian before", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    move(document, "m1", 1, "Assegna il lavoro");
+    move(document, "m2", 2, "Esegui le verifiche");
+    document.requests[1]!.step!.stalled = "La mossa automatica non è riuscita: l'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.";
+    slicedPlan(document, 3);
+    expect(recap(document, 4, "request").done).toEqual([
+      { text: "Work assignment done", number: null, url: null },
+      { text: "Work check did not succeed. L'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.", number: null, url: null },
+      { text: "Opened issue #41 for slice 1: Stato della revisione", number: 41, url: "https://github.com/o/r/issues/41" },
+    ]);
+    expect(recap(emptyDocument("p"), 1, "request").doing).toBe("Nothing in progress.");
   });
 });

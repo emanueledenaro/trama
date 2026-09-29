@@ -142,7 +142,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return send({ id, error: { code: -32000, message: "thread not found" } });
     case "thread/start": {
       // FAKE_CODEX_FAIL_THREAD_START names a file: while it exists, one new thread fails to open and the file goes away,
-      // so a test can make the Coordinator's new session fail once (ADR 0018).
+      // so a test can make the Coordinator's new session fail once (ADR 0019).
       const failStart = process.env.FAKE_CODEX_FAIL_THREAD_START;
       if (failStart) {
         const { existsSync, rmSync } = await import("node:fs");
@@ -156,7 +156,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (server) toolServers.set(threadId, server);
       threadProfiles.set(threadId, { permissions: params.permissions ?? null, config: params.config ?? {} });
       if (String(params.developerInstructions ?? "").includes("[lento:sempre]")) slowThreads.add(threadId);
-      // "[specialista-pieno]": a specialist's thread whose turns use most of the context window (ADR 0018).
+      // "[specialista-pieno]": a specialist's thread whose turns use most of the context window (ADR 0019).
       if (String(params.developerInstructions ?? "").includes("[specialista-pieno]")) fullThreads.add(threadId);
       return send({ id, result: { thread: { id: threadId } } });
     }
@@ -552,6 +552,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         // "[segreto]" leaves a key in the note, which Trama's scan blocks at the candidate gate (W10); "[bloccante]" leaves
         // a line a reviewer blocks. The turn that resumes with the findings writes the note without either.
         const resumedWithFindings = text.includes("Rilievi bloccanti dei revisori");
+        // With FAKE_CODEX_SECRET_FIX_HOLD the developer's fix of the secret waits for that file: a check sees the blocked
+        // candidate while the developer is still at work, before Trama declares the corrected one (issue #388).
+        const fixHold = process.env.FAKE_CODEX_SECRET_FIX_HOLD;
+        if (resumedWithFindings && fixHold && text.includes("Segreto nel diff")) {
+          const { existsSync } = await import("node:fs");
+          await new Promise((resolve) => {
+            const release = setInterval(() => {
+              if (!existsSync(fixHold)) return;
+              clearInterval(release);
+              resolve();
+            }, 10);
+          });
+        }
         const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}`;
         writeFileSync(join(root, "NOTE.md"), `Lavoro dello specialista\n${extra}`);
         // "[impostazioni]" also changes the code owners, a setting of the repository: its merge runs into a fixed ban (issue #247).
@@ -711,6 +724,21 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               instructions: "Scrivi una nota",
             });
             done.push(assigned.isError ? `Rifiutato: ${assigned.content[0].text}` : "Ho assegnato la fetta ad Ada.");
+          } else if (automatic[1] === "decideWithDelegation") {
+            // Issue #423: with the full delegation the Coordinator answers the person's questions with its recommendation
+            // and gives the ok to the candidates that wait for the person, writing its doubt.
+            for (const [, question, recommended] of text.matchAll(/^- (Q-[0-9A-F]{8}): .*?(?:consigliata (\d+))?\)$/gm)) {
+              const decided = await call("decide_with_delegation", { question, alternative: Number(recommended ?? 0), reason: "È la risposta che consiglio", doubt: "Non so se vale anche per gli ordini pagati con un buono" });
+              done.push(decided.isError ? `Rifiutato: ${decided.content[0].text}` : `Ho deciso ${question} con la tua delega.`);
+            }
+            for (const [, candidate] of text.matchAll(/^- (C-[0-9A-F]{8}): candidato di interfaccia/gm)) {
+              const approved = await call("approve_with_delegation", { candidate, reason: "Le schermate prima e dopo sono coerenti" });
+              done.push(approved.isError ? `Rifiutato: ${approved.content[0].text}` : `Ho approvato ${candidate} con la tua delega.`);
+            }
+          } else if (automatic[1] === "takeTicket") {
+            const issue = text.match(/issue #(\d+)/)?.[1];
+            const noted = await call("note_doubt", { subject: `Issue #${issue}`, choice: "Parto dal caso più semplice descritto nella issue", doubt: "La issue non dice cosa fare con gli ordini vecchi" });
+            done.push(noted.isError ? `Rifiutato: ${noted.content[0].text}` : `Ho preso la issue #${issue}.`);
           } else if (automatic[1] === "answerQuestion") {
             done.push(await answerDeveloper(process.env.FAKE_CODEX_QUESTION === "block"));
           } else if (automatic[1] === "verifyCandidate") {
@@ -768,6 +796,33 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      const delegation = text.match(/\[(delega|delega-ticket|ritira-delega):([^\]]+)\]/);
+      if (delegation) {
+        // [delega:<quote>], [delega-ticket:<quote>]: the person gave the full delegation (issue #423); [ritira-delega:<quote>] withdraws it.
+        const [, kind, quote] = delegation;
+        const tool = kind === "ritira-delega" ? "revoke_full_delegation" : "grant_full_delegation";
+        callTool(threadId, tool, kind === "ritira-delega" ? { quote } : { quote, tickets: kind === "delega-ticket" }).then((result) => {
+          toolDone(tool, result);
+          finish(result.isError ? `Non posso: ${result.content[0].text}` : kind === "ritira-delega" ? "Ho ritirato la delega." : "Da ora faccio tutto io.");
+        });
+        return;
+      }
+      const requested = text.match(/\[richiesta:([^|\]]+)\|([^|\]]+)\|([^\]]+)\]/);
+      const confirmed = text.match(/\[conferma:([^|\]]+)\|([^\]]+)\]/);
+      if (requested || confirmed) {
+        // [richiesta:<command>|<quote>|<summary>]: the person asked for an action a fixed ban stops (issue #422);
+        // [conferma:<actionID>|<quote>]: the person confirmed in the chat an action that waits for their yes.
+        const args = requested
+          ? { command: requested[1], quote: requested[2], summary: requested[3] }
+          : { actionID: confirmed[1], quote: confirmed[2] };
+        callTool(threadId, "run_requested_action", args).then((result) => {
+          toolDone("run_requested_action", result);
+          if (result.isError && !result.content[0].text.includes("\"status\"")) return finish(`Non posso farlo: ${result.content[0].text}`);
+          const answer = JSON.parse(result.content[0].text);
+          finish(answer.status === "waiting_for_confirmation" ? "Aspetto la tua conferma in Aspetta te; intanto vado avanti con il resto." : `Fatto: ${answer.status}.`);
+        });
+        return;
+      }
       if (text.includes("[vietato:")) {
         // [vietato:<command>]: the model starts a command a fixed ban covers (issue #244); Trama interrupts the turn.
         const command = text.match(/\[vietato:([^\]]+)\]/)[1];
@@ -795,6 +850,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         }).then((result) => {
           toolDone("propose_team", result);
           finish("Ti ho proposto il team.");
+        });
+        return;
+      }
+      // A11: the person asks the Coordinator to merge a squad into another.
+      const squadMergeMatch = text.match(/\[unisci-squadre:([^:\]]+):([^\]]+)\]/);
+      if (squadMergeMatch) {
+        callTool(threadId, "merge_squads", { squad: squadMergeMatch[1], into: squadMergeMatch[2] }).then((result) => {
+          toolDone("merge_squads", result);
+          const waiting = !result.isError && JSON.parse(result.content[0].text).status === "waiting_for_person";
+          finish(
+            result.isError
+              ? `Rifiutato: ${result.content[0].text}`
+              : waiting
+                ? `Unire ${squadMergeMatch[1]} a ${squadMergeMatch[2]}: scegli chi resta nella vista Squadre.`
+                : `Ho unito ${squadMergeMatch[1]} a ${squadMergeMatch[2]}.`,
+          );
         });
         return;
       }
@@ -863,6 +934,18 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const verified = await callTool(threadId, "verify_candidate", { candidate: recheckMatch[1], check: recheckMatch[2] });
         toolDone("verify_candidate", verified);
         finish(verified.isError ? `Rifiutato: ${verified.content[0].text}` : `Ho eseguito di nuovo ${recheckMatch[2]} su ${recheckMatch[1]}.`);
+        return;
+      }
+      // [superato:<older>:<newer>] declares the older candidate superseded by the newer one of the same work (issue #421).
+      const supersedeMatch = text.match(/\[superato:(C-[0-9A-F]+):(C-[0-9A-F]+)\]/);
+      if (supersedeMatch) {
+        const superseded = await callTool(threadId, "supersede_candidate", {
+          candidate: supersedeMatch[1],
+          newerCandidate: supersedeMatch[2],
+          reason: "È una versione vecchia dello stesso lavoro, ripresa nel candidato più recente",
+        });
+        toolDone("supersede_candidate", superseded);
+        finish(superseded.isError ? `Rifiutato: ${superseded.content[0].text}` : `Ho chiuso il candidato ${supersedeMatch[1]}: lo sostituisce ${supersedeMatch[2]}.`);
         return;
       }
       // [candidato:<assignment>:<decision>] verifies git_status; [candidato:<assignment>:<decision>:<check>] that check, and
@@ -1008,7 +1091,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh-study", type: "commandExecution", command: "gh issue list", exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
       }
       // Like Codex: `total` adds up every request of the thread and keeps growing, `last` is the request that fills the window (issue #305).
-      // A study turn opens a new session: its reading is small even when the summary quotes "[pieno]" (ADR 0018).
+      // A study turn opens a new session: its reading is small even when the summary quotes "[pieno]" (ADR 0019).
       // 13.000 of 258.000 is 5,04%: just past the lowest threshold with the exact share (issue #272).
       const full = text.includes("[pieno]") && !text.startsWith("Studio del progetto scritto da Trama");
       processedTokens += full ? 2_300_000 : 120_000;

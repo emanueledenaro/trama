@@ -23,8 +23,9 @@ export const GLOSSARY: GlossaryTerm[] = [
   { term: "Candidato", meaning: "Il risultato di un incarico, pronto per le verifiche e per essere unito.", insteadOf: ["candidate"] },
   { term: "Verifiche", meaning: "I comandi di prova che Trama esegue davvero sul candidato, come i test.", insteadOf: ["check", "evidence"] },
   { term: "Revisori", meaning: "Gli agenti che leggono il candidato prima dell'unione e segnalano i problemi.", insteadOf: ["gate", "review gate"] },
-  { term: "Esame approfondito", meaning: "Una lettura completa di un candidato: prima le verifiche, poi il confronto con le regole del codice e con il piano.", insteadOf: ["Focus mode", "audit"] },
+  { term: "Esame approfondito", meaning: "Una lettura completa di un candidato, di un modulo o dell'intero progetto: prima le verifiche, poi il confronto con le regole del codice e con il piano. Per un modulo o per il progetto occupa tutta la finestra finché non esci; per un candidato è una sezione della sua scheda.", insteadOf: ["Focus mode", "audit"] },
   { term: "Lenti di Trama", meaning: "I controlli in più dell'esame approfondito, aggiunti da Trama: sicurezza, qualità dei test, documenti e codice.", insteadOf: ["lens"] },
+  { term: "Punto fisso", meaning: "Il commit, il branch o il tag da cui l'esame approfondito di un modulo o del progetto legge i cambiamenti.", insteadOf: ["fixed point"] },
   { term: "Punti di prova", meaning: "I punti del codice da cui i test controllano un comportamento senza toccare il resto.", insteadOf: ["seam"] },
   { term: "Copia di lavoro", meaning: "Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua.", insteadOf: ["worktree"] },
   {
@@ -33,7 +34,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     insteadOf: ["remoto", "sandbox"],
   },
   { term: "Luogo di lavoro", meaning: "Dove lavora un incarico: in locale sul Mac o in una sessione cloud. Lo sceglie l'impostazione del progetto, e puoi spostare un incarico.", insteadOf: [] },
-  { term: "Patto Vivo", meaning: "Le decisioni che hai preso sul comportamento del prodotto, con la loro versione.", insteadOf: ["pact"] },
+  { term: "Patto", meaning: "Le decisioni che hai preso sul comportamento del prodotto, con la loro versione.", insteadOf: ["pact"] },
   { term: "Mandato", meaning: "Il permesso che dai al Coordinatore per fare da solo alcune cose.", insteadOf: ["mandate"] },
   { term: "Aspetta te", meaning: "L'elenco delle domande, proposte e permessi che aspettano una tua risposta.", insteadOf: ["pending", "waiting"] },
   { term: "Attività", meaning: "Il registro delle mosse che il Coordinatore ha fatto da solo, con l'esito.", insteadOf: ["activity log"] },
@@ -45,6 +46,7 @@ export const GLOSSARY: GlossaryTerm[] = [
 /** A candidate's blocker, by code, in the person's words. */
 export const BLOCKER_TEXT: Record<string, string> = {
   BASE_CHANGED: "Il codice di partenza è cambiato",
+  WORKTREE_CHANGED: "La copia di lavoro è cambiata dopo il candidato",
   DECISION_CHANGED: "Una decisione è cambiata",
   UNRESOLVED_CHOICE: "Resta una scelta da fare",
   EXTERNAL_EFFECT_UNSUPPORTED: "Ha un effetto esterno che Trama non sa verificare",

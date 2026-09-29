@@ -8,6 +8,7 @@
 import type { ProviderAccount, ProviderId, ProviderModel, TurnEvent } from "@shared/codex";
 import type { Language } from "@shared/i18n";
 import type { LoadedSkill } from "@shared/skills";
+import { t } from "../personLanguage";
 
 export type { ProviderAccount, ProviderId, ProviderModel, TurnEvent };
 
@@ -19,6 +20,13 @@ export interface HostToolServer {
   /** Names of the tools the server offers, so a refusal can name the one to use instead (issue #228). */
   tools?: readonly string[];
 }
+
+/**
+ * How long a provider waits for one call to Trama's tools. review_candidate runs the required checks and every candidate
+ * reviewer before it answers, which takes minutes: two minutes cut it off while the gate was still at work (issue #389).
+ * A call cut off anyway leaves the gate running, and the next review_candidate waits for the same gate.
+ */
+export const HOST_TOOL_TIMEOUT_MS = 30 * 60_000;
 
 export interface OpenThreadOptions {
   model: string;
@@ -42,7 +50,7 @@ export interface OpenThreadOptions {
   readableRoots?: string[];
   /**
    * Where the provider's own automatic compaction may start, in tokens: above Trama's threshold, so the provider
-   * compacts only as a fallback within a very long turn (ADR 0018). Adapters that cannot set it ignore it.
+   * compacts only as a fallback within a very long turn (ADR 0019). Adapters that cannot set it ignore it.
    */
   autoCompactTokenLimit?: number | null;
 }
@@ -91,11 +99,14 @@ export interface AgentRuntime {
   /** The skills the provider finds for `cwd`, where the adapter can list them (supportsSkillDiscovery). */
   listSkills?(cwd: string): Promise<LoadedSkill[]>;
   openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }>;
-  /** Runs one turn and resolves with the final answer. Rejects with a message containing "interrott" when interrupted. */
+  /**
+   * Runs one turn and resolves with the final answer. Rejects with `interruptedTurnError()` when interrupted: its `interrupted`
+   * flag holds in every language, and its Italian message still contains "interrott".
+   */
   runTurn(options: RunTurnOptions): Promise<string>;
   interrupt(): Promise<void>;
   /**
-   * Asks the provider to compact the session's context now (ADR 0018). Only a fallback: Trama reorders the context
+   * Asks the provider to compact the session's context now (ADR 0019). Only a fallback: Trama reorders the context
    * itself with a new session, and uses this when that session could not open. Absent where the provider has no way.
    */
   compact?(threadId: string): Promise<void>;
@@ -125,6 +136,18 @@ export class ProviderError extends Error {
   }
 }
 
+/** The error of an interrupted turn, in the person's language. */
+export function interruptedTurnError(): Error & { interrupted: true } {
+  return Object.assign(new Error(t("main.provider.turnInterrupted")), { interrupted: true as const });
+}
+
+/** True for the error of an interrupted turn: the `interrupted` flag, or an Italian message that says "interrott". */
+export function isInterruptedTurn(error: unknown): boolean {
+  if ((error as { interrupted?: unknown } | null)?.interrupted === true) return true;
+  return /interrott/i.test((error as Error | null)?.message ?? "");
+}
+
+// @model-text: the instruction goes to the model with the prompt.
 /** Instruction appended to the prompt when a provider cannot enforce an output schema natively. */
 export function schemaInstruction(schema: Record<string, unknown>): string {
   return `\n\nRispondi solo con un oggetto JSON valido, senza testo prima o dopo e senza blocchi di codice, conforme a questo schema:\n${JSON.stringify(schema)}`;

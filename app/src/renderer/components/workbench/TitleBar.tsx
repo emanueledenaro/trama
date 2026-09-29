@@ -8,18 +8,21 @@ import {
   IconLayoutBottombar,
   IconLayoutList,
   IconLayoutSidebar,
+  IconLayoutSidebarRight,
   IconPencilPlus,
   IconRefresh,
   IconSearch,
 } from "@tabler/icons-react";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
-import { ExercisesChip, GoalFilterMenu, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
+import { ExercisesChip, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
+import { SPLIT_EDITOR_MIN_VIEWPORT } from "@/lib/workbench";
+import { useViewportWidth } from "./EditorArea";
 
 const ICON_BUTTON =
   "no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent aria-pressed:text-foreground";
@@ -129,10 +132,13 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
   const project = useUi((s) => s.app?.project ?? null);
   const mainView = useUi((s) => s.mainView);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
-  const activityOpen = useUi((s) => s.sidebarOpen && s.inspector?.kind === "activity");
+  const activityOpen = useUi((s) => s.panelOpen);
   const toggleSidebar = useUi((s) => s.toggleSidebar);
-  const setInspector = useUi((s) => s.setInspector);
+  const togglePanel = useUi((s) => s.togglePanel);
   const setDialog = useUi((s) => s.setDialog);
+  const splitEditor = useUi((s) => s.splitEditor);
+  const toggleSplitEditor = useUi((s) => s.toggleSplitEditor);
+  const splitAvailable = useViewportWidth() >= SPLIT_EDITOR_MIN_VIEWPORT;
   const name = project ? (project.isDemo ? t("workbench.title.demoProject") : project.name) : null;
   return (
     <header
@@ -165,10 +171,10 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
         </button>
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-1">
-        {project && mainView === "dialog" ? (
+        {/* The goal filter is in the summary of Lavoro (issue #332); the crumb after the project clears it. */}
+        {project && mainView === "dialog" && project.isDemo ? (
           <div className="no-drag flex min-w-0 items-center gap-1">
-            <GoalFilterMenu />
-            {project.isDemo ? <ExercisesChip /> : null}
+            <ExercisesChip />
           </div>
         ) : null}
         {project ? (
@@ -184,16 +190,31 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
           </button>
         </Tooltip>
         {project ? (
-          // Activity opens in the side bar until the bottom panel arrives (B08, issue #337).
+          // The bottom panel with Activity (issue #337).
           <Tooltip label={t("workbench.title.panel")}>
             <button
               type="button"
               className={cn(ICON_BUTTON, activityOpen && HEADER_CHIP_ACTIVE)}
               aria-label={t("workbench.title.panel")}
               aria-pressed={activityOpen}
-              onClick={() => setInspector(activityOpen ? null : { kind: "activity" })}
+              onClick={togglePanel}
             >
               <IconLayoutBottombar className="size-4" stroke={1.7} />
+            </button>
+          </Tooltip>
+        ) : null}
+        {splitAvailable ? (
+          // The split editor (issue #336): in a wide window the details sit beside the conversation, or cover it.
+          <Tooltip label={splitEditor ? t("workbench.editor.unsplit") : t("workbench.editor.split")}>
+            <button
+              type="button"
+              className={cn(ICON_BUTTON, splitEditor && HEADER_CHIP_ACTIVE)}
+              aria-label={t("workbench.editor.split")}
+              aria-pressed={splitEditor}
+              data-testid="split-editor-toggle"
+              onClick={toggleSplitEditor}
+            >
+              <IconLayoutSidebarRight className="size-4" stroke={1.7} />
             </button>
           </Tooltip>
         ) : null}

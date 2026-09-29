@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
-import { nextStepViews, workState, workStateText } from "./workPhase";
+import { setPersonLanguage } from "./personLanguage";
+import { BLOCK_PHRASES, COORDINATOR_MOVES, nextStepViews, PHASE_LABELS, workState, workStateText } from "./workPhase";
+
+afterEach(() => setPersonLanguage("it"));
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
 
@@ -273,6 +276,29 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     ]);
   });
 
+  it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {
+    const { document, assignment } = withAssignment();
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    expect(workState(document, "r3").phase).toBe("candidate");
+    // The developer's last turn changed the worktree and Trama could not declare the new candidate.
+    assignment.worktreeSnapshot = { snapshotId: "snap-after-the-fix", at: at(9).toISOString() };
+    const state = workState(document, "r3");
+    expect(state).toMatchObject({
+      phase: "verification",
+      verification: { undeclared: [assignment.id], unverified: [], outdated: [assignment.id] },
+      moves: [{ move: "verifyCandidate", actor: "coordinator", targetId: null }],
+    });
+    const text = workStateText(state);
+    expect(text).toContain(`Incarichi con la copia di lavoro cambiata dopo l'ultimo candidato: ${assignment.id}.`);
+    expect(text).toContain("non dire che il lavoro è finito");
+    expect(text).not.toContain("Incarichi conclusi senza candidato");
+    // The candidate of the worktree as it is now takes the work back to the person.
+    assignment.worktreeSnapshot = { snapshotId: ready.snapshotId, at: at(10).toISOString() };
+    expect(workState(document, "r3").moves).toEqual([
+      { move: "reviewCandidate", actor: "person", label: "Verifica il candidato", targetId: ready.id, url: null, message: null },
+    ]);
+  });
+
   it("is merged when every pull request of the work is merged, with no move", () => {
     const { document, assignment } = withAssignment();
     const done = candidate(document, assignment.id, "pass", "approved");
@@ -303,6 +329,29 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     const waiting = withAssignment();
     waiting.assignment.waitingForProvider = { provider: "codex", until: null, since: at(3).toISOString() };
     expect(workState(waiting.document, "r3")).toMatchObject({ phase: "blocked", blocker: expect.stringContaining("aspetta che ChatGPT torni disponibile"), moves: [] });
+  });
+
+  it("speaks the person's language: buttons, phases and the reasons of a block (issue #301)", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    request(document, "r1");
+    const first = grill(document, "r1");
+    grill(document, "r1");
+    expect(workState(document, "r1").moves[0]).toMatchObject({ label: "Answer the 2 questions", targetId: first.id });
+    expect(PHASE_LABELS.clarification).toBe("clarification");
+    expect(COORDINATOR_MOVES.preparePlan).toEqual({ label: "Prepare the plan", message: "Prepare the plan." });
+    expect(BLOCK_PHRASES.worktreeConflict).toBe("Resolving the conflict");
+
+    const failed = withAssignment();
+    endTurn(failed.document, failed.assignment.id, null, { kind: "failed", message: "The provider closed the session." });
+    expect(workState(failed.document, "r3")).toMatchObject({
+      phase: "blocked",
+      blocker: `Assignment ${failed.assignment.id} did not succeed: The provider closed the session.`,
+      why: "Ada's work did not succeed.",
+    });
+    const check = withAssignment();
+    const red = candidate(check.document, check.assignment.id, "fail", "approved");
+    expect(workState(check.document, "r3")).toMatchObject({ blocker: `The git_status check of candidate ${red.id} did not pass.`, why: "A check of Ada's work did not pass." });
   });
 
   it("waits for the person, not for new work, on a candidate stopped by a changed decision or a choice left open (issue #390)", () => {

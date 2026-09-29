@@ -1,6 +1,6 @@
 import type { ProjectDocument, SliceState, SliceTicket, SliceView, WorkPlan } from "@shared/domain";
 import { sliceStatus } from "@shared/states";
-import { parallelDevelopers } from "@shared/parallel";
+import { projectCapacity } from "@shared/squads";
 import { readableFailure } from "@shared/providerFailure";
 import { useState } from "react";
 import { Spinner } from "@/components/Spinner";
@@ -68,6 +68,11 @@ function Ticket({
         </div>
       ) : null}
       {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">Sospesa: {ticket.pause.reason}</div> : null}
+      {state === "ready" && ticket.waiting ? (
+        <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="plan-slice-waiting">
+          In attesa: {ticket.waiting}
+        </div>
+      ) : null}
       <div className="mt-0.5 text-ui-sm text-foreground/90">{ticket.whatToBuild}</div>
       {showCriteria ? (
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/80">
@@ -95,7 +100,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
   const atWork = document.team.specialists.filter(
     (s) => s.role === "developer" && s.status !== "removed" && s.assignments.some((a) => ACTIVE.includes(a.status)),
   ).length;
-  const limit = parallelDevelopers(document);
+  const limit = projectCapacity(document);
 
   return (
     <div className="mt-3" data-testid="plan-slices" data-status={slicing.status}>

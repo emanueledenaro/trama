@@ -10,6 +10,7 @@ import {
   sandboxGitEnvironment,
   toolchainRoots,
 } from "../readScope";
+import { t } from "../personLanguage";
 import { type AgentRuntime, type OpenThreadOptions, ProviderError, type RunTurnOptions, type RuntimeOptions } from "./types";
 import { ToolRefusals } from "./toolRefusal";
 
@@ -86,7 +87,7 @@ export class CodexRuntime implements AgentRuntime {
       resumeThreadId: options.resumeThreadId,
       config: {
         web_search: "disabled",
-        // Codex compacts by itself only above Trama's threshold, as a fallback within a very long turn (ADR 0018).
+        // Codex compacts by itself only above Trama's threshold, as a fallback within a very long turn (ADR 0019).
         ...(options.autoCompactTokenLimit ? { model_auto_compact_token_limit: options.autoCompactTokenLimit } : {}),
         features: {
           apps: false,
@@ -118,7 +119,7 @@ export class CodexRuntime implements AgentRuntime {
     const scope = this.scope;
     if (!scope) return this.client.runTurn({ ...options, outputSchema: options.outputSchema as never });
     if (options.writableRoot && resolve(options.writableRoot) !== scope.writableRoot) {
-      return Promise.reject(new ProviderError("unsupportedSandbox", "Il turno chiede di scrivere fuori dalla cartella del thread di Codex."));
+      return Promise.reject(new ProviderError("unsupportedSandbox", t("main.codex.writeOutsideThread")));
     }
     const notice = this.refusals.takeNotice();
     return this.client.runTurn({

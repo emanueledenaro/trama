@@ -34,8 +34,12 @@ export type CardKind =
   | "overlap"
   /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
   | "recap"
-  /** Trama reordered the Coordinator's context (ADR 0018); referenceId is the Activity event with the context summary. */
-  | "contextRollover";
+  /** The person gave or withdrew the full delegation (issue #423); referenceId is the delegation. */
+  | "delegation"
+  /** Trama reordered the Coordinator's context (ADR 0019); referenceId is the Activity event with the context summary. */
+  | "contextRollover"
+  /** An action a fixed ban stops, done or asked for because the person wrote it (issue #422); referenceId is the action. */
+  | "requestedAction";
 
 export interface ConflictAssessment {
   id: string;
@@ -98,7 +102,18 @@ export interface BranchDivergence {
 }
 
 export type EventContent =
-  | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
+  | {
+      type: "personMessage";
+      text: string;
+      moduleId: string | null;
+      moduleName: string | null;
+      imageCount?: number;
+      /**
+       * True when the person typed the message in the composer (issue #422). A choice Trama writes for the person (an
+       * answer, a withdrawal, a mandate) and older messages lack it: only a typed message can ask for a banned action.
+       */
+      composer?: boolean;
+    }
   | { type: "coordinatorText"; text: string; model: string | null; references: string[]; provider?: ProviderId | null }
   | { type: "activity"; title: string; detail: string | null; tone: "info" | "tool" | "error" }
   | { type: "card"; kind: CardKind; title: string; detail: string | null; referenceId: string | null };
@@ -200,7 +215,7 @@ export interface ContinuousWorkRecord {
 }
 
 /** What made the Coordinator write a recap (A03): one or more milestones, or the person's request. */
-export type RecapReason = "milestone" | "request";
+export type RecapReason = "milestone" | "request" | "return";
 
 /** A milestone of the work (A03): a slice done, a candidate merged, a goal achieved. */
 export type MilestoneKind = "sliceDone" | "candidateMerged" | "goalAchieved";
@@ -235,6 +250,21 @@ export interface RecapRecord {
   /** The status line when the recap was written. */
   doing: string;
   needs: RecapNeed[];
+  /**
+   * What the Coordinator decided with the full delegation since the last recap, with its doubts (issue #423); absent
+   * without such choices and in recaps written before.
+   */
+  delegated?: RecapDelegated[];
+}
+
+/** One choice of the recap made with the full delegation: what was to decide, the choice, the doubt. */
+export interface RecapDelegated {
+  /** The choice's id, so the card lets the person review it while it is still to review. */
+  id: string;
+  kind: DelegatedChoice["kind"];
+  subject: string;
+  choice: string;
+  doubt: string | null;
 }
 
 /** The recaps of a project and the milestones already told (A03). Absent until Trama first reads the milestones. */
@@ -329,7 +359,11 @@ export type NextMove =
   | "preparePlan"
   | "assignWork"
   | "verifyCandidate"
-  | "answerQuestion";
+  | "answerQuestion"
+  /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
+  | "decideWithDelegation"
+  /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
+  | "takeTicket";
 
 /** The move the Coordinator chose among the allowed ones, with its one-line reason. */
 export interface NextStep {
@@ -424,6 +458,74 @@ export interface FixedBanRefusal {
   acknowledgedAt: string | null;
 }
 
+/**
+ * An action a fixed ban stops, which the Coordinator asks Trama to run because the person wrote it in the composer
+ * (issue #422, ADR 0021). Trama runs it itself, never the model. One that deletes something or cannot be undone
+ * waits for the person's confirmation first; the rest runs at once.
+ */
+export interface RequestedAction {
+  id: string;
+  /** The fixed ban the action meets; `branchPush` is a push of another branch, which the mandate alone would not allow. */
+  ban: import("./fixedBans").FixedBan | "branchPush";
+  /** The git or gh command Trama runs in the project's checkout. */
+  command: string;
+  /** What happens, in the Coordinator's words for the person. */
+  summary: string;
+  /** The person's message that asks for it: its chat event and the words the Coordinator quoted. */
+  request: { eventId: string; quote: string; at: string };
+  requestedAt: string;
+  /**
+   * Set when the action waits for a confirmation. The person confirms with the button of its item in "Aspetta te"
+   * (`by: "button"`) or with a message typed after the question (`by: "message"`, with the message and the words).
+   */
+  confirmation: {
+    askedAt: string;
+    confirmedAt: string | null;
+    by: "button" | "message" | null;
+    message?: { eventId: string; quote: string } | null;
+    declinedAt: string | null;
+  } | null;
+  status: "waiting" | "running" | "done" | "failed" | "declined";
+  endedAt: string | null;
+  /** The output of the command, filtered of sensitive data and cut; or why it failed. */
+  output: string | null;
+}
+
+/**
+ * The full delegation (issue #423, ADR 0022): the person wrote "fai tutto tu", or words with the same sense, in the
+ * composer. The Coordinator takes by itself also the choices that wait for the person and records them; deletions and
+ * what cannot be undone still wait for the confirmation. The person withdraws it in the chat or from the Mandate view.
+ */
+export interface FullDelegation {
+  id: string;
+  grantedAt: string;
+  /** The person's message that gave it, and the words the Coordinator quoted. */
+  request: { eventId: string; quote: string };
+  /** True when the person also asked to do the open tickets ("fai tutti i ticket"). */
+  tickets: boolean;
+  revokedAt: string | null;
+  revokedBy: { kind: "view" } | { kind: "message"; eventId: string; quote: string } | null;
+}
+
+/** A choice the Coordinator made with the full delegation, with its doubt, for the person to review (issue #423). */
+export interface DelegatedChoice {
+  id: string;
+  delegationId: string;
+  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, or another doubt. */
+  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "doubt";
+  /** What was to decide, in the person's words. */
+  subject: string;
+  /** What the Coordinator chose. */
+  choice: string;
+  /** What the Coordinator was not sure about; null when it had no doubt. */
+  doubt: string | null;
+  /** The record the choice acts on: the question, the candidate, the goal, the issue number; null for a doubt. */
+  targetId: string | null;
+  at: string;
+  /** When the person reviewed it; null while it is to review. */
+  seenAt: string | null;
+}
+
 /** The one mandate request waiting for the person: the latest unresolved one (W14). */
 export function pendingMandateRequest(document: Pick<ProjectDocument, "mandateRequests">): MandateRequest | null {
   return document.mandateRequests.filter((r) => !r.resolution).at(-1) ?? null;
@@ -459,7 +561,15 @@ export interface DecisionRequest {
   /** Set when the question belongs to a grilling round before a plan (M01). */
   grilling?: GrillingPlace | null;
   askedAt: string;
-  outcome: { answer: string; alternativeIndex: number | null; decisionId: string; version: number; answeredAt: string } | null;
+  outcome: {
+    answer: string;
+    alternativeIndex: number | null;
+    decisionId: string;
+    version: number;
+    answeredAt: string;
+    /** Set when the Coordinator chose the answer with the full delegation (issue #423): the person can review it. */
+    byDelegation?: { choiceId: string } | null;
+  } | null;
   /**
    * Set when the person withdrew the open question with a reason (W03): it stays in the history, records no
    * decision and no longer waits for an answer. Absent in documents written before withdrawals.
@@ -505,12 +615,12 @@ export interface CoordinatorState {
   /** Set when the person moved the Coordinator to another provider: the next study hands the conversation over. */
   /** `transcript` false: the new session starts without the conversation (an Ask Trama "/clear", M07). */
   /**
-   * `summary`: the context summary Trama wrote at a reorder (ADR 0018), handed over in place of the transcript;
+   * `summary`: the context summary Trama wrote at a reorder (ADR 0019), handed over in place of the transcript;
    * `rollover` keeps the thread it replaces, to go back to when the new session cannot open.
    */
   pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean; summary?: string; rollover?: ContextRollover } | null;
   /**
-   * A reorder of the context Trama owes the Coordinator (ADR 0018): marked when a reading passes the threshold or the
+   * A reorder of the context Trama owes the Coordinator (ADR 0019): marked when a reading passes the threshold or the
    * person asks for it, made between turns, never during one. `failedAt`: the last attempt could not open a new session.
    */
   pendingRollover?: { reason: "threshold" | "manual"; markedAt: string; failedAt?: string | null } | null;
@@ -526,7 +636,7 @@ export interface CoordinatorState {
   referencesSent?: string | null;
   /** The late rules (writing, grilling) the thread holds: a thread opened before they changed receives them in a turn. */
   rulesSent?: string | null;
-  /** Percent of the context window above which Trama reorders the context (5-95, ADR 0018). */
+  /** Percent of the context window above which Trama reorders the context (5-95, ADR 0019). */
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
   contextWarnedAt?: number | null;
@@ -534,7 +644,7 @@ export interface CoordinatorState {
   learning?: CoordinatorLearning;
 }
 
-/** The thread a context reorder replaces (ADR 0018), with what it had received, to go back to it on a failure. */
+/** The thread a context reorder replaces (ADR 0019), with what it had received, to go back to it on a failure. */
 export interface ContextRollover {
   reason: "threshold" | "manual";
   /** The Activity event that holds the context summary. */
@@ -608,7 +718,7 @@ export interface AssignmentTurn {
   startedAt: string;
   endedAt: string | null;
   outcome: "completed" | "interrupted" | "failed" | null;
-  /** The highest share of the context window the turn used, in percent (ADR 0018); absent when the provider reported none. */
+  /** The highest share of the context window the turn used, in percent (ADR 0019); absent when the provider reported none. */
   contextPercent?: number | null;
 }
 
@@ -675,8 +785,18 @@ export interface SpecialistAssignment {
   selfPicked?: boolean;
   /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
   questions?: DeveloperQuestion[];
+  /**
+   * The worktree as Trama read it at the end of the developer's latest local turn (issue #388): a candidate with another
+   * snapshot no longer describes the work. Absent before the first reading and while a turn runs.
+   */
+  worktreeSnapshot?: { snapshotId: string; at: string } | null;
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /**
+   * The earlier assignments this work corrects (issue #389): later work in the same dialog on their modules while
+   * their candidate was still blocked. Their candidates are superseded by this work's; absent when it corrects nothing.
+   */
+  replaces?: string[];
   /** Where the work runs and why (A19, issue #260); absent for work that never had a choice, which runs locally. */
   place?: AssignmentPlace | null;
   /** The person's move of this work between local and cloud (A19); it holds for the next start or resume. */
@@ -1040,6 +1160,7 @@ export type TeamRole =
   | "research"
   | "documentation"
   | "developer"
+  | "squadLead"
   | "bugTriage"
   | "specReviewer"
   | "cleanCode"
@@ -1083,6 +1204,73 @@ export interface ProjectTeam {
   proposals: TeamProposal[];
   specialists: Specialist[];
   confirmedAt: string | null;
+  /** The squads by product area (A10, Q14); absent until the Coordinator forms them after the study. */
+  squads?: Squad[];
+  /**
+   * A merge the person asked the Coordinator for that leaves more than three developers (A11): Trama's proposal of who
+   * stays, waiting for the person's confirmation in the Squads view. Absent or null when none waits.
+   */
+  squadMerge?: SquadMergeProposal | null;
+}
+
+/** Two squads to merge and the developers Trama proposes to keep, for the person to confirm or change (A11). */
+export interface SquadMergeProposal {
+  id: string;
+  /** The squad that stays, with its id, name, lead and QA. */
+  intoId: string;
+  /** The squad that joins it and ends. */
+  fromId: string;
+  /** The developers Trama proposes to keep; the others leave the squads and keep their work. */
+  keepIds: string[];
+  proposedAt: string;
+}
+
+/**
+ * A stable squad that takes the work of one area of the product (A10, Q14, Q15): the area's modules of the Map, a squad
+ * lead, one to three developers and a dedicated QA. The other fixed roles are shared and belong to no squad.
+ */
+export interface Squad {
+  id: string;
+  /** The area's name, as the Map names its module. */
+  name: string;
+  /** The Map modules of the area; empty for the one squad of a project whose work has no module yet. */
+  moduleIds: string[];
+  leadId: string;
+  qaId: string;
+  developerIds: string[];
+  createdAt: string;
+  /**
+   * When the person last renamed, merged or split the squad (A11): the Coordinator's formation then leaves it as the
+   * person made it and places no developer in it by itself. Absent for a squad only the Coordinator shaped.
+   */
+  touchedAt?: string;
+}
+
+/** What the person changed in the squads (A11). */
+export type SquadChangeKind = "rename" | "merge" | "split";
+
+/**
+ * A change the person made to the squads, from the Squads view or through the Coordinator (A11). It keeps what it
+ * changed, so Activity tells it and the person can undo it: the squads as they were, the squads it created, the
+ * specialists whose status it changed as they were, and the specialists it added.
+ */
+export interface SquadChange {
+  id: string;
+  kind: SquadChangeKind;
+  /** `person` from the Squads view, `coordinator` when the person asked the Coordinator in the chat. */
+  by: "person" | "coordinator";
+  at: string;
+  /** The squads the change touched as they were before, with their place in the list. */
+  before: { index: number; squad: Squad }[];
+  /** The squads as the change left them: their ids, the created one included. */
+  afterIds: string[];
+  /** The specialists whose status the change set (the lead and the QA of a squad that joined another), as they were. */
+  specialists: { id: string; status: SpecialistStatus; removal: Specialist["removal"] }[];
+  /** The specialists the change added (the lead and the QA of a new squad). */
+  addedIds: string[];
+  /** The names the change is told with: the squads' names before and after, and who left the squads. */
+  names: { from: string; to: string; other: string | null; leftIds: string[] };
+  undoneAt: string | null;
 }
 
 export interface CandidateEvidence {
@@ -1136,6 +1324,8 @@ export interface Candidate {
   unresolvedChoices: string[];
   externalEffects: string[];
   declaredAt: string;
+  /** "trama" when Trama declared it by itself after a turn that changed the worktree (issue #388); absent for the Coordinator. */
+  declaredBy?: "trama";
   updatedAt: string;
   evidence: Record<string, CandidateEvidence>;
   technicalReview: TechnicalReview | null;
@@ -1177,6 +1367,23 @@ export interface Candidate {
   commit?: CandidateCommit;
   /** What `git diff --check` reported on the candidate's snapshot (Q01); absent in candidates declared before it. */
   whitespaceErrors?: string[];
+  /**
+   * The Coordinator declared the candidate superseded by a newer candidate of the same work (issue #421): it is not
+   * merged and not compared with other work, and it stays in the history. `waiting` is the "Aspetta te" item it had,
+   * which left the list with the reason. Absent for a candidate replaced by rule (conflictScope.ts).
+   */
+  supersession?: CandidateSupersession;
+}
+
+export interface CandidateSupersession {
+  /** The newer candidate of the same work. */
+  byCandidateId: string;
+  /** Why, in the person's words. */
+  reason: string;
+  actor: string;
+  at: string;
+  /** The label and the title of the "Aspetta te" item the candidate had when it was superseded; null when it had none. */
+  waiting: { label: string; title: string } | null;
 }
 
 /**
@@ -1401,6 +1608,11 @@ export interface SliceTicket {
    * nobody picks it until the pause is cleared. Absent or null means not paused.
    */
   pause?: { reason: string; since: string } | null;
+  /**
+   * Why a ready slice is not taken yet, as the last independent pick found it (A10): a squad at its limit, no free
+   * developer of its squad. Absent or null once the slice is taken or nothing holds it.
+   */
+  waiting?: string | null;
 }
 
 /**
@@ -1492,6 +1704,12 @@ export interface ProjectDocument {
   mandateRequests: MandateRequest[];
   /** Actions the fixed bans stopped (issue #244); absent in documents written before. */
   fixedBanRefusals?: FixedBanRefusal[];
+  /** Banned actions the person asked for in the composer (issue #422); absent in documents written before. */
+  requestedActions?: RequestedAction[];
+  /** The full delegations the person gave, oldest first (issue #423); absent in documents written before. */
+  delegations?: FullDelegation[];
+  /** The choices the Coordinator made with the full delegation (issue #423); absent in documents written before. */
+  delegatedChoices?: DelegatedChoice[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
@@ -1546,10 +1764,14 @@ export interface ProjectDocument {
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */
   autonomousSteps?: AutonomousStep[];
+  /** What the person changed in the squads (A11), oldest first; absent until the first change. */
+  squadChanges?: SquadChange[];
   /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
   problems?: ProblemLedger;
   /** The conversations between agents (W07), oldest first; absent before the first one. */
   agentThreads?: AgentThread[];
+  /** The order of each squad's backlog (A13): the Coordinator's and the person's; absent before the first one. */
+  backlog?: BacklogLedger;
 }
 
 /**
@@ -1634,8 +1856,30 @@ export interface ProblemLedger {
   items: FoundProblem[];
 }
 
+/**
+ * The order of one squad's backlog (A13, Q20). The Coordinator orders it, with a reason for each item; the person moves
+ * items, and the position they chose wins: the Coordinator's new order and the new items fill the other places.
+ * `squadId` null is the backlog of the work no squad owns, as before the squads are formed.
+ */
+export interface SquadBacklogOrder {
+  squadId: string | null;
+  /** The Coordinator's last order, by item key, with its reason; items it did not list follow Trama's own rule. */
+  coordinator: { key: string; reason: string }[];
+  orderedAt: string | null;
+  /** The places the person chose, 0-based, by item key. */
+  person: { key: string; position: number; at: string }[];
+}
+
+/** The order of the squads' backlogs (A13). */
+export interface BacklogLedger {
+  squads: SquadBacklogOrder[];
+}
+
 /** The person's steps the project mandate lets the Coordinator take by itself (A06, Q1). */
 export type DelegableMove = "confirmUnderstanding" | "confirmTeam" | "confirmSeams" | "confirmSlices";
+
+/** A step the Coordinator records in Activity and the recap: a person's step it took (A06), or the squads it formed (A10). */
+export type AutonomousMove = DelegableMove | "formSquads";
 
 /**
  * A step of the person the Coordinator took by itself within the mandate (A06): the understanding, the team, the seams
@@ -1644,7 +1888,7 @@ export type DelegableMove = "confirmUnderstanding" | "confirmTeam" | "confirmSea
  */
 export interface AutonomousStep {
   id: string;
-  move: DelegableMove;
+  move: AutonomousMove;
   /** The request of the dialog the step belongs to; null for the team, which is the project's. */
   requestId: string | null;
   goalId: string | null;
@@ -1661,8 +1905,12 @@ export interface AutonomousStep {
 export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment";
 
 export interface ProjectSettings {
-  /** Developers at work at the same time (W08); absent means three. */
+  /** Developers at work at the same time before squads (W08); read as the squads' limit of developers when that is absent. */
   parallelDevelopers?: number;
+  /** Developers of one squad at work at the same time (A10, Q22); absent means three. */
+  developersPerSquad?: number;
+  /** Squads of the project at work at the same time (A10, Q22); absent means three. */
+  activeSquads?: number;
   /** Where developers' work runs (A19); absent means automatic. */
   workPlace?: WorkPlaceSetting;
 }
@@ -1742,11 +1990,25 @@ export interface AuditAxis {
  * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement,
  * each with a proof that Trama verifies (F02).
  */
+/**
+ * What focus mode examines (F03, spec #124 Q1): a candidate against its base, or a module or the whole project against a
+ * fixed point the person chose. A module keeps its name and path as they were when the examination opened.
+ */
+export type FocusTarget =
+  | { kind: "candidate"; candidateId: string; assignmentId: string }
+  | { kind: "module"; moduleId: string; moduleName: string; path: string }
+  | { kind: "project" };
+
 export interface FocusAudit {
   id: string;
-  target: { kind: "candidate"; candidateId: string; assignmentId: string };
-  /** The fixed point of code-review: the candidate's base commit. */
+  target: FocusTarget;
+  /** The fixed point of code-review: the candidate's base commit, or the commit the person's fixed point resolved to. */
   fixedPoint: string;
+  /** The fixed point as the person wrote it (a branch, a tag, `HEAD~5`); absent for a candidate, whose base is the fixed point. */
+  fixedPointRef?: string;
+  /** The commits between the fixed point and HEAD, one line each, for a module or the project (F03). */
+  commits?: string[];
+  /** The candidate's snapshot, or the checkout's HEAD for a module or the project. */
   snapshotId: string;
   changedFiles: string[];
   status: AuditStatus;
@@ -1823,8 +2085,12 @@ export interface CandidateGate {
   checksFailed: string[];
   suite: SuiteComparison[];
   reviews: GateReview[];
-  /** The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. */
-  returned: { assignmentId: string; at: string; waiting: string | null } | null;
+  /**
+   * The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. `held`
+   * is set when the work was blocked too many times in a row (issue #389): Trama does not resume it by itself, the
+   * person decides how to go on.
+   */
+  returned: { assignmentId: string; at: string; waiting: string | null; held?: boolean } | null;
   failure: string | null;
   startedAt: string;
   updatedAt: string;
@@ -1963,6 +2229,8 @@ export interface ActiveProjectState {
   nextSteps: Record<string, NextStepView>;
   /** Where each slice of an approved breakdown stands, by plan id (M05); computed by the main process. */
   sliceViews?: Record<string, SliceView[]>;
+  /** Each squad's backlog in order (A13), computed by the main process; absent before the first computation. */
+  backlogs?: import("./backlog").SquadBacklogView[];
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
   /**
@@ -2090,7 +2358,16 @@ export interface LearningView {
   /** Replacements and removals an unattended review proposed; only the person applies them. */
   proposals: { id: string; target: "memory" | "user"; summary: string; createdAt: string; operations: string[] }[];
   reviews: LearningReviewRun[];
-  curator: { lastRunAt: string | null; lastRunSummary: string | null; paused: boolean; runCount: number; backups: string[] };
+  /** The upkeep of learned skills: its last check as counts, never its technical summary (issue #335). */
+  curator: {
+    lastRunAt: string | null;
+    lastRun: import("./curatorReport").CuratorRunView | null;
+    /** The first check only records a start and waits one interval. */
+    firstRunPending: boolean;
+    paused: boolean;
+    runCount: number;
+    backups: string[];
+  };
   counters: { turnsSinceMemory: number; itersSinceSkill: number; memoryInterval: number; skillInterval: number };
 }
 
@@ -2119,6 +2396,15 @@ export interface AppState {
   onboarding: import("./onboarding").OnboardingState;
   /** GitHub CLI's login, read on demand for the guide. */
   gitHubCli: import("./onboarding").GitHubCliState;
+  /** The full-screen focus mode the person is in (F03); null outside it. Notifications wait until the person leaves it. */
+  focusMode?: FocusModeState | null;
+}
+
+/** Focus mode on screen (F03): the examination shown and the notifications held back while it stays open. */
+export interface FocusModeState {
+  projectId: string;
+  auditId: string;
+  pausedNotifications: number;
 }
 
 export interface ProviderState {
@@ -2160,6 +2446,10 @@ export interface ProjectOverview {
   waitingForCapacity: number;
   /** Checks of the open pull requests from the last GitHub reading; null when the repository was not read. */
   ci: { passing: number; failing: number; pending: number } | null;
+  /** What the Coordinator does now, as the project's status line says it (issue #336); null when not read. */
+  coordinator: { text: string; state: StatusLineView["state"]; paused: boolean } | null;
+  /** What waits for the person in the project: the count of Aspetta te and its first item (issue #336). */
+  waiting: { count: number; first: { key: string; label: string; title: string } | null };
 }
 
 export interface SharedCapacity {

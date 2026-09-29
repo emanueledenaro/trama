@@ -34,8 +34,10 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { ReferenceText } from "./ReferenceText";
 import { SettledOr } from "./SettledCard";
 import { DisclosureChevron, WorkLabel } from "./WorkSteps";
-import { WaitingOr } from "@/components/WaitingView";
+import { useWaiting, WaitingOr, WaitingReference } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
+import { RequestedActionLine } from "./RequestedAction";
+import { DelegationLine } from "./Delegation";
 import { ContextRolloverCard } from "./ContextRolloverCard";
 import { Sep } from "@/components/ui/sep";
 
@@ -44,7 +46,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
   const [openPaste, setOpenPaste] = useState<number | null>(null);
   const { prompt, pastes } = extractPastes(row.text);
   return (
-    <div className="chat-message-send-enter flex w-full justify-end py-2">
+    <div className="chat-message-send-enter chat-person-message flex w-full justify-end py-2" data-testid="person-message" data-event={row.event.id}>
       <div className="group flex max-w-[80%] flex-col items-end gap-px">
         {row.moduleName || row.imageCount ? (
           <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">
@@ -102,16 +104,16 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
  * Activity, where the line opens them; a turn with only empty notes has no line.
  */
 function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
-  const setInspector = useUi((s) => s.setInspector);
+  const openActivity = useUi((s) => s.openActivity);
   const steps = compactSteps(row.activities);
   if (!steps.length && !row.running) return null;
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
   const failed = failedSteps(row.activities);
   return (
-    <div className="mb-3 text-chat" data-testid="work-line">
+    <div className="chat-work-line mb-3 text-chat" data-testid="work-line" data-work={row.id}>
       <button
         type="button"
-        onClick={() => setInspector({ kind: "activity", work: row.id })}
+        onClick={() => openActivity(row.id)}
         title="Apri i passi in Attività"
         className="-ml-0.5 inline-flex max-w-full items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >
@@ -125,8 +127,21 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
 }
 
-/** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
+/**
+ * The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. A step
+ * that is the person's answer to an item of Aspetta te is the reference to that item (issue #331): the item's buttons,
+ * and the window's one filled button, are in Aspetta te.
+ */
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
+  const waiting = useWaiting();
+  const item = step.actor === "person" && step.targetId ? waiting.find((i) => i.targetId === step.targetId) : undefined;
+  if (item) {
+    return (
+      <div className="mt-2" data-testid="next-step" data-waiting-key={item.key}>
+        <WaitingReference item={item} lead={step.label} />
+      </div>
+    );
+  }
   return (
     <div className="cta-row mt-2" data-testid="next-step">
       {step.reason ? (
@@ -218,7 +233,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
 
   if (row.interrupted) {
     // An interrupted turn is not an error: same place, neutral colors, the reason when there is one, and Riprendi (C11).
-    const detail = /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null;
+    const detail = /^(?:turno interrotto|turn interrupted)\.?$/i.test(row.message.trim()) ? null : row.message || null;
     return (
       <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-3.5 py-3">
         <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
@@ -415,6 +430,13 @@ function RowContent({ row, streaming = false, latest = false }: { row: TimelineR
           </WaitingOr>
         );
       if (row.cardKind === "contextRollover") return <ContextRolloverCard summaryEventId={content.referenceId} />;
+      if (row.cardKind === "delegation") return <DelegationLine delegationId={content.referenceId} phase={content.title} />;
+      if (row.cardKind === "requestedAction" && content.referenceId)
+        return (
+          <WaitingOr kind="confirmation" targetId={content.referenceId}>
+            <RequestedActionLine actionId={content.referenceId} />
+          </WaitingOr>
+        );
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }
