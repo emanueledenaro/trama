@@ -31,13 +31,33 @@ import { act, useUi } from "@/lib/store";
 const ITEM =
   "no-drag inline-flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-ui-xs text-[var(--color-text-foreground-secondary)] outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]";
 
+/**
+ * A problem of the status bar (UI wave of 29 September): the conflict with the default branch or a step of Configura
+ * that went back. It is tinted with the warning color, so it reads at a glance; the text is the warning mixed with the
+ * ink, dark enough on the light bar and light enough on the dark one.
+ */
+const PROBLEM =
+  "bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] font-medium text-[color-mix(in_srgb,var(--warning)_62%,var(--foreground))] hover:bg-[color-mix(in_srgb,var(--warning)_22%,transparent)] hover:text-[color-mix(in_srgb,var(--warning)_62%,var(--foreground))] aria-expanded:bg-[color-mix(in_srgb,var(--warning)_22%,transparent)]";
+
+/** The line between two groups of the status bar: where the branch ends, where the problems end. */
+function Divider() {
+  return <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-[color-mix(in_srgb,var(--foreground)_16%,transparent)]" data-testid="status-divider" />;
+}
+
 const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
   working: <Spinner className="size-3" />,
-  next: <IconPlayerTrackNext className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />,
-  waiting: <IconHandStop className="size-3 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />,
+  next: <IconPlayerTrackNext className="size-3 shrink-0 text-foreground" stroke={1.8} />,
+  waiting: <IconHandStop className="size-3 shrink-0 text-foreground" stroke={1.8} />,
   blocked: <IconAlertTriangle className="size-3 shrink-0 text-warning" stroke={1.8} />,
   idle: <IconCircleDashed className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />,
 };
+
+/** The icon of the status line: paused, waiting for a provider's limit, or the line's state. Lavoro shows it too. */
+export function StatusLineIcon({ line }: { line: StatusLineView }) {
+  if (line.paused && line.state !== "working") return <IconPlayerPause className="size-3 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />;
+  if (line.providerWait && line.state !== "working") return <IconClockPause className="size-3 shrink-0 text-warning" stroke={1.8} />;
+  return <>{STATUS_ICONS[line.state]}</>;
+}
 
 type Popup = "focus" | "divergence" | null;
 
@@ -104,14 +124,6 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
   if (!line) return <div className="flex min-w-0 flex-1 items-center justify-end">{focus}</div>;
   // A move that answers an item of Aspetta te is taken there (issue #331): the line says it, the button is in the view.
   const action = line.action && !(line.action.actor === "person" && waiting.some((item) => item.targetId === line.action!.targetId)) ? line.action : null;
-  const icon =
-    line.paused && line.state !== "working" ? (
-      <IconPlayerPause className="size-3 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />
-    ) : line.providerWait && line.state !== "working" ? (
-      <IconClockPause className="size-3 shrink-0 text-warning" stroke={1.8} />
-    ) : (
-      STATUS_ICONS[line.state]
-    );
   return (
     <div
       className="flex min-w-0 flex-1 items-center gap-1"
@@ -120,10 +132,14 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
       data-paused={line.paused ? "true" : "false"}
       data-provider-wait={line.providerWait ? "true" : "false"}
     >
+      {/* The next step is what the bar is for (UI wave of 29 September): the line in the ink, a step heavier than the
+          rest of the bar; the reason stays a quiet second part. */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5">
-        <span className="flex size-3 shrink-0 items-center justify-center">{icon}</span>
+        <span className="flex size-3 shrink-0 items-center justify-center">
+          <StatusLineIcon line={line} />
+        </span>
         <span className="min-w-0 truncate" title={line.reason ? `${line.text}. ${line.reason}` : line.text}>
-          <span className={cn("text-ui-xs", line.state === "idle" ? "text-muted-foreground" : "text-foreground")} data-testid="status-line-text">
+          <span className={cn("text-ui-xs", line.state === "idle" ? "text-muted-foreground" : "font-medium text-foreground")} data-testid="status-line-text">
             <ReferenceText text={line.text} />
           </span>
           {line.reason ? (
@@ -183,27 +199,32 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
 /** The steps of Configura seen done in this window: one that goes back is a warning, not a reason to reopen the Benvenuto. */
 const seenDone = new Set<string>();
 
+/** The step of Configura that went back, or no provider at all; null when setup stands or no project is open. */
+function useSetupBack(withProject: boolean) {
+  const app = useUi((s) => s.app);
+  if (!app || !withProject) return null;
+  const steps = welcomeSteps(app);
+  for (const step of steps) if (step.status === "done") seenDone.add(step.id);
+  return (
+    steps.find((step) => step.id === "provider" && needsProvider(app)) ??
+    steps.find((step) => seenDone.has(step.id) && (step.status === "pending" || step.status === "skipped")) ??
+    null
+  );
+}
+
 /**
  * A step of Configura that went back, such as an access that expired or GitHub CLI removed, or no provider at all
  * (issue #354): a warning with its action, which opens the Benvenuto on that step. The Benvenuto never reopens by itself.
  */
-function SetupItem() {
+function SetupItem({ back }: { back: NonNullable<ReturnType<typeof useSetupBack>> }) {
   const t = useT();
-  const app = useUi((s) => s.app);
   const openWelcome = useUi((s) => s.openWelcome);
-  if (!app) return null;
-  const steps = welcomeSteps(app);
-  for (const step of steps) if (step.status === "done") seenDone.add(step.id);
-  const back =
-    steps.find((step) => step.id === "provider" && needsProvider(app)) ??
-    steps.find((step) => seenDone.has(step.id) && (step.status === "pending" || step.status === "skipped"));
-  if (!back) return null;
   const label = t("welcome.stepBack", { title: back.title });
   return (
     <Tooltip label={back.detail}>
       <button
         type="button"
-        className={cn(ITEM, "min-w-0 text-warning hover:text-warning")}
+        className={cn(ITEM, PROBLEM, "min-w-0")}
         data-testid="status-setup"
         data-step={back.id}
         aria-label={label}
@@ -217,13 +238,16 @@ function SetupItem() {
 }
 
 /**
- * The status bar at the bottom of the window (issue #330, ADR 0018): the branch, the conflict with the default branch,
- * the status line, the work in focus, Activity and Pause. It says what happens now; decisions wait in Aspetta te.
+ * The status bar at the bottom of the window (issue #330, ADR 0018), in three groups split by a visible line (UI wave
+ * of 29 September): the branch, quiet, since it is context; the problems, tinted, so the conflict with the default
+ * branch or a step of Configura that went back read at a glance; the status line with the next step in the ink, then
+ * the work in focus, Activity, Pause and the person's move on the right. Decisions wait in Aspetta te.
  */
 export function StatusBar() {
   const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
   const setInspector = useUi((s) => s.setInspector);
+  const setup = useSetupBack(project !== null);
   const [popup, setPopup] = useState<Popup>(null);
   const bar = useRef<HTMLElement>(null);
   const toggle = (next: Exclude<Popup, null>) => setPopup((current) => (current === next ? null : next));
@@ -247,6 +271,7 @@ export function StatusBar() {
   const line = project?.statusLine ?? null;
   const branch = project?.snapshot.branch ?? null;
   const divergence = project?.document.branchDivergence ?? null;
+  const problems = Boolean(divergence) || Boolean(setup);
   return (
     <footer
       ref={bar}
@@ -258,16 +283,22 @@ export function StatusBar() {
         <>
           {branch ? (
             <Tooltip label={t("workbench.status.branch", { name: branch })}>
-              <button type="button" className={cn(ITEM, "max-w-[12rem]")} data-testid="status-branch" onClick={() => setInspector({ kind: "branch", name: branch })}>
+              <button
+                type="button"
+                className={cn(ITEM, "max-w-[10rem] text-[var(--color-text-foreground-tertiary)]")}
+                data-testid="status-branch"
+                onClick={() => setInspector({ kind: "branch", name: branch })}
+              >
                 <IconGitBranch className="size-3 shrink-0" stroke={1.8} />
                 <span className="min-w-0 truncate">{branch}</span>
               </button>
             </Tooltip>
           ) : null}
+          {branch && problems ? <Divider /> : null}
           {divergence ? (
             <button
               type="button"
-              className={cn(ITEM, "text-warning hover:text-warning")}
+              className={cn(ITEM, PROBLEM)}
               aria-expanded={popup === "divergence"}
               data-testid="status-conflict"
               onClick={() => toggle("divergence")}
@@ -276,7 +307,8 @@ export function StatusBar() {
               {t("workbench.status.conflicts", { count: divergence.conflictingFiles.length })}
             </button>
           ) : null}
-          <SetupItem />
+          {setup ? <SetupItem back={setup} /> : null}
+          {(branch || problems) && line ? <Divider /> : null}
           <StatusLine line={line} focus={<FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />} />
           {popup === "focus" ? (
             <StatusPopup side="end">
