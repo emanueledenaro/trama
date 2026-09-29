@@ -7103,7 +7103,11 @@ await send("[assegna] [interfaccia]");
 const styledWork = await workDone(plainWork);
 await send(`[candidato:${styledWork}:${vetrinaDecision}]`);
 const styledItem = await openWaiting("candidate", undefined, 60_000);
-if (!(await styledItem.innerText()).includes("Interfaccia da guardare")) throw new Error("The interface candidate does not say it changes the interface");
+// UI wave of 29 September: the open item of Aspetta te has no title of its own, its card is its one frame. The item keeps
+// its label as its name, and the card says the candidate changes the interface.
+if ((await styledItem.getAttribute("aria-label")) !== "Interfaccia da guardare" || !(await styledItem.innerText()).includes("Cambia l'interfaccia")) {
+  throw new Error("The interface candidate does not say it changes the interface");
+}
 await styledItem.locator('[data-testid="interface-shots"][data-status="ready"]').waitFor({ timeout: 60_000 });
 const styledShots = styledItem.locator('[data-testid="interface-shot"] img');
 await styledShots.nth(3).waitFor({ timeout: 20_000 });
