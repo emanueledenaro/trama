@@ -6,7 +6,7 @@ import { ITALIAN, translator } from "@shared/i18n";
 import { REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
 import { waitingForYou } from "@shared/waitingForYou";
 import { candidateReport, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
-import { automaticMove } from "./continuousWork";
+import { automaticMove, stalledMove } from "./continuousWork";
 import { emptyDocument } from "./document";
 import { beginReviews, closeGate, finishReview, openGate, pendingReturns, settleGate } from "./gate";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
@@ -223,6 +223,20 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     expect(inspectCandidate(document, candidate, null).map((b) => b.code)).not.toContain("GATE_BLOCKED");
     expect(workState(document, "r1").block).not.toBe("reviewLoop");
     expect(coordinatorMoves(document, "r1")).not.toContain("settleReview");
+  });
+
+  it("says the settlement stalled when the turn did not decide, and gives the green light once it sides with the developer", () => {
+    const document = project();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    const { candidate, gate } = heldWork(document);
+    request(document, "r2", 30, { move: "settleReview", by: "trama" });
+    expect(stalledMove(document, "r2")?.reason).toBe(
+      "La mossa automatica non è riuscita: il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+    );
+    settleGate(gate, candidate, { side: "developer", reason: "Il Patto chiede i dati aziendali nel sito" }, at(40));
+    expect(stalledMove(document, "r2")).toBeNull();
+    // The review approves the candidate: the next move is the Coordinator's green light, then Trama merges it.
+    expect(automaticMove(document, "r2", "round", guards)?.move).toBe("clearCandidate");
   });
 
   it("starts the count again when the Coordinator sides with the reviewers (ADR 0023)", () => {

@@ -1489,7 +1489,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.continuousWork.blockResolved":
     "Block resolved by the Coordinator: {kind}",
   "main.continuousWork.blockOpen": "Block still open: {kind}",
-  "main.continuousWork.stall.unsettled": "The turn did not decide between the developer and the reviewers: use settle_review.",
+  "main.continuousWork.stall.unsettled": "the turn did not decide between the developer and the reviewers: use settle_review.",
   "main.continuousWork.stall.uncleared": "the turn gave the verified candidate no green light: use clear_candidate, or assign the correction.",
   "main.continuousWork.block.checkFailed": "red check",
   "main.continuousWork.block.worktreeConflict":

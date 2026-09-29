@@ -1541,7 +1541,7 @@ export const mainIt = {
   "main.continuousWork.blockResolved":
     "Blocco risolto dal Coordinatore: {kind}",
   "main.continuousWork.blockOpen": "Blocco ancora aperto: {kind}",
-  "main.continuousWork.stall.unsettled": "Il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+  "main.continuousWork.stall.unsettled": "il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
   "main.continuousWork.stall.uncleared": "il turno non ha dato il via libera al candidato verificato: usa clear_candidate, o assegna la correzione.",
   "main.continuousWork.block.checkFailed": "verifica rossa",
   "main.continuousWork.block.worktreeConflict": "conflitto tra lavori",
