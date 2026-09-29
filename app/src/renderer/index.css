@@ -1586,6 +1586,12 @@ body:has(.sash--horizontal.active) {
   border-radius: 6px;
   transition: background-color 600ms ease-out;
 }
+/* The person's message an action in Activity points to (issue #422): the same short tint. */
+.chat-person-message {
+  border-radius: 6px;
+  transition: background-color 600ms ease-out;
+}
+.chat-person-message[data-highlight="true"],
 .chat-work-line[data-highlight="true"] {
   background: color-mix(in srgb, var(--app-focus-border) 12%, transparent);
   transition: none;

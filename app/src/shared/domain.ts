@@ -35,7 +35,9 @@ export type CardKind =
   /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
   | "recap"
   /** Trama reordered the Coordinator's context (ADR 0019); referenceId is the Activity event with the context summary. */
-  | "contextRollover";
+  | "contextRollover"
+  /** An action a fixed ban stops, done or asked for because the person wrote it (issue #422); referenceId is the action. */
+  | "requestedAction";
 
 export interface ConflictAssessment {
   id: string;
@@ -98,7 +100,18 @@ export interface BranchDivergence {
 }
 
 export type EventContent =
-  | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
+  | {
+      type: "personMessage";
+      text: string;
+      moduleId: string | null;
+      moduleName: string | null;
+      imageCount?: number;
+      /**
+       * True when the person typed the message in the composer (issue #422). A choice Trama writes for the person (an
+       * answer, a withdrawal, a mandate) and older messages lack it: only a typed message can ask for a banned action.
+       */
+      composer?: boolean;
+    }
   | { type: "coordinatorText"; text: string; model: string | null; references: string[]; provider?: ProviderId | null }
   | { type: "activity"; title: string; detail: string | null; tone: "info" | "tool" | "error" }
   | { type: "card"; kind: CardKind; title: string; detail: string | null; referenceId: string | null };
@@ -422,6 +435,39 @@ export interface FixedBanRefusal {
   by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "trama" };
   refusedAt: string;
   acknowledgedAt: string | null;
+}
+
+/**
+ * An action a fixed ban stops, which the Coordinator asks Trama to run because the person wrote it in the composer
+ * (issue #422, ADR 0021). Trama runs it itself, never the model. One that deletes something or cannot be undone
+ * waits for the person's confirmation first; the rest runs at once.
+ */
+export interface RequestedAction {
+  id: string;
+  /** The fixed ban the action meets; `branchPush` is a push of another branch, which the mandate alone would not allow. */
+  ban: import("./fixedBans").FixedBan | "branchPush";
+  /** The git or gh command Trama runs in the project's checkout. */
+  command: string;
+  /** What happens, in the Coordinator's words for the person. */
+  summary: string;
+  /** The person's message that asks for it: its chat event and the words the Coordinator quoted. */
+  request: { eventId: string; quote: string; at: string };
+  requestedAt: string;
+  /**
+   * Set when the action waits for a confirmation. The person confirms with the button of its item in "Aspetta te"
+   * (`by: "button"`) or with a message typed after the question (`by: "message"`, with the message and the words).
+   */
+  confirmation: {
+    askedAt: string;
+    confirmedAt: string | null;
+    by: "button" | "message" | null;
+    message?: { eventId: string; quote: string } | null;
+    declinedAt: string | null;
+  } | null;
+  status: "waiting" | "running" | "done" | "failed" | "declined";
+  endedAt: string | null;
+  /** The output of the command, filtered of sensitive data and cut; or why it failed. */
+  output: string | null;
 }
 
 /** The one mandate request waiting for the person: the latest unresolved one (W14). */
@@ -1596,6 +1642,8 @@ export interface ProjectDocument {
   mandateRequests: MandateRequest[];
   /** Actions the fixed bans stopped (issue #244); absent in documents written before. */
   fixedBanRefusals?: FixedBanRefusal[];
+  /** Banned actions the person asked for in the composer (issue #422); absent in documents written before. */
+  requestedActions?: RequestedAction[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */

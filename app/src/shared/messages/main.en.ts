@@ -2369,6 +2369,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.squads.developers.one": "developer",
   "main.squads.joins": "{developer} joins squad {squad}.",
   "main.squads.hired": "Added within the mandate: {names}.",
+  "main.requestedAction.notFound": "Action not found.",
   "main.slicePicking.squadsFull": "The squads at work are at their limit: the slice starts when one frees up.",
 
   // Discussions between agents (A12, issue #252)
