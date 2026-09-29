@@ -90,8 +90,15 @@ export interface SemanticHypothesis {
 export interface BranchDivergence {
   /** The branch checked out in the project; null on a detached head. */
   branch: string | null;
+  /** The other side: the default branch on GitHub, or the branch's own copy on GitHub when the checkout went another way. */
   defaultBranch: string;
+  /** The head of the project's branch Trama compared: the checkout's, or the copy on GitHub when the checkout lags it. */
   headSHA: string;
+  /**
+   * The checkout's head when Trama compared the branch as it is on GitHub because the checkout lagged it; absent when it
+   * compared the checkout. The notice holds while the checkout stays at this head.
+   */
+  checkoutSHA?: string;
   remoteSHA: string;
   /** Commits only in the project's branch. */
   ahead: number;

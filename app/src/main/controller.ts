@@ -384,7 +384,7 @@ import {
   recordPublication,
 } from "./core/findingWork";
 import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
-import { assessBranchDivergence } from "./core/branchDivergence";
+import { assessProjectDivergence } from "./core/branchDivergence";
 import { type BranchBase, readBranchBase } from "./core/branchBase";
 import { assessConflict, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
@@ -1813,25 +1813,24 @@ export class TramaController {
   private divergenceChecked: string | null = null;
 
   /**
-   * Compares the project's checkout with the default branch on GitHub (U02) and keeps the divergence on the document:
-   * the chat shows it as one project notice while it holds, and it disappears once the branches are realigned.
+   * Compares the project's branch, as it is on GitHub, with the default branch on GitHub (U02) and keeps the divergence
+   * on the document: the chat shows it as one project notice while it holds, and it disappears once the branches are
+   * realigned. The branch is fetched first: a checkout that only lags its copy on GitHub is not compared as it is, and a
+   * checkout with commits of its own while the copy moved on is a divergence from that copy (negozio, 29 September).
    */
   private async assessBranchDivergence(project: ActiveProjectState, repository: string, defaultBranch: string, remoteSHA: string): Promise<void> {
-    const headSHA = await this.headSHA(project.rootPath);
-    if (!headSHA || this.state.project !== project) return;
-    const branch = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"], project.rootPath).catch(() => "")).trim() || null;
-    if (this.state.project !== project) return;
+    const base = await this.readBranchBase(project, true);
+    if (!base || this.state.project !== project) return;
     // The names are in the key too: a renamed default branch or a switch to a branch on the same commit changes the notice.
-    const key = [project.id, branch ?? "", headSHA, defaultBranch, remoteSHA.toLowerCase()].join("\0");
+    const key = [project.id, base.branch ?? "", base.headSHA, base.remoteSHA ?? "", defaultBranch, remoteSHA.toLowerCase()].join("\0");
     if (this.divergenceChecked === key) return;
     let divergence: BranchDivergence | null;
     try {
-      divergence = await assessBranchDivergence({
+      divergence = await assessProjectDivergence({
         sourceRoot: project.rootPath,
-        branch,
+        base,
         defaultBranch,
-        headSHA,
-        remoteSHA,
+        defaultSHA: remoteSHA,
         source: { kind: "github", repository },
         cacheRoot: join(this.storage.root, "RemoteCache"),
       });

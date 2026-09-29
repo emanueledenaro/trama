@@ -76,4 +76,12 @@ describe("conflict scope (U02)", () => {
     expect(divergenceHolds(divergence, "9e0f1a2b3c4d5e4df3c14a0b1c2d3e4f5a6b7c8d")).toBe(false);
     expect(divergenceHolds(divergence, null)).toBe(false);
   });
+
+  it("holds a divergence read on the branch as it is on GitHub while the checkout that lagged it stays where it was", () => {
+    // The checkout at f1197f9 lags chore/pre-apertura on GitHub: Trama compared GitHub's copy with main.
+    const onGitHub: BranchDivergence = { ...divergence, headSHA: "8b70a5f32bb2f6502443e4700e383f7e2173657b", checkoutSHA: "f1197f9104cf652c4b1d8b06137e7aab9173388d" };
+    expect(divergenceHolds(onGitHub, "f1197f9104cf652c4b1d8b06137e7aab9173388d")).toBe(true);
+    // The person pulled: the checkout moved, and the next reading of GitHub compares the branches again.
+    expect(divergenceHolds(onGitHub, "8b70a5f32bb2f6502443e4700e383f7e2173657b")).toBe(false);
+  });
 });
