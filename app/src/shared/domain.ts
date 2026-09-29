@@ -732,8 +732,14 @@ export interface AssignmentTurn {
   contextPercent?: number | null;
 }
 
+/** Who asked to stop a piece of work: the person's stop is their choice, the others are taken up again by the work. */
+export type StopActor = "person" | "coordinator" | "trama";
+
 export interface AssignmentStop {
+  /** The name shown for who asked, in the language of the moment: text for the person, never read back to decide. */
   requestedBy: string;
+  /** Who asked, as data; absent in stops recorded before, which `requestedBy` tells. */
+  by?: StopActor;
   reason: string;
   requestedAt: string;
   thenRemove: boolean;

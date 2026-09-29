@@ -16,6 +16,7 @@ import type {
   SpecialistModelChoice,
   SpecialistStatus,
   SpecialistTool,
+  StopActor,
   TeamProposal,
   TeamRole,
   WorkKind,
@@ -818,10 +819,18 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
   });
 }
 
+/** The name of who asked to stop, as the person reads it in the work's updates. */
+const STOP_ACTOR_NAMES: Record<StopActor, () => string> = {
+  person: () => t("main.controller.personActor"),
+  coordinator: () => "Coordinatore",
+  trama: () => "Trama",
+};
+
+/** Asks to stop a developer's work; `by` is recorded as data, so a stop of the person stays theirs whatever its name. */
 export function requestStop(
   document: ProjectDocument,
   specialistId: string,
-  actor: string,
+  by: StopActor,
   reason: string,
   thenRemove = false,
   now = new Date(),
@@ -835,7 +844,8 @@ export function requestStop(
   return updateAssignment(document, current.id, now, (assignment) => {
     if (pendingStop(assignment)) return;
     assignment.status = "stopRequested";
-    assignment.stops.push({ requestedBy: actor, reason: why, requestedAt: now.toISOString(), thenRemove, confirmedAt: null });
+    const actor = STOP_ACTOR_NAMES[by]();
+    assignment.stops.push({ requestedBy: actor, by, reason: why, requestedAt: now.toISOString(), thenRemove, confirmedAt: null });
     assignment.lastUpdate = t("main.team.stopRequested", { actor, why });
   });
 }
@@ -861,7 +871,7 @@ export function stopOrphanedAssignments(document: ProjectDocument, note: string,
         turn.outcome = "interrupted";
       }
       if (!pendingStop(assignment)) {
-        assignment.stops.push({ requestedBy: "Trama", reason: note, requestedAt: now.toISOString(), thenRemove: false, confirmedAt: null });
+        assignment.stops.push({ requestedBy: "Trama", by: "trama", reason: note, requestedAt: now.toISOString(), thenRemove: false, confirmedAt: null });
       }
       confirmStop(assignment, note, now);
     });

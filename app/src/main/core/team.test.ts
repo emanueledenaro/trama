@@ -77,7 +77,7 @@ describe("team", () => {
       /not completed/,
     );
     beginTurn(document, assignment.id, "t1", "gpt-5.5");
-    requestStop(document, "Ada", "Coordinatore", "Cambio di piano");
+    requestStop(document, "Ada", "coordinator", "Cambio di piano");
     const ada = findSpecialist(document, "Ada")!;
     expect(ada.status).toBe("stopping");
     endTurn(document, assignment.id, "t1", { kind: "interrupted" });
@@ -190,8 +190,8 @@ describe("full team (W09)", () => {
     expect(guardian.status).toBe("available");
     const qa = document.team.specialists.find((s) => s.role === "qa")!;
     assign(document, order({ specialist: qa.id, tools: [] }), 1, null);
-    expect(() => requestStop(document, qa.id, "Coordinatore", "basta", true)).toThrow(expect.objectContaining({ code: "fixed_role" }));
-    expect(requestStop(document, qa.id, "Coordinatore", "basta").status).toBe("stopRequested");
+    expect(() => requestStop(document, qa.id, "coordinator", "basta", true)).toThrow(expect.objectContaining({ code: "fixed_role" }));
+    expect(requestStop(document, qa.id, "coordinator", "basta").status).toBe("stopRequested");
   });
 });
 

@@ -2104,7 +2104,7 @@ export class TramaController {
       const project = this.projectById(runtime.projectId);
       const assignment = project ? findAssignment(project.document, assignmentId) : null;
       if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
-        requestStop(project.document, assignment.specialistId, "Trama", closingNote("assignmentQuit"));
+        requestStop(project.document, assignment.specialistId, "trama", closingNote("assignmentQuit"));
       }
     }
     await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
@@ -4412,7 +4412,7 @@ export class TramaController {
     const stopped: string[] = [];
     for (const assignment of assignmentsAffectedByDecision(project.document, decisionId)) {
       if (assignment.status === "stopRequested") continue;
-      requestStop(project.document, assignment.specialistId, "Trama", t("main.controller.decisionChangedStop", { decision: decisionId }));
+      requestStop(project.document, assignment.specialistId, "trama", t("main.controller.decisionChangedStop", { decision: decisionId }));
       void this.stopAssignmentRuntime(assignment.id);
       stopped.push(assignment.id);
     }
@@ -5829,7 +5829,7 @@ export class TramaController {
     const project = this.requireProject();
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment || !isActive(assignment)) return;
-    requestStop(project.document, assignment.specialistId, t("main.controller.personActor"), t("main.controller.stoppedByPerson"));
+    requestStop(project.document, assignment.specialistId, "person", t("main.controller.stoppedByPerson"));
     this.changed();
     await this.stopAssignmentRuntime(assignmentId);
   }
@@ -6053,7 +6053,7 @@ export class TramaController {
     const document = project.document;
     const stopped = workStoppedBy(document, activeTerms(document.mandate));
     for (const { specialist, assignment, dependsOn } of stopped) {
-      requestStop(document, specialist.id, "Trama", dependsOn ? t("main.controller.dependsOnStop", { assignment: dependsOn.id, reason }) : reason);
+      requestStop(document, specialist.id, "trama", dependsOn ? t("main.controller.dependsOnStop", { assignment: dependsOn.id, reason }) : reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
     this.changed();

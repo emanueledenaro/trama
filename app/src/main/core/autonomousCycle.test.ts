@@ -15,7 +15,7 @@ import { automaticMove, blockOutcome, type ContinuationGuards } from "./continuo
 import { emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, grantMandate, revokeMandate } from "./pact";
 import { doneSince } from "./recap";
-import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
+import { assign, confirmStopWithoutTurn, confirmTeam, endTurn, proposeTeam, requestStop } from "./team";
 import { workState } from "./workPhase";
 import { translator } from "@shared/i18n";
 
@@ -302,6 +302,26 @@ describe("technical blocks the Coordinator resolves by itself (A06, Q3)", () => 
     assignment.stops.at(-1)!.requestedBy = "Person";
     request(document, "r2");
     expect(automaticMove(document, "r2", "round", free)?.move).toBe("assignWork");
+  });
+
+  it("knows the person's stop from the record, whatever label it carries (issue #423)", () => {
+    const document = stalled();
+    const assignment = assign(
+      document,
+      { specialist: "Ada", kind: "agreedTicket", objective: "o", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "i" },
+      document.mandate!.version,
+      "r1",
+      new Date(tick()),
+    );
+    requestStop(document, assignment.specialistId, "person", "Fermato dalla persona", false, new Date(tick()));
+    confirmStopWithoutTurn(document, assignment.id, "Nessun turno in corso", new Date(tick()));
+    expect(assignment.stops.at(-1)).toMatchObject({ by: "person", requestedBy: "Persona" });
+    // The name shown for the person may change with the language or the wording: the stop stays theirs.
+    assignment.stops.at(-1)!.requestedBy = "Emanuele";
+    expect(automaticMove(document, "r1", "round", free)).toBeNull();
+    // A stop of the Coordinator is not the person's choice: the round takes the work up.
+    assignment.stops.at(-1)!.by = "coordinator";
+    expect(automaticMove(document, "r1", "round", free)?.move).toBe("assignWork");
   });
 
   it("reads the outcome when the turn ends: resolved when the work is no longer blocked by it", () => {

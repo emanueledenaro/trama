@@ -1752,7 +1752,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (current && isActive(current)) {
           const authorization = authorize(document.mandate, "executeInWorktree");
           if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
-          const assignment = requestStop(document, specialist.id, "Coordinatore", reason, remove);
+          const assignment = requestStop(document, specialist.id, "coordinator", reason, remove);
           context.changed();
           context.stopAssignment(assignment.id);
           return toolSuccess({ assignmentID: assignment.id, status: "stop_requested", thenRemove: remove });

@@ -667,7 +667,10 @@ function assignedWork(
   return { phase: "merged", blocker: null };
 }
 
-/** The name Trama records for the person who stops a developer's work, in every language: a record keeps its language. */
+/**
+ * The name Trama recorded for the person who stopped a developer's work, in every language: read only for the stops
+ * recorded before `by`, which says who stopped as data.
+ */
 const PERSON_ACTORS = LANGUAGES.map((language) => translate(language, "main.controller.personActor"));
 
 /**
@@ -676,7 +679,8 @@ const PERSON_ACTORS = LANGUAGES.map((language) => translate(language, "main.cont
  */
 function stoppedByPerson(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
   const stop = assignment.stops.at(-1);
-  if (assignment.status !== "stopped" || !stop || !PERSON_ACTORS.includes(stop.requestedBy)) return false;
+  if (assignment.status !== "stopped" || !stop) return false;
+  if (!(stop.by ? stop.by === "person" : PERSON_ACTORS.includes(stop.requestedBy))) return false;
   const goalId = document.requests.find((r) => r.id === assignment.requestId)?.goalId ?? null;
   return !document.requests.some((r) => (r.goalId ?? null) === goalId && r.step?.by !== "trama" && r.createdAt > stop.requestedAt);
 }
