@@ -2445,5 +2445,6 @@ export const mainIt = {
   "main.squads.developers.one": "sviluppatore",
   "main.squads.joins": "{developer} entra nella squadra {squad}.",
   "main.squads.hired": "Aggiunti dentro il mandato: {names}.",
+  "main.requestedAction.notFound": "Azione non trovata.",
   "main.slicePicking.squadsFull": "Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera.",
 } satisfies Record<string, string>;
