@@ -329,6 +329,27 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     expect(calls.at(-1)).toEqual([marco.id, "chore: merge main"]);
   });
 
+  it("does not let the Coordinator declare a merge left with files in conflict", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    endTurn(document, marco.id, null, { kind: "completed", text: "Merge a metà" }, at(2));
+    const { context: tools } = context(document);
+    tools.reviewWorkspace = async () => ({
+      snapshotId: "snap-merge",
+      baseSHA: "f1197f9",
+      diff: "+<<<<<<< HEAD",
+      changedFiles: ["src/app/page.tsx"],
+      excludedSensitiveFiles: [],
+      whitespaceErrors: [],
+      unmergedFiles: ["src/app/page.tsx"],
+    });
+    const result = await runCoordinatorTool("declare_candidate", { assignment: marco.id, decisionIDs: [document.decisions[0]!.id] }, tools);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("merge_unresolved");
+    expect(result.content[0]!.text).toContain("resume_assignment");
+    expect(document.candidates).toEqual([]);
+  });
+
   it("stays within the mandate", async () => {
     const document = shop(["plan"]);
     const marco = realignment(document);

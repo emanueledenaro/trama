@@ -645,6 +645,7 @@ export const it = {
   "candidate.afterTurn.declared.detail": "Lo sviluppatore ha cambiato la copia di lavoro dopo l'ultimo candidato. Trama ha dichiarato un candidato nuovo con quello che c'è ora: le verifiche e i revisori lavorano su questo.",
   "candidate.afterTurn.refused.title": "Candidato non aggiornato",
   "candidate.afterTurn.refused.emptyWorktree": "La copia di lavoro non ha più modifiche: il candidato precedente non corrisponde al lavoro e non si può approvare.",
+  "candidate.afterTurn.refused.unmerged": "Il merge nella copia di lavoro ha ancora file in conflitto: non è ancora il lavoro, quindi Trama non dichiara un candidato finché non sono risolti.",
   "candidate.afterTurn.refused.published": "Il candidato precedente è già una pull request: le modifiche nuove restano nella copia di lavoro e non entrano in quella pull request.",
   "candidate.afterTurn.refused.notAuthorized": "Il mandato non copre più il lavoro in questa copia: il candidato precedente non corrisponde al lavoro e non si può approvare finché il Coordinatore non dichiara quello nuovo.",
   "candidate.afterTurn.refused.invalid": "Trama non è riuscita a dichiarare il candidato nuovo: il candidato precedente non corrisponde al lavoro e non si può approvare finché il Coordinatore non dichiara quello nuovo.",

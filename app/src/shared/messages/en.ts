@@ -642,6 +642,7 @@ export const en: Record<keyof typeof it, string> = {
   "candidate.afterTurn.declared.detail": "The developer changed the working copy after the latest candidate. Trama declared a new candidate with what it holds now: the checks and the reviewers work on this one.",
   "candidate.afterTurn.refused.title": "Candidate not updated",
   "candidate.afterTurn.refused.emptyWorktree": "The working copy has no changes left: the earlier candidate does not match the work and cannot be approved.",
+  "candidate.afterTurn.refused.unmerged": "The merge in the working copy still has files in conflict: it is not the work yet, so Trama declares no candidate until they are resolved.",
   "candidate.afterTurn.refused.published": "The earlier candidate is already a pull request: the new changes stay in the working copy and are not part of that pull request.",
   "candidate.afterTurn.refused.notAuthorized": "The mandate no longer covers work in this copy: the earlier candidate does not match the work and cannot be approved until the Coordinator declares the new one.",
   "candidate.afterTurn.refused.invalid": "Trama could not declare the new candidate: the earlier candidate does not match the work and cannot be approved until the Coordinator declares the new one.",

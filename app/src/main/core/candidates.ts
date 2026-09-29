@@ -159,7 +159,7 @@ export type TurnCandidate =
   | { kind: "none" }
   | { kind: "current"; candidate: Candidate }
   | { kind: "declared"; candidate: Candidate; previous: Candidate }
-  | { kind: "refused"; reason: "emptyWorktree" | "published" | "notAuthorized" | "invalid"; previous: Candidate; message: string };
+  | { kind: "refused"; reason: "emptyWorktree" | "unmerged" | "published" | "notAuthorized" | "invalid"; previous: Candidate; message: string };
 
 /**
  * Records the worktree as it is after a developer's turn and keeps the candidate in step with it (issue #388): when
@@ -177,6 +177,10 @@ export function candidateAfterTurn(document: ProjectDocument, assignmentId: stri
     return { kind: "refused", reason: "published", previous, message: `Candidate ${previous.id} is already pull request #${previous.pullRequest.number}.` };
   }
   if (review.changedFiles.length === 0) return { kind: "refused", reason: "emptyWorktree", previous, message: `The worktree of ${assignment.id} has no changes.` };
+  // A merge left with files in conflict is not the work yet: no reviewer reads conflict markers.
+  if (review.unmergedFiles?.length) {
+    return { kind: "refused", reason: "unmerged", previous, message: `The merge in the worktree of ${assignment.id} has files in conflict: ${review.unmergedFiles.join(", ")}.` };
+  }
   if (authorize(document.mandate, "executeInWorktree", assignment.moduleIds) !== "authorized") {
     return { kind: "refused", reason: "notAuthorized", previous, message: `The mandate does not cover work in the worktree of ${assignment.id}.` };
   }

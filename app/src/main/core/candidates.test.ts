@@ -295,6 +295,14 @@ describe("candidates", () => {
       }
     });
 
+    it("does not declare a merge left with files in conflict: it is not the work yet", () => {
+      const { document, candidate, assignment } = corrected();
+      const outcome = candidateAfterTurn(document, assignment.id, { ...worktree("snap-2", ["a", "b"]), unmergedFiles: ["b"] });
+      expect(outcome).toMatchObject({ kind: "refused", reason: "unmerged", previous: candidate });
+      expect(latestCandidate(document, assignment.id)).toBe(candidate);
+      expect(candidateReport(document, candidate, "base").blockers[0]).toMatchObject({ code: "WORKTREE_CHANGED" });
+    });
+
     it("says in English that the candidate lags the working copy (issue #301)", () => {
       setPersonLanguage("en");
       try {

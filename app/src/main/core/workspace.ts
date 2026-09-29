@@ -16,6 +16,8 @@ export interface WorkspaceReview {
   excludedSensitiveFiles: string[];
   /** What `git diff --check` reports on the changed files: whitespace errors and conflict markers (Q01). */
   whitespaceErrors: string[];
+  /** The files a merge in progress left in conflict: the worktree is not the work yet. Absent in readings made before. */
+  unmergedFiles?: string[];
 }
 
 export function slug(name: string): string {
@@ -235,7 +237,8 @@ export async function reviewWorktree(session: WorktreeSession): Promise<Workspac
     }
   }
   const whitespaceErrors = await diffCheck(root, session.baseSHA, changedFiles, untracked);
-  return { snapshotId: hash.digest("hex"), baseSHA: session.baseSHA, diff: parts.join(""), changedFiles, excludedSensitiveFiles, whitespaceErrors };
+  const { unmergedFiles } = await mergeState(root);
+  return { snapshotId: hash.digest("hex"), baseSHA: session.baseSHA, diff: parts.join(""), changedFiles, excludedSensitiveFiles, whitespaceErrors, unmergedFiles };
 }
 
 /**

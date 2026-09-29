@@ -288,8 +288,9 @@ describe("publication of a realignment left as a merge in progress", () => {
     const { workspace } = await realignment();
     const root = workspace.worktreeRoot;
     const message = "chore: merge main";
-    // The conflict comes back, as if the developer never resolved it.
+    // The conflict comes back, as if the developer never resolved it: Trama's reading of the copy says so.
     await git(["checkout", "-m", "--", "a.txt"], root, false);
+    expect((await reviewWorktree(workspace)).unmergedFiles).toEqual(["a.txt"]);
     await expect(concludeMerge(workspace, message, secretFindings)).rejects.toThrow(/still in conflict: a\.txt/);
     await writeFile(join(root, "a.txt"), "<<<<<<< HEAD\npre-apertura\n=======\nmain\n>>>>>>> main\n");
     await git(["add", "a.txt"], root, false);

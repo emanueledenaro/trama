@@ -1953,6 +1953,12 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (isActive(assignment)) return toolFailure("assignment_running", `Assignment ${assignment.id} is still running; declare the candidate when it ends.`);
         const review = await context.reviewWorkspace(assignment.id);
         if (review.changedFiles.length === 0) return toolFailure("empty_candidate", `The worktree of ${assignment.id} has no changes.`);
+        if (review.unmergedFiles?.length) {
+          return toolFailure(
+            "merge_unresolved",
+            `The merge in the working copy of ${assignment.id} still has files in conflict: ${review.unmergedFiles.join(", ")}. It is not the work yet: have the developer resolve them in the same copy with resume_assignment, then conclude the merge with commit_merge or declare the candidate.`,
+          );
+        }
         const input = {
           assignmentId: assignment.id,
           decisionIds: strings(args.decisionIDs),
