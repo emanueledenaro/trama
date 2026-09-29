@@ -23,12 +23,13 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
-import { DEFAULT_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
+import { DEFAULT_DEVELOPERS_PER_SQUAD, foreignSquad, squadLimitError, squadLimitProblem } from "@shared/squads";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { cloudWorking } from "@shared/workPlace";
 import { readDeveloperReport } from "./implementation";
 import { pendingQuestion, pendingState } from "./developerQuestions";
+import { t } from "./personLanguage";
 
 export class TeamError extends Error {
   constructor(
@@ -74,7 +75,7 @@ function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Speciali
         name: profile.name,
         tag: profile.tag,
         competence: profile.competence,
-        reason: "Ogni team di Trama ha questa figura, in ogni progetto.",
+        reason: t("main.team.fixedRoleReason"),
         moduleIds: [],
       },
       "fixedRole",
@@ -133,10 +134,16 @@ export function findSpecialist(document: ProjectDocument, reference: string): Sp
 }
 
 /**
- * At most this many developers work at the same time in a project unless the person changes it in the project's
- * settings (spec #137, Q5; W08); the fixed roles do not count.
+ * At most this many developers of a squad work at the same time unless the person changes it in the project's settings
+ * (A10, Q22); the fixed roles do not count.
  */
-export const MAX_PARALLEL_DEVELOPERS = DEFAULT_PARALLEL_DEVELOPERS;
+export const MAX_PARALLEL_DEVELOPERS = DEFAULT_DEVELOPERS_PER_SQUAD;
+
+/** Refuses a developer's work beyond the squads' limits (A10, Q22); work in a cloud session counts too (Q29). */
+function requireSquadRoom(document: ProjectDocument, specialist: Specialist): void {
+  const problem = squadLimitProblem(document, specialist);
+  if (problem) throw new TeamError("parallel_limit", squadLimitError(problem));
+}
 
 /** Developers at work now: developers with an active assignment. */
 export function activeDevelopers(document: ProjectDocument): number {
@@ -225,7 +232,7 @@ export function proposeTeam(
 }
 
 /** A new agent: a free color of the palette and its tag, the given one or the start of its competence (W15). */
-function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], team: ProjectTeam, now: Date): Specialist {
+export function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], team: ProjectTeam, now: Date): Specialist {
   return {
     id: shortId("S", randomUUID()),
     name: member.name,
@@ -241,7 +248,7 @@ function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"],
     model: null,
     tools: ["commands"],
     updatedAt: now.toISOString(),
-    lastUpdate: "Nel team",
+    lastUpdate: t("main.team.inTheTeam"),
     assignments: [],
     removal: null,
   };
@@ -288,14 +295,14 @@ export function teamMessage(document: ProjectDocument, proposal: TeamProposal): 
     .filter((s) => resolution && resolution.kind !== "superseded" && resolution.specialistIds.includes(s.id))
     .map((s) => `${s.name} (${s.id}, ${s.competence})`)
     .join(", ");
-  if (resolution?.kind === "confirmed") return `Ho confermato il team che hai proposto: ${members}.`;
+  if (resolution?.kind === "confirmed") return t("main.team.confirmed", { members });
   if (resolution?.kind === "corrected") {
-    let text = `Ho corretto il team: resta ${members}.`;
-    if (resolution.removedNames.length) text += ` Ho tolto ${resolution.removedNames.join(", ")}.`;
+    let text = t("main.team.corrected", { members });
+    if (resolution.removedNames.length) text += ` ${t("main.team.removed", { names: resolution.removedNames.join(", ") })}`;
     if (resolution.note) text += ` ${resolution.note}`;
     return text;
   }
-  return "La proposta di team precedente non vale più.";
+  return t("main.team.superseded");
 }
 
 // MARK: Specialists
@@ -359,7 +366,7 @@ export function removeSpecialist(document: ProjectDocument, id: string, reason: 
   specialist.status = "removed";
   specialist.removal = { removedBy: actor, reason: why, removedAt: now.toISOString() };
   specialist.updatedAt = now.toISOString();
-  specialist.lastUpdate = `Uscito dal team: ${why}`;
+  specialist.lastUpdate = t("main.team.left", { why });
   return specialist;
 }
 
@@ -437,13 +444,11 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
-  const limit = parallelDevelopers(document);
-  if (specialist.role === "developer" && activeDevelopers(document) >= limit) {
-    throw new TeamError(
-      "parallel_limit",
-      `${limit} ${limit === 1 ? "developer is" : "developers are"} already at work, the project's limit: assign more when one of them ends (spec #137).`,
-    );
+  const owner = foreignSquad(document, specialist, moduleIds);
+  if (owner) {
+    throw new TeamError("squad_owner", `The work on ${moduleIds.join(", ")} belongs to squad ${owner.name}: assign it to one of its developers.`);
   }
+  requireSquadRoom(document, specialist);
   const decisionVersions: Record<string, number> = {};
   for (const id of cleaned(order.decisionIds ?? [])) {
     const decision = document.decisions.find((d) => d.id === id);
@@ -523,7 +528,7 @@ function recordAssignment(specialist: Specialist, fields: AssignmentFields, now:
     result: null,
     failure: null,
     updatedAt: now.toISOString(),
-    lastUpdate: `Incarico ricevuto: ${fields.objective}`,
+    lastUpdate: t("main.team.assignmentReceived", { objective: fields.objective }),
     reportedStatus: null,
   };
   specialist.assignments.push(assignment);
@@ -597,7 +602,7 @@ export function assignDuty(document: ProjectDocument, order: DutyOrder, mandateV
 export function recordWorkspace(document: ProjectDocument, id: string, workspace: WorktreeSession, now = new Date()): void {
   updateAssignment(document, id, now, (assignment) => {
     assignment.workspace = workspace;
-    assignment.lastUpdate = `Worktree pronto sul branch ${workspace.branch}`;
+    assignment.lastUpdate = t("main.team.worktreeReady", { branch: workspace.branch });
   });
 }
 
@@ -626,7 +631,7 @@ export function beginCloudWork(document: ProjectDocument, id: string, session: C
       endedAt: null,
       outcome: null,
     });
-    assignment.lastUpdate = `Al lavoro in una sessione cloud sul branch ${session.branch}`;
+    assignment.lastUpdate = t("main.team.cloudWorking", { branch: session.branch });
   });
 }
 
@@ -686,7 +691,7 @@ export function beginTurn(
     const question = pendingQuestion(assignment);
     if (question && pendingState(assignment) === "answered") question.resumedAt = now.toISOString();
     assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, provider, startedAt: now.toISOString(), endedAt: null, outcome: null });
-    assignment.lastUpdate = `Turno ${assignment.turns.length} in corso con ${model}`;
+    assignment.lastUpdate = t("main.team.turnRunning", { number: assignment.turns.length, model });
   });
 }
 
@@ -694,7 +699,7 @@ function confirmStop(assignment: SpecialistAssignment, note: string, now: Date):
   const stop = pendingStop(assignment);
   if (stop) stop.confirmedAt = now.toISOString();
   assignment.status = "stopped";
-  assignment.lastUpdate = `Fermato: ${note}`;
+  assignment.lastUpdate = t("main.team.stopped", { note });
 }
 
 export type TurnEnd = { kind: "completed"; text: string } | { kind: "interrupted" } | { kind: "failed"; message: string };
@@ -713,26 +718,26 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       // Work under a contract ends with the developer's structured report (W05): its statement, never evidence.
       if (assignment.seams) assignment.report = readDeveloperReport(outcome.text, assignment.seams);
       assignment.failure = null;
-      assignment.lastUpdate = "Incarico concluso";
+      assignment.lastUpdate = t("main.team.assignmentDone");
       // A developer who asked the Coordinator a question (W06) pauses until the answer: the work is not done.
       const question = pendingQuestion(assignment);
       if (question) {
         assignment.status = "paused";
-        assignment.lastUpdate = `Aspetta la risposta alla domanda ${question.id}`;
+        assignment.lastUpdate = t("main.team.waitsForAnswer", { id: question.id });
       }
     } else if (outcome.kind === "interrupted") {
-      confirmStop(assignment, "Il provider ha interrotto il turno.", now);
+      confirmStop(assignment, t("main.team.providerInterrupted"), now);
     } else if (pendingStop(assignment)) {
       confirmStop(assignment, outcome.message, now);
     } else {
       assignment.status = "failed";
       assignment.failure = outcome.message;
-      assignment.lastUpdate = `Turno non riuscito: ${outcome.message}`;
+      assignment.lastUpdate = t("main.team.turnFailed", { message: outcome.message });
       // A question asked before the failure still pauses the work (W06): it stays visible to the Coordinator.
       const question = pendingQuestion(assignment);
       if (question) {
         assignment.status = "paused";
-        assignment.lastUpdate = `Aspetta la risposta alla domanda ${question.id}. Il turno non è riuscito: ${outcome.message}`;
+        assignment.lastUpdate = t("main.team.waitsForAnswerAfterFailure", { id: question.id, message: outcome.message });
       }
     }
   });
@@ -756,7 +761,7 @@ export function requestStop(
     if (pendingStop(assignment)) return;
     assignment.status = "stopRequested";
     assignment.stops.push({ requestedBy: actor, reason: why, requestedAt: now.toISOString(), thenRemove, confirmedAt: null });
-    assignment.lastUpdate = `Arresto richiesto da ${actor}: ${why}`;
+    assignment.lastUpdate = t("main.team.stopRequested", { actor, why });
   });
 }
 
@@ -801,13 +806,13 @@ export function resumeAssignment(document: ProjectDocument, id: string, now = ne
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
     a.failure = null;
-    a.lastUpdate = `Ripresa dell'incarico con ${a.model}`;
+    a.lastUpdate = t("main.team.resumed", { model: a.model });
   });
 }
 
 /**
  * Resumes paused work whose question has its answer (W06), in the same session and worktree. It waits while the
- * developer works on something else, while three developers are at work or while someone works on its modules.
+ * developer works on something else, while its squad or the project is at its limit (A10) or while someone works on its modules.
  */
 export function resumePausedAssignment(document: ProjectDocument, id: string, now = new Date()): SpecialistAssignment {
   const assignment = findAssignment(document, id);
@@ -819,16 +824,14 @@ export function resumePausedAssignment(document: ProjectDocument, id: string, no
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
   const current = currentAssignment(specialist);
   if (current && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}.`);
-  if (specialist.role === "developer" && activeDevelopers(document) >= MAX_PARALLEL_DEVELOPERS) {
-    throw new TeamError("parallel_limit", `${MAX_PARALLEL_DEVELOPERS} developers are already at work.`);
-  }
+  requireSquadRoom(document, specialist);
   requireIndependent(document, assignment.moduleIds, specialist.id);
   // The resumed work is the specialist's current work again, after what it did while this one waited.
   specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
     a.failure = null;
-    a.lastUpdate = `Ripresa con la risposta alla domanda ${pendingQuestion(a)!.id}`;
+    a.lastUpdate = t("main.team.resumedWithAnswer", { id: pendingQuestion(a)!.id });
   });
 }
 
@@ -851,15 +854,14 @@ export function reopenForFindings(
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
   const current = currentAssignment(specialist);
   if (current && current.id !== id && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}.`);
-  const limit = parallelDevelopers(document);
-  if (specialist.role === "developer" && activeDevelopers(document) >= limit) throw new TeamError("parallel_limit", `${limit} developers are already at work.`);
+  requireSquadRoom(document, specialist);
   requireIndependent(document, assignment.moduleIds, specialist.id);
   specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
     a.failure = null;
     a.gateReturn = { ...returned, at: now.toISOString() };
-    a.lastUpdate = `Ripresa con i rilievi bloccanti sul candidato ${returned.candidateId}`;
+    a.lastUpdate = t("main.team.resumedWithFindings", { id: returned.candidateId });
   });
 }
 
@@ -876,6 +878,7 @@ export function markReported(document: ProjectDocument, ids: string[]): void {
   }
 }
 
+/** @model-text: the statuses as the Coordinator reads them in the team updates. */
 export const ASSIGNMENT_STATUS_TEXT: Record<AssignmentStatus, string> = {
   preparing: "in preparazione",
   running: "al lavoro",
@@ -886,6 +889,7 @@ export const ASSIGNMENT_STATUS_TEXT: Record<AssignmentStatus, string> = {
   paused: "in pausa per una domanda",
 };
 
+/** The team updates Trama sends to the Coordinator. @model-text */
 export function teamReport(document: ProjectDocument): { text: string; ids: string[] } | null {
   const pending = unreportedAssignments(document);
   if (!pending.length) return null;
@@ -965,7 +969,7 @@ export function changeAssignmentProvider(
     a.provider = provider;
     a.model = trimmed;
     if (changed) a.threadId = null;
-    a.lastUpdate = `Provider impostato dalla persona: ${provider} ${trimmed}`;
+    a.lastUpdate = t("main.team.providerSet", { provider, model: trimmed });
   });
 }
 

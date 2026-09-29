@@ -5,21 +5,23 @@
  * must not copy them into a public page. Each value becomes a placeholder that names what was there and, when the
  * repository holds it, the file and line where it lives, so the reader can still find it.
  */
+import type { MessageKey } from "@shared/i18n";
+import { t } from "./personLanguage";
 import { git } from "./process";
 
 export type SensitiveKind = "token" | "iban" | "pec" | "email" | "fiscalCode" | "vatNumber" | "sdiCode" | "shopDomain" | "address";
 
-/** The placeholder's words for each kind, in the language of the text Trama publishes. */
-const PLACEHOLDER: Record<SensitiveKind, string> = {
-  token: "token rimosso",
-  iban: "IBAN rimosso",
-  pec: "PEC rimossa",
-  email: "email rimossa",
-  fiscalCode: "codice fiscale rimosso",
-  vatNumber: "partita IVA rimossa",
-  sdiCode: "codice SDI rimosso",
-  shopDomain: "dominio del negozio rimosso",
-  address: "indirizzo rimosso",
+/** The placeholder's words for each kind, in the language of the text Trama publishes: the person's (issue #301). */
+const PLACEHOLDER: Record<SensitiveKind, MessageKey> = {
+  token: "main.redaction.token",
+  iban: "main.redaction.iban",
+  pec: "main.redaction.pec",
+  email: "main.redaction.email",
+  fiscalCode: "main.redaction.fiscalCode",
+  vatNumber: "main.redaction.vatNumber",
+  sdiCode: "main.redaction.sdiCode",
+  shopDomain: "main.redaction.shopDomain",
+  address: "main.redaction.address",
 };
 
 /** Where a value lives in the repository, as `path:line`, or null when no tracked file holds it. */
@@ -67,11 +69,13 @@ function isPublicEmail(address: string): boolean {
   );
 }
 
-/** Street types that open an Italian address, written as they are or with a capital letter. */
+/** Street types that open an Italian address, written as they are or with a capital letter. @model-text: patterns that read the data. */
 const STREET = ["via", "viale", "v\\.le", "piazza", "p\\.za", "piazzale", "corso", "c\\.so", "largo", "vicolo", "strada", "contrada", "località", "loc\\.", "borgo", "lungomare"]
   .map((word) => `[${word[0]!.toUpperCase()}${word[0]}]${word.slice(1)}`)
   .join("|");
+// @model-text: patterns that read Italian addresses in the data.
 const NAME_WORD = "(?:[A-ZÀ-Ý0-9][\\p{L}\\d'.]*|di|del|della|dei|degli|delle|de|d'|san|santa)";
+// @model-text: a pattern that reads Italian addresses in the data.
 const CITY_WORD = "[A-ZÀ-Ý][\\p{L}'-]*";
 
 const RULES: Rule[] = [
@@ -150,7 +154,7 @@ export async function redactSensitiveData(text: string, locate?: SensitiveLocato
   let cursor = 0;
   for (const item of found) {
     const where = locate ? await locate(item.value).catch(() => null) : null;
-    result += `${text.slice(cursor, item.start)}[${PLACEHOLDER[item.kind]}${where ? `, vedi ${where}` : ""}]`;
+    result += `${text.slice(cursor, item.start)}[${where ? t("main.redaction.placeholderAt", { what: t(PLACEHOLDER[item.kind]), where }) : t(PLACEHOLDER[item.kind])}]`;
     cursor = item.end;
   }
   return result + text.slice(cursor);

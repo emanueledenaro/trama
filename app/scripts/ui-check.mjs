@@ -5,6 +5,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
+import { addWorkView } from "./work-view-fixture.mjs";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
@@ -91,6 +92,17 @@ const changeMandate = async (action) => {
   await openView("Regole", "Mandato");
   await openSection("Cambia il mandato|Concedi un mandato");
   await page.getByTestId("mandate-change").getByRole("button", { name: action, exact: true }).click();
+};
+// The overview opens from the Projects view (issue #330); the view opens first when the side bar shows another one.
+const overviewButton = async () => {
+  if (!(await page.getByRole("button", { name: "Panoramica dei progetti" }).count())) await openView("Progetti");
+  return page.getByRole("button", { name: "Panoramica dei progetti" });
+};
+// Issue #333: the shared roles of the Squads view wait in a closed section; the checks that read them open it first.
+const openSharedRoles = async () => {
+  const toggle = page.getByTestId("side-bar").getByTestId("shared-roles-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await page.getByTestId("side-bar").getByTestId("shared-roles").waitFor();
 };
 // The work in focus and the queue open from the status bar (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
@@ -807,11 +819,78 @@ await page.getByText("Concluso", { exact: true }).first().waitFor({ timeout: 20_
 await page.waitForTimeout(500);
 await shot("04d-assignment-done");
 await openView("Squadre");
-// W09: the full team, moment by moment, with the fixed roles next to the confirmed developer.
+// A10: the Squads view replaces Team. After the study the Coordinator formed the squad of Ada's area: its lead, Ada, its
+// dedicated QA and the squad's status line; the shared roles sit apart, the squad's QA is not among them. Light and dark.
 const teamPanel = page.getByTestId("side-bar");
-await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
-await teamPanel.getByRole("button", { name: /^Ada/ }).waitFor();
-await shot("04e-team-inspector");
+const firstSquad = teamPanel.getByTestId("squad").first();
+await firstSquad.waitFor({ timeout: 20_000 });
+await firstSquad.getByTestId("squad-status").getByText(/^Libera/).waitFor();
+await firstSquad.getByRole("button", { name: /^Ada/ }).waitFor();
+await firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').filter({ hasText: "[Capo]" }).waitFor();
+await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
+// Issue #333: who works now is on top, in view at 1280x800 without scrolling. Each person is one row with the bot, the
+// name, the role's tag, what it does now and the sign; the ids stay on hover; the shared roles wait closed, with their
+// count. The view and the person of the squad, narrow and wide, Codex and Claude, light and dark.
+{
+  const teamsLook = await lookOf();
+  const summary = teamPanel.getByTestId("squads-summary");
+  await summary.waitFor();
+  await summary.getByText(/squadr[ae] al lavoro|Nessuna squadra al lavoro/).waitFor();
+  if (!(await summary.evaluate((el) => el.parentElement.firstElementChild === el))) throw new Error("The summary of the Squads view is not on top");
+  const rows = teamPanel.locator('[data-testid="team-developer"], [data-testid="team-figure"]');
+  for (const row of await rows.all()) {
+    if (!(await row.getByTestId("agent-bot").count())) throw new Error("A person of the squad has no bot");
+    if (!(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
+    const sign = await row.getByTestId("member-sign").getAttribute("data-sign");
+    if (!["working", "waiting", "free", "stopped"].includes(sign)) throw new Error(`A person of the squad has no sign: ${sign}`);
+  }
+  if (await teamPanel.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count()) throw new Error("The Squads view shows an id outside the hover");
+  const sharedToggle = teamPanel.getByTestId("shared-roles-toggle");
+  if ((await sharedToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The shared roles are not closed at first");
+  if (!/^Ruoli condivisi\s*\d+/.test((await sharedToggle.innerText()).trim())) throw new Error("The shared roles do not show their count");
+  const person = teamPanel.getByTestId("team-developer").first();
+  for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    const top = await summary.evaluate((el) => ({ bottom: el.getBoundingClientRect().bottom, scrolled: el.parentElement.scrollTop, height: innerHeight }));
+    if (top.scrolled !== 0 || top.bottom > top.height) throw new Error(`Who works now is not in view at ${size}: ${JSON.stringify(top)}`);
+    await noHorizontalScroll(`Squads view ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`33a-teams-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(teamsLook.provider, teamsLook.dark);
+    await person.click();
+    const detail = teamPanel.getByTestId("specialist");
+    await detail.waitFor();
+    if ((await teamPanel.getByTestId("side-bar-title").innerText()).trim() !== "Persona della squadra") throw new Error("The detail is not titled Persona della squadra");
+    await detail.getByTestId("specialist-now").waitFor();
+    const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
+    if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
+    for (const fold of ["Perché è nella squadra", "Quando interviene", "Colore"]) {
+      if ((await detail.getByRole("button", { name: fold }).getAttribute("aria-expanded")) !== "false") throw new Error(`${fold} is not closed at first`);
+    }
+    await noHorizontalScroll(`person of the squad ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`33b-person-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(teamsLook.provider, teamsLook.dark);
+    await detail.getByRole("button", { name: "Squadre", exact: true }).click();
+    await summary.waitFor();
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
+await openSharedRoles();
+const sharedRoles = teamPanel.getByTestId("shared-roles");
+await sharedRoles.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).waitFor();
+if (await sharedRoles.locator('[data-role="qa"], [data-role="squadLead"]').count()) throw new Error("A member of the squad is among the shared roles");
+if (await teamPanel.getByText("Chiarimento e spec", { exact: true }).count()) throw new Error("The Squads view still lists the team moment by moment");
+await themeShots("04e-squads");
 // W16: right after the team is generated, every agent rests with its eyes open; only an agent out of the team sleeps.
 const teamEyes = await teamPanel.evaluate((el) =>
   [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
@@ -832,7 +911,11 @@ await teamPanel.getByTestId("team-developer").first().click();
 const developerId = await teamPanel.getByTestId("specialist-header").locator("h3[data-record-id]").getAttribute("data-record-id");
 if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "")) throw new Error(`The specialist's header lost its id: ${developerId}`);
 await expectNoRawIds(teamPanel.getByTestId("specialist-header"), "The specialist's header");
-await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
+// Issue #333: the whole header carries the id on hover too; Rename and Remove are in the menu of more actions.
+if ((await teamPanel.getByTestId("specialist").getAttribute("data-specialist-id")) !== developerId || (await teamPanel.getByTestId("specialist-header").getAttribute("title")) !== developerId) throw new Error(`The developer's id is not on hover: ${developerId}`);
+await teamPanel.getByRole("button", { name: "Altre azioni", exact: true }).click();
+await page.getByRole("menuitem", { name: "Togli dalla squadra" }).waitFor();
+await page.getByRole("menuitem", { name: "Rinomina", exact: true }).click();
 const rename = teamPanel.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
 await rename.getByText("È il nome di un ruolo fisso").waitFor();
@@ -845,17 +928,21 @@ await rename.getByRole("button", { name: "Rinomina" }).click();
 await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
 // The id stays the same after the rename.
 await teamPanel.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
-// W15: the person picks another color; only the avatar and the tag take it.
+// W15: the person picks another color; only the avatar and the tag take it. The color waits in a closed section (issue #333).
+await teamPanel.getByRole("button", { name: "Colore", exact: true }).click();
 await teamPanel.getByRole("radio", { name: "Rame" }).click();
 await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
 await shot("04e4-team-color");
-await teamPanel.getByRole("button", { name: "Team", exact: true }).click();
+await teamPanel.getByTestId("specialist-squad").getByText(/^Squadra .+, sviluppatore\.$/).waitFor();
+await teamPanel.getByRole("button", { name: "Squadre", exact: true }).click();
 await teamPanel.getByTestId("team-developer").filter({ hasText: "Giulia" }).waitFor();
-await teamPanel.getByText("In sottofondo", { exact: true }).scrollIntoViewIfNeeded();
-await shot("04e1-team-candidate-background");
+await openSharedRoles();
+await sharedRoles.scrollIntoViewIfNeeded();
+await themeShots("04e1-squads-shared-roles");
 await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).first().click();
 await teamPanel.getByText("Quando interviene").waitFor();
-if (await teamPanel.getByRole("button", { name: "Togli dal team" }).count()) throw new Error("A fixed role offers to leave the team");
+// Rename and Remove are in the menu of more actions (issue #333): a fixed role has no such menu.
+if (await teamPanel.getByRole("button", { name: "Altre azioni", exact: true }).count()) throw new Error("A fixed role offers to leave the team");
 await shot("04e2-team-fixed-role");
 // W16: at the inspector's minimum width, with a long name, the header keeps the name on one line and the status whole.
 await page.setViewportSize({ width: 980, height: 820 });
@@ -880,7 +967,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("04e2c-specialist-narrow-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.setViewportSize({ width: 1280, height: 820 });
-if (await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).count()) throw new Error("A fixed role offers a rename");
+if ((await teamPanel.getByRole("button", { name: "Altre azioni", exact: true }).count()) || (await page.getByRole("menuitem", { name: "Rinomina" }).count())) throw new Error("A fixed role offers a rename");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 // W13: the person asks the Coordinator to rename the developer, without a new mandate; the chat follows the new name.
 await page.getByLabel("Messaggio al Coordinatore").fill("[rinomina:Giulia:Bea]");
@@ -904,7 +991,7 @@ const botState = (root) =>
 const chatBots = await botState(page.locator("main").first());
 if (!chatBots.length) throw new Error("The chat shows no agent bot");
 await openView("Squadre");
-await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
+await openSharedRoles();
 const teamBots = await botState(teamPanel);
 const bodies = new Map();
 for (const bot of teamBots) {
@@ -918,6 +1005,9 @@ const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-
 if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
 const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
 if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
+// Issue #333: the cost at rest is read on the view as the person first sees it, with the shared roles closed.
+await teamPanel.getByTestId("shared-roles-toggle").click();
+await teamPanel.getByTestId("shared-roles").waitFor({ state: "detached" });
 // W16, cost: CSS runs the steady moves; the frame loop runs only while a bot morphs, at most 24 times per second,
 // and not at all at rest. The eyes do not follow the cursor. Reduced motion stops everything and keeps the still pose.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
@@ -1004,9 +1094,127 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il ge
 await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await openView("Memoria");
-await page.getByRole("button", { name: "Rivedi ora" }).click();
+// Issue #335: Memoria is a view of the side bar. "Come impara" sits closed at the bottom: no review takes room until
+// the person opens it, and its Rivedi ora is an icon on the closed row.
+const memoryView = page.getByTestId("memory-view");
+const howItLearns = memoryView.getByTestId("how-it-learns");
+if ((await howItLearns.getAttribute("data-open")) !== "false") throw new Error("Come impara is open before the person opens it");
+await memoryView.getByRole("button", { name: "Rivedi ora" }).click();
+await howItLearns.getByRole("button", { name: /^Come impara/ }).click();
+// The last review stays in view; the earlier ones wait in the history, closed until the person opens it.
+await howItLearns.getByTestId("review-run").filter({ hasText: "chiesta da te" }).filter({ hasNotText: "In corso" }).first().waitFor({ timeout: 30_000 });
+if ((await howItLearns.getByTestId("review-run").count()) !== 1) throw new Error("The review history is open before the person opens it");
+await memoryView.getByTestId("review-history-toggle").click();
+await memoryView.getByTestId("review-history").waitFor();
 await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
+await memoryView.getByTestId("review-history-toggle").click();
+await memoryView.getByTestId("review-history").waitFor({ state: "detached" });
+// The memory proposals wait in Aspetta te only: the view keeps one line that points there, without Scarta or Applica.
+// A notes file edited by hand past its limit: the next note is refused and Trama proposes to shorten it (issue #305).
+const learningDirs = async (dir) => {
+  const found = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...(await learningDirs(path)));
+    else if (entry.name === "reviews.json") found.push(dir);
+  }
+  return found;
+};
+const [projectLearningDir] = await learningDirs(dataDir);
+if (!projectLearningDir) throw new Error("No learning folder for the example project");
+await writeFile(
+  join(projectLearningDir, "MEMORY.md"),
+  [`Nota vecchia: ${"a".repeat(1400)}`, `Nota recente: ${"b".repeat(1000)}`].join("\n§\n"),
+);
+await memoryView.getByRole("button", { name: "Aggiungi una nota sul progetto" }).click();
+await memoryView.getByRole("textbox", { name: "Aggiungi una nota sul progetto" }).fill("Il catalogo si aggiorna di notte");
+await memoryView.getByRole("button", { name: "Aggiungi", exact: true }).click();
+const memoryWaiting = memoryView.getByTestId("memory-waiting");
+await memoryWaiting.filter({ hasText: /^1 proposta aspetta te: / }).waitFor({ timeout: 20_000 });
+await memoryView.getByRole("button", { name: "Annulla", exact: true }).click();
+await page.getByRole("alert").filter({ hasText: "La memoria del progetto è piena" }).getByRole("button", { name: "Chiudi" }).click();
+if (await memoryView.getByTestId("memory-proposal").count()) throw new Error("A memory proposal shows in Memoria too");
+if (await memoryView.getByRole("button", { name: /^(Scarta|Applica)$/ }).count()) throw new Error("Memoria offers the proposal's answers");
+await themeShots("35-memory-waiting-line");
+await memoryWaiting.click();
+const memoryProposal = page.getByTestId("side-bar").getByTestId("memory-proposal");
+await memoryProposal.waitFor();
+const proposalAnswers = await memoryProposal.locator(".cta-row button").allInnerTexts();
+if (proposalAnswers.join("|") !== "Scarta|Applica") throw new Error(`The memory proposal's answers: ${proposalAnswers.join(", ")}`);
+await memoryProposal.getByRole("button", { name: "Applica" }).click();
+await memoryProposal.waitFor({ state: "detached", timeout: 10_000 });
+await openView("Memoria");
+if (await memoryView.getByTestId("memory-waiting").count()) throw new Error("The proposal still waits after Applica");
+// Modifica and Salva rewrite the note that stayed.
+const keptNote = memoryView.getByTestId("memory-entry").filter({ hasText: "Nota recente" });
+await keptNote.getByRole("button", { name: "Modifica" }).click();
+await memoryView.getByRole("textbox", { name: "Modifica" }).fill("Il catalogo si aggiorna di notte: le modifiche ai prezzi arrivano la mattina dopo.");
+await memoryView.getByRole("button", { name: "Salva", exact: true }).click();
+await memoryView.getByTestId("memory-entry").filter({ hasText: "Il catalogo si aggiorna di notte" }).waitFor({ timeout: 10_000 });
+if ((await howItLearns.getAttribute("data-open")) !== "true") await howItLearns.getByRole("button", { name: /^Come impara/ }).click();
+// The learning switches live only here, in Come impara, one copy (they left Impostazioni).
+const learningSwitches = howItLearns.getByTestId("learning-switches");
+if ((await learningSwitches.getByRole("switch").count()) !== 5) throw new Error("Come impara does not hold the five learning switches");
+const consolidateSwitch = learningSwitches.getByRole("switch", { name: "Unire con un modello le skill troppo simili" });
+const consolidateBefore = await consolidateSwitch.getAttribute("aria-checked");
+await consolidateSwitch.click();
+await learningSwitches.locator(`[role="switch"][aria-label="Unire con un modello le skill troppo simili"][aria-checked="${consolidateBefore === "true" ? "false" : "true"}"]`).waitFor();
+await consolidateSwitch.click();
+await learningSwitches.locator(`[role="switch"][aria-label="Unire con un modello le skill troppo simili"][aria-checked="${consolidateBefore}"]`).waitFor();
+// Upkeep of the skills: Controlla ora and Anteprima are icons; the result reads in the person's language, never the
+// upkeep's technical summary; "Sospendi la manutenzione" takes the place of "Metti in pausa".
+const curatorStatus = howItLearns.getByTestId("curator-status");
+await howItLearns.getByRole("button", { name: "Controlla ora" }).click();
+await curatorStatus.filter({ hasText: /^Ultimo controllo .+: .+\./ }).waitFor({ timeout: 20_000 });
+await howItLearns.getByRole("button", { name: /^Anteprima/ }).click();
+await curatorStatus.filter({ hasText: /anteprima, / }).waitFor({ timeout: 20_000 });
+if (/auto:|llm|deferred|curator|seeded|[–—]/.test(await curatorStatus.innerText())) throw new Error(`The upkeep speaks its technical summary: ${await curatorStatus.innerText()}`);
+if (await howItLearns.getByRole("button", { name: "Metti in pausa" }).count()) throw new Error("The upkeep still offers Metti in pausa");
+await howItLearns.getByRole("button", { name: "Sospendi la manutenzione" }).click();
+await howItLearns.getByRole("button", { name: "Riprendi la manutenzione" }).click();
+await howItLearns.getByRole("button", { name: "Sospendi la manutenzione" }).waitFor();
+// Notes and profile: Aggiungi and Modifica are icons; the text buttons of the editor sit on the right, Salva last.
+await memoryView.getByRole("button", { name: "Aggiungi una nota sul progetto" }).click();
+await memoryView.getByRole("textbox", { name: "Aggiungi una nota sul progetto" }).fill("I rilasci partono dal branch main");
+await memoryView.getByRole("button", { name: "Aggiungi", exact: true }).click();
+const addedNote = memoryView.getByTestId("memory-entry").filter({ hasText: "I rilasci partono dal branch main" });
+await addedNote.waitFor({ timeout: 10_000 });
+await addedNote.getByRole("button", { name: "Modifica" }).click();
+const noteActions = await memoryView.getByTestId("memory-entry").locator(".cta-row button").allInnerTexts();
+if (noteActions.join("|") !== "Togli|Annulla|Salva") throw new Error(`The note editor's buttons: ${noteActions.join(", ")}`);
+await memoryView.getByTestId("memory-entry").getByRole("button", { name: "Togli" }).click();
+await addedNote.waitFor({ state: "detached", timeout: 10_000 });
+// Skills: Apri, Fissa and Archivia are icons with a tooltip and a name; Elimina keeps its text.
+const learnedSkill = memoryView.getByTestId("learned-skill").filter({ hasText: "release-flow" });
+for (const name of ["Apri", "Fissa", "Archivia"]) await learnedSkill.getByRole("button", { name, exact: true }).waitFor();
+if (!(await learnedSkill.getByRole("button", { name: "Elimina" }).innerText()).includes("Elimina")) throw new Error("Elimina lost its text");
+await learnedSkill.getByRole("button", { name: "Apri", exact: true }).click();
+await learnedSkill.getByLabel("Testo della skill release-flow").waitFor();
+await learnedSkill.getByRole("button", { name: "Chiudi", exact: true }).first().click();
+// Every button of the view has a name, and nothing scrolls sideways.
+const unnamed = await memoryView.locator("button").evaluateAll((buttons) => buttons.filter((b) => !(b.getAttribute("aria-label") || b.textContent.trim())).length);
+if (unnamed) throw new Error(`${unnamed} buttons of Memoria have no name`);
+// Before and after of the slice: the view with Come impara open, narrow and wide, Codex and Claude, light and dark.
+const memoryLook = await lookOf();
+for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(300);
+  await noHorizontalScroll(`Memoria ${size}`);
+  for (const open of [false, true]) {
+    if ((await howItLearns.getAttribute("data-open")) !== String(open)) await howItLearns.getByRole("button", { name: /^Come impara/ }).click();
+    if (open) await howItLearns.scrollIntoViewIfNeeded();
+    else await memoryView.evaluate((view) => view.closest(".overflow-y-auto")?.scrollTo(0, 0));
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`35-memory-${open ? "how-it-learns-" : ""}${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+}
+await setLookTo(memoryLook.provider, memoryLook.dark);
+await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // Candidate: correct the mandate to allow integration, then declare, verify, review and clear.
@@ -1382,7 +1590,9 @@ await goalReference.first().waitFor();
 await page.getByTestId("chat-goal-tag").filter({ hasText: goalTitle }).last().scrollIntoViewIfNeeded();
 if ((await page.getByLabel("Messaggio al Coordinatore").inputValue()) !== "Bozza che resta nella chat") throw new Error("The chat's draft changed with the filter");
 await shot("10f-single-chat-dark");
-await page.getByTestId("chat-filter").click();
+// Issue #332: the goal filter is the button at the top of Lavoro, with the menu of the goals.
+await openView("Lavoro");
+await page.getByTestId("work-summary").getByTestId("chat-filter").click();
 await page.getByRole("menuitem", { name: goalTitle }).waitFor();
 await shot("10g-chat-filter-menu-dark");
 await page.keyboard.press("Escape");
@@ -1397,10 +1607,13 @@ await page.getByRole("menuitem", { name: goalTitle }).click();
 await page.getByTestId("dialog-title").filter({ hasText: goalTitle }).waitFor();
 if (await page.getByText("Ho letto lo studio").count()) throw new Error("The goal filter shows messages outside the goal");
 await shot("10h-chat-filtered-light");
+// Filtered on the goal, the summary counts its examples tried on a candidate.
+await page.getByTestId("work-summary").getByTestId("work-goal-progress").waitFor();
 await page.getByTestId("chat-filter").click();
 await page.getByRole("menuitem", { name: "Tutta la chat" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor();
 await page.getByLabel("Messaggio al Coordinatore").fill("");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
@@ -1565,8 +1778,9 @@ await page.getByRole("button", { name: "Interrompi" }).click();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 if (await page.getByText("Questo messaggio resta in coda").count()) throw new Error("The deleted queued message reached the chat");
 // An empty goal dialog is deleted after a confirmation; a goal with history is archived and restored.
-await openView("Lavoro", "Obiettivi");
-await page.getByRole("button", { name: "Nuovo obiettivo" }).click();
+// Issue #332: Lavoro is one view; its goals section has "Nuovo obiettivo" as an icon.
+await openView("Lavoro");
+await page.getByTestId("side-bar").getByRole("button", { name: "Nuovo obiettivo" }).click();
 await page.getByLabel("Titolo dell'obiettivo").fill("Obiettivo creato per sbaglio");
 await page.getByLabel("Risultato atteso").fill("Nessuno: è un doppione.");
 await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
@@ -1587,9 +1801,12 @@ const goalRow = page.getByTestId("sidebar-goal").filter({ hasText: goalTitle });
 await goalRow.hover();
 await goalRow.getByRole("button", { name: `Archivia ${goalTitle}` }).click();
 await goalRow.waitFor({ state: "detached" });
-await openView("Lavoro", "Obiettivi");
+await openView("Lavoro");
 const inspectorPanel = page.getByTestId("side-bar");
-await inspectorPanel.getByText("Archiviati (1)").waitFor();
+// Issue #332: archived goals are folded at the end of the goals of Lavoro, with one state each.
+await inspectorPanel.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).click();
+const archivedRow = inspectorPanel.getByTestId("work-goals-archived").getByTestId("work-goal").filter({ hasText: goalTitle });
+if ((await archivedRow.getByTestId("goal-state").allTextContents()).join("|") !== "Archiviato") throw new Error("An archived goal shows more than one state");
 await shot("14e-goal-archived");
 await inspectorPanel.getByRole("button", { name: new RegExp(goalTitle) }).click();
 await inspectorPanel.getByRole("button", { name: "Ripristina" }).click();
@@ -1629,20 +1846,26 @@ const recordDecision = page.getByTestId("side-bar").getByRole("button", { name: 
 await recordDecision.waitFor();
 await page.getByTestId("side-bar").getByRole("button", { name: "Annulla", exact: true }).click();
 await recordDecision.waitFor({ state: "detached" });
-// Team: asking about a specialist names its latest assignment; the action is the last in the cta-row.
+// Squadre: asking about a specialist names its latest assignment; the action is the last in the cta-row.
 await openView("Squadre");
 await page.getByTestId("side-bar").getByTestId("team-developer").first().click();
 await page.getByTestId("side-bar").getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).waitFor();
 const developerName = (await page.getByTestId("side-bar").locator("h3.text-ui-lg").first().textContent()).trim();
-const specialistActions = await page.getByTestId("side-bar").locator(".cta-row").first().locator("button").allTextContents();
+// The Ask button reads "Chiedi" and is named in full for screen readers (issue #333).
+const specialistActions = await page
+  .getByTestId("side-bar")
+  .locator(".cta-row")
+  .first()
+  .locator("button")
+  .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label") ?? b.textContent));
 if (specialistActions.at(-1)?.trim() !== "Chiedi al Coordinatore") throw new Error(`Chiedi al Coordinatore is not the last call to action: ${specialistActions}`);
 await page.getByTestId("side-bar").getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
-await expectAsked(`di ${developerName}`, "Team, Chiedi al Coordinatore");
+await expectAsked(`di ${developerName}`, "Squadre, Chiedi al Coordinatore");
 if (!(await composer().inputValue()).includes("Aggiornami sul lavoro di ") || /A-[0-9A-F]{8}/.test(await composer().inputValue())) throw new Error(`The question does not name ${developerName}'s assignment`);
 await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
-await openView("Lavoro", "Candidati");
+await openView("Lavoro");
 // Issue #272: Lavoro names the plan as its chat card does, and a finished candidate never reads "In costruzione".
 {
   const workPanel = page.getByTestId("side-bar");
@@ -1721,6 +1944,8 @@ await activity.getByText("Fermata").first().waitFor();
 const understandingStep = activity.getByTestId("activity-step").filter({ hasText: "Comprensione confermata dal Coordinatore" }).first();
 await understandingStep.waitFor({ timeout: 20_000 });
 await understandingStep.getByRole("button", { name: "Correggi" }).waitFor();
+// A10: the squads the Coordinator formed after the study are in Activity too.
+await activity.getByTestId("activity-step").filter({ hasText: "Squadre formate dal Coordinatore" }).first().waitFor({ timeout: 20_000 });
 await themeShots("15b-activity");
 // Correggi opens the person's words for the step, with Invia la correzione as the primary on the right.
 await understandingStep.getByRole("button", { name: "Correggi" }).click();
@@ -1790,6 +2015,18 @@ await page.getByRole("button", { name: "Indietro" }).first().click();
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const settings = page.getByTestId("settings");
 await settings.waitFor();
+// Issue #335: the learning switches left Impostazioni for Memoria, Come impara: one copy. Apprendimento keeps a way
+// there, which opens Memoria with Come impara open on the switches.
+await settings.getByRole("button", { name: /^Apprendimento/ }).first().click();
+await settings.getByText(/stanno in Memoria, in Come impara/).waitFor();
+if (await settings.getByRole("switch").count()) throw new Error("A learning switch is still in Impostazioni");
+await themeShots("12c-learning-settings-link");
+await settings.getByTestId("learning-open-memory").click();
+const learningFromSettings = page.locator('[data-testid="side-bar"][data-view="memory"] [data-testid="how-it-learns"][data-open="true"]');
+await learningFromSettings.getByTestId("learning-switches").getByRole("switch", { name: "Revisione dell'esperienza dopo il lavoro" }).waitFor();
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+if (!(await settings.isVisible())) await page.getByRole("button", { name: "Impostazioni" }).click();
+await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
 // Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
@@ -1845,7 +2082,7 @@ await page.getByText("Prima proposta di mandato").first().waitFor({ timeout: 20_
 await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Seconda proposta di mandato]");
 await page.keyboard.press("Enter");
 // Issue #271: the superseded request is one line; the line opens its card.
-const supersededLine = page.getByTestId("settled-card").filter({ hasText: "Superata" }).filter({ hasText: "Prima proposta di mandato" });
+const supersededLine = page.getByTestId("settled-card").filter({ hasText: "Sostituita" }).filter({ hasText: "Prima proposta di mandato" });
 await supersededLine.waitFor({ timeout: 20_000 });
 await openSettled(supersededLine);
 const supersededNote = page.getByTestId("superseded-mandate");
@@ -2099,38 +2336,53 @@ console.log("reopened goal", goalId);
 // native, so the project opens through the same action as a recent project in the sidebar.
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), githubProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-negozio" }).waitFor({ timeout: 30_000 });
-await openView("Lavoro", "Issue");
+await openView("Lavoro");
 const issuesPanel = page.getByTestId("side-bar");
+// Issue #332: the issues are a section of Lavoro, each with what Trama does with it.
+await issuesPanel.getByTestId("work-issue").filter({ hasText: "Il pulsante Annulla non fa niente" }).getByText("nessun lavoro").waitFor({ timeout: 30_000 });
 await issuesPanel.getByRole("button", { name: /Il pulsante Annulla non fa niente/ }).click({ timeout: 30_000 });
 await issuesPanel.getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
 await expectAsked("@issue:7 «Il pulsante Annulla non fa niente»", "Issue, Chiedi al Coordinatore");
 if (await page.getByRole("button", { name: "Invia al Coordinatore" }).isDisabled()) throw new Error("The question about the issue cannot be sent");
 await shot("15a-issue-ask");
 await composer().fill("");
-// W12, Gruppo: following the repository shows the monitor at work; the impact question waits in the composer. In a
-// narrow window the inspector floats over the chat, so it steps aside to leave the question in view.
-await openView("Lavoro", "Gruppo");
+// W12, Gruppo dissolved (issue #332): following the repository in the background is in Impostazioni, Monitor, and
+// Lavoro then says it is followed; who works on what is in Squadre; the impact question is in Lavoro.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
+await page.getByTestId("settings").getByRole("button", { name: "Osserva", exact: true }).click();
+await page.getByTestId("settings").getByRole("button", { name: "Togli", exact: true }).waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await openView("Lavoro");
 const groupPanel = page.getByTestId("side-bar");
-await groupPanel.getByRole("button", { name: "Segui in background" }).click();
-await groupPanel.getByText("Monitor attivo").waitFor({ timeout: 10_000 });
-// G02, decision 9a: a colleague who does not use Trama appears with what GitHub shows, their pull request and branch;
-// a branch nobody explains stays apart.
-const githubOnly = groupPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
+await groupPanel.getByTestId("work-github").getByText("seguito in background").waitFor({ timeout: 10_000 });
+if (await groupPanel.getByRole("button", { name: "Segui in background" }).count()) throw new Error("Lavoro still offers Segui in background, which is in Impostazioni, Monitor");
+// The GitHub part of Gruppo: the colleague's pull request is in Lavoro, with its details and Apri su GitHub as an icon.
+const colleaguePull = groupPanel.getByTestId("work-pull").filter({ hasText: "#12 Annullo degli ordini dal riepilogo" });
+await colleaguePull.waitFor({ timeout: 20_000 });
+await colleaguePull.getByText(/collega/).waitFor();
+await colleaguePull.getByRole("button", { name: "Apri su GitHub" }).waitFor();
+// G02, decision 9a: a colleague who does not use Trama appears in Squadre with what GitHub shows, their pull request
+// and branch; a branch nobody explains stays apart.
+await openView("Squadre");
+const boardPanel = page.getByTestId("side-bar");
+const githubOnly = boardPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
 await githubOnly.getByText("#12 Annullo degli ordini dal riepilogo").waitFor({ timeout: 20_000 });
 await githubOnly.getByText("feature/annullo-ordini").waitFor();
 await githubOnly.getByText(/^su GitHub/).waitFor();
-await groupPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
-await groupPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
+await boardPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
+await boardPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
 await shot("15b-group-follow");
+await openView("Lavoro");
 await page.setViewportSize({ width: 720, height: 640 });
 await groupPanel.getByRole("button", { name: "Chiedi al Coordinatore l'impatto" }).click();
-await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Gruppo, Chiedi al Coordinatore l'impatto");
+await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Lavoro, Chiedi al Coordinatore l'impatto");
 // Issue #330: the side bar is attached and no longer floats over the chat, so it stays open and leaves the question
 // in view beside it.
 {
   const question = await composer().boundingBox();
   const side = await groupPanel.boundingBox();
-  if (!question || !side || question.x < side.x + side.width || question.x + question.width > 720) throw new Error("The question is not in view beside Gruppo at 720x640");
+  if (!question || !side || question.x < side.x + side.width || question.x + question.width > 720) throw new Error("The question is not in view beside Lavoro at 720x640");
 }
 await shot("15c-group-ask-narrow");
 await composer().fill("");
@@ -2365,8 +2617,9 @@ await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_0
 await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
 await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
-// Issue #389: the correction replaced the failed candidate, so its card settles as one "Superato" line; the line opens it.
-const supersededLines = page.getByTestId("settled-card").filter({ hasText: "Superato" });
+// Issue #389: the correction replaced the failed candidate, so its card settles as one "Sostituito" line (issue #332:
+// "Superato" became "Sostituito" for replaced work); the line opens it.
+const supersededLines = page.getByTestId("settled-card").filter({ hasText: "Sostituito" });
 await supersededLines.first().waitFor({ timeout: 20_000 });
 for (const line of await supersededLines.all()) {
   if (await failedCard.isVisible().catch(() => false)) break;
@@ -2910,17 +3163,25 @@ await shot("19m-specialist-threads");
 await specialistThreads.click();
 await agentThread.waitFor();
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
-// W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
-// parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
+// W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the squads'
+// limits in the settings (A10: developers per squad and squads at work together); a verified slice unblocks the ones that depended on it, and with continuous work on
 // the free developer takes the next ready one in its modules by itself, without a Coordinator turn.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const parallelSettings = page.getByTestId("settings");
 await parallelSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
-const parallelPicker = parallelSettings.getByTestId("parallel-developers");
+// A10 with #346: one group holds the four limits, each with one control: all projects, this project (three per
+// squad formed, here one squad), developers per squad and squads together.
+const parallelPicker = parallelSettings.getByTestId("squad-limit-developersPerSquad");
 await parallelPicker.getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelSettings.getByTestId("parallel-developers").getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelSettings.getByTestId("shared-developers").getByRole("radio", { name: "6", checked: true }).waitFor();
+for (const id of ["shared-developers", "parallel-developers", "squad-limit-developersPerSquad", "squad-limit-activeSquads"]) {
+  if ((await parallelSettings.getByTestId(id).count()) !== 1) throw new Error(`The limit ${id} has not exactly one control`);
+}
+await parallelSettings.getByTestId("squad-limit-activeSquads").getByRole("radio", { name: "3", checked: true }).waitFor();
 await parallelPicker.getByRole("radio", { name: "2" }).click();
 await parallelPicker.getByRole("radio", { name: "2", checked: true }).waitFor();
-await parallelPicker.scrollIntoViewIfNeeded();
+await parallelSettings.getByTestId("squad-limit-activeSquads").scrollIntoViewIfNeeded();
 await shot("22a-parallel-developers");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
@@ -3213,9 +3474,10 @@ const narrowProblems = await typographyOverflow();
 if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
 await shot("16d2-typography-narrow");
 await page.setViewportSize({ width: 1280, height: 820 });
-// G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
-// "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
-await openView("Lavoro", "Gruppo");
+// G02: who works on what, in Squadre since Gruppo dissolved (issue #332). One row per person and per agent, with
+// identity, active branch, "anche su", the request, the files and the freshness; the person's own switch is in
+// Impostazioni, Presenza, on the right.
+await openView("Squadre");
 const presencePanel = page.getByTestId("group-board");
 const rows = presencePanel.locator('[data-testid="group-row"]');
 const adaRow = rows.filter({ hasText: "Ada (tu)" });
@@ -3232,11 +3494,19 @@ await liaRow.getByTestId("agent-tag").getByText("[Interfaccia]").waitFor();
 await liaRow.getByText("trama/lia-rimborsi").waitFor();
 await liaRow.getByText("Schermata dei rimborsi").waitFor();
 await liaRow.getByText(/^inattivo da 1[2-9] min$/).waitFor();
-const ownSwitch = page.getByTestId("side-bar").getByRole("switch", { name: "Condividi la presenza", checked: true });
-await ownSwitch.waitFor();
-const groupInspector = await page.getByTestId("side-bar").boundingBox();
-const switchBox = await ownSwitch.boundingBox();
-if (!groupInspector || !switchBox || switchBox.x < groupInspector.x + groupInspector.width / 2) throw new Error("Gruppo: the sharing switch is not on the right");
+if (await page.getByTestId("side-bar").getByRole("switch", { name: "Condividi la presenza" }).count()) throw new Error("Squadre repeats the sharing switch of Impostazioni, Presenza");
+await page.getByTestId("side-bar").getByTestId("group-presence-line").waitFor();
+await page.getByRole("button", { name: "Impostazioni" }).click();
+{
+  const ownSwitch = page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true });
+  await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
+  await ownSwitch.waitFor();
+  const settingsBox = await page.getByTestId("settings").boundingBox();
+  const switchBox = await ownSwitch.boundingBox();
+  if (!settingsBox || !switchBox || switchBox.x < settingsBox.x + settingsBox.width / 2) throw new Error("Presenza: the sharing switch is not on the right");
+}
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await openView("Squadre");
 // W16: the agent of a colleague who is idle sleeps: same body and color, eyes closed, and Z's rising above it.
 const liaBot = liaRow.getByTestId("agent-bot");
 if ((await liaBot.getAttribute("data-move")) !== "sleep") throw new Error("An idle colleague's agent does not sleep");
@@ -3263,8 +3533,8 @@ await shot("16d-presence-group-wide");
 await page.getByTestId("side-bar").getByRole("button", { name: "Larghezza normale" }).click();
 await page.setViewportSize({ width: 720, height: 640 });
 await page.waitForTimeout(400);
-if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll in Gruppo at 720x640");
-if (await page.getByTestId("side-bar").evaluate((node) => node.scrollWidth > node.clientWidth + 1)) throw new Error("Gruppo overflows the inspector at 720x640");
+if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll in Squadre at 720x640");
+if (await page.getByTestId("side-bar").evaluate((node) => node.scrollWidth > node.clientWidth + 1)) throw new Error("Who works on what overflows the side bar at 720x640");
 await shot("16e-presence-group-narrow");
 await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Impostazioni" }).click();
@@ -3591,6 +3861,7 @@ if (!(await onRequest.isVisible())) {
 // The Pact card waits in Aspetta te: the chat shows its reference (issue #240).
 await page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first().waitFor({ timeout: 60_000 });
 await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
+await openSharedRoles();
 await dutyPanel.getByTestId("team-figure").filter({ hasText: "Clean Code" }).first().click();
 const roleWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
 await roleWork.waitFor();
@@ -3779,9 +4050,9 @@ await primaryLast(divergenceNotice.locator(".cta-row"), "Divergence notice");
 const settledLines = page.getByTestId("settled-card");
 const divergenceCards = settledLines.filter({ hasText: "Nell'avviso del progetto" });
 if ((await divergenceCards.count()) !== 2) throw new Error(`Divergence: ${await divergenceCards.count()} conflicts with main still shown on their own`);
-const supersededConflict = settledLines.filter({ hasText: "Due incarichi del team" }).filter({ hasText: "Superato" });
+const supersededConflict = settledLines.filter({ hasText: "Due incarichi del team" }).filter({ hasText: "Sostituito" });
 if ((await supersededConflict.count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
-const replacedLine = settledLines.filter({ hasText: /^Candidato / }).filter({ hasText: "Superato" });
+const replacedLine = settledLines.filter({ hasText: /^Candidato / }).filter({ hasText: "Sostituito" });
 if ((await replacedLine.count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
 await replacedLine.getByRole("button", { name: /^Apri: / }).click();
 await replacedLine.getByTestId("candidate-superseded").waitFor();
@@ -3792,21 +4063,128 @@ if (await page.getByRole("main").getByText(/colleg[ah]i?\b/).count()) throw new 
 if (await page.getByText("Conflitto con C-AC540E8F").count()) throw new Error("Divergence: the newer candidate still conflicts with the replaced one");
 await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();
 await openDivergence();
-for (const dark of [false, true]) {
-  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
-  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`25a-branch-divergence-${dark ? "dark" : "light"}`);
-}
-await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
+// Issue #332: the files in conflict are one click away from the status bar: the notice opens with them shown.
 await divergenceNotice.getByTestId("branch-divergence-files").getByText("vercel.json").waitFor();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`25b-branch-divergence-files-${dark ? "dark" : "light"}`);
 }
+await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
+await divergenceNotice.getByTestId("branch-divergence-files").waitFor({ state: "detached" });
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`25a-branch-divergence-${dark ? "dark" : "light"}`);
+}
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #332: Lavoro is one view in the side bar. At the top the goal filter and how many of the goal's examples were
+// tried; then goals with one state each, the slices of the sprint with who works on them (their animated avatars), the
+// candidates and plans, the project's branch with its conflict against main and the files one click away, the pull
+// requests with their CI and Apri su GitHub as an icon, and the issues with what Trama does with each. A copy of the
+// example project with a GitHub remote read by the fake GitHub CLI, and the records of scripts/work-view-fixture.mjs.
+const workProject = await mkdtemp(join(tmpdir(), "trama-ui-lavoro-"));
+await cp(resolve("resources/DemoProject"), workProject, { recursive: true });
+const workGit = (...args) => execFileSync("git", ["-C", workProject, ...args], { encoding: "utf8" });
+workGit("init", "-q", "-b", "main");
+workGit("add", ".");
+workGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+workGit("checkout", "-q", "-b", "chore/pre-apertura");
+workGit("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
+const workHead = workGit("rev-parse", "HEAD").trim();
+const workEnv = { PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", FAKE_GH_WORK: "1" };
+({ app, page } = await launch(workEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+{
+  let workPath = null;
+  for (const file of await readdir(join(dataDir, "Projects"))) {
+    if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-lavoro-")) workPath = join(dataDir, "Projects", file);
+  }
+  if (!workPath) throw new Error("Lavoro: the project's state was not saved");
+  const document = addWorkView(JSON.parse(await readFile(workPath, "utf8")), workProject, workHead);
+  const conflictFiles = Array.from({ length: 18 }, (_, index) => `app/checkout/${["carrello", "spedizioni", "pagamenti"][index % 3]}-${index + 1}.ts`);
+  document.branchDivergence = { branch: "chore/pre-apertura", defaultBranch: "main", headSHA: workHead, remoteSHA: "4df3c14a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e", ahead: 13, behind: 7, conflictingFiles: conflictFiles, checkedAt: "2026-09-28T12:00:00.000Z" };
+  await writeFile(workPath, JSON.stringify(document));
+}
+({ app, page } = await launch(workEnv));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.setViewportSize({ width: 1280, height: 800 });
+await openView("Lavoro");
+const workView = page.getByTestId("side-bar").getByTestId("work-overview");
+await workView.waitFor();
+if ((await page.getByTestId("side-bar").getByRole("tab").count()) !== 0) throw new Error("Lavoro still splits its sections into tabs");
+// Summary: the goal of the work, with its examples tried on a candidate.
+await workView.getByTestId("work-goal-progress").filter({ hasText: "2 di 4 esempi di «Spedizioni e pagamenti» provati" }).waitFor({ timeout: 20_000 });
+await workView.getByTestId("work-summary").getByTestId("chat-filter").waitFor();
+// Goals: one state each, never "Aperto" and "Archiviato" together; archived goals are folded at the end.
+for (const row of await workView.getByTestId("work-goal").all()) {
+  if ((await row.getByTestId("goal-state").count()) !== 1) throw new Error(`Lavoro: a goal has more than one state: ${await row.innerText()}`);
+}
+await workView.getByTestId("work-goal").filter({ hasText: "Spedizioni e pagamenti" }).getByText("Attivo", { exact: true }).waitFor();
+await workView.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).waitFor();
+await workView.getByTestId("work-section-goals").getByRole("button", { name: "Nuovo obiettivo" }).waitFor();
+// Slices: one row per slice with who, state and goal; a developer is its animated avatar, never a letter in a circle.
+const workSlices = workView.getByTestId("work-slice");
+if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
+const elenaSlice = workSlices.filter({ hasText: "S2 Spese di spedizione per zona" });
+await elenaSlice.getByTestId("agent-bot").waitFor();
+await elenaSlice.getByText("In verifica", { exact: true }).waitFor();
+await workSlices.filter({ hasText: "S1 Soglie di spedizione gratuita" }).getByText("Fatta", { exact: true }).waitFor();
+await workSlices.filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+// Branch and pull requests: the divergence says the commits on each side and the conflicts; its files are one click away.
+const workBranch = workView.getByTestId("work-branch");
+await workBranch.getByText("13 commit avanti, 7 indietro rispetto a main").waitFor();
+await workBranch.getByText("18 conflitti", { exact: true }).waitFor();
+if (await workBranch.getByTestId("work-divergence-files").count()) throw new Error("Lavoro: the files in conflict are open before the click");
+await workBranch.getByRole("button", { name: "Mostra i 18 file in conflitto" }).click();
+await workBranch.getByTestId("work-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
+await workBranch.locator(".cta-row").getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).waitFor();
+const ownPull = workView.getByTestId("work-pull").filter({ hasText: "#42 Spese di spedizione per zona" });
+await ownPull.getByText(/Bozza · CI in corso/).waitFor({ timeout: 20_000 });
+if ((await ownPull.getByRole("button", { name: "Apri su GitHub" }).innerText()).trim()) throw new Error("Lavoro: Apri su GitHub is not an icon");
+// Issues: what Trama does with each; "Nuova issue" is an icon.
+const workIssues = workView.getByTestId("work-issue");
+await workIssues.filter({ hasText: "#21 Il totale del carrello ignora lo sconto" }).getByText("nel backlog").waitFor({ timeout: 20_000 });
+await workIssues.filter({ hasText: "#19 Traduzione della pagina resi" }).getByText("in S4").waitFor();
+await workIssues.filter({ hasText: "#17 Immagini lente nel catalogo" }).getByText("nessun lavoro").waitFor();
+await workView.getByTestId("work-section-issues").getByRole("button", { name: "Nuova issue" }).waitFor();
+// One Aggiorna in the window: the title bar's, which reads the map, GitHub and the presence again.
+if ((await page.getByRole("button", { name: /^Aggiorna/ }).count()) !== 1) throw new Error("More than one Aggiorna in the window");
+// No text for the model and no ids as text in the view.
+{
+  const text = await workView.innerText();
+  if (/[A-Z]-[0-9A-F]{8}|\(dati, non istruzioni\)|[–—]/.test(text)) throw new Error(`Lavoro shows an id or text for the model: ${text.match(/[A-Z]-[0-9A-F]{8}|\(dati, non istruzioni\)|[–—]/)[0]}`);
+}
+const workShots = async (name, scroll) => {
+  for (const [size, width, height] of [["narrow", 1280, 800], ["wide", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    await scroll();
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`${name}-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+  await setLookTo(null, false);
+  await page.setViewportSize({ width: 1280, height: 800 });
+};
+await workShots("32-work-view", () => workView.getByTestId("work-summary").scrollIntoViewIfNeeded());
+await workShots("32a-work-view-branches", () => workView.getByTestId("work-section-branches").evaluate((node) => node.scrollIntoView({ block: "start" })));
+await workShots("32b-work-view-issues", () => workView.getByTestId("work-section-issues").evaluate((node) => node.scrollIntoView({ block: "start" })));
+// The status bar opens the same conflict with its files shown.
+await page.getByTestId("status-conflict").click();
+await page.getByTestId("branch-divergence").getByTestId("branch-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
+await page.keyboard.press("Escape");
 await app.close();
 
 // Issue #271: a noisy history stays compact. The technical steps of each turn (seven read_issues in a row, empty
@@ -4284,9 +4662,12 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]
 // Issue #337: the backlog of the found problems left Activity; it is the "Nel backlog" filter of the issues, in Lavoro.
 if (await page.getByTestId("bottom-panel").getByTestId("problem-backlog").count()) throw new Error("The backlog is still in Activity");
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
-await openView("Lavoro", "Issue");
+// Issue #332: Lavoro is one view; the backlog is the "Nel backlog" filter of its Issue section.
+await openView("Lavoro");
+await page.getByTestId("work-section-issues").getByRole("radio", { name: /^Nel backlog/ }).click();
 const localBacklog = page.getByTestId("side-bar").getByTestId("problem-backlog");
 await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 30_000 });
+if (await page.getByTestId("activity-log").count()) throw new Error("Activity is still open under the backlog");
 await localBacklog.scrollIntoViewIfNeeded();
 await lookShots("27c-found-problem-local-backlog");
 await app.close();
@@ -5159,9 +5540,7 @@ await app.close();
 // Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
 ({ app, page } = await launch());
 await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
-// Issue #330: the overview opens from the Projects view.
-await openView("Progetti");
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 const priority = page.getByTestId("overview-priority");
 await priority.waitFor({ timeout: 10_000 });
 await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
@@ -5182,13 +5561,12 @@ await themeShots("39a-overview-priority");
 await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
 await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
 await page.waitForTimeout(1_500);
-await openView("Progetti");
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 await priority.waitFor();
 let reopened39 = await priorityNames();
 for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
 if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
-await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await (await overviewButton()).click();
 // The shared limit sits next to the project's own limit in the settings.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const sharedSettings = page.getByTestId("settings");
@@ -5200,4 +5578,55 @@ await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
 await sharedPicker.scrollIntoViewIfNeeded();
 await noHorizontalScroll("shared developers");
 await themeShots("39b-shared-developers");
+
+// Issue #301: the texts the main process writes follow the person's language at once, without a restart: the status
+// line, the Activity rows and the notices of the Coordinator in English, in light and dark, with the actions in their
+// place on the right and no text running out of its line.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.waitForFunction(() => document.documentElement.lang === "en");
+await page.getByRole("button", { name: /^(Impostazioni|Settings)$/ }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+const englishLine = page.getByTestId("status-line");
+if (await page.locator('[data-testid="status-line"][data-paused="true"]').count()) {
+  await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
+  await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
+}
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: true }));
+await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
+await englishLine.getByRole("button", { name: /^(Attività|Activity)$/ }).click();
+const englishActivity = page.getByTestId("activity-log");
+await englishActivity.waitFor();
+await themeShots("41-main-en");
+await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused: running turns finish/).waitFor({ timeout: 10_000 });
+// The rows already in Activity keep the language they were written in; what the main process writes now is English.
+const italianWords = /[àèìòù]|\b(?:il|la|non|che|della|nel|Coordinatore|Concedi|Rivedi|Conferma|Lavoro del progetto)\b/;
+const englishTexts = [
+  await englishLine.getByTestId("status-line-text").innerText(),
+  // Issue #330: in the status bar the person's move is a text button and the Coordinator's actions are icons.
+  ...(await englishLine.locator("button:not([aria-label])").allInnerTexts()),
+  ...(await page.getByTestId("focus-title").allInnerTexts()),
+];
+const stillItalian = englishTexts.filter((text) => italianWords.test(text));
+if (stillItalian.length) throw new Error(`Main texts still in Italian after the switch: ${stillItalian.join(" | ")}`);
+await noHorizontalScroll("main texts in English");
+const englishLayout = await englishLine.evaluate((line) => {
+  const box = line.getBoundingClientRect();
+  const text = line.querySelector('[data-testid="status-line-text"]');
+  return {
+    buttonsOutside: [...line.querySelectorAll("button")].filter((button) => {
+      const b = button.getBoundingClientRect();
+      return b.width > 0 && (b.left < box.left - 1 || b.right > box.right + 1 || button.scrollWidth > button.clientWidth + 1);
+    }).length,
+    textOutside: text ? text.getBoundingClientRect().right > box.right + 1 : false,
+  };
+});
+if (englishLayout.buttonsOutside) throw new Error(`${englishLayout.buttonsOutside} status line actions do not fit in English`);
+if (englishLayout.textOutside) throw new Error("The English status line text runs out of the line");
+// The last action sits on the right, as in Italian.
+const englishLast = await englishLine.getByRole("button").last().boundingBox();
+const englishBox = await englishLine.boundingBox();
+if (!englishLast || !englishBox || englishBox.x + englishBox.width - (englishLast.x + englishLast.width) > 2) throw new Error("The last action of the English status line is not on the right");
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.waitForFunction(() => document.documentElement.lang === "it");
 await app.close();

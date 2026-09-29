@@ -6,6 +6,7 @@ import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import { assignmentSlice } from "./implementation";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
+import { t } from "./personLanguage";
 import { specMarkdown } from "./plan";
 import { extractJsonAnswer } from "./providers/types";
 
@@ -178,7 +179,7 @@ export function latestAuditOn(document: ProjectDocument, target: FocusTarget): F
 /** Opens focus mode on a candidate: the fixed point is its base. One examination at a time per candidate. */
 export function openAudit(document: ProjectDocument, candidate: Candidate, now = new Date()): FocusAudit {
   const running = latestAudit(document, candidate.id);
-  if (running && isAuditRunning(running)) throw new AuditError("audit_running", `La focus mode sul candidato ${candidate.id} è già in corso.`);
+  if (running && isAuditRunning(running)) throw new AuditError("audit_running", t("main.audit.running", { candidate: candidate.id }));
   const audit: FocusAudit = {
     id: shortId("F", randomUUID()),
     target: { kind: "candidate", candidateId: candidate.id, assignmentId: candidate.assignmentId },
@@ -248,6 +249,7 @@ export function auditSpec(document: ProjectDocument, assignment: SpecialistAssig
   const slice = assignmentSlice(document, assignment);
   if (slice) {
     const { plan, ticket } = slice;
+    // @model-text: the spec the axis reads.
     const lines = [
       `# ${ticket.title}${ticket.issue ? ` (issue #${ticket.issue.number})` : ""}`,
       `Cosa consegna: ${ticket.whatToBuild}`,
@@ -255,9 +257,13 @@ export function auditSpec(document: ProjectDocument, assignment: SpecialistAssig
       ...ticket.acceptanceCriteria.map((c) => `- [ ] ${c}`),
     ];
     if (plan.spec?.sections) lines.push("", `# Spec: ${plan.spec.sections.title}${plan.spec.issue ? ` (issue #${plan.spec.issue.number})` : ""}`, "", specMarkdown(plan.spec.sections));
-    return { source: `Fetta ${ticket.id} del piano ${plan.id}${ticket.issue ? `, issue #${ticket.issue.number}` : ""}`, text: lines.join("\n") };
+    const source = ticket.issue
+      ? t("main.audit.sliceSourceIssue", { slice: ticket.id, plan: plan.id, issue: String(ticket.issue.number) })
+      : t("main.audit.sliceSource", { slice: ticket.id, plan: plan.id });
+    return { source, text: lines.join("\n") };
   }
   const issue = assignment.issueNumber ? issues?.find((i) => i.number === assignment.issueNumber) : null;
+  // @model-text: the issue's text is what the axis reads; the source is a label the person also sees.
   if (issue) return { source: `Issue #${issue.number}`, text: `# ${issue.title}\n\n${issue.body.trim() || "Nessuna descrizione."}` };
   return null;
 }
@@ -276,7 +282,8 @@ export function rangeSpec(commits: string[], issues: GitHubIssue[] | null): { so
   const found = citedIssues(commits).flatMap((n) => issues?.find((i) => i.number === n) ?? []).slice(0, 5);
   if (!found.length) return null;
   return {
-    source: `Issue ${found.map((i) => `#${i.number}`).join(", ")} ${found.length === 1 ? "citata" : "citate"} nei commit`,
+    source: t("main.audit.commitIssuesSource", { count: found.length, issues: found.map((i) => `#${i.number}`).join(", ") }),
+    // @model-text: the issues' text is what the Spec axis reads.
     text: found.map((i) => `# ${i.title} (issue #${i.number})\n\n${i.body.trim() || "Nessuna descrizione."}`).join("\n\n"),
   };
 }
@@ -328,10 +335,10 @@ export function readAxisAnswer(raw: string): AxisAnswer {
   try {
     answer = JSON.parse(extractJsonAnswer(raw)) as typeof answer;
   } catch {
-    throw new AuditError("unreadable_answer", "L'asse non ha restituito un rapporto leggibile.");
+    throw new AuditError("unreadable_answer", t("main.audit.unreadableAnswer"));
   }
   const report = typeof answer.report === "string" ? answer.report.trim() : "";
-  if (!report) throw new AuditError("empty_report", "L'asse ha risposto senza rapporto.");
+  if (!report) throw new AuditError("empty_report", t("main.audit.emptyReport"));
   const worst = typeof answer.worst === "string" && answer.worst.trim() ? answer.worst.trim() : null;
   const findings = (Array.isArray(answer.findings) ? answer.findings : []).flatMap((item: unknown): FindingDraft[] => {
     if (!item || typeof item !== "object") return [];
@@ -373,14 +380,15 @@ export function beginVerification(audit: FocusAudit, now = new Date()): void {
   audit.updatedAt = now.toISOString();
 }
 
-const count = (n: number) => (n === 0 ? "nessun rilievo" : n === 1 ? "1 rilievo" : `${n} rilievi`);
+const count = (n: number) => (n === 0 ? t("main.audit.noFindings") : t("main.audit.findings", { count: n }));
 
 function axisLine(axis: AxisName, value: AuditAxis): string {
   const title = AXIS_TITLES[axis];
   if (value.status === "skipped") return `${title}: ${NO_SPEC}.`;
-  if (value.status === "failed") return `${title}: non riuscito.`;
+  if (value.status === "failed") return t("main.audit.axisFailed", { title });
   const findings = value.findings ?? 0;
-  return `${title}: ${count(findings)}${value.worst && findings ? `, il più grave: ${value.worst.replace(/\.$/, "")}` : ""}.`;
+  if (value.worst && findings) return t("main.audit.axisLineWorst", { title, findings: count(findings), worst: value.worst.replace(/\.$/, "") });
+  return t("main.audit.axisLine", { title, findings: count(findings) });
 }
 
 /** The skill's one-line summary: findings per axis and the worst within each axis, never a winner across them. */
@@ -394,7 +402,7 @@ export function closeAudit(audit: FocusAudit, now = new Date()): void {
     .map((s) => s.section)
     .filter((a) => a.status !== "skipped");
   if (ran.every((a) => a.status === "failed")) {
-    failAudit(audit, ran.map((a) => a.failure).filter(Boolean).join(" ") || "Nessun asse ha prodotto un rapporto.", now);
+    failAudit(audit, ran.map((a) => a.failure).filter(Boolean).join(" ") || t("main.audit.noReport"), now);
     return;
   }
   audit.status = "done";
@@ -416,7 +424,7 @@ export function failAudit(audit: FocusAudit, failure: string, now = new Date()):
     for (const finding of axis.items ?? []) {
       if (finding.status !== "pending") continue;
       finding.status = "hypothesis";
-      finding.basis = "La verifica si è interrotta prima di ricontrollare la prova.";
+      finding.basis = t("main.audit.verificationStopped");
     }
   }
   audit.finishedAt = now.toISOString();
@@ -426,7 +434,7 @@ export function failAudit(audit: FocusAudit, failure: string, now = new Date()):
 /** An examination still running on disk lost its sessions when Trama closed: it stays, marked as interrupted. */
 export function interruptAudits(document: ProjectDocument, now = new Date()): void {
   for (const audit of document.audits ?? []) {
-    if (isAuditRunning(audit)) failAudit(audit, "La focus mode si è interrotta alla chiusura di Trama: aprila di nuovo.", now);
+    if (isAuditRunning(audit)) failAudit(audit, t("main.audit.interrupted"), now);
   }
 }
 
@@ -440,6 +448,7 @@ export interface AxisTurn {
 /** Output of a failed check the axes read: its tail, where the cause usually is. */
 export const CHECK_OUTPUT_IN_PROMPT = 4_000;
 
+/** @model-text: a check as the axes read it. */
 const checkLine = (e: CandidateEvidence) => {
   const line = `- ${e.check}: ${e.result === "pass" ? "superata" : "non superata"} (\`${e.command}\`)`;
   if (e.result === "pass") return line;
@@ -449,7 +458,7 @@ const checkLine = (e: CandidateEvidence) => {
 /** What an axis examines: a candidate with its assignment, or a module or the project with the diff Trama captured (F03). */
 export type AxisSubject = { candidate: Candidate; assignment: SpecialistAssignment } | { diff: string };
 
-/** The read-only session of one axis: the skill's original text, the binding, and the target as data. */
+/** The read-only session of one axis: the skill's original text, the binding, and the target as data. @model-text */
 export function axisTurn(
   input: {
     projectName: string;
@@ -516,7 +525,7 @@ export const LENS_BRIEFS: Record<LensName, string> = {
   ].join(" "),
 };
 
-/** The read-only session of one of Trama's lenses: Trama's brief, and the candidate as data. No skill text. */
+/** The read-only session of one of Trama's lenses: Trama's brief, and the candidate as data. No skill text. @model-text */
 export function lensTurn(
   input: {
     projectName: string;

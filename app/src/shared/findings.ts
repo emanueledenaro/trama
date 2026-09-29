@@ -73,6 +73,11 @@ export function findingTally(audit: FocusAudit): string | null {
     .join(", ");
 }
 
+/** The latest examination of a candidate, which focus mode opens again instead of starting a new one (F01, F03). */
+export function latestCandidateAudit(audits: readonly FocusAudit[] | undefined, candidateId: string): FocusAudit | null {
+  return (audits ?? []).filter((audit) => audit.target.kind === "candidate" && audit.target.candidateId === candidateId).at(-1) ?? null;
+}
+
 /**
  * What focus mode examines, in Italian after "Esame approfondito" and with names instead of ids (F03): "del modulo
  * Orders", "dell'intero progetto", or the candidate by the objective of its assignment when it is known.

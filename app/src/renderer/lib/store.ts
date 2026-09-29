@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
+import { latestCandidateAudit } from "@shared/findings";
 import type { ExerciseId, GuideStepId } from "@shared/onboarding";
 import { SIDE_BAR_VIEWS, type SideBarView, homeOf, viewOf } from "@/lib/workbench";
 
@@ -17,7 +18,8 @@ export type InspectorTarget =
   | { kind: "mandate"; change?: "correct" }
   /** The code standard of the open project, in Regole (issue #334). */
   | { kind: "standard" }
-  | { kind: "memory" }
+  /** `howItLearns` opens "Come impara", as the way from Impostazioni does (issue #335). */
+  | { kind: "memory"; howItLearns?: boolean }
   | { kind: "team" }
   | { kind: "specialist"; id: string }
   /** A conversation between agents (W07). */
@@ -333,6 +335,13 @@ export async function act<K extends ActionName>(action: K, payload: ActionPayloa
     useUi.getState().setToast(errorText(error));
     return undefined;
   }
+}
+
+/** Focus mode on a candidate, full screen: its latest examination, or the first one when there is none (F01, F03). */
+export async function examineCandidate(candidateId: string): Promise<void> {
+  const latest = latestCandidateAudit(useUi.getState().app?.project?.document.audits, candidateId);
+  const auditId = latest?.id ?? (await act("candidate:focusAudit", { candidateId }));
+  if (auditId) await act("focusMode:enter", { auditId });
 }
 
 /** Rescans the open project; a rescan that changes nothing still says it ran (W12). */

@@ -21,7 +21,7 @@ import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
-import { SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
+import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
@@ -31,6 +31,7 @@ import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
+import { squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import { DomainProposalError, proposeDomainDocs } from "./domainDocs";
@@ -66,6 +67,7 @@ import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
+import { t } from "./personLanguage";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -106,6 +108,7 @@ const TAG = {
 export const TOOL_SERVER_INSTRUCTIONS =
   "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, read who works on what (presence), keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step. Use them instead of your provider's own GitHub, web and command tools, which Trama blocks.";
 
+/** @model-text */
 const SKILL_MANAGE_DESCRIPTION =
   "Create, update, or delete skills — your procedural memory for recurring task types. The call is an operations array (a single edit is a list of one); it applies atomically — any failure rolls every touched skill back. Ops: create (full SKILL.md; lands in this project's skill library in Trama's folder, never in the repository; must precede that skill's other ops), patch (targeted old_string/new_string fix — preferred; content alone REPLACES the whole file, read it via skill_view() first), write_file/remove_file (supporting files), delete (sole op only). Keep the description's first 57 chars a self-contained trigger: 'Use when <trigger>. <one-line behavior>.' Write lessons, not logs: imperative rule + why, no PR numbers/dates/incident narration, one rule per lesson, references/ named by topic (extend before adding). skill_view() shows format conventions.";
 
@@ -229,6 +232,7 @@ export function learningTools(memoryEnabled: boolean, userEnabled: boolean): Too
 
 const WORK_KINDS: WorkKind[] = ["agreedTicket", "decidedBehaviorCorrection", "newFeature", "tradeOff"];
 
+/** @model-text: the tools' descriptions, for the Coordinator. */
 export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_study",
@@ -397,7 +401,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and work beyond the squads' limits (read_team: developers at work per squad and squads at work together, three and three unless the person changes them; work in a cloud session counts too). A slice belongs to the squad of its area: give it to that squad's developers. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
     properties: {
       specialist: text,
       commitType: text,
@@ -592,6 +596,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
  * How the Coordinator carries the work on and closes a turn with the one next step (W01, W04); a late rule,
  * so open threads receive it too.
  */
+// @model-text
 export const NEXT_STEP_RULES = [
   "Each message from Trama gives the phase of the work and the moves allowed now, under \"Fase del lavoro\": Trama computes them from the records, you choose among them.",
   "Within the mandate you carry the work on by yourself. When the next move is yours (prepare the plan once the person confirmed the shared understanding, assign the slices of a ready plan, run the checks and the technical review of finished work), make it in the same turn with your tools, without asking. When a turn ends and your own move is still the next one, Trama starts it by itself as a new turn with the section \"Mossa automatica di Trama\": make that move then; the person can stop it.",
@@ -602,7 +607,7 @@ export const NEXT_STEP_RULES = [
   "Never end a message with a generic confirmation question such as \"Vuoi che...?\", \"Procedo?\" or \"Fammi sapere se...\": within the mandate you go on by yourself, and what belongs to the person is a card or the next step's button, never a question at the end of your text.",
 ].join("\n");
 
-/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. */
+/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. @model-text */
 const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
   coordinator: "Trama publishes the candidate as a pull request and merges it by itself with this green light; Activity and the recap tell the person.",
   interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
@@ -725,7 +730,7 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
       return toolSuccess(
         new SessionSearch({
           document: context.document,
-          currentSessionId: context.sessionSearch?.currentSessionId ?? "progetto",
+          currentSessionId: context.sessionSearch?.currentSessionId ?? PROJECT_DIALOG_ID,
           liveFromSequence: context.sessionSearch?.liveFromSequence ?? 0,
         }).run(args as Record<string, unknown>) as JsonObject,
       );
@@ -929,7 +934,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           authorizedActions: strings(args.authorizedActions) as MandateAction[],
           limits: strings(args.limits),
         });
-        context.addCard("mandate", "Mandato", request.id);
+        context.addCard("mandate", t("main.coordinatorTools.card.mandate"), request.id);
         context.changed();
         // A pending request is superseded by this one (W14): the person can grant only the latest.
         return toolSuccess({ requestID: request.id, status: "shown_to_person", supersededRequestIDs: pending });
@@ -971,7 +976,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           grilling,
         });
         const blocked = blocksQuestion ? blockOnPerson(document, blocksQuestion, request) : null;
-        context.addCard("decision", "Decisione", request.id);
+        context.addCard("decision", t("main.coordinatorTools.card.decision"), request.id);
         const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
         context.changed();
         return toolSuccess({
@@ -1027,6 +1032,17 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           pages,
           specialistCount: team.specialists.length,
           specialists: team.specialists.slice((page - 1) * TEAM_PAGE, page * TEAM_PAGE).map(specialistSummary),
+          // The squads by product area (A10), with their status line; the shared roles belong to none.
+          squads: teamSquads(document).map((squad) => ({
+            id: squad.id,
+            name: squad.name,
+            moduleIDs: squad.moduleIds,
+            leadID: squad.leadId,
+            qaID: squad.qaId,
+            developerIDs: squad.developerIds,
+            status: squadStatusLine(document, squad),
+          })),
+          squadLimits: squadLimits(document) as unknown as Json,
           automaticWork: (context.automaticWork?.() ?? []).map((w) => ({
             work: w.kind,
             role: w.role,
@@ -1083,7 +1099,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           summary: typeof args.summary === "string" ? args.summary : null,
           members,
         });
-        context.addCard("teamProposal", "Proposta del team", proposal.id);
+        context.addCard("teamProposal", t("main.coordinatorTools.card.teamProposal"), proposal.id);
         context.changed();
         return toolSuccess({ proposalID: proposal.id, status: "shown_to_person" });
       }
@@ -1260,7 +1276,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           document.mandate!.version,
           context.runningRequestId,
         );
-        context.addCard("assignment", "Incarico", assignment.id);
+        context.addCard("assignment", t("main.coordinatorTools.card.assignment"), assignment.id);
         context.changed();
         context.startAssignment(assignment.id);
         return toolSuccess({
@@ -1291,7 +1307,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             goalId: requestGoalId(document, context.runningRequestId) ?? null,
             ...catalog,
           });
-          context.addCard("route", "Percorso di Ask Trama", route.id);
+          context.addCard("route", t("main.coordinatorTools.card.route"), route.id);
           context.changed();
           return toolSuccess(routeReport(route));
         } catch (error) {
@@ -1311,7 +1327,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             adrs: args.adrs,
             projectModuleIds: context.snapshot.modules.map((m) => m.id),
           });
-          context.addCard("domainProposal", "Glossario e ADR", proposal.id);
+          context.addCard("domainProposal", t("main.coordinatorTools.card.domainProposal"), proposal.id);
           const assignmentId = context.startDomainWriting(proposal.id);
           context.changed();
           return toolSuccess({
@@ -1335,7 +1351,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           outcome: typeof args.outcome === "string" ? args.outcome : "",
           examples: [...examples("accepted", args.acceptedExamples), ...examples("refused", args.refusedExamples)],
         });
-        context.addCard("goal", "Obiettivo proposto", goal.id);
+        context.addCard("goal", t("main.coordinatorTools.card.goal"), goal.id);
         context.changed();
         // Presence (G04, decision 11): warn when someone already works on something like it.
         const busy = goalOverlaps(context.presence, { title: goal.title, outcome: goal.outcome }).map((o) => ({
@@ -1466,7 +1482,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
         candidate.whitespaceErrors = review.whitespaceErrors;
         candidate.commit = candidateCommit(document, candidate, (await context.conventions?.()) ?? DEFAULT_CONVENTIONS);
-        if (!rebound) context.addCard("candidate", "Candidato", candidate.id);
+        if (!rebound) context.addCard("candidate", t("main.coordinatorTools.card.candidate"), candidate.id);
         context.changed();
         return toolSuccess({
           candidateID: candidate.id,
@@ -1683,6 +1699,7 @@ export const COORDINATOR_SKILLS: { name: string; binding: string }[] = [
 /**
  * `learningGuidance`: the memory, session search and skills guidance, verbatim.
  * `skills`: native AI Hero skills with their binding (nativeSkills.ts), when they belong in the session instructions.
+ * @model-text
  */
 export function developerInstructions(
   projectName: string,
@@ -1706,6 +1723,7 @@ export function developerInstructions(
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
+    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line. When the person wants a squad renamed, merged or split, tell them what changes and do it only when Trama offers a tool for it; never invent squads in the chat.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "read_team shows that automatic work in automaticWork: whether each one is running, when it starts and why it has not started yet. When the person asks about it, answer from there, with the reason and what starts it. When the person asks for a triage or a Clean Code review now, start it with start_automatic_work within the mandate; never simulate it with assign_task, and never say it cannot be asked for.",
     `At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two words in ${LANGUAGE_NAMES_IN_ENGLISH[language]} (Interfaccia, Provider in Italian; Interface, Provider in English), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.`,

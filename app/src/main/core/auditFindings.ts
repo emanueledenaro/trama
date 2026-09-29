@@ -6,6 +6,7 @@ import { evidenceLabel } from "@shared/findings";
 import type { ProviderModel } from "@shared/codex";
 import { auditSections, isLens, type ReviewName, reviewTitle } from "./audit";
 import { isLightModel } from "./duties";
+import { t } from "./personLanguage";
 import { extractJsonAnswer } from "./providers/types";
 import { containsExcludedComponent, readRepositoryFile, RepositoryScannerError } from "./repositoryScanner";
 
@@ -54,25 +55,28 @@ export interface RecheckPlace {
   on: string;
 }
 
-export const CANDIDATE_PLACE: RecheckPlace = { copy: "nella copia di lavoro del candidato", on: "su questo candidato" };
+/** The candidate's worktree, in the person's language at the time of the recheck. */
+export const candidatePlace = (): RecheckPlace => ({ copy: t("main.auditFindings.place.candidateCopy"), on: t("main.auditFindings.place.candidate") });
 
 export function recheckPlace(audit: FocusAudit): RecheckPlace {
-  if (audit.target.kind === "candidate") return CANDIDATE_PLACE;
-  return audit.target.kind === "module" ? { copy: "nel progetto", on: `sul modulo ${audit.target.moduleName}` } : { copy: "nel progetto", on: "sul progetto" };
+  const target = audit.target;
+  if (target.kind === "candidate") return candidatePlace();
+  const copy = t("main.auditFindings.place.projectCopy");
+  return target.kind === "module" ? { copy, on: t("main.auditFindings.place.module", { name: target.moduleName }) } : { copy, on: t("main.auditFindings.place.project") };
 }
 
 async function recheckLine(evidence: Extract<FindingEvidence, { kind: "fileLine" }>, worktreeRoot: string, place: RecheckPlace): Promise<Recheck> {
   // A line without the text that supports the finding proves only that the line exists: it is no proof.
-  if (!squash(evidence.quote)) return { outcome: "notCheckable", basis: "La prova non cita il testo della riga.", observed: null };
+  if (!squash(evidence.quote)) return { outcome: "notCheckable", basis: t("main.auditFindings.noQuote"), observed: null };
   const file = evidence.file.replace(/^\.\//, "");
   const components = file.split("/");
-  const unread = (reason: string): Recheck => ({ outcome: "notCheckable", basis: `Trama non legge questo percorso: ${reason}`, observed: null });
+  const unread = (reason: string): Recheck => ({ outcome: "notCheckable", basis: t("main.auditFindings.unread", { reason }), observed: null });
   // Secrets, symbolic links and paths outside the worktree stay unread: Trama cannot recheck them.
   if (isAbsolute(file) || components.some((c) => c === "" || c === "." || c === "..") || containsExcludedComponent(components)) {
-    return unread(`\`${file}\` è fuori dai file che Trama legge.`);
+    return unread(t("main.auditFindings.outsideFiles", { file }));
   }
   if (!(await lstat(join(worktreeRoot, file)).then(() => true, () => false))) {
-    return { outcome: "contradicted", basis: `Il file ${file} non esiste ${place.copy}.`, observed: null };
+    return { outcome: "contradicted", basis: t("main.auditFindings.fileMissing", { file, copy: place.copy }), observed: null };
   }
   let text: string;
   try {
@@ -82,34 +86,34 @@ async function recheckLine(evidence: Extract<FindingEvidence, { kind: "fileLine"
   }
   const lines = text.split("\n");
   if (evidence.line > lines.length) {
-    return { outcome: "contradicted", basis: `Il file ${file} ha ${lines.length} righe: la riga ${evidence.line} non esiste.`, observed: null };
+    return { outcome: "contradicted", basis: t("main.auditFindings.lineMissing", { file, lines: String(lines.length), line: String(evidence.line) }), observed: null };
   }
   const line = lines[evidence.line - 1]!.replace(/\r$/, "");
   const observed = line.slice(0, OBSERVED_LIMIT);
   if (!squash(line).includes(squash(evidence.quote))) {
-    return { outcome: "contradicted", basis: `La riga ${evidence.line} di ${file} non contiene il testo citato dall'asse.`, observed };
+    return { outcome: "contradicted", basis: t("main.auditFindings.quoteMissing", { line: String(evidence.line), file }), observed };
   }
-  return { outcome: "held", basis: `Trama ha letto ${file}:${evidence.line} e la riga contiene il testo citato.`, observed };
+  return { outcome: "held", basis: t("main.auditFindings.lineHeld", { file, line: String(evidence.line) }), observed };
 }
 
 /** Trama's own recheck of a proof, on the candidate's worktree and on the checks it ran for this examination. */
-export async function recheckEvidence(evidence: FindingEvidence, checks: CandidateEvidence[], worktreeRoot: string, place: RecheckPlace = CANDIDATE_PLACE): Promise<Recheck> {
+export async function recheckEvidence(evidence: FindingEvidence, checks: CandidateEvidence[], worktreeRoot: string, place: RecheckPlace = candidatePlace()): Promise<Recheck> {
   if (evidence.kind === "fileLine") return recheckLine(evidence, worktreeRoot, place);
   if (evidence.kind === "command") {
     const check = checkForCommand(evidence.command, checks);
     if (!check) {
-      return { outcome: "notCheckable", basis: "Trama esegue solo le proprie verifiche, e questo comando non è tra quelle di questo esame.", observed: null };
+      return { outcome: "notCheckable", basis: t("main.auditFindings.commandNotOurs"), observed: null };
     }
     if (check.result === "pass") {
-      return { outcome: "contradicted", basis: `Trama ha eseguito ${check.check} ${place.on} e la verifica è superata.`, observed: null };
+      return { outcome: "contradicted", basis: t("main.auditFindings.checkPassed", { check: check.check, on: place.on }), observed: null };
     }
     return {
       outcome: "held",
-      basis: `Trama ha eseguito ${check.check} ${place.on} e la verifica non è superata.`,
+      basis: t("main.auditFindings.checkFailed", { check: check.check, on: place.on }),
       observed: check.output.slice(-OBSERVED_LIMIT) || null,
     };
   }
-  return { outcome: "notCheckable", basis: "Trama non esegue le riproduzioni scritte da un modello.", observed: null };
+  return { outcome: "notCheckable", basis: t("main.auditFindings.reproduction"), observed: null };
 }
 
 /**
@@ -119,7 +123,7 @@ export async function recheckEvidence(evidence: FindingEvidence, checks: Candida
 export function settleFinding(finding: AuditFinding, recheck: Recheck | null): boolean {
   if (!finding.evidence || !recheck) {
     finding.status = "hypothesis";
-    finding.basis = "L'asse non ha dato una prova: resta un'ipotesi.";
+    finding.basis = t("main.auditFindings.noProof");
     return false;
   }
   finding.observed = recheck.observed;
@@ -130,7 +134,7 @@ export function settleFinding(finding: AuditFinding, recheck: Recheck | null): b
   }
   if (recheck.outcome === "contradicted") {
     finding.status = "hypothesis";
-    finding.basis = `${recheck.basis} La prova non regge: resta un'ipotesi.`;
+    finding.basis = t("main.auditFindings.contradicted", { basis: recheck.basis });
     return false;
   }
   if (finding.severity === "serious") {
@@ -138,7 +142,7 @@ export function settleFinding(finding: AuditFinding, recheck: Recheck | null): b
     return true;
   }
   finding.status = "hypothesis";
-  finding.basis = `${recheck.basis} Il rilievo non è grave: resta un'ipotesi.`;
+  finding.basis = t("main.auditFindings.minor", { basis: recheck.basis });
   return false;
 }
 
@@ -177,10 +181,10 @@ export function readConfirmation(raw: string): { confirmed: boolean; reason: str
   try {
     answer = JSON.parse(extractJsonAnswer(raw)) as typeof answer;
   } catch {
-    throw new Error("Il secondo modello non ha restituito una risposta leggibile.");
+    throw new Error(t("main.auditFindings.unreadableConfirmation"));
   }
   const reason = typeof answer.reason === "string" ? answer.reason.trim() : "";
-  if (typeof answer.confirmed !== "boolean" || !reason) throw new Error("Il secondo modello ha risposto senza esito o senza motivo.");
+  if (typeof answer.confirmed !== "boolean" || !reason) throw new Error(t("main.auditFindings.incompleteConfirmation"));
   return { confirmed: answer.confirmed, reason };
 }
 
@@ -192,17 +196,17 @@ export function confirmFinding(
 ): void {
   if ("failure" in outcome) {
     finding.status = "hypothesis";
-    finding.basis = `${finding.basis ?? ""} ${outcome.failure} Resta un'ipotesi.`.trim();
+    finding.basis = t("main.auditFindings.unconfirmed", { basis: finding.basis ?? "", failure: outcome.failure }).trim();
     return;
   }
   finding.confirmation = { ...outcome, at: now.toISOString() };
   finding.status = outcome.confirmed ? "confirmed" : "hypothesis";
-  finding.basis = outcome.confirmed ? `Confermato da ${outcome.model}: ${outcome.reason}` : `${outcome.model} non lo conferma: ${outcome.reason}`;
+  finding.basis = t(outcome.confirmed ? "main.auditFindings.confirmed" : "main.auditFindings.rejected", { model: outcome.model, reason: outcome.reason });
 }
 
-export const NO_STRONGER_MODEL = "Nessun modello più forte di quello degli assi è disponibile per confermarlo.";
+export const noStrongerModel = () => t("main.auditFindings.noStrongerModel");
 
-/** The read-only session of the stronger model on one serious finding. */
+/** The read-only session of the stronger model on one serious finding. @model-text */
 export function confirmationTurn(
   input: {
     projectName: string;

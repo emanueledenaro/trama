@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { RuleLabel } from "@/components/chat/RuleLabel";
-import { Toggle } from "@/components/settings/SettingsView";
+import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { useT } from "@/lib/i18n";

@@ -55,7 +55,7 @@ import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
-import { act, useUi } from "@/lib/store";
+import { act, examineCandidate, useUi } from "@/lib/store";
 import { useT, withNodes } from "@/lib/i18n";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -311,7 +311,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
               : resolution.kind === "corrected"
                 ? `Corretto, v${resolution.version}`
                 : superseded
-                  ? "Superata"
+                  ? "Sostituita"
                   : resolution.kind === "rejected"
                     ? "Rifiutata"
                     : "Non concesso"}
@@ -324,7 +324,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
       <p className="text-ui text-foreground/90">{request.reason}</p>
       {superseded ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="superseded-mandate">
-          Superata da una richiesta più recente: non si può più concedere.
+          Sostituita da una richiesta più recente: non si può più concedere.
         </p>
       ) : null}
       {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
@@ -1520,12 +1520,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         <Button
           size="sm"
           variant="outline"
-          onClick={() => {
-            // Focus mode opens the latest examination of this candidate, or starts the first one (F01), full screen (F03).
-            const latest = (project.document.audits ?? []).filter((a) => a.target.kind === "candidate" && a.target.candidateId === candidateId).at(-1);
-            if (latest) void act("focusMode:enter", { auditId: latest.id });
-            else void act("candidate:focusAudit", { candidateId }).then((id) => (id ? act("focusMode:enter", { auditId: id }) : undefined));
-          }}
+          // Focus mode opens this candidate's latest examination, or starts the first one, full screen (F01, F03).
+          onClick={() => void examineCandidate(candidateId)}
         >
           <IconFocus2 /> Esame approfondito
         </Button>
@@ -1907,7 +1903,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   if (superseded) {
     return (
-      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Superato</Badge>}>
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Sostituito</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="conflict-superseded">
           {worktree ? "Uno dei due candidati" : "Il candidato"} è stato sostituito da un lavoro più recente: questo conflitto non va risolto.
         </p>
