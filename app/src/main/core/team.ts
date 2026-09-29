@@ -28,6 +28,7 @@ import { workRequests } from "@shared/grilling";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 import { DEFAULT_DEVELOPERS_PER_SQUAD, foreignSquad, squadLimitError, squadLimitProblem } from "@shared/squads";
+import { type BotShape, isBotShape } from "@shared/agentBot";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { ITALIAN, LANGUAGES, translator } from "@shared/i18n";
 import { catalogOffers, PROVIDERS, supportsReadOnly, type CatalogEntry } from "@shared/providers";
@@ -359,6 +360,17 @@ export function setSpecialistColor(document: ProjectDocument, id: string, color:
   if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
   if (!isAgentColor(color)) throw new TeamError("invalid_color", `Unknown agent color: ${String(color)}.`);
   specialist.color = color;
+  specialist.updatedAt = now.toISOString();
+  return specialist;
+}
+
+/** The person picks the body of any agent, fixed roles included; null gives it back to the role or the id (W16). */
+export function setSpecialistShape(document: ProjectDocument, id: string, shape: BotShape | null, now = new Date()): Specialist {
+  const specialist = document.team.specialists.find((s) => s.id === id);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
+  if (shape !== null && !isBotShape(shape)) throw new TeamError("invalid_shape", `Unknown agent body: ${String(shape)}.`);
+  if (shape === null) delete specialist.shape;
+  else specialist.shape = shape;
   specialist.updatedAt = now.toISOString();
   return specialist;
 }

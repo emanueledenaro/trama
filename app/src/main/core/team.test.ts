@@ -21,6 +21,7 @@ import {
   resumeAssignment,
   resumeProblem,
   setSpecialistColor,
+  setSpecialistShape,
   setSpecialistModel,
   teamMembers,
   stopOrphanedAssignments,
@@ -283,6 +284,11 @@ describe("agent identity (W13, W15)", () => {
     const qa = document.team.specialists.find((s) => s.role === "qa")!;
     expect(setSpecialistColor(document, qa.id, "copper").color).toBe("copper");
     expect(() => setSpecialistColor(document, qa.id, "green" as never)).toThrow(expect.objectContaining({ code: "invalid_color" }));
+    // The person picks the body too; null gives it back to the role, and an unknown body is refused.
+    expect(setSpecialistShape(document, qa.id, "star").shape).toBe("star");
+    expect(setSpecialistShape(document, qa.id, null).shape).toBeUndefined();
+    expect(() => setSpecialistShape(document, qa.id, "cube" as never)).toThrow(expect.objectContaining({ code: "invalid_shape" }));
+    expect(() => setSpecialistShape(document, "S-NOPE", "star")).toThrow(expect.objectContaining({ code: "unknown_specialist" }));
   });
 
   it("keeps the person's model for an agent through its assignments (issue #455)", () => {
