@@ -5,6 +5,7 @@ import type {
   AssignmentCommit,
   AutomaticWorkRequest,
   AutomaticWorkStatus,
+  DiscussionReason,
   Candidate,
   CommitConventions,
   MandateAction,
@@ -25,6 +26,8 @@ import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIE
 import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
+import { decideDiscussion, DiscussionError, escalateDiscussion, openDiscussion, requireDiscussion } from "./discussions";
+import { type Discussion, discussions } from "@shared/discussions";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
@@ -281,7 +284,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "request_decision",
-    description: `Put a product behavior choice or a serious destructive case to the person, on a concrete case with 2 to ${MAXIMUM_ALTERNATIVES} alternatives. The person answers with an alternative or in their own words and only that answer becomes a Pact decision. Never ask about technical choices you can resolve yourself. While you grill a request before its plan, give grillingRound (1 for the first round) and recommendedAlternative (the index of the alternative you recommend): Trama groups the questions of a round and numbers them, and refuses a round that starts before the previous one is answered. When the card answers a developer's question (W06) that is the person's to decide, give its id in blocksQuestionID: the card says it blocks the work, the developer's slice stays paused and Trama resumes it with the person's answer; meanwhile assign a ready slice.`,
+    description: `Put a product behavior choice or a serious destructive case to the person, on a concrete case with 2 to ${MAXIMUM_ALTERNATIVES} alternatives. The person answers with an alternative or in their own words and only that answer becomes a Pact decision. Never ask about technical choices you can resolve yourself. While you grill a request before its plan, give grillingRound (1 for the first round) and recommendedAlternative (the index of the alternative you recommend): Trama groups the questions of a round and numbers them, and refuses a round that starts before the previous one is answered. When the card answers a developer's question (W06) that is the person's to decide, give its id in blocksQuestionID: the card says it blocks the work, the developer's slice stays paused and Trama resumes it with the person's answer; meanwhile assign a ready slice. When a discussion between agents reached a product choice, give its id in blocksDiscussionID: the discussion waits for the person's answer and closes with it.`,
     properties: {
       category: { type: "string", enum: ["product", "destructive"] },
       question: text,
@@ -301,6 +304,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       grillingRound: { type: "integer", minimum: 1 },
       recommendedAlternative: { type: "integer", minimum: 0 },
       blocksQuestionID: text,
+      blocksDiscussionID: text,
     },
     required: ["category", "question", "concreteCase", "alternatives"],
     readOnly: false,
@@ -311,6 +315,37 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       "Answer a developer's question (W06, listed under \"Domande degli sviluppatori\") from facts: what the code, the spec, the slice, the Pact decisions or the issues already say. Name those facts in sources (file paths, decision ids, issue numbers, the spec). Trama gives the answer to the developer and resumes its paused work in the same session. When the answer is a product choice nobody decided, do not answer it yourself: put it to the person with request_decision and blocksQuestionID.",
     properties: { question: text, answer: text, sources: list(1) },
     required: ["question", "answer", "sources"],
+    readOnly: false,
+  },
+  {
+    name: "open_discussion",
+    description:
+      "Open a discussion between agents (A12), visible to the person: in planning to estimate and split the work (estimate), on a blocker or a dependency between squads (blocker), on the review of a candidate (review), on a conflict (conflict). Name at least two agents in participants (ids or names from read_team); the squad lead of a discussion inside its squad joins and chairs it, you chair one that crosses squads. " +
+      "Trama runs one turn per participant on the provider's lightest model (or the role's, if the person chose so), then the chair's turn, which closes it with a decision or puts a product choice to the person. timeBoxMinutes is the time box (5 to 60; by default 15 for an estimate, 20 otherwise): at its end the chair closes it with the latest proposal. Never use a discussion to decide the product.",
+    properties: {
+      reason: { type: "string", enum: ["estimate", "blocker", "review", "conflict"] },
+      motive: text,
+      participants: list(2),
+      timeBoxMinutes: { type: "integer", minimum: 5, maximum: 60 },
+      assignment: text,
+    },
+    required: ["reason", "motive", "participants"],
+    readOnly: false,
+  },
+  {
+    name: "read_discussions",
+    description:
+      "Read the discussions between agents (A12): for each its id, reason, motive, participants, chair, time box, state (open, waitingPerson, decided) and outcome. Pass discussionID to read one with its messages.",
+    properties: { discussionID: text },
+    required: [],
+    readOnly: true,
+  },
+  {
+    name: "decide_discussion",
+    description:
+      "Close an open discussion between agents with a decision, as its chair when you chair it, or when a squad lead's discussion needs a harder decision on your model. A discussion that waits for the person's answer on a product choice does not close here: the person's answer closes it.",
+    properties: { discussionID: text, decision: text },
+    required: ["discussionID", "decision"],
     readOnly: false,
   },
   {
@@ -626,6 +661,7 @@ export const NEXT_STEP_RULES = [
   "Each message from Trama gives the phase of the work and the moves allowed now, under \"Fase del lavoro\": Trama computes them from the records, you choose among them.",
   "Within the mandate you carry the work on by yourself. When the next move is yours (prepare the plan once the person confirmed the shared understanding, assign the slices of a ready plan, run the checks and the technical review of finished work), make it in the same turn with your tools, without asking. When a turn ends and your own move is still the next one, Trama starts it by itself as a new turn with the section \"Mossa automatica di Trama\": make that move then; the person can stop it.",
   "When a developer asks you a question (\"Domande degli sviluppatori\"), answer it before your other moves: from facts with answer_question, or, when the answer is a product choice nobody decided, on a Pact card with request_decision and blocksQuestionID. The card holds only that slice: assign a ready slice in the same turn.",
+  "When agents have to agree (an estimate and split of the work in planning, a blocker or a dependency between squads, the review of a candidate, a conflict), let them talk with open_discussion instead of deciding alone: the discussion has a time box and ends with a decision. When its choice is about the product, the chair puts it to the person; if you find it yourself, use request_decision with blocksDiscussionID.",
   "Ask the person only for what is theirs: product decisions (request_decision), the confirmation of the shared understanding, the mandate (request_mandate), the team and merging the candidate. Technical choices are yours.",
   "When your turn is about the work, close it with declare_next_step: the one move that takes the work on, with a one-line reason for the person. Call it last, after the tools that change the work: questions you just asked make answerQuestions allowed, and a refusal lists the moves allowed now. Trama shows the person's move as one button under your reply.",
   "Declare nothing when nothing is to do: after a greeting, after an answer for information, while specialists or the planner work.",
@@ -681,6 +717,8 @@ export interface ToolContext {
   providers: { id: ProviderId; models: string[]; catalog?: CatalogEntry[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
+  /** A discussion between agents was opened (A12): Trama runs its turns in the background. */
+  discussionOpened?(threadId: string): void;
   /** A developer's question got its answer (W06): Trama resumes the paused work when it can. */
   questionAnswered?(assignmentId: string): void;
   /** Where each fixed role's automatic work stands now (issue #231); absent where Trama runs none. */
@@ -983,6 +1021,14 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           }
           requireAskedQuestion(document, blocksQuestion);
         }
+        const blocksDiscussion = typeof args.blocksDiscussionID === "string" && args.blocksDiscussionID.trim() ? args.blocksDiscussionID.trim() : null;
+        if (blocksDiscussion) {
+          if (blocksQuestion) return toolFailure("invalid_arguments", "A card blocks either a developer's question or a discussion, not both.");
+          if (args.category === "destructive") return toolFailure("invalid_arguments", "Only a product choice of a discussion goes to the person: use category product.");
+          if (requireDiscussion(document, blocksDiscussion).discussion.status !== "open") {
+            return toolFailure("closed", `The discussion ${blocksDiscussion} is no longer open.`);
+          }
+        }
         const grilling =
           args.grillingRound === undefined || args.grillingRound === null
             ? null
@@ -1010,6 +1056,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           grilling,
         });
         const blocked = blocksQuestion ? blockOnPerson(document, blocksQuestion, request) : null;
+        if (blocksDiscussion) escalateDiscussion(document, blocksDiscussion, request);
         context.addCard("decision", t("main.coordinatorTools.card.decision"), request.id);
         const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
         context.changed();
@@ -1022,7 +1069,65 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           ...(blocked
             ? { blocksWork: { assignmentID: blocked.id, questionID: blocksQuestion }, note: "The card blocks this work until the person answers: assign a ready slice meanwhile." }
             : {}),
+          ...(blocksDiscussion ? { blocksDiscussion: blocksDiscussion.toUpperCase(), note: "The discussion waits for the person's answer and closes with it." } : {}),
         });
+      }
+      case "open_discussion": {
+        const thread = openDiscussion(document, {
+          reason: args.reason as DiscussionReason,
+          motive: typeof args.motive === "string" ? args.motive : "",
+          participants: strings(args.participants),
+          timeBoxMinutes: typeof args.timeBoxMinutes === "number" ? args.timeBoxMinutes : null,
+          assignmentId: typeof args.assignment === "string" ? args.assignment : null,
+        });
+        context.changed();
+        context.discussionOpened?.(thread.id);
+        return toolSuccess({
+          discussionID: thread.id,
+          chair: thread.discussion.chairId ?? "coordinator",
+          participants: thread.specialistIds,
+          deadline: thread.discussion.deadline,
+          note: "Trama runs the participants' turns and the chair's now. Read the outcome with read_discussions.",
+        });
+      }
+      case "read_discussions": {
+        const reference = typeof args.discussionID === "string" ? args.discussionID.trim() : "";
+        const specialistName = (id: string) => document.team.specialists.find((s) => s.id === id)?.name ?? id;
+        const summary = (thread: Discussion) => ({
+          id: thread.id,
+          reason: thread.discussion.reason,
+          motive: thread.discussion.motive,
+          participants: thread.specialistIds.map(specialistName),
+          chair: thread.discussion.chairId ? specialistName(thread.discussion.chairId) : "coordinator",
+          deadline: thread.discussion.deadline,
+          state: thread.discussion.status,
+          decisionRequestID: thread.discussion.decisionRequestId,
+          outcome: thread.discussion.outcome ? { decision: thread.discussion.outcome.decision, how: thread.discussion.outcome.how } : null,
+        });
+        if (reference) {
+          const thread = requireDiscussion(document, reference);
+          return toolSuccess({
+            ...summary(thread),
+            messages: thread.messages.map((m) => ({
+              author: m.author.kind === "specialist" ? specialistName(m.author.specialistId) : m.author.kind,
+              text: m.text,
+              proposal: m.proposal ?? null,
+              model: m.model?.model ?? null,
+              at: m.at,
+            })),
+          } as unknown as JsonObject);
+        }
+        return toolSuccess({ discussions: discussions(document).slice(0, 20).map(summary) } as unknown as JsonObject);
+      }
+      case "decide_discussion": {
+        const thread = decideDiscussion(document, typeof args.discussionID === "string" ? args.discussionID : "", {
+          decision: typeof args.decision === "string" ? args.decision : "",
+          by: { kind: "coordinator" },
+          how: "agreed",
+          model: context.defaultModel ? { provider: context.defaultProvider, model: context.defaultModel } : null,
+        });
+        context.changed();
+        return toolSuccess({ discussionID: thread.id, status: "decided" });
       }
       case "answer_question": {
         const assignment = answerFromFacts(document, typeof args.question === "string" ? args.question : "", {
@@ -1703,6 +1808,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
     if (error instanceof TeamError) return toolFailure(error.code, error.message);
     if (error instanceof GrillingError) return toolFailure("grilling_order", error.message);
     if (error instanceof QuestionError) return toolFailure(error.code, error.message);
+    if (error instanceof DiscussionError) return toolFailure(error.code, error.message);
     throw error;
   }
 }

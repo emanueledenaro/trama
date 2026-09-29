@@ -2370,4 +2370,15 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.squads.joins": "{developer} joins squad {squad}.",
   "main.squads.hired": "Added within the mandate: {names}.",
   "main.slicePicking.squadsFull": "The squads at work are at their limit: the slice starts when one frees up.",
+
+  // Discussions between agents (A12, issue #252)
+  "main.discussions.activity.timeBox": "Discussion closed at the end of its time box: {motive}",
+  "main.discussions.activity.turnFailed": "A turn of the discussion failed: {motive}",
+  "main.discussions.closed": "The discussion is closed: write to the Coordinator.",
+  "main.discussions.emptyMessage": "Write the message.",
+  "main.discussions.modelSetting": "The model of the discussions must be the lightest or the role's.",
+  "main.discussions.noProposal.estimate": "No shared estimate within the time box: the plan's estimate stands and the squad reviews it at the next planning.",
+  "main.discussions.noProposal.blocker": "No proposal within the time box: the blocked work stays still and the Coordinator takes the blocker up again at the next round.",
+  "main.discussions.noProposal.review": "No proposal within the time box: the candidate stays as it is and goes through Trama's checks.",
+  "main.discussions.noProposal.conflict": "No proposal within the time box: the two pieces of work stay apart and the Coordinator takes the conflict up again at the next round.",
 };

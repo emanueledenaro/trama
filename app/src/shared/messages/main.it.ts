@@ -2446,4 +2446,15 @@ export const mainIt = {
   "main.squads.joins": "{developer} entra nella squadra {squad}.",
   "main.squads.hired": "Aggiunti dentro il mandato: {names}.",
   "main.slicePicking.squadsFull": "Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera.",
+
+  // Discussions between agents (A12, issue #252)
+  "main.discussions.activity.timeBox": "Discussione chiusa allo scadere del tempo: {motive}",
+  "main.discussions.activity.turnFailed": "Un turno della discussione non è riuscito: {motive}",
+  "main.discussions.closed": "La discussione è chiusa: scrivi al Coordinatore.",
+  "main.discussions.emptyMessage": "Scrivi il messaggio.",
+  "main.discussions.modelSetting": "Il modello delle discussioni deve essere il più leggero o quello del ruolo.",
+  "main.discussions.noProposal.estimate": "Nessuna stima condivisa nel tempo massimo: vale la stima del piano e la squadra la rivede alla prossima pianificazione.",
+  "main.discussions.noProposal.blocker": "Nessuna proposta nel tempo massimo: il lavoro bloccato resta fermo e il Coordinatore riprende il blocco al prossimo giro.",
+  "main.discussions.noProposal.review": "Nessuna proposta nel tempo massimo: il candidato resta com'è e segue le verifiche di Trama.",
+  "main.discussions.noProposal.conflict": "Nessuna proposta nel tempo massimo: i due lavori restano separati e il Coordinatore riprende il conflitto al prossimo giro.",
 } satisfies Record<string, string>;

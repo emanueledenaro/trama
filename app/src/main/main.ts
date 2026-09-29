@@ -168,6 +168,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "decision:withdraw": ({ requestId, reason }) => controller.withdrawDecision(requestId, reason),
+  "discussion:write": ({ threadId, text }) => controller.writeInDiscussion(threadId, text),
   "mandate:grant": (input) => controller.grantMandate(input),
   "mandate:revoke": ({ reason }) => controller.revokeMandate(reason),
   "mandate:restrict": (input) => controller.restrictMandate(input),

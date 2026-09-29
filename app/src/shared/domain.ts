@@ -469,6 +469,8 @@ export interface DecisionRequest {
   blocksWork?: { assignmentId: string; questionId: string } | null;
   /** Set when the person turned a finding of an examination into a trade-off card (F04): no work waits for it. */
   fromFinding?: { auditId: string; findingId: string } | null;
+  /** Set when a discussion between agents reached a product choice (A12): the discussion waits for the answer. */
+  fromDiscussion?: { threadId: string } | null;
 }
 
 /** A question still waiting for the person: neither answered nor withdrawn. */
@@ -1643,7 +1645,7 @@ export interface ProjectDocument {
  * What a conversation between agents is about (W07): a developer's question to the Coordinator, the findings of the
  * candidate gate's reviewers on the developer's candidate (W10), or a regression the guardian found on it.
  */
-export type AgentThreadKind = "question" | "review" | "regression";
+export type AgentThreadKind = "question" | "review" | "regression" | "discussion";
 
 /** Who wrote a message in a conversation between agents: a member of the team, the Coordinator, or the person on a Pact card. */
 export type AgentThreadAuthor = { kind: "specialist"; specialistId: string } | { kind: "coordinator" } | { kind: "person" };
@@ -1653,6 +1655,50 @@ export interface AgentThreadMessage {
   author: AgentThreadAuthor;
   text: string;
   at: string;
+  /** The provider and model that wrote the message, in a discussion between agents (A12); absent for Trama's own lines. */
+  model?: { provider: import("./codex").ProviderId; model: string } | null;
+  /** The decision the author proposes in a discussion (A12): at the time box the chair adopts the latest one. */
+  proposal?: string | null;
+  /** A step of the discussion Trama recorded by its own rules (A12), which the view tells in the person's language. */
+  event?: DiscussionEvent | null;
+}
+
+/**
+ * What a discussion between agents is for (A12, Q16 of #239): estimating and splitting the work in planning, a blocker
+ * or a dependency between squads, the review of a candidate, a conflict.
+ */
+export type DiscussionReason = "estimate" | "blocker" | "review" | "conflict";
+
+/** How a discussion ended: the chair decided, the time box ran out, the person answered or withdrew the product question. */
+export type DiscussionClosing = "agreed" | "timeBox" | "person" | "withdrawn";
+
+/** The steps of a discussion Trama records itself (A12). */
+export type DiscussionEvent =
+  | { kind: "opened" }
+  | { kind: "decided"; how: DiscussionClosing }
+  | { kind: "toPerson"; decisionRequestId: string }
+  | { kind: "forwarded" };
+
+/**
+ * A discussion between agents (A12, Q16 and Q17 of #239): a visible conversation with a reason, its participants, a time
+ * box and an outcome. The squad lead chairs it when every participant is in its squad, the Coordinator otherwise; at the
+ * time box the chair closes it with a decision. A product choice never closes between agents: it becomes a Pact card in
+ * "Aspetta te" and the discussion waits for the person's answer.
+ */
+export interface AgentDiscussion {
+  reason: DiscussionReason;
+  /** Why it was opened, one line, as the Coordinator wrote it. */
+  motive: string;
+  /** The squad of every participant, or null when the discussion crosses squads. */
+  squadId: string | null;
+  /** The squad lead who closes it; null when the Coordinator does. */
+  chairId: string | null;
+  timeBoxMinutes: number;
+  deadline: string;
+  status: "open" | "waitingPerson" | "decided";
+  /** The Pact card the discussion waits on, when its choice is the person's. */
+  decisionRequestId: string | null;
+  outcome: { decision: string; by: AgentThreadAuthor; how: DiscussionClosing; at: string } | null;
 }
 
 /**
@@ -1662,8 +1708,8 @@ export interface AgentThreadMessage {
 export interface AgentThread {
   id: string;
   kind: AgentThreadKind;
-  /** The developer's work the conversation is about. */
-  assignmentId: string;
+  /** The developer's work the conversation is about; null for a discussion that is not about one piece of work (A12). */
+  assignmentId: string | null;
   /** The members of the team in the conversation, the developer first; the Coordinator is not a member. */
   specialistIds: string[];
   /** Whether the Coordinator takes part, as in a developer's question. */
@@ -1672,6 +1718,8 @@ export interface AgentThread {
   createdAt: string;
   updatedAt: string;
   messages: AgentThreadMessage[];
+  /** Set on a discussion between agents (A12): reason, time box and outcome. */
+  discussion?: AgentDiscussion;
 }
 
 /** The proof a found problem refers to (A08): a red check or a reviewer's finding. */
@@ -1759,7 +1807,11 @@ export interface ProjectSettings {
   activeSquads?: number;
   /** Where developers' work runs (A19); absent means automatic. */
   workPlace?: WorkPlaceSetting;
+  /** The model of the discussions between agents (A12, Q17): the provider's lightest, or the role's; absent means the lightest. */
+  discussionModel?: DiscussionModelSetting;
 }
+
+export type DiscussionModelSetting = "light" | "role";
 
 /** "verifying": both axes ended and Trama rechecks the proof of each finding (F02). */
 export type AuditStatus = "checking" | "reviewing" | "verifying" | "done" | "failed";

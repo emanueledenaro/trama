@@ -527,6 +527,28 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
+      if (required.includes("productChoice") || required.includes("productQuestion")) {
+        // A turn of a discussion between agents (A12): each participant answers with a proposal; the chair closes it
+        // with a decision, or with a product question when the discussion is about the cart.
+        const speaker = text.match(/^Tu sei: ([^(]+?) \(/m)?.[1] ?? "?";
+        const product = text.includes("carrello");
+        const answer = required.includes("productChoice")
+          ? { message: `Sono ${speaker}: per me bastano due giorni.`, proposal: product ? "" : `Documentare l'annullamento in due giorni, con ${speaker} alla prova.`, productChoice: product }
+          : product
+            ? {
+                message: "La scelta riguarda cosa vede il cliente: la passo alla persona.",
+                decision: "",
+                productQuestion: "Un ordine annullato torna nel carrello?",
+                concreteCase: "Ada annulla l'ordine 42 dopo il pagamento con la carta.",
+                alternatives: [
+                  { behavior: "Gli articoli tornano nel carrello", example: "Il carrello di Ada ha di nuovo i due libri dell'ordine 42" },
+                  { behavior: "Il carrello resta vuoto", example: "Ada riparte da un carrello vuoto" },
+                ],
+              }
+            : { message: "Chiudo: la proposta tiene insieme stima e prova.", decision: "Documentare l'annullamento in due giorni, con la prova del QA.", productQuestion: "", concreteCase: "", alternatives: [] };
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
+        return;
+      }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
         // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
@@ -799,6 +821,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           toolDone("request_mandate", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : result.content[0].text);
         });
+        return;
+      }
+      const discussionMarker = text.match(/\[discussione(-prodotto)?\]/);
+      if (discussionMarker && toolServers.has(threadId)) {
+        // A10 and A12: the Coordinator opens a discussion between the first squad's developer and its QA; its lead chairs it.
+        const product = Boolean(discussionMarker[1]);
+        const team = await callTool(threadId, "read_team", {});
+        toolDone("read_team", team);
+        const squad = JSON.parse(team.content[0].text).squads[0];
+        const result = await callTool(threadId, "open_discussion", {
+          reason: product ? "conflict" : "estimate",
+          motive: product ? "Un ordine annullato torna nel carrello?" : "Stimare e dividere la documentazione dell'annullamento",
+          participants: [squad.developerIDs[0], squad.qaID],
+        });
+        toolDone("open_discussion", result);
+        finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho aperto la discussione nella squadra.");
         return;
       }
       if (text.includes("[proponi-team]")) {
