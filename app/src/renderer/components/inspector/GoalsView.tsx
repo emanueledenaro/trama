@@ -2,6 +2,9 @@ import { RecordLabel } from "@/components/chat/ReferenceText";
 import { IconArchive, IconArrowLeft, IconMessageCircle, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
+import { type GoalState, goalState } from "@shared/workOverview";
+import type { MessageKey } from "@shared/i18n";
+import { useT } from "@/lib/i18n";
 import { GOAL_STATUS_LABELS, findGoal, goalDialogIsEmpty, goalLinks, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
 import type { GoalExampleInputPayload } from "@shared/ipc";
 import { PROVIDERS } from "@shared/providers";
@@ -30,14 +33,28 @@ export function GoalStatusBadge({ status }: { status: GoalStatus }) {
   return <Badge tone={STATUS_TONE[status]}>{GOAL_STATUS_LABELS[status]}</Badge>;
 }
 
-/** The status of a goal, and whether the person archived it: archiving keeps the status (W03). */
-function GoalBadges({ goal }: { goal: ProjectGoal }) {
+const GOAL_TONE: Record<GoalState, "warning" | "info" | "success" | "secondary" | "outline"> = {
+  proposed: "warning",
+  open: "info",
+  achieved: "success",
+  abandoned: "secondary",
+  archived: "outline",
+};
+
+/** One state per goal (issue #332): proposed, active, achieved, abandoned or archived, never two at once. */
+export function GoalStateBadge({ goal }: { goal: Pick<ProjectGoal, "status" | "archivedAt"> }) {
+  const t = useT();
+  const state = goalState(goal);
   return (
-    <>
-      <GoalStatusBadge status={goal.status} />
-      {isArchived(goal) ? <Badge tone="outline">Archiviato</Badge> : null}
-    </>
+    <span className="inline-flex shrink-0" data-testid="goal-state" data-state={state}>
+      <Badge tone={GOAL_TONE[state]}>{t(`goal.state.${state}` as MessageKey)}</Badge>
+    </span>
   );
+}
+
+/** A goal's one state: archiving keeps the status underneath (W03), and the badge says archived (issue #332). */
+function GoalBadges({ goal }: { goal: ProjectGoal }) {
+  return <GoalStateBadge goal={goal} />;
 }
 
 /** Archives or restores a goal; the toast says where an archived goal went. */

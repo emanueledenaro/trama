@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   branchPrefix,
   commitDescription,
@@ -18,6 +18,7 @@ import {
   validateCommitMessage,
   workBranchName,
 } from "./conventions";
+import { setPersonLanguage } from "./personLanguage";
 import { git } from "./process";
 
 const valid = (message: string) => expect(validateCommitMessage(message)).toEqual([]);
@@ -306,5 +307,17 @@ describe("project conventions (Q01)", () => {
     expect(conventions.sources).toContain(".commitlintrc.json");
     expect(conventions.sources).not.toContain("CONTRIBUTING.md");
     expect(conventions.branchPrefixes.bugfix).toBe("fix");
+  });
+});
+
+describe("the problems in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("explains a wrong message and branch in English", () => {
+    setPersonLanguage("en");
+    expect(validateCommitMessage("feat(): add the palette")).toEqual(["The scope in parentheses is empty: write it or remove the parentheses."]);
+    expect(() => requireValidCommitMessage("")).toThrow("Invalid commit message: The message is empty.");
+    expect(validateBranchName("feature/")).toEqual(["A short description is needed after the type."]);
+    expect(conventionsFromText({ instructions: [], commitlint: null, branches: ["feat/a", "feat/b"] }).sources).toEqual(["existing branches"]);
   });
 });

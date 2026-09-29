@@ -3,17 +3,39 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, readlink, realpath, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
+import { t } from "./personLanguage";
 import { git, runProcess } from "./process";
 
 export type ReadOnlyCheck = "git_status" | "git_diff_check" | "swift_build" | "swift_test" | "node_test" | "node_typecheck";
 
-export const CHECKS: Record<ReadOnlyCheck, { summary: string; title: string }> = {
-  git_status: { summary: "uncommitted changes and branch of the checkout", title: "stato Git" },
-  git_diff_check: { summary: "whitespace errors and conflict markers in the uncommitted changes", title: "spazi e marcatori di conflitto" },
+/** Each check: `summary` for the model, `title` for the person, read in the person's language when it is used. */
+export const CHECKS: Record<ReadOnlyCheck, { readonly summary: string; readonly title: string }> = {
+  git_status: {
+    summary: "uncommitted changes and branch of the checkout",
+    get title() {
+      return t("main.checks.title.gitStatus");
+    },
+  },
+  git_diff_check: {
+    summary: "whitespace errors and conflict markers in the uncommitted changes",
+    get title() {
+      return t("main.checks.title.gitDiffCheck");
+    },
+  },
   swift_build: { summary: "swift build of the package", title: "swift build" },
   swift_test: { summary: "swift test of the package", title: "swift test" },
-  node_test: { summary: "npm test of the Node package", title: "test Node" },
-  node_typecheck: { summary: "npm run typecheck of the Node package", title: "typecheck Node" },
+  node_test: {
+    summary: "npm test of the Node package",
+    get title() {
+      return t("main.checks.title.nodeTest");
+    },
+  },
+  node_typecheck: {
+    summary: "npm run typecheck of the Node package",
+    get title() {
+      return t("main.checks.title.nodeTypecheck");
+    },
+  },
 };
 
 export const ALL_CHECKS = Object.keys(CHECKS) as ReadOnlyCheck[];
@@ -194,17 +216,17 @@ export async function lendNodeDependencies(worktreeRoot: string, projectRoot: st
   const exists = await lstat(target).then(() => true).catch(() => false);
   if (exists) return null;
   const source = join(projectRoot, pkg.dir, "node_modules");
-  if (!existsSync(source)) return "Il checkout del progetto non ha le dipendenze installate (node_modules): esegui npm ci nel progetto.";
+  if (!existsSync(source)) return t("main.checks.noDependencies");
   const lock = async (root: string) => readFile(join(root, pkg.dir, "package-lock.json"), "utf8").catch(() => null);
   const [mine, theirs] = await Promise.all([lock(worktreeRoot), lock(projectRoot)]);
   if (mine === null || mine !== theirs) {
-    return "Le dipendenze del candidato sono diverse da quelle del checkout (package-lock.json): servirebbe npm ci, che le verifiche non eseguono perché non hanno rete.";
+    return t("main.checks.dependenciesDiffer");
   }
   await mkdir(target);
   const ignored = await git(["check-ignore", "-q", join(pkg.dir, "node_modules/")], worktreeRoot).then(() => true).catch(() => false);
   if (!ignored) {
     await rm(target, { recursive: true, force: true });
-    return "git non ignora node_modules in questo progetto: Trama non collega le dipendenze per non cambiare il candidato.";
+    return t("main.checks.nodeModulesNotIgnored");
   }
   for (const entry of await readdir(source)) {
     if (!TOOL_CACHES.includes(entry)) await symlink(join(source, entry), join(target, entry));
@@ -269,8 +291,8 @@ export async function runReadOnlyCheck(
   const sandboxNote = !/listen EPERM|connect EPERM/.test(raw)
     ? ""
     : local
-      ? "\n[Trama] Alcuni fallimenti vengono dalla sandbox: la rete è permessa solo verso 127.0.0.1, internet è bloccato."
-      : "\n[Trama] Alcuni fallimenti vengono dalla sandbox senza rete: su questo sistema Trama non ha una sandbox che lasci la rete locale, quindi i test che aprono un server su 127.0.0.1 non possono girare qui.";
+      ? `\n${t("main.checks.sandboxLoopback")}`
+      : `\n${t("main.checks.sandboxNoNetwork")}`;
   return {
     check,
     command: inner,

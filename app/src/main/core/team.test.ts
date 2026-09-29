@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ProjectMandate, Specialist } from "@shared/domain";
 import { AGENT_PALETTE, isAgentColor } from "@shared/identity";
 import { FIXED_ROLES, roleProfile } from "@shared/roster";
@@ -24,6 +24,7 @@ import {
   teamReport,
   TeamError,
 } from "./team";
+import { setPersonLanguage } from "./personLanguage";
 
 const members = [
   { name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIds: ["Sources/Orders"] },
@@ -291,5 +292,21 @@ describe("decision dependencies (C06)", () => {
     expect(assignmentsAffectedByDecision(document, other.id)).toEqual([]);
     expect(refreshDecisionVersions(document, a.id)).toEqual([refunds.id]);
     expect(b.decisionVersions).toEqual({ [other.id]: 1 });
+  });
+});
+
+describe("team texts in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the team answer and the latest updates in English", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    const proposal = proposeTeam(document, { requestId: null, summary: null, members });
+    confirmTeam(document, proposal.id, ["ada"], "Bruno later");
+    expect(teamMessage(document, proposal)).toMatch(/^I corrected the team: Ada \(.+\) stay\. I removed Bruno\. Bruno later$/);
+    const assignment = assign(document, order(), 1, null);
+    expect(assignment.lastUpdate).toBe(`Assignment received: ${assignment.objective}`);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+    expect(findSpecialist(document, "Ada")!.assignments.at(-1)!.lastUpdate).toBe("Turn 1 running with gpt-5.5");
   });
 });

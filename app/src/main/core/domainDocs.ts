@@ -109,6 +109,7 @@ export function proposeDomainDocs(document: ProjectDocument, input: DomainPropos
 }
 
 /** The proposal in the skill's formats, for the documentation and domain role that writes it. */
+// @model-text: the instructions of the documentation and domain role.
 export function domainProposalText(proposal: DomainProposal): string {
   return [
     `Proposta ${proposal.id}, dalle decisioni del Patto ${proposal.decisionIds.join(", ")}.`,

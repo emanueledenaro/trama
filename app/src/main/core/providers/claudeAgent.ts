@@ -38,7 +38,10 @@ import {
   HOST_TOOL_TIMEOUT_MS,
   ProviderError,
   extractJsonAnswer,
+  interruptedTurnError,
 } from "./types";
+import { localeOf, type MessageKey } from "@shared/i18n";
+import { personLanguage, t } from "../personLanguage";
 import { deniedReadFolders, expandHome, readableRoots, sandboxGitEnvironment, toolchainRoots } from "../readScope";
 import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
 import { checkedOutBranch, isGitPushCommand } from "../push";
@@ -63,9 +66,6 @@ const INTERRUPT_TIMEOUT_MS = 10_000;
 const MAX_INLINE_SKILL_CHARS = 24_000;
 const MAX_INLINE_SKILLS_TOTAL_CHARS = 60_000;
 const CLIENT_APP = "trama/0.1.0";
-const MISSING_CLI_MESSAGE =
-  "Claude Code non trovato. Installa Claude Code e accedi con `claude login` dal terminale.";
-const SIGNED_OUT_MESSAGE = "Accedi a Claude con `claude login` dal terminale per usarlo in Trama.";
 
 // ── Binary resolution (providerBinaryResolution.ts) ─────────────────
 
@@ -126,7 +126,7 @@ export function resolveClaudeExecutable(configured?: string | null): string {
       // Try the next candidate.
     }
   }
-  throw new ProviderError("executableNotFound", MISSING_CLI_MESSAGE);
+  throw new ProviderError("executableNotFound", t("main.claudeAgent.notInstalled"));
 }
 
 /**
@@ -224,7 +224,7 @@ function hasLoginRequiredText(result: CommandResult): boolean {
 export function parseClaudeAuthStatus(result: CommandResult): ParsedAuth {
   const text = lowerOutput(result);
   if (["unknown command", "unrecognized command", "unexpected argument"].some((marker) => text.includes(marker))) {
-    return { status: "unknown", message: "Questa versione di Claude Code non ha `claude auth status`. Aggiorna Claude Code." };
+    return { status: "unknown", message: t("main.claudeAgent.noAuthStatus") };
   }
   if (hasLoginRequiredText(result)) return { status: "signedOut" };
   const json = parseJsonOutput(result.stdout);
@@ -232,11 +232,11 @@ export function parseClaudeAuthStatus(result: CommandResult): ParsedAuth {
   if (auth === true) return { status: "authenticated" };
   if (auth === false) return { status: "signedOut" };
   if (json.attempted) {
-    return { status: "unknown", message: "Impossibile verificare l'accesso a Claude: l'output JSON non indica lo stato." };
+    return { status: "unknown", message: t("main.claudeAgent.authJsonWithoutStatus") };
   }
   if (result.code === 0) return { status: "authenticated" };
-  const detail = result.stderr.trim() || result.stdout.trim() || `Il comando è terminato con codice ${result.code}.`;
-  return { status: "unknown", message: `Impossibile verificare l'accesso a Claude. ${detail}` };
+  const detail = result.stderr.trim() || result.stdout.trim() || t("main.claudeAgent.commandExited", { code: String(result.code) });
+  return { status: "unknown", message: t("main.claudeAgent.authCheckFailed", { detail }) };
 }
 
 /**
@@ -266,7 +266,7 @@ export function claudeAccountLabel(result: CommandResult): string | null {
   const email = findDeepString(json, ["email", "emailAddress"], ["account", "user"]);
   let plan: string | undefined;
   if (method?.toLowerCase().replace(/[\s_-]+/g, "") === "apikey") {
-    plan = "Chiave API Claude";
+    plan = t("main.claudeAgent.apiKeyLabel");
   } else if (subscription) {
     const normalized = subscription.toLowerCase().replace(/[\s_-]+/g, "");
     const name =
@@ -313,16 +313,19 @@ const USAGE_LIMIT_WITHOUT_RESET_MS = 15 * 60_000;
 function formatReset(until: string | null): string {
   if (!until) return "";
   const date = new Date(until);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : ` Riprova dopo le ${date.toLocaleString("it-IT", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "long" })}.`;
+  if (Number.isNaN(date.getTime())) return "";
+  const time = date.toLocaleString(localeOf(personLanguage()), { hour: "2-digit", minute: "2-digit", day: "numeric", month: "long" });
+  return ` ${t("main.claudeAgent.retryAfter", { time })}`;
 }
+
+/** The usage-limit sentence, with the reset time when Claude gave one. */
+const usageLimitMessage = (until: string | null): string => `${t("main.claudeAgent.usageLimit")}${formatReset(until)}`;
 
 /** The block implied by a `rate_limit_event`, or null when requests are still allowed. */
 export function usageLimitFromRateLimit(info: SDKRateLimitInfo): { message: string; until: string | null } | null {
   if (info.status !== "rejected") return null;
   const until = typeof info.resetsAt === "number" && info.resetsAt > 0 ? new Date(info.resetsAt * 1000).toISOString() : null;
-  return { message: `Hai raggiunto il limite di utilizzo di Claude.${formatReset(until)}`, until };
+  return { message: usageLimitMessage(until), until };
 }
 
 /** True for the CLI's usage-limit texts ("You've hit your limit · resets 3pm", legacy "Claude AI usage limit reached|<epoch>"). */
@@ -633,7 +636,7 @@ export function createHostToolBridge(server: HostToolServer, fetchImpl: typeof f
         await reply({
           jsonrpc: "2.0",
           id,
-          error: { code: -32603, message: `Il server degli strumenti di Trama non ha risposto: ${(error as Error).message}` },
+          error: { code: -32603, message: t("main.claudeAgent.toolServerNoAnswer", { error: (error as Error).message }) },
         });
       }
     } finally {
@@ -730,18 +733,19 @@ export type TurnOutcome =
   | { kind: "failed"; message: string; blocked: boolean }
   | { kind: "interrupted" };
 
-const ASSISTANT_ERRORS: Record<string, string> = {
-  authentication_failed: SIGNED_OUT_MESSAGE,
-  oauth_org_not_allowed: "L'accesso a Claude è riuscito, ma questa organizzazione non consente Claude Code.",
-  account_on_hold: "L'account Claude attivo è sospeso. Risolvi il problema dell'account e riprova.",
-  billing_error: "Problema di fatturazione o abbonamento Claude. Controlla l'account attivo e riprova.",
-  rate_limit: "Limite di richieste di Claude raggiunto. Attendi un momento e riprova.",
-  overloaded: "Claude è temporaneamente sovraccarico. Riprova tra poco.",
-  invalid_request: "Claude ha rifiutato la richiesta perché non valida.",
-  model_not_found: "Il modello Claude scelto non è disponibile per questo account.",
-  server_error: "Claude ha restituito un errore del server. Riprova tra poco.",
-  max_output_tokens: "Claude ha raggiunto la lunghezza massima della risposta prima di finire il turno.",
-  unknown: "Claude non è riuscito a completare il turno.",
+/** The catalog key of each assistant error code; the text is read in the person's language when the error arrives. */
+const ASSISTANT_ERRORS: Record<string, MessageKey> = {
+  authentication_failed: "main.claudeAgent.signedOut",
+  oauth_org_not_allowed: "main.claudeAgent.orgNotAllowed",
+  account_on_hold: "main.claudeAgent.accountOnHold",
+  billing_error: "main.claudeAgent.billingError",
+  rate_limit: "main.claudeAgent.rateLimit",
+  overloaded: "main.claudeAgent.overloaded",
+  invalid_request: "main.claudeAgent.invalidRequest",
+  model_not_found: "main.claudeAgent.modelNotFound",
+  server_error: "main.claudeAgent.serverError",
+  max_output_tokens: "main.claudeAgent.maxOutputTokens",
+  unknown: "main.claudeAgent.turnNotCompleted",
 };
 
 function isInterruptedText(text: string): boolean {
@@ -849,30 +853,26 @@ export class ClaudeTurnMapper {
     const text = error instanceof Error ? error.message : String(error);
     if (this.interruptRequested || isInterruptedText(text)) return { kind: "interrupted" };
     if (/no conversation found with session id/i.test(text)) {
-      return { kind: "failed", message: "La sessione Claude non esiste più. Apri una nuova conversazione.", blocked: false };
+      return { kind: "failed", message: t("main.claudeAgent.sessionGone"), blocked: false };
     }
     if (/sandbox/i.test(text) && /unavailable|not available|bubblewrap|bwrap/i.test(text)) {
-      return {
-        kind: "failed",
-        message: "Il sandbox di Claude Code non è disponibile su questo sistema: le modifiche nella worktree non sono consentite.",
-        blocked: false,
-      };
+      return { kind: "failed", message: t("main.claudeAgent.sandboxUnavailable"), blocked: false };
     }
-    return this.failure(text.trim() || "Claude si è fermato con un errore.");
+    return this.failure(text.trim() || t("main.claudeAgent.stoppedWithError"));
   }
 
   /** The outcome when the stream ends without a `result`. */
   fromStreamEnd(): TurnOutcome {
     return this.interruptRequested
       ? { kind: "interrupted" }
-      : this.failure("Claude si è fermato senza completare il turno.");
+      : this.failure(t("main.claudeAgent.stoppedWithoutCompleting"));
   }
 
   private failure(text: string): TurnOutcome {
     if (this.blocked) return { kind: "failed", message: this.blocked.message, blocked: true };
     if (isUsageLimitText(text)) {
       const until = legacyUsageLimitReset(text);
-      const block = { message: until ? `Hai raggiunto il limite di utilizzo di Claude.${formatReset(until)}` : sanitizeDisplayText(text).trim(), until };
+      const block = { message: until ? usageLimitMessage(until) : sanitizeDisplayText(text).trim(), until };
       recordUsageLimit(block);
       return { kind: "failed", message: block.message, blocked: true };
     }
@@ -898,7 +898,7 @@ export class ClaudeTurnMapper {
     const messageId = nonEmpty(body.id) ?? null;
     const usage = asRecord(body.usage);
     if (usage && promptTokens(usage) > 0) this.lastUsage = usage;
-    if (message.error) this.assistantError = ASSISTANT_ERRORS[message.error] ?? ASSISTANT_ERRORS.unknown!;
+    if (message.error) this.assistantError = t(ASSISTANT_ERRORS[message.error] ?? ASSISTANT_ERRORS.unknown!);
     const blocks = Array.isArray(body.content) ? (body.content as unknown[]) : [];
     blocks.forEach((value, index) => {
       const block = asRecord(value);
@@ -979,12 +979,12 @@ export class ClaudeTurnMapper {
       return { kind: "interrupted" };
     }
     if (message.subtype === "error_max_structured_output_retries") {
-      return { kind: "failed", message: "Claude non è riuscito a produrre una risposta conforme allo schema richiesto.", blocked: false };
+      return { kind: "failed", message: t("main.claudeAgent.schemaNotMet"), blocked: false };
     }
     if (message.subtype === "error_max_turns") {
-      return { kind: "failed", message: "Claude ha raggiunto il numero massimo di passaggi per questo turno.", blocked: false };
+      return { kind: "failed", message: t("main.claudeAgent.maxTurns"), blocked: false };
     }
-    return this.failure(first || "Claude non è riuscito a completare il turno.");
+    return this.failure(first || t("main.claudeAgent.turnNotCompleted"));
   }
 }
 
@@ -1075,11 +1075,11 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       }
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "EACCES") return { kind: "unavailable", message: MISSING_CLI_MESSAGE };
+      if (code === "ENOENT" || code === "EACCES") return { kind: "unavailable", message: t("main.claudeAgent.notInstalled") };
       if ((error as { killed?: boolean }).killed) {
-        return { kind: "unavailable", message: "Impossibile verificare l'accesso a Claude: il comando non ha risposto in tempo." };
+        return { kind: "unavailable", message: t("main.claudeAgent.authCheckTimeout") };
       }
-      return { kind: "unavailable", message: `Impossibile verificare l'accesso a Claude: ${(error as Error).message}` };
+      return { kind: "unavailable", message: t("main.claudeAgent.authCheckError", { error: (error as Error).message }) };
     }
     const parsed = parseClaudeAuthStatus(result);
     if (parsed.status === "authenticated") return { kind: "authenticated", label: claudeAccountLabel(result) };
@@ -1117,12 +1117,12 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       const models = await withTimeout(
         query.supportedModels(),
         this.options.requestTimeoutMs ?? 30_000,
-        "Timeout in attesa dell'elenco dei modelli Claude.",
+        t("main.claudeAgent.modelListTimeout"),
       );
       return mapClaudeModels(models);
     } catch (error) {
       if (error instanceof ProviderError) throw error;
-      throw new ProviderError("processExited", `Claude Code non ha restituito i modelli: ${(error as Error).message}`);
+      throw new ProviderError("processExited", t("main.claudeAgent.noModels", { error: (error as Error).message }));
     } finally {
       abort.abort();
       query.close();
@@ -1135,7 +1135,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
   }
 
   async openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
-    if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
+    if (!options.model.trim()) throw new ProviderError("invalidModel", t("main.provider.invalidModel", { model: options.model }));
     await this.requireAccount();
     const base = {
       cwd: options.cwd,
@@ -1165,9 +1165,9 @@ export class ClaudeAgentRuntime implements AgentRuntime {
 
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
-    if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
-    if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
-    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (!prompt) throw new ProviderError("emptyPrompt", t("main.provider.emptyMessage"));
+    if (!options.model.trim()) throw new ProviderError("invalidModel", t("main.provider.invalidModel", { model: options.model }));
+    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const thread: ThreadState =
       this.thread?.sessionId === options.threadId
         ? this.thread
@@ -1180,7 +1180,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
             hostToolsOnly: false,
             readableRoots: readableRoots(options.cwd),
           };
-    const pending = new PendingTurn(options.onEvent, "Claude è stato chiuso.");
+    const pending = new PendingTurn(options.onEvent, t("main.provider.closed", { provider: "Claude" }));
     this.pending = pending;
     let executable: string;
     let sdk: ClaudeSdk;
@@ -1296,7 +1296,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       if (this.active === active) this.active = null;
     }
     if (mapper.sessionId === thread.sessionId) thread.started = true;
-    if (active.stopped) throw new ProviderError("processExited", "Claude è stato chiuso.");
+    if (active.stopped) throw new ProviderError("processExited", t("main.provider.closed", { provider: "Claude" }));
     outcome ??= mapper.fromStreamEnd();
 
     switch (outcome.kind) {
@@ -1305,7 +1305,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
         return outcome.text;
       case "interrupted":
         options.onEvent({ type: "interrupted" });
-        throw new Error("Turno interrotto.");
+        throw interruptedTurnError();
       case "failed":
         options.onEvent({ type: "failed", message: outcome.message });
         if (outcome.blocked) {
@@ -1324,7 +1324,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
     }
     active.mapper.interruptRequested = true;
     try {
-      await withTimeout(active.query.interrupt(), INTERRUPT_TIMEOUT_MS, "Timeout in attesa dell'interruzione di Claude.");
+      await withTimeout(active.query.interrupt(), INTERRUPT_TIMEOUT_MS, "Timed out waiting for Claude to interrupt.");
     } catch {
       // A wedged CLI never acknowledges the interrupt: abort the process instead.
       active.abort.abort();
@@ -1362,7 +1362,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       case "blocked":
         throw new ProviderError("blocked", account.message);
       default:
-        throw new ProviderError("authenticationRequired", SIGNED_OUT_MESSAGE);
+        throw new ProviderError("authenticationRequired", t("main.claudeAgent.signedOut"));
     }
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationEvent, CoordinatorRequest } from "./domain";
-import { compactSteps, failedSteps, isEmptyStep, workTurns } from "./technicalSteps";
+import { compactSteps, failedSteps, isEmptyStep, stepKind, workTurns } from "./technicalSteps";
 import { deriveTimelineRows } from "./timeline";
 
 const at = "2026-09-28T12:00:00.000Z";
@@ -77,5 +77,22 @@ describe("workTurns (issue #271)", () => {
     ]);
     const chat = deriveTimelineRows(events, requests, null, new Set(["A-1:1"])).filter((r) => r.kind === "work");
     expect(new Set(turns.map((t) => t.id))).toEqual(new Set(chat.map((r) => r.id)));
+  });
+});
+
+describe("steps written in either language (issue #301)", () => {
+  it("drops the empty English notes and reasoning", () => {
+    expect(isEmptyStep(step(1, "Developer note", " ", "info"))).toBe(true);
+    expect(isEmptyStep(step(2, "Coordinator note", null, "info"))).toBe(true);
+    expect(isEmptyStep(step(3, "Reasoning", "", "info"))).toBe(true);
+    expect(isEmptyStep(step(4, "Reasoning", "I read package.json.", "info"))).toBe(false);
+  });
+
+  it("tells the kind of a step in Italian and in English", () => {
+    expect([stepKind("Ragionamento"), stepKind("Reasoning")]).toEqual(["reasoning", "reasoning"]);
+    expect([stepKind("Modifica di 3 file"), stepKind("Changed 3 files"), stepKind("File edit failed")]).toEqual(["edit", "edit", "edit"]);
+    expect([stepKind("Nota del Coordinatore"), stepKind("Developer note"), stepKind("Message sent to the Coordinator")]).toEqual(["note", "note", "note"]);
+    expect([stepKind("Strumento di Trama: read_issues"), stepKind("Trama tool: read_issues")]).toEqual(["tool", "tool"]);
+    expect(stepKind("Comando")).toBeNull();
   });
 });
