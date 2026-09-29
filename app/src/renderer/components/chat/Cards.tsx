@@ -474,6 +474,7 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
 }
 
 export function DecisionCard({ requestId }: { requestId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [choice, setChoice] = useState<number | null>(null);
@@ -502,6 +503,11 @@ export function DecisionCard({ requestId }: { requestId: string }) {
           {request.blocksWork && !closed ? (
             <span data-testid="blocks-work">
               <Badge tone="warning">Blocca il lavoro</Badge>
+            </span>
+          ) : null}
+          {outcome?.byDelegation ? (
+            <span data-testid="decided-by-delegation">
+              <Badge tone="secondary">{t("delegation.decision.badge")}</Badge>
             </span>
           ) : null}
           {withdrawal ? (

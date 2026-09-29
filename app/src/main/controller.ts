@@ -55,6 +55,7 @@ import type {
   ProviderState,
   FixedBanRefusal,
   RequestedAction,
+  FullDelegation,
   MandateAction,
   ProjectDocument,
   WorkKind,
@@ -163,6 +164,7 @@ import {
   isPaused,
   PROJECT_EVENTS,
   projectMove,
+  ticketMove,
   recordRound,
   ROUND_INTERVAL_MS,
   setPaused,
@@ -393,6 +395,8 @@ import { git, runProcess } from "./core/process";
 import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
 import { redactSensitiveData } from "./core/redaction";
 import { runnableCommand } from "@shared/fixedBans";
+import { keepsAwake } from "@shared/delegation";
+import { activeDelegation, markChoiceSeen, mandateForDelegation, nextTicket, READY_LABEL, recordChoice, revokeDelegation } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
 import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
@@ -693,6 +697,11 @@ export interface ControllerHost {
   setOpenAtLogin(enabled: boolean): void;
   /** The system's preferred languages, most preferred first (issue #301). Without it Trama speaks Italian. */
   systemLanguages?(): readonly string[];
+  /**
+   * Keeps the computer from sleeping, or lets it sleep again (issue #423): Trama asks it while a project with the full
+   * delegation has open work. Absent where the host cannot.
+   */
+  setKeepAwake?(awake: boolean): void;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
   codexExecutable: string | null;
@@ -1039,6 +1048,26 @@ export class TramaController {
   private changed(): void {
     this.scheduleSave();
     this.publish();
+    this.updateKeepAwake();
+  }
+
+  /** Whether Trama asked the host to keep the computer awake (issue #423). */
+  private keptAwake = false;
+
+  /**
+   * Keeps the computer awake while the open project has the full delegation, open work and no Pause (issue #423);
+   * without open work the computer goes back to its usual sleep.
+   */
+  private updateKeepAwake(): void {
+    const project = this.state.project;
+    const awake =
+      !this.quitting &&
+      !!project &&
+      this.state.settings.continuousWork !== false &&
+      keepsAwake([{ delegated: activeDelegation(project.document) !== null, openWork: hasOpenWork(project.document), paused: isPaused(project.document) }]);
+    if (awake === this.keptAwake) return;
+    this.keptAwake = awake;
+    this.host.setKeepAwake?.(awake);
   }
 
   /**
@@ -1088,7 +1117,7 @@ export class TramaController {
       runningRequestId: project.runningRequestId,
       sources,
     });
-    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(recap), detail: null, referenceId: recap.id }, null, now, null, goalId);
+    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(recap, this.state.language), detail: null, referenceId: recap.id }, null, now, null, goalId);
     return recap;
   }
 
@@ -2262,6 +2291,13 @@ export class TramaController {
           headSHA: () => this.headSHA(current.rootPath),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           runRequestedAction: (id) => this.runRequestedAction(current, id),
+          delegationChanged: (delegation) => this.delegationChanged(current, delegation, current.runningRequestId),
+          questionDecided: (questionId, decisionId) => this.questionDecided(current, questionId, decisionId),
+          approveWithDelegation: async (candidateId) => {
+            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.headSHA(current.rootPath));
+            this.changedIn(current);
+            await this.integrateCandidates(current);
+          },
           mainBranches: current.github.snapshot?.defaultBranch ? [current.github.snapshot.defaultBranch] : [],
           checkedOutBranch: () => checkedOutBranch(current.rootPath),
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
@@ -2745,7 +2781,7 @@ export class TramaController {
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
       sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
-      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null));
+      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
@@ -3036,6 +3072,8 @@ export class TramaController {
 
   /** After the computer wakes up, a turn waiting for the network or a quota is checked soon instead of at its old time (C11). */
   resumeAfterSleep(): void {
+    // After a sleep the work starts again from where it was (issue #423): a round reads the state again.
+    void this.runRound().catch((error) => this.fail(error));
     const project = this.state.project;
     const view = project?.providerRetry;
     if (!project || !view || this.quitting || view.reason === "temporaryLimit") return;
@@ -3309,6 +3347,33 @@ export class TramaController {
     return null;
   }
 
+  /**
+   * With the full delegation and "fai tutti i ticket" (issue #423), takes the next open issue with clear criteria when no
+   * work is open: the choice is recorded for the recap and the Coordinator turns the issue into work. Returns its name.
+   */
+  private startTicketMove(project: ActiveProjectState): string | null {
+    const document = project.document;
+    const issue = nextTicket(document, project.github.issues);
+    const latest = document.requests.at(-1) ?? null;
+    const move = ticketMove(document, issue, this.continuationGuards(project), latest);
+    if (!move || !issue) return null;
+    recordChoice(document, {
+      kind: "ticket",
+      subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
+      choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
+      targetId: String(issue.number),
+    });
+    const step: RequestStep = { move: move.move, by: "trama", trigger: "round" };
+    const starting = { projectId: project.id };
+    this.automaticStarting = starting;
+    void this.send(move.message, null, move.model, move.model ? move.effort : null, [], null, null, false, step)
+      .catch((error) => this.fail(error))
+      .finally(() => {
+        if (this.automaticStarting === starting) this.automaticStarting = null;
+      });
+    return move.label;
+  }
+
   /** Starts the periodic round (A05): it runs while Trama is open, on the project with open work. */
   private scheduleRounds(): void {
     if (this.roundTimer) clearInterval(this.roundTimer);
@@ -3328,7 +3393,9 @@ export class TramaController {
     // The results of cloud sessions come back also in pause: collecting them starts no provider turn (A19).
     await this.refreshCloudSessions(project).catch(() => undefined);
     if (this.state.project !== project || this.quitting) return;
-    if (this.state.settings.continuousWork === false || isPaused(project.document) || !hasOpenWork(project.document)) return;
+    // With "fai tutti i ticket" (issue #423) a round without open work takes the next open issue.
+    const tickets = nextTicket(project.document, project.github.issues) !== null;
+    if (this.state.settings.continuousWork === false || isPaused(project.document) || (!hasOpenWork(project.document) && !tickets)) return;
     // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
     if (this.coordinatorWait(project)) {
       if (!project.providerRetry) this.scheduleProviderWait(this.coordinatorProvider(project.document));
@@ -3355,7 +3422,7 @@ export class TramaController {
       const busy = this.continuationGuards(project).busy;
       // The person's steps the mandate lets the Coordinator take (A06) go first: they can open its next move.
       if (!busy) details.push(...this.takeDelegatedSteps(project));
-      const move = busy ? null : this.startAutomaticMove(project, [{ requestId: null, event: "round" }]);
+      const move = busy ? null : (this.startAutomaticMove(project, [{ requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;
       recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
@@ -4561,6 +4628,82 @@ export class TramaController {
     finishAction(action, { ok, output: await redactSensitiveData(output) });
     this.changedIn(project);
     return action;
+  }
+
+  /**
+   * The person gave or withdrew the full delegation (issue #423). Given, it brings a mandate over every module and action
+   * when the one in force is narrower, so the Coordinator can do the whole cycle; the chat line quotes the person.
+   */
+  private delegationChanged(project: ActiveProjectState, delegation: FullDelegation, requestId: string | null): void {
+    const document = project.document;
+    if (!delegation.revokedAt) {
+      const terms = mandateForDelegation(document, project.snapshot.modules.map((m) => m.id));
+      if (terms) {
+        const pending = pendingMandateRequest(document);
+        const kind = document.mandate?.status === "granted" ? "corrected" : "granted";
+        const mandate = grantMandate(document, terms);
+        if (pending) resolveMandateRequest(document, pending.id, kind, mandate.version);
+        appendEvent(
+          document,
+          "trama",
+          { type: "activity", title: t("main.delegation.mandateTitle", { version: mandate.version }), detail: t("main.delegation.mandateDetail"), tone: "info" },
+          requestId,
+        );
+      }
+    }
+    appendEvent(document, "trama", { type: "card", kind: "delegation", title: delegation.revokedAt ? "revoked" : "granted", detail: null, referenceId: delegation.id }, requestId);
+    this.changedIn(project);
+    if (!delegation.revokedAt) void this.runDuties();
+  }
+
+  /** A product question the Coordinator answered with the delegation: the same effects as the person's answer (issue #423). */
+  private questionDecided(project: ActiveProjectState, questionId: string, decisionId: string): void {
+    const request = project.document.decisionRequests.find((r) => r.id === questionId);
+    if (!request) return;
+    const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
+    if (goalId) linkDecision(project.document, goalId, decisionId);
+    this.stopWorkDependingOn(decisionId);
+    if (personAnswered(project.document, request)) this.resumeAnsweredWork(project);
+  }
+
+  /** The person withdraws the full delegation from the Mandate view (issue #423): the choices are theirs again. */
+  revokeDelegation(): void {
+    const project = this.requireProject();
+    const delegation = revokeDelegation(project.document, { kind: "view" });
+    this.delegationChanged(project, delegation, null);
+    this.changed();
+  }
+
+  /** The person has seen a choice the Coordinator made with the delegation (issue #423). */
+  markDelegatedChoiceSeen(id: string): void {
+    const project = this.requireProject();
+    markChoiceSeen(project.document, id);
+    this.changed();
+  }
+
+  /** When the person left the window, for the recap of their return (issue #423); null while they are here. */
+  private awaySince: number | null = null;
+
+  /** The person left Trama's window. */
+  personAway(now = Date.now()): void {
+    this.awaySince ??= now;
+  }
+
+  /**
+   * The person is back after at least `absence` milliseconds away (issue #423): when the Coordinator made choices with
+   * the delegation meanwhile, Trama writes the recap of what it did and decided, with the doubts, without a model turn.
+   */
+  personReturned(absence: number, now = Date.now()): void {
+    const away = this.awaySince;
+    this.awaySince = null;
+    const project = this.state.project;
+    if (away === null || now - away < absence || !project?.stateWritable || project.isDemo) return;
+    const since = project.document.recap?.recaps.at(-1)?.at ?? null;
+    const untold = (project.document.delegatedChoices ?? []).some((c) => since === null || c.at > since);
+    if (!untold) return;
+    const sources = this.waitingSources(project);
+    this.appendRecap(project, "return", newMilestones(project.document, sources.sliceViews ?? {}), sources);
+    this.changed();
   }
 
   /**
