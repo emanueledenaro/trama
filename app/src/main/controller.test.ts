@@ -373,7 +373,7 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
-  it("reorders the context once past the threshold instead of warning (ADR 0018)", async () => {
+  it("reorders the context once past the threshold instead of warning (ADR 0019)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
     const thread = project.document.coordinator.threadId;
@@ -1853,7 +1853,7 @@ describe("TramaController", () => {
     const choice = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
     expect(choice).toMatchObject({ text: "Confermo: Cancello feature/old" });
     expect(choice).not.toHaveProperty("composer");
-    expect(activityLog(document.requests, document.events, [], [], [], [], document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
+    expect(activityLog(document.requests, document.events, [], [], [], [], [], document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
   });
 
 

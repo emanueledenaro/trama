@@ -70,7 +70,7 @@ export function openingInput(assignment: SpecialistAssignment, decisions: PactDe
 }
 
 /**
- * The brief a specialist's new thread starts from when its last turn passed the context threshold (ADR 0018): the
+ * The brief a specialist's new thread starts from when its last turn passed the context threshold (ADR 0019): the
  * worktree is the durable state, so Trama says where it stands instead of carrying the old conversation. @model-text
  */
 export function contextBriefing(

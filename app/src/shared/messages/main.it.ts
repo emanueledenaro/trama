@@ -1487,6 +1487,7 @@ export const mainIt = {
   "main.recap.outcome.stopped": "fermata",
   "main.recap.outcome.failed": "finita con un errore",
   "main.recap.outcome.corrected": "corretta da te",
+  "main.recap.outcome.undone": "annullata",
   "main.recap.stepCorrected": "{label} (corretto da te): {detail}",
   "main.recap.moreMoves": "Altre {count} mosse sono in Attività",
   "main.recap.moreMoves.one": "Un'altra mossa è in Attività",

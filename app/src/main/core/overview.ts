@@ -1,8 +1,9 @@
-import type { AttentionReason, CandidateReport, GitHubSnapshot, ProjectDocument, ProjectOverview, RecentProject } from "@shared/domain";
+import type { AttentionReason, CandidateReport, GitHubSnapshot, ProjectDocument, ProjectOverview, RecentProject, StatusLineView } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
 import { presenceFreshness, type PresenceView } from "@shared/presence";
 import { t } from "./personLanguage";
-import { type WaitingKind, waitingForYou } from "@shared/waitingForYou";
+import { type WaitingItem, type WaitingKind, waitingForYou } from "@shared/waitingForYou";
+import { statusLine } from "./statusLine";
 import { currentAssignment } from "./team";
 
 const ORDER: (AttentionReason | "unreadable" | null)[] = ["decision", "blocked", "approval", "running", "unreadable", null];
@@ -25,6 +26,10 @@ export function summarizeProject(
     priority?: number;
     waitingForCapacity?: number;
     ci?: ProjectOverview["ci"];
+    /** The project's Aspetta te as the open project shows it; computed from the document when not given. */
+    waiting?: WaitingItem[];
+    /** The project's status line as the open project shows it; computed from the document when not given. */
+    status?: StatusLineView | null;
   },
 ): ProjectOverview {
   // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision. The
@@ -86,7 +91,20 @@ export function summarizeProject(
     priority: input.priority ?? 0,
     waitingForCapacity,
     ci,
+    coordinator: coordinatorLine(input.status ?? statusLine(document, null)),
+    waiting: waitingSummary(input.waiting ?? waiting),
   };
+}
+
+/** The status line in the overview: its text and state, without the person's move (issue #336). */
+function coordinatorLine(line: StatusLineView): ProjectOverview["coordinator"] {
+  return { text: line.text, state: line.state, paused: line.paused };
+}
+
+/** The same count as Aspetta te and its first item, the one the project's row shows (issue #336). */
+function waitingSummary(items: WaitingItem[]): ProjectOverview["waiting"] {
+  const first = items[0];
+  return { count: items.length, first: first ? { key: first.key, label: first.label, title: first.title } : null };
 }
 
 /** A recent project whose state could not be read, or that was never saved. */
@@ -111,6 +129,8 @@ export function unreadableProject(recent: RecentProject, error: string | null, p
     priority,
     waitingForCapacity: 0,
     ci: null,
+    coordinator: null,
+    waiting: { count: 0, first: null },
   };
 }
 
