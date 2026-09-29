@@ -359,6 +359,7 @@ import {
   settleGate,
   applyOverruled,
   applyPactRule,
+  pactLines,
   decidedLines,
   overruledFor,
   rememberOverruled,
@@ -6614,7 +6615,7 @@ export class TramaController {
         const cleanCodeRun = this.runCleanCodeReview(project, candidate, assignment, provider, run.clients).then(
           (result) => {
             cleanCode = result;
-            finishReview(gate, "cleanCode", cleanCodeOutcome(result.answer));
+            finishReview(gate, "cleanCode", cleanCodeOutcome(result.answer, document.decisions));
             reviewThread(gate, "cleanCode", result.threadId);
           },
           (error: Error) => finishReview(gate, "cleanCode", { failure: error.message }),
@@ -6697,15 +6698,11 @@ export class TramaController {
         developerInstructions: reviewerInstructions(document.cleanCode, this.state.language),
       });
       // @model-text: the technical review's prompt for the Clean Code reviewer.
-      const decisions = candidate.requiredDecisionIds
-        .map((id) => document.decisions.find((d) => d.id === id))
-        .filter((d) => d !== undefined)
-        .map((d) => `- ${d.id} v${d.version}: ${d.value} (esempio: ${d.acceptedExample})`)
-        .join("\n");
+      // The whole Pact in force, as for the other figures: the decisions the candidate was declared with are not all of it.
       // @model-text: the technical review's prompt for the Clean Code reviewer.
       const prompt = [
         `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
-        `Decisioni del Patto da rispettare:\n${decisions}`,
+        pactLines(document.decisions),
         reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
         decidedLines(overruledFor(document, assignment.id).filter((d) => d.role === "cleanCode")),
         `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
