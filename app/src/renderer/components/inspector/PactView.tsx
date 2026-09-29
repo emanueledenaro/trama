@@ -11,8 +11,8 @@ import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { WaitingProposalPointer } from "@/components/WaitingPointer";
 import { AgentName } from "@/components/AgentIdentity";
-import { WaitingOr } from "@/components/WaitingView";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 
@@ -70,11 +70,14 @@ export function PactView() {
       {project.isDemo ? <PactDemoBox /> : null}
       {pending.length ? (
         <InspectorSection title={t("rules.pact.pending")}>
-          {pending.map((request) => (
-            <WaitingOr key={request.id} kind="question" targetId={request.id}>
-              <DecisionCard requestId={request.id} />
-            </WaitingOr>
-          ))}
+          {/* Answered only in Aspetta te (issue #331): one line per question opens it there. */}
+          <div className="space-y-1.5">
+            {pending.map((request) => (
+              <WaitingProposalPointer key={request.id} kind="question" targetId={request.id} textKey="waiting.pointer.question">
+                <DecisionCard requestId={request.id} />
+              </WaitingProposalPointer>
+            ))}
+          </div>
         </InspectorSection>
       ) : null}
       <InspectorSection

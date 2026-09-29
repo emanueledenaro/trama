@@ -145,8 +145,6 @@ export const sharedIt = {
   "shared.waiting.memoryUser": "Memoria, profilo",
   "shared.waiting.memoryProject": "Memoria, note sul progetto",
   "shared.waiting.memoryTitle": "Una revisione propone di cambiare la memoria.",
-  "shared.waiting.summary": "{count} cose aspettano te",
-  "shared.waiting.summary.one": "1 cosa aspetta te",
   "shared.waiting.blocksNone": "Non ferma il lavoro",
   "shared.waiting.blocks": "Ferma {count} parti del lavoro",
   "shared.waiting.blocks.one": "Ferma 1 parte del lavoro",

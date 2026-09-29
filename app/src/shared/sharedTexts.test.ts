@@ -130,8 +130,8 @@ describe("shared texts in English (issue #301)", () => {
   test("names states, counts and Waiting for you in the language", () => {
     expect(assignmentStatus(en, "paused").label).toBe("Waiting for an answer");
     expect(assignmentStatus(it, "paused").label).toBe("Aspetta una risposta");
-    expect(waitingSummary(en, 1)).toBe("1 thing is waiting for you");
-    expect(waitingSummary(en, 3)).toBe("3 things are waiting for you");
+    expect(waitingSummary(en, 1)).toBe("1 thing waits for you");
+    expect(waitingSummary(en, 3)).toBe("3 things wait for you");
     expect(waitingSummary(it, 3)).toBe("3 cose aspettano te");
     expect(blocksText(en, 2)).toBe("Stops 2 parts of the work");
     expect(activityOutcomeLabel(en, "stalled")).toBe("Not done");

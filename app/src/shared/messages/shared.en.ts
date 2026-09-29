@@ -146,8 +146,6 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.waiting.memoryUser": "Memory, profile",
   "shared.waiting.memoryProject": "Memory, project notes",
   "shared.waiting.memoryTitle": "A review proposes a change to the memory.",
-  "shared.waiting.summary": "{count} things are waiting for you",
-  "shared.waiting.summary.one": "1 thing is waiting for you",
   "shared.waiting.blocksNone": "Does not stop any work",
   "shared.waiting.blocks": "Stops {count} parts of the work",
   "shared.waiting.blocks.one": "Stops 1 part of the work",

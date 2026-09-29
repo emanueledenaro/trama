@@ -18,6 +18,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { useWaitingItem, WaitingPointer } from "@/components/WaitingPointer";
 import { AgentName } from "@/components/AgentIdentity";
 
 const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondary"> = {
@@ -306,6 +307,8 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
   const [editing, setEditing] = useState(edit);
   const [linking, setLinking] = useState("");
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
+  // A proposed goal is confirmed or discarded in Aspetta te (issue #331): the detail keeps its editor and a line to it.
+  const waitingGoal = useWaitingItem("goal", id);
   const document = project.document;
   const goal = findGoal(document, id);
   if (!goal) return <div className="p-4"><EmptyNote>Obiettivo non trovato.</EmptyNote></div>;
@@ -357,14 +360,16 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
               Ripristina
             </Button>
           ) : goal.status === "proposed" ? (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => setStatus("abandoned")}>
-                Scarta
-              </Button>
-              <Button size="sm" onClick={() => setStatus("open")}>
-                Conferma l'obiettivo
-              </Button>
-            </>
+            waitingGoal ? null : (
+              <>
+                <Button size="sm" variant="ghost" onClick={() => setStatus("abandoned")}>
+                  Scarta
+                </Button>
+                <Button size="sm" onClick={() => setStatus("open")}>
+                  Conferma l'obiettivo
+                </Button>
+              </>
+            )
           ) : goal.status === "open" ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setStatus("achieved")}>
@@ -380,6 +385,11 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
             </Button>
           )}
         </div>
+        {goal.status === "proposed" && !archived && waitingGoal ? (
+          <div className="mt-2">
+            <WaitingPointer item={waitingGoal} text={t("waiting.pointer.proposal")} />
+          </div>
+        ) : null}
         <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
       </div>
       <InspectorSection title="Risultato atteso" aside={!editing ? <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>Modifica</Button> : null}>
