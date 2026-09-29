@@ -14,7 +14,7 @@ function exchange(document: ReturnType<typeof emptyDocument>, index: number) {
   appendEvent(document, "coordinator", { type: "coordinatorText", text: `risposta ${index}`, model: null, references: [], provider: null }, id, at(index));
 }
 
-describe("the context summary (ADR 0018)", () => {
+describe("the context summary (ADR 0019)", () => {
   it("writes goals, Pact, mandate, waiting requests and the last exchanges from Trama's records", () => {
     const document = emptyDocument("p");
     createGoal(document, { title: "Ordini annullati in revisione", outcome: "Un ordine pagato e annullato va in revisione", examples: [] }, at(0));

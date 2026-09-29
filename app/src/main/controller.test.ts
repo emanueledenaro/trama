@@ -368,7 +368,7 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
-  it("reorders the context once past the threshold instead of warning (ADR 0018)", async () => {
+  it("reorders the context once past the threshold instead of warning (ADR 0019)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
     const thread = project.document.coordinator.threadId;
