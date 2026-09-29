@@ -18,6 +18,7 @@ import {
 import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import type { NativeSkill } from "./nativeSkills";
+import { t } from "./personLanguage";
 
 /**
  * Ask Trama (M07, issue #130). The Coordinator runs AI Hero's ask-trama skill (upstream ask-matt) with its original
@@ -44,7 +45,7 @@ const FLOW_STARTS: Readonly<Record<string, string>> = {
   "improve-codebase-architecture": "within the mandate the Clean Code role runs it by itself when the team is free after work that changed code; its proposals reach the person as a Pact decision card",
 };
 
-/** Trama's binding for AI Hero's ask-trama skill in the Coordinator (M07). */
+/** Trama's binding for AI Hero's ask-trama skill in the Coordinator (M07). @model-text */
 export const ASK_TRAMA_BINDING = [
   `Trama runs the ask-trama skill above with its own text, its reference file PHASE-BOUNDARIES.md included. These lines only map its words to Trama's tools; they do not change its method. ${SKILL_RULES_ABOVE}`,
   "When Trama uses it: when the person writes /ask-trama, or opens Ask Trama from its button, and describes their situation. Also without the command (a Trama addition): when a request of the person is about to become work, choose its route with this skill before you grill or plan it.",
@@ -55,7 +56,7 @@ export const ASK_TRAMA_BINDING = [
   "A skill the bundled package carries without a Trama flow: Trama gives you its original text with the start message of a route that has it; run it in this session under Trama's rules. A skill the bundled package does not carry is shown to the person as not yet available in Trama: never simulate it.",
   "Phase boundaries: \"Continue\" is this session. \"/clear\" is a new Coordinator session with the study and your memory and without the conversation. \"/compact\" and \"/handoff\" are a new Coordinator session that receives Trama's transcript of the conversation; a new harness is the person moving the Coordinator to another provider, which Trama hands over the same way. \"Subagent\" is a session Trama manages apart from yours: the planner, a developer in its worktree, the technical reviewer, a fixed role. Trama applies the boundary of the route when the person starts it; /clear, /compact and /handoff are never steps of a route. Clearing context between tickets is already Trama's: each assignment runs in its own session.",
   "Issue tracker: the project's GitHub issues when GitHub is connected, otherwise the plan's slices in Trama. \"/setup-trama\": the person prepares the method from Trama's settings; a route never waits for it, because Trama gives the skills to its agents.",
-  "When Trama writes \"Avvia il percorso\" with a route id, start its first step that Trama can run in that turn, with the tools above; the later steps follow Trama's flow and its next moves. When the person declines a route, do not propose it again for the same situation unless they ask.",
+  "When Trama writes \"Avvia il percorso\" or \"Start Ask Trama route\" with a route id, start its first step that Trama can run in that turn, with the tools above; the later steps follow Trama's flow and its next moves. When the person declines a route, do not propose it again for the same situation unless they ask.",
 ].join("\n");
 
 /** Trama's binding for a bundled skill without a Trama flow, delivered with the start message of a route (M07). */
@@ -144,16 +145,16 @@ export function routeReport(route: AskTramaRoute): Record<string, string | { ski
 
 /** The person's answer to a proposed route; returns the message Trama writes to the Coordinator. */
 export function answerRoute(route: AskTramaRoute, start: boolean, now = new Date()): string {
-  if (route.status !== "proposed") throw new RouteError(route.status === "superseded" ? "Il Coordinatore ha proposto un percorso più recente." : "Hai già risposto a questo percorso.");
+  if (route.status !== "proposed") throw new RouteError(t(route.status === "superseded" ? "main.askTrama.superseded" : "main.askTrama.alreadyAnswered"));
   const first = firstRunnableStep(route);
-  if (start && !first) throw new RouteError("Nessun passo di questo percorso è ancora disponibile in Trama.");
+  if (start && !first) throw new RouteError(t("main.askTrama.noRunnableStep"));
   route.status = start ? "started" : "declined";
   route.answeredAt = now.toISOString();
-  if (!start) return `Non avvio il percorso ${route.id} di Ask Trama (${routeSteps(route)}).`;
+  if (!start) return t("main.askTrama.declined", { id: route.id, steps: routeSteps(route) });
   return [
-    `Avvia il percorso ${route.id} di Ask Trama: ${ROUTE_PATH_LABELS[route.path].toLowerCase()}, ${routeSteps(route)}.`,
-    `Primo passo: ${first!.skill}${first!.kind === "flow" ? ` (${TRAMA_FLOWS[first!.skill]})` : ""}.`,
-    `Confine di fase: ${BOUNDARY_LABELS[route.boundary].label.toLowerCase()}.`,
+    t("main.askTrama.start", { id: route.id, path: ROUTE_PATH_LABELS[route.path].toLowerCase(), steps: routeSteps(route) }),
+    first!.kind === "flow" ? t("main.askTrama.firstStepFlow", { skill: first!.skill, flow: TRAMA_FLOWS[first!.skill]! }) : t("main.askTrama.firstStep", { skill: first!.skill }),
+    t("main.askTrama.boundary", { boundary: BOUNDARY_LABELS[route.boundary].label.toLowerCase() }),
   ].join(" ");
 }
 

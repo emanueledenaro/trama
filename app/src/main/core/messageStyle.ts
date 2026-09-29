@@ -6,7 +6,7 @@ const RECOMMENDED_MARKER: Record<Language, string> = { it: "(consigliata)", en: 
 
 /**
  * How the Coordinator and the specialists lay out a chat message. Trama renders GitHub Markdown, and
- * blockquotes opened by an alert marker become callouts (see the renderer's remarkCallouts).
+ * blockquotes opened by an alert marker become callouts (see the renderer's remarkCallouts). @model-text
  */
 export function messageStyle(reader: "the person" | "the Coordinator", language: Language = DEFAULT_LANGUAGE): string {
   return [
@@ -26,6 +26,7 @@ export function messageStyle(reader: "the person" | "the Coordinator", language:
 /**
  * The person asked for plain language (issue #270): names instead of ids, the interface's own words instead of
  * jargon, no technical codes. Trama shows an id as a link with its name, so a sentence built around an id reads badly.
+ * @model-text
  */
 function plainLanguage(): string[] {
   const words = GLOSSARY.filter((t) => t.insteadOf.length).map((t) => `"${t.term}" (not ${t.insteadOf.map((w) => `"${w}"`).join(" or ")})`);

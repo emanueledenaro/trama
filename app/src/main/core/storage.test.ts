@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,6 +22,18 @@ describe("AppStorage", () => {
     const broken = await storage.loadDocument("p1");
     expect(broken).toMatchObject({ document: null, writable: false });
     expect(await readFile(storage.documentPath("p1"), "utf8")).toBe("{ non è json");
+  });
+
+  it("refuses a state file that is a symbolic link and reads a missing one as empty", async () => {
+    const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
+    expect(await storage.loadDocument("missing")).toMatchObject({ document: null });
+    const elsewhere = join(await mkdtemp(join(tmpdir(), "trama-elsewhere-")), "state.json");
+    await writeFile(elsewhere, JSON.stringify(emptyDocument("p1")));
+    await storage.saveDocument(emptyDocument("p0"));
+    await symlink(elsewhere, storage.documentPath("p1"));
+    const linked = await storage.loadDocument("p1");
+    expect(linked).toMatchObject({ document: null, writable: false });
+    expect(linked.error).toContain("collegamento simbolico");
   });
 
   it("keeps the team, its assignments and their candidates across a save and a reopening (V04, V05)", async () => {

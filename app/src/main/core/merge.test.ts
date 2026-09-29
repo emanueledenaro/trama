@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CandidateGate } from "@shared/domain";
 import { approveCandidate, candidateReport, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { declineDestructiveMerge, deletedFiles, destructiveChange, mergeActivity, mergeBan, MERGE_RETRY_MS, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./merge";
 import { decide, grantMandate, revokeMandate } from "./pact";
 import { restrictMandate } from "./projectMandate";
+import { setPersonLanguage } from "./personLanguage";
 import { assign, beginTurn, confirmTeam, endTurn, proposeTeam } from "./team";
 
 const BRANCHES = { head: "feature/negozio-trama-0a1b2c3d", base: "main" };
@@ -171,6 +172,22 @@ describe("merge of a candidate (issue #247)", () => {
 
   it("titles the merge commit with the candidate's header and the pull request", () => {
     expect(mergeCommitTitle("feat(checkout): show the paid orders", 12)).toBe("feat(checkout): show the paid orders (#12)");
+  });
+
+  describe("in English (issue #301)", () => {
+    afterEach(() => setPersonLanguage("it"));
+
+    it("writes the merge rows and the reasons in the person's language", () => {
+      const s = setup(["NOTE.md"]);
+      setPersonLanguage("en");
+      expect(mergeActivity(s.candidate, { kind: "merged", number: 1234, url: "https://github.com/o/r/pull/1234" }, "coordinator")).toMatchObject({
+        title: `Candidate ${s.candidate.id} merged with the Coordinator's green light`,
+        detail: "Pull request #1234: https://github.com/o/r/pull/1234",
+      });
+      expect(mergeActivity(s.candidate, { kind: "merged", number: 2, url: "u" }, "person").title).toBe(`Candidate ${s.candidate.id} merged with your ok`);
+      expect(mergeRoute(s.document, s.candidate, null).reason).toBe("The project has no GitHub remote: Trama does not open or merge the pull request.");
+      expect(() => rejectCandidate(s.document, s.candidate.id, " ", "persona")).toThrow("Write why you reject the candidate: the reason goes back to the developer.");
+    });
   });
 });
 
