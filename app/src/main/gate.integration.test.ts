@@ -12,12 +12,14 @@ import { findSpecialist } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
+/** The wait the test configuration sets (vitest.config.ts): one test shortens it, every test gets it back. */
+const gateTurnWait = process.env.TRAMA_GATE_TURN_WAIT_MS;
 afterEach(async () => {
   await controller?.stop();
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
   delete process.env.FAKE_CODEX_GATE_HOLD;
-  delete process.env.TRAMA_GATE_TURN_WAIT_MS;
+  process.env.TRAMA_GATE_TURN_WAIT_MS = gateTurnWait;
 });
 
 async function until(check: () => boolean, timeout = 20_000): Promise<void> {
