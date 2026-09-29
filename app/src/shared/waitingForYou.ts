@@ -133,7 +133,9 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       label: t(
         question.blocksWork
           ? "shared.waiting.developerQuestion"
-          : question.fromFinding
+          : question.fromDiscussion
+            ? "shared.waiting.discussion"
+            : question.fromFinding
             ? "shared.waiting.tradeOff"
             : question.grilling
               ? "shared.waiting.clarification"
@@ -145,9 +147,12 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       goalId: question.goalId ?? requestGoal(document, question.requestId),
       askedAt: question.askedAt,
       // A trade-off from an examination holds no work: the candidate is already delivered (F04).
+      // A discussion between agents waits for the answer (A12), while the team goes on with the rest of the work.
       blocks: question.blocksWork
         ? heldByDeveloperQuestion(document, sources, question.blocksWork.assignmentId)
-        : question.fromFinding
+        : question.fromDiscussion
+          ? 0
+          : question.fromFinding
           ? 0
           : heldWork(document, sources, question.grilling?.subjectRequestId ?? question.requestId),
     });
