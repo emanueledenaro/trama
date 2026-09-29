@@ -47,8 +47,8 @@ export function ModulesList() {
         </ul>
       ) : null}
       <div className="cta-row mt-3">
-        <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "project" })}>
-          <IconFocus2 stroke={1.8} /> {t("focus.openProject")}
+        <Button size="sm" variant="outline" className="max-w-full" title={t("focus.openProject")} onClick={() => openFocusStart({ kind: "project" })}>
+          <IconFocus2 stroke={1.8} /> <span className="truncate">{t("focus.openProject")}</span>
         </Button>
       </div>
       {snapshot.modules.length === 0 ? <EmptyNote>{t("rules.modules.empty")}</EmptyNote> : null}
