@@ -420,6 +420,39 @@ const primaryLast = async (row, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// UI wave of 29 September: only the conversation holds the work bar on the composer. Over a detail tab without the
+// composer, as an agent's or a candidate's, the bar is the tab's last row in a room of its own: the tab ends where the
+// bar starts, so it covers nothing, and it still shows while something waits. Progetti, Impostazioni and the Benvenuto
+// have no bar. `expected` is "composer", "tab" or "none".
+const workBarPlace = async (where, expected) => {
+  const layout = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="work-bar"]');
+    const row = bar?.closest('[data-testid="work-bar-row"]');
+    const tab = document.querySelector('[data-testid="editor-cover"] [data-testid="editor-detail"]');
+    return {
+      bar: Boolean(bar),
+      placement: bar?.dataset.placement ?? null,
+      inCover: Boolean(bar?.closest('[data-testid="editor-cover"]')),
+      inDock: Boolean(bar?.closest(".chat-composer-dock")),
+      tabBottom: tab ? Math.round(tab.getBoundingClientRect().bottom) : null,
+      barTop: row ? Math.round(row.getBoundingClientRect().top) : null,
+    };
+  });
+  if (expected === "none") {
+    if (layout.bar) throw new Error(`The work bar shows over ${where}`);
+    return;
+  }
+  if (!layout.bar) {
+    // Aspetta te open hides the waiting part; with nothing in focus the bar then has nothing to say.
+    if ((await page.getByTestId("activity-badge").count()) && !(await page.getByTestId("waiting-view").count())) throw new Error(`The work bar is missing over ${where} while something waits`);
+    return;
+  }
+  if (layout.placement !== expected) throw new Error(`The work bar sits on the ${layout.placement} over ${where}, not on the ${expected}`);
+  if (expected === "composer" && !layout.inDock) throw new Error(`The work bar is not on the composer in ${where}: ${JSON.stringify(layout)}`);
+  if (expected === "tab" && (!layout.inCover || layout.inDock || layout.tabBottom === null || layout.tabBottom > layout.barTop + 1)) {
+    throw new Error(`The work bar lies over ${where}: ${JSON.stringify(layout)}`);
+  }
+};
 // The wave on the interface's priorities (29 September 2026): a view of the side bar at its narrowest (240 px, the sash
 // moved from the keyboard) and at its widest, light and dark, then back to the normal width and the look it had.
 const sideBarWidthNow = () => page.getByRole("separator", { name: /Larghezza della barra laterale/ }).getAttribute("aria-valuenow");
@@ -2083,6 +2116,7 @@ await page.getByRole("button", { name: "Chiudi Benvenuto", exact: true }).waitFo
   const editorTabs = page.getByTestId("editor-tabs");
   await editorTabs.getByRole("tab", { name: "Benvenuto", selected: true }).waitFor();
   if (!(await editorTabs.getByRole("tab", { name: "Conversazione" }).count())) throw new Error("The Benvenuto tab is not next to the conversation");
+  await workBarPlace("the Benvenuto", "none");
 }
 await page.getByTestId("welcome").getByRole("button", { name: /^(Riprendi|Inizia|Rifai): Conosci il progetto$/ }).click();
 await page.getByTestId("welcome").waitFor({ state: "detached" });
@@ -4140,6 +4174,13 @@ await closePanels();
       if ((await page.getByTestId("activity-badge").count()) && !(await page.getByTestId("waiting-summary").isVisible())) {
         throw new Error("The row above the composer is hidden by the person's tab");
       }
+      // UI wave of 29 September: the bar was a pill floating over the bottom of the person's tab and hid its
+      // assignments. Now it is the tab's last row: scrolled to the end, the last assignment ends above the bar.
+      await workBarPlace("the person's tab at 1280x800", "tab");
+      await detailPane().evaluate((el) => el.scrollTo(0, el.scrollHeight));
+      await workBarPlace("the person's tab scrolled to the end", "tab");
+      await sideBarEnds("41f-editor-person-work-bar", (end) => workBarPlace(`the person's tab with the side bar ${end}`, "tab"));
+      await detailPane().evaluate((el) => el.scrollTo(0, 0));
     } else {
       await page.locator('[data-testid="editor-area"][data-split="true"]').waitFor();
       const chatBox = await page.getByTestId("editor-main").boundingBox();
@@ -4147,6 +4188,8 @@ await closePanels();
       if (!chatBox || !sideBox || chatBox.width < 420 || sideBox.x < chatBox.x + chatBox.width - 1) throw new Error(`The person and the conversation are not side by side at ${size}`);
       if (!(await composer().isVisible())) throw new Error("The composer is hidden beside the person's tab");
       await page.getByTestId("editor-side").getByRole("separator").waitFor({ state: "attached" });
+      // Beside the conversation the tab has no bar of its own: the bar stays on the composer.
+      await workBarPlace(`the conversation beside the person's tab at ${size}`, "composer");
     }
     await noHorizontalScroll(`the person's tab at ${size}`);
     await editorShots(`41a-editor-person-${size}`);
@@ -4157,6 +4200,7 @@ await closePanels();
     // Opened on the examination, the tab brings it into view; the first shot shows the top of the tab.
     await detailPane().evaluate((el) => el.scrollTo(0, 0));
     if (!(await detailPane().getByTestId("candidate-to-merge").isVisible())) throw new Error(`What is missing to merge the candidate is not on top at ${size}`);
+    await workBarPlace(`the candidate's tab at ${size}`, width === 1280 ? "tab" : "composer");
     await editorShots(`41b-editor-candidate-${size}`);
     await detailPane().getByTestId("focus-audit").scrollIntoViewIfNeeded();
     await editorShots(`41c-editor-candidate-audit-${size}`);
@@ -4171,6 +4215,7 @@ await closePanels();
     if (Number(await row.getAttribute("data-waiting")) !== badge) throw new Error(`Progetti counts ${await row.getAttribute("data-waiting")} things for the person, Aspetta te ${badge}`);
     if (badge && Number(await row.getByTestId("overview-waiting-count").innerText()) !== badge) throw new Error("The project's row shows another count than Aspetta te");
     await closePanels();
+    await workBarPlace(`Progetti at ${size}`, "none");
     await editorShots(`41d-editor-projects-${size}`);
     // Impostazioni: the app's sections apart from the project's, Collegamenti with one row per provider.
     await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
@@ -4178,6 +4223,7 @@ await closePanels();
     await settingsTab.getByRole("group", { name: "App" }).getByRole("button", { name: /^Collegamenti/ }).click();
     await settingsTab.getByRole("group", { name: /^Progetto/ }).getByRole("button", { name: /^Presenza/ }).waitFor();
     await settingsTab.getByRole("button", { name: /^Capacità/ }).first().waitFor();
+    await workBarPlace(`Impostazioni at ${size}`, "none");
     await editorShots(`41e-editor-settings-${size}`);
     await page.locator('[data-testid="editor-tab"][data-tab="settings"]').getByRole("button", { name: /^Chiudi / }).click();
     await page.locator('[data-testid="editor-tab"][data-tab="projects"]').getByRole("button", { name: /^Chiudi / }).click();

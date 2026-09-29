@@ -313,10 +313,24 @@ function useHeight(): [(element: HTMLElement | null) => void, number] {
 }
 
 /**
+ * A detail tab over the conversation in a narrow window (issue #336), such as an agent's or a candidate's. The tab
+ * scrolls in its own room and the bar of the work in focus and of Aspetta te is its last row, below it: the bar stays
+ * in view and covers nothing of the tab. Only the conversation holds the bar on the composer.
+ */
+export function CoverPane({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="absolute inset-0 flex flex-col" data-testid="editor-cover">
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      <WorkBar placement="tab" />
+    </div>
+  );
+}
+
+/**
  * The main tab of the editor area (issue #330): the conversation with the Coordinator, or the overview, the settings or
  * the Benvenuto (issue #354). Without a project the Benvenuto is the only thing in the window. `cover` is a detail tab
- * that covers the conversation in a narrow window (issue #336): it lies over the timeline, the row of Aspetta te stays
- * in view below it, and the timeline and the composer stay mounted, hidden, with the draft.
+ * that covers the conversation in a narrow window (issue #336): it lies over the timeline with the bar of the work in
+ * focus as its last row (CoverPane), and the timeline and the composer stay mounted, hidden, with the draft.
  */
 export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const project = useUi((s) => s.app?.project);
@@ -349,7 +363,7 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
             <div className={cn("flex min-h-0 flex-1 flex-col", cover && "invisible")} aria-hidden={cover ? true : undefined}>
               <Timeline key={goalId ?? "all"} />
             </div>
-            {cover ? <div className="absolute inset-0 flex flex-col pb-14">{cover}</div> : null}
+            {cover ? <CoverPane>{cover}</CoverPane> : null}
             {/* The exercise guides the person through the details too: it stays over a covering tab. */}
             <FilledScope allowed={!waitingNow}>
               <ExercisePanel />
@@ -357,7 +371,8 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
             {/* The status bar sits right below: 8 px keep the composer off it and leave the conversation 580 px at 1280x800 (issue #330). */}
             <div ref={dock} className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
               <div className="pointer-events-auto">
-                <WorkBar attached={!cover} />
+                {/* Over a covering tab the bar is the tab's own last row (CoverPane): here it would lie over the tab. */}
+                {cover ? null : <WorkBar placement="composer" />}
                 <div hidden={Boolean(cover)}>
                   {/* "Collega un provider" in place of sending is the composer's primary: outlined while something waits. */}
                   <FilledScope allowed={!waitingNow}>

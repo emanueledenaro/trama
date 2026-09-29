@@ -11,6 +11,9 @@ import { useUi } from "@/lib/store";
 import { FocusPanel, focusOverlaps } from "./FocusBar";
 import { ReferenceText } from "./ReferenceText";
 
+/** Where the bar sits: on top of the composer in the conversation, or as the last row of a tab that covers it. */
+export type WorkBarPlacement = "composer" | "tab";
+
 /**
  * The bar above the composer (UI wave of 29 September): one bar, attached to the top of the composer, for the work in
  * focus and what waits for the person, with one button. It takes the place of the Aspetta te strip that floated over
@@ -23,10 +26,11 @@ import { ReferenceText } from "./ReferenceText";
  * button. The waiting part hides while Aspetta te is open, where the item's own buttons are. The chat leaves room for
  * the whole dock below its last message (ChatView), so the bar never covers it.
  *
- * `attached` is false while a detail tab covers the conversation and the composer is hidden: the bar is then a row of
- * its own, rounded on every side.
+ * Only the conversation holds the bar on the composer. A detail tab that covers the conversation in a narrow window,
+ * such as an agent's or a candidate's, has no composer: there the bar is the tab's last row, in a room of its own below
+ * the tab's content, with a line above it, so it covers nothing (`placement` "tab", CoverPane in ChatView).
  */
-export function WorkBar({ attached }: { attached: boolean }) {
+export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
   const t = useT();
   const items = useWaiting();
   const waitingOpen = useWaitingOpen();
@@ -65,17 +69,27 @@ export function WorkBar({ attached }: { attached: boolean }) {
   const first = items[0]!;
   const title = focus?.title ?? t("focus.none");
   const elsewhere = focus !== null && (focus.goalId ?? null) !== dialogGoalId;
+  const onComposer = placement === "composer";
   return (
-    <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0">
+    <div
+      className={cn(
+        "min-w-0",
+        // In a tab, a flat row of the tab's own with a line above: the tab's content scrolls above it, never under it.
+        onComposer ? "mx-auto w-full max-w-[var(--app-chat-max-width)]" : "shrink-0 border-t border-[color:var(--app-surface-divider)] px-3 py-1 sm:px-5",
+      )}
+      data-testid="work-bar-row"
+      data-placement={placement}
+    >
       <section
         ref={bar}
         aria-label={t("waiting.strip.label")}
         data-testid="work-bar"
+        data-placement={placement}
         data-open={open ? "true" : "false"}
         className={cn(
-          // Inset past the composer's rounded corners, so its straight edge closes the bar from below.
-          "translucent-popup mx-5 shadow-none",
-          attached ? "-mb-px rounded-t-[0.875rem] rounded-b-none border-b-0" : "mb-1.5 rounded-[0.875rem]",
+          // On the composer, inset past its rounded corners, so its straight edge closes the bar from below. In a tab,
+          // the column of the tab's content (DetailPane), so the bar lines up with what it follows.
+          onComposer ? "translucent-popup mx-5 -mb-px rounded-t-[0.875rem] rounded-b-none border-b-0 shadow-none" : "mx-auto w-full max-w-[52rem]",
         )}
       >
         {open && hasFocus ? (
