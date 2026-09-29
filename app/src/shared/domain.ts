@@ -182,8 +182,8 @@ export interface RequestStep {
 
 /**
  * What makes Trama weigh the Coordinator's next move (A05): a Coordinator turn, a plan or an assignment that ended, a red
- * check, a conflict between worktrees, a new issue, a commented pull request, a candidate gate that ended in the
- * background, or the periodic round.
+ * check, a conflict between worktrees, a new issue, a commented pull request, a candidate gate or a candidate's check
+ * that ended in the background, or the periodic round.
  */
 export type WorkEvent =
   | "turnEnded"
@@ -194,6 +194,7 @@ export type WorkEvent =
   | "issueOpened"
   | "pullRequestCommented"
   | "gateEnded"
+  | "checkEnded"
   | "round";
 
 /** A round of the Coordinator that did something (A05): what it started or unblocked, for Activity. */

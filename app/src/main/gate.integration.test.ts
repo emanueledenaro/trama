@@ -61,6 +61,20 @@ async function repository(nodeSuite: boolean): Promise<string> {
   return repo;
 }
 
+/** The example project with a Node suite that runs until the file `hold` exists, then passes; after 20 s it fails. */
+async function slowSuite(hold: string): Promise<string> {
+  const repo = await repository(true);
+  const suite = [
+    `const { existsSync } = require("node:fs");`,
+    `const started = Date.now();`,
+    `const wait = () => (existsSync(${JSON.stringify(hold)}) ? process.exit(0) : Date.now() - started > 20000 ? process.exit(3) : setTimeout(wait, 50));`,
+    `wait();`,
+  ];
+  await writeFile(join(repo, "check.js"), `${suite.join("\n")}\n`);
+  await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-am", "slow suite"], repo, false);
+  return repo;
+}
+
 async function openTeam(repo: string) {
   controller = new TramaController(await mkdtemp(join(tmpdir(), "trama-data-")), host);
   await controller.start();
@@ -223,18 +237,89 @@ describe("the candidate gate (W10)", () => {
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     const gate = document.gates![0]!;
     const candidate = document.candidates[0]!;
-    // The turn ended while the reviewers are still at work: the chat is free.
-    expect(gate.status).toBe("reviewing");
+    // The turn ended while the gate is still at work, on its checks or with the reviewers: the chat is free.
+    expect(["checking", "reviewing"]).toContain(gate.status);
     expect(document.requests.at(-1)!.state).toBe("completed");
     // The person writes now: the message runs at once, it does not wait in the queue for the gate.
     await controller!.send("Aggiungi anche una nota sugli ordini annullati.", null, null, null);
     expect(document.requests.at(-1)).toMatchObject({ text: "Aggiungi anche una nota sugli ordini annullati.", state: "completed" });
     // The gate ends in the background and records its review on the same candidate.
     await writeFile(hold, "");
-    await until(() => gate.status !== "reviewing");
+    await until(() => gate.status !== "checking" && gate.status !== "reviewing");
     await until(() => candidate.technicalReview?.gateId === gate.id);
     expect(document.gates).toHaveLength(1);
     expect(candidate.technicalReview).toMatchObject({ verdict: "approved", gateId: gate.id });
+  }, 120_000);
+
+  it("lets a long check of a candidate go on in the background so the person can talk to the Coordinator meanwhile", async () => {
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    const { document, decision } = await openTeam(await slowSuite(hold));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna] [test-node]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send(`[candidato:${work.id}:${decision.id}:node_test] [senza-revisione]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    // The turn ended while the suite still runs: the chat is free and the evidence is not there yet.
+    expect(document.requests.at(-1)!.state).toBe("completed");
+    expect(candidate.evidence.node_test).toBeUndefined();
+    await controller!.send("Aggiungi anche una nota sugli ordini annullati.", null, null, null);
+    expect(document.requests.at(-1)).toMatchObject({ text: "Aggiungi anche una nota sugli ordini annullati.", state: "completed" });
+    // The suite ends in the background and records its evidence on the same candidate.
+    await writeFile(hold, "");
+    await until(() => candidate.evidence.node_test !== undefined, 60_000);
+    expect(candidate.evidence.node_test).toMatchObject({ result: "pass", snapshotId: candidate.snapshotId });
+  }, 120_000);
+
+  it("never holds the Coordinator's turn for the merge it starts with the full delegation", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    await controller!.send("[delega:fai tutto tu in automatico] Stanotte fai tutto tu in automatico", null, null, null);
+    // Publishing and merging on GitHub takes long: here it never ends.
+    (controller as unknown as { integrateCandidates(): Promise<void> }).integrateCandidates = () => new Promise(() => undefined);
+    const tools = (controller as unknown as { runtime: { toolServer: { handler(name: string, args: object): Promise<{ content: { text: string }[] }> } } }).runtime.toolServer;
+    const answer = await Promise.race([
+      tools.handler("approve_with_delegation", { candidate: candidate.id, reason: "Le schermate sono coerenti" }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
+    ]);
+    expect(answer).not.toBeNull();
+    expect(JSON.parse(answer!.content[0]!.text)).toMatchObject({ candidateID: candidate.id, status: "approved" });
+    expect(candidate.humanApproval).toMatchObject({ actor: expect.any(String) });
+  }, 120_000);
+
+  it("lets a long check of the checkout go on in the background and tells the result to the person and the Coordinator", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    const { document } = await openTeam(await slowSuite(hold));
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send("[verifica:node_test]", null, null, null);
+    const asked = document.requests.at(-1)!;
+    expect(asked.state).toBe("completed");
+    await controller!.send("Come stanno andando gli sviluppatori?", null, null, null);
+    expect(document.requests.at(-1)).toMatchObject({ text: "Come stanno andando gli sviluppatori?", state: "completed" });
+    await writeFile(hold, "");
+    // The result is a line of its own at the bottom of the chat, not hidden in the turn that asked for it.
+    const passed = () => document.events.find((e) => e.content.type === "activity" && e.content.title.endsWith(": superata"));
+    await until(() => passed() !== undefined, 60_000);
+    expect(passed()!.requestId).toBeNull();
+    // The next turn tells the Coordinator the result it did not wait for, once.
+    const before = (await readLog(log)).length;
+    await controller!.send("Allora?", null, null, null);
+    await controller!.send("E adesso?", null, null, null);
+    const prompts = (await readLog(log))
+      .slice(before)
+      .filter((r) => r.method === "turn/start")
+      .map((r) => JSON.stringify(r.params.input));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Verifiche finite dopo il loro turno");
+    expect(prompts[1]).not.toContain("Verifiche finite dopo il loro turno");
   }, 120_000);
 
   it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
@@ -298,7 +383,8 @@ describe("the candidate gate (W10)", () => {
     process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     const gate = document.gates![0]!;
-    expect(gate.status).toBe("reviewing");
+    // The gate is still at work, on its checks or with the reviewers (long checks go on in the background too).
+    expect(["checking", "reviewing"]).toContain(gate.status);
     // The person pauses while the reviewers work, with continuous work on; then the gate blocks.
     await controller!.pauseContinuousWork(true);
     await controller!.updateSettings({ continuousWork: true });

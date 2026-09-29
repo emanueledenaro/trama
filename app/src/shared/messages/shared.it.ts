@@ -106,6 +106,7 @@ export const sharedIt = {
   "shared.activity.trigger.issueOpened": "Dopo una issue nuova",
   "shared.activity.trigger.pullRequestCommented": "Dopo un commento su una pull request",
   "shared.activity.trigger.gateEnded": "Dopo la fine del cancello di un candidato",
+  "shared.activity.trigger.checkEnded": "Dopo la fine di una verifica di un candidato",
   "shared.activity.trigger.round": "Nel giro periodico",
   "shared.activity.round": "Giro del Coordinatore",
   "shared.activity.correction": "{summary} Correzione: {note}",

@@ -64,8 +64,8 @@ export const holdsWork = (state: Pick<WorkState, "questionsHoldOnlyTheirWork">, 
   WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
-/** A gate that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
-export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "round"];
+/** A gate or a check that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
+export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "checkEnded", "round"];
 
 /** Events whose block the Coordinator resolves by itself (Q3): a red check, a conflict, and the round that unblocks. */
 const RESOLVES_BLOCKS: WorkEvent[] = ["checkFailed", "worktreeConflict", "round"];
@@ -270,7 +270,7 @@ export function automaticMoveSection(
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
-    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se una strada è chiusa, prendi un'altra strada con i tuoi strumenti o con il team. Se resta ferma solo per qualcosa che spetta alla persona, scrivi in una riga cosa manca e cosa fai intanto. La persona può fermare il turno.",
     ...(retry ? [retry] : []),
     ...(block ? [blockSection(block)] : []),
     ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
