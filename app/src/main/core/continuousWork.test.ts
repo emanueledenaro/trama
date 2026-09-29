@@ -343,6 +343,17 @@ describe("projectMove: events of the whole project and the round (A05)", () => {
     expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
   });
 
+  it("prepares the plan again when its slices failed, instead of waiting for the person's button", () => {
+    const document = confirmed();
+    request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    const failed = plan(document, "r3");
+    failed.slicing = { status: "failed", tickets: [], feedback: null, approvedAt: null, failure: "Risposta illeggibile", publishFailure: null };
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    // Without a mandate for planning the slices wait for the person.
+    document.mandate!.authorizedActions = ["executeInWorktree"];
+    expect(projectMove(document, "round", free)).toBeNull();
+  });
+
   it("takes the work up again in the round after an automatic turn that failed, never after the person's stop", () => {
     const failed = confirmed();
     request(failed, "r3", { step: { move: "preparePlan", by: "trama" }, state: "failed" });

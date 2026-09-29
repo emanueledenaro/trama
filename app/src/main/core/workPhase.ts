@@ -441,7 +441,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("blocked", t("main.workPhase.blockerPlanStale", { id: plan.id }), undefined, t("main.workPhase.whyPlanStale"));
       default:
         if (open.length) return finish("spec");
-        return readyPlan(plan, { assignWork, add, finish });
+        return readyPlan(plan, { assignWork, preparePlan, add, finish });
     }
   }
   if (grilled) {
@@ -461,6 +461,7 @@ function readyPlan(
   plan: WorkPlan,
   moves: {
     assignWork(): void;
+    preparePlan(): void;
     add(option: MoveOption): void;
     finish(phase: WorkPhase, blocker?: string | null, verification?: VerificationTargets, why?: string | null): WorkState;
   },
@@ -474,6 +475,8 @@ function readyPlan(
       moves.add(person("confirmSlices", PERSON_MOVE_LABELS.confirmSlices, plan.id));
       return moves.finish("slices");
     case "failed":
+      // Within the mandate the Coordinator prepares the plan again, and the slices with it: nobody waits for the button.
+      moves.preparePlan();
       moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       return moves.finish(
         "blocked",
