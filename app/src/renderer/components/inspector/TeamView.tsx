@@ -170,8 +170,12 @@ const ROW = "flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left trans
 /**
  * A person of the team in one row (issue #333): the bot, the name with the role's tag, what it does now in one line
  * and the sign. The id and the model stay on hover.
+ *
+ * `dutyOnHover`: a squad's lead and QA say the same duty in every squad, so a free one reads "Libero" and keeps its
+ * duty on the hover (critique of 29 September 2026). `short`: the squad's lead in one line, with what it does now
+ * beside the name only while it has something to say.
  */
-function PersonRow({ specialist }: { specialist: Specialist }) {
+function PersonRow({ specialist, dutyOnHover = false, short = false, testId }: { specialist: Specialist; dutyOnHover?: boolean; short?: boolean; testId?: string }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -179,38 +183,53 @@ function PersonRow({ specialist }: { specialist: Specialist }) {
   const document = project.document;
   const sign = memberSign(document, project.candidateReports, specialist);
   const goal = findGoal(document, specialist.assignments.at(-1)?.goalId ?? null);
+  const duty = specialist.role === "developer" ? null : (roleDuties(t, specialist.role)[0]?.task ?? null);
   // A free role that never worked says what it does; anyone else says what the latest work left.
   const now =
-    sign !== "free" || specialist.assignments.length
-      ? sign === "free"
+    sign !== "free"
+      ? specialistLine(t, document, specialist)
+      : specialist.assignments.length || !duty || dutyOnHover
         ? t("teams.sign.free")
-        : specialistLine(t, document, specialist)
-      : specialist.role === "developer"
-        ? t("teams.sign.free")
-        : (roleDuties(t, specialist.role)[0]?.task ?? t("teams.sign.free"));
+        : duty;
+  const hover = [workHover(t, specialist, goal?.title ?? null), dutyOnHover ? duty : null].filter(Boolean).join("\n");
+  const name = (
+    <>
+      <span className="min-w-0 truncate">{specialist.name}</span>
+      <AgentTag agent={specialist} className="shrink-0 text-ui-xs" />
+    </>
+  );
   return (
     <button
       type="button"
-      data-testid={specialist.role === "developer" ? "team-developer" : "team-figure"}
+      data-testid={testId ?? (specialist.role === "developer" ? "team-developer" : "team-figure")}
       data-role={specialist.role}
       data-sign={sign}
+      data-short={short || undefined}
       aria-current={selected || undefined}
-      title={workHover(t, specialist, goal?.title ?? null)}
+      title={hover}
       onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
       className={cn(ROW, selected && "bg-[var(--sidebar-selected)]")}
     >
       <span className="flex w-8 shrink-0 justify-center">
         <AgentAvatar agent={specialist} size={32} />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-1.5 text-ui text-foreground">
-          <span className="min-w-0 truncate">{specialist.name}</span>
-          <AgentTag agent={specialist} className="shrink-0 text-ui-xs" />
+      {short ? (
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui text-foreground">
+          {name}
+          {sign !== "free" ? (
+            <span className="min-w-0 flex-1 truncate text-ui-sm text-muted-foreground" data-testid="member-now">
+              <ReferenceText text={now} links={false} />
+            </span>
+          ) : null}
         </span>
-        <span className="block truncate text-ui-sm text-muted-foreground" data-testid="member-now">
-          <ReferenceText text={now} links={false} />
+      ) : (
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5 text-ui text-foreground">{name}</span>
+          <span className="block truncate text-ui-sm text-muted-foreground" data-testid="member-now">
+            <ReferenceText text={now} links={false} />
+          </span>
         </span>
-      </span>
+      )}
       <SignMark sign={sign} />
     </button>
   );
@@ -252,7 +271,7 @@ function SquadGroup({ squad }: { squad: Squad }) {
       </p>
       <div className="mt-1 flex flex-col">
         {byIds(specialists, [squad.leadId, ...squad.developerIds, squad.qaId]).map((s) => (
-          <PersonRow key={s.id} specialist={s} />
+          <PersonRow key={s.id} specialist={s} short={s.id === squad.leadId} dutyOnHover={s.id === squad.leadId || s.id === squad.qaId} />
         ))}
       </div>
       <DiscussionRows squadId={squad.id} />
@@ -441,7 +460,8 @@ function SquadsSummary() {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const summary = teamSummary(project.document, project.candidateReports, project.presence);
-  const colleague = (project.presence?.others ?? []).find((entry) => !entry.self && entry.status !== "expired") ?? null;
+  const attention = summary.attention.flatMap(({ id }) => project.document.team.specialists.filter((s) => s.id === id));
+  const colleague =(project.presence?.others ?? []).find((entry) => !entry.self && entry.status !== "expired") ?? null;
   const shared = colleague ? (project.overlaps?.items ?? []).filter((item) => item.colleague.user === colleague.record.user).flatMap((item) => item.files) : [];
   const colleagueText = colleague
     ? t(colleague.record.activeBranch ? "teams.summary.colleagueOn" : "teams.summary.colleague", {
@@ -467,6 +487,15 @@ function SquadsSummary() {
           {t("teams.summary.sameFiles", { names: pair.names.join(", "), count: pair.files.length })}
         </p>
       ))}
+      {/* Who waits for the person and who is stopped, at a glance on top (critique of 29 September 2026): the same rows
+          as in their squad, so a click opens the person. */}
+      {attention.length ? (
+        <div className="-mx-2 mt-2 flex flex-col" data-testid="squads-attention">
+          {attention.map((specialist) => (
+            <PersonRow key={specialist.id} specialist={specialist} dutyOnHover testId="attention-person" />
+          ))}
+        </div>
+      ) : null}
       {colleagueText ? (
         <button
           type="button"

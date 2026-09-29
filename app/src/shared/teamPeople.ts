@@ -55,6 +55,11 @@ export interface TeamSummary {
   peopleAtWork: number;
   /** Pairs of people at work that touch the same files, from their candidates and their live presence. */
   sameFiles: SameFiles[];
+  /**
+   * The people the person should look at first (critique of 29 September 2026): who waits for them, then who is
+   * stopped by a stop or an error, in the team's order.
+   */
+  attention: { id: string; sign: Extract<MemberSign, "waiting" | "stopped"> }[];
 }
 
 type SummaryProject = Pick<ProjectDocument, "team" | "candidates">;
@@ -69,7 +74,9 @@ function filesOf(document: SummaryProject, reports: Reports, presence: PresenceV
 /** How many squads and people are at work, and whether two of them touch the same files. */
 export function teamSummary(document: SummaryProject, reports: Reports, presence: PresenceView | null | undefined): TeamSummary {
   const members = document.team.specialists.filter((s) => s.status !== "removed");
-  const atWork = members.filter((s) => memberSign(document, reports, s) === "working");
+  const signs = members.map((s) => ({ id: s.id, sign: memberSign(document, reports, s) }));
+  const atWork = members.filter((_, i) => signs[i]!.sign === "working");
+  const attention = (["waiting", "stopped"] as const).flatMap((sign) => signs.filter((s) => s.sign === sign).map((s) => ({ id: s.id, sign })));
   const squads = teamSquads(document);
   const squadsAtWork = squads.filter((squad) => atWork.some((s) => squadOf(document, s.id)?.id === squad.id)).length;
   const touched = atWork.map((s) => ({ name: s.name, files: filesOf(document, reports, presence, s) }));
@@ -80,7 +87,7 @@ export function teamSummary(document: SummaryProject, reports: Reports, presence
       if (files.length) sameFiles.push({ names: [a.name, b.name], files });
     }
   });
-  return { squads: squads.length, squadsAtWork, peopleAtWork: atWork.length, sameFiles };
+  return { squads: squads.length, squadsAtWork, peopleAtWork: atWork.length, sameFiles, attention };
 }
 
 /** The slices a squad's developers took, and how many of them are done. */

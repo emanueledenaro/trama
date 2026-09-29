@@ -63,7 +63,22 @@ describe("memberSign", () => {
 describe("teamSummary", () => {
   it("counts the squads and the people at work", () => {
     const document = project([person("L"), person("Q", { role: "qa" }), person("D1", { assignments: [work("running")] }), person("D2"), person("T", { role: "bugTriage", status: "working" })]);
-    expect(teamSummary(document, {}, null)).toEqual({ squads: 1, squadsAtWork: 1, peopleAtWork: 2, sameFiles: [] });
+    expect(teamSummary(document, {}, null)).toEqual({ squads: 1, squadsAtWork: 1, peopleAtWork: 2, sameFiles: [], attention: [] });
+  });
+
+  it("puts on top who waits for the person, then who is stopped or failed", () => {
+    const document = project([
+      person("D1", { assignments: [work("failed")] }),
+      person("D2", { assignments: [work("paused")] }),
+      person("L", { status: "stopped" }),
+      person("X", { status: "removed", assignments: [work("failed")] }),
+      person("Q", { role: "qa" }),
+    ]);
+    expect(teamSummary(document, {}, null).attention).toEqual([
+      { id: "D2", sign: "waiting" },
+      { id: "D1", sign: "stopped" },
+      { id: "L", sign: "stopped" },
+    ]);
   });
 
   it("names two people at work that touch the same files, from candidates and from the live presence", () => {

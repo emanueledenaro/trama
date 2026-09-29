@@ -1122,6 +1122,15 @@ await firstSquad.getByTestId("squad-status").getByText(/^Libera/).waitFor();
 await firstSquad.getByRole("button", { name: /^Ada/ }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').filter({ hasText: "[Capo]" }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
+// Critique of 29 September: the lead is one short row and the duty every squad's lead and QA share stays on hover.
+{
+  const lead = firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]');
+  if ((await lead.getAttribute("data-short")) !== "true") throw new Error("The squad's lead is not a short row");
+  if (await teamPanel.getByText("Divide il lavoro dell'area della sua squadra", { exact: false }).count()) throw new Error("The squad lead's duty is still written in the Squads view");
+  if (!/Divide il lavoro dell'area della sua squadra/.test((await lead.getAttribute("title")) ?? "")) throw new Error("The squad lead's duty is not on hover");
+  const leadLines = await lead.evaluate((row) => Math.round(row.getBoundingClientRect().height));
+  if (leadLines > 40) throw new Error(`The squad's lead takes more than one line: ${leadLines}px`);
+}
 // Issue #333: who works now is on top, in view at 1280x800 without scrolling. Each person is one row with the bot, the
 // name, the role's tag, what it does now and the sign; the ids stay on hover; the shared roles wait closed, with their
 // count. The view and the person of the squad, narrow and wide, Codex and Claude, light and dark.
@@ -1134,7 +1143,9 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
   const rows = teamPanel.locator('[data-testid="team-developer"], [data-testid="team-figure"]');
   for (const row of await rows.all()) {
     if (!(await row.getByTestId("agent-bot").count())) throw new Error("A person of the squad has no bot");
-    if (!(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
+    // Critique of 29 September: the squad's lead is one short row; it says what it does beside its name only when busy.
+    const short = (await row.getAttribute("data-short")) === "true";
+    if (!short && !(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
     const sign = await row.getByTestId("member-sign").getAttribute("data-sign");
     if (!["working", "waiting", "free", "stopped"].includes(sign)) throw new Error(`A person of the squad has no sign: ${sign}`);
   }
