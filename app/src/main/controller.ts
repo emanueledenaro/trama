@@ -284,6 +284,8 @@ import {
   removeSpecialist,
   renameSpecialist,
   setSpecialistColor,
+  setSpecialistModel,
+  usableChoice,
   requestStop,
   assignmentsAffectedByDecision,
   authorize,
@@ -3503,7 +3505,8 @@ export class TramaController {
     if (!hasAdapter(provider) || !supportsReadOnly(provider)) return null;
     if (providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null)) return null;
     const specialist = speaker.kind === "specialist" ? document.team.specialists.find((s) => s.id === speaker.specialistId) : undefined;
-    const own = specialist?.model && (specialist.provider ?? "codex") === provider ? specialist.model : null;
+    const personal = specialist?.chosenModel?.provider === provider ? specialist.chosenModel.model : null;
+    const own = personal ?? (specialist?.model && (specialist.provider ?? "codex") === provider ? specialist.model : null);
     const roleModel = own ?? document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
     const chosen = discussionModel(this.state.providers[provider]?.models ?? [], roleModel, discussionModelSetting(document));
     return chosen ? { provider, model: chosen.model } : null;
@@ -5098,6 +5101,7 @@ export class TramaController {
         prompt,
         cwd,
         model: assignment.model,
+        effort: assignment.effort ?? null,
         writableRoot: needsWorktree(assignment) ? cwd : null,
         ...(duty?.skills.length ? { skills: duty.skills } : developer?.skills.length ? { skills: developer.skills } : {}),
         ...(duty?.outputSchema ? { outputSchema: duty.outputSchema } : {}),
@@ -5372,7 +5376,9 @@ export class TramaController {
     if (!hasAdapter(provider) || !supportsReadOnly(provider)) return null;
     if (providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null)) return null;
     const chosen = dutyModel(this.state.providers[provider]?.models ?? [], document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
-    return chosen ? { provider, model: chosen.model, modelReason: chosen.reason } : null;
+    // A fixed role the person gave a model of its own works on it while it can run (issue #455).
+    const personal = (specialist: Specialist) => (specialist.chosenModel ? usableChoice(specialist.chosenModel, this.connectedProviders(), false) : null);
+    return chosen ? { provider, model: chosen.model, modelReason: chosen.reason, chosen: personal } : null;
   }
 
   /** What the rules of the fixed roles' automatic work read about the project now. */
@@ -5946,6 +5952,34 @@ export class TramaController {
   async setSpecialistColorByPerson(specialistId: string, color: AgentColor): Promise<void> {
     const project = this.requireProject();
     setSpecialistColor(project.document, specialistId, color);
+    this.changed();
+  }
+
+  /**
+   * The person chooses the provider, model and effort of an agent's next assignments, or gives the choice back to the
+   * Coordinator with null (issue #455). The work in progress keeps its model; the change is written in Activity.
+   */
+  async setSpecialistModelByPerson(specialistId: string, choice: { provider: ProviderId; model: string; effort: string | null } | null): Promise<void> {
+    const project = this.requireProject();
+    const { specialist } = setSpecialistModel(project.document, specialistId, choice);
+    const chosen = specialist.chosenModel ?? null;
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: t(chosen ? "main.controller.specialistModelSetTitle" : "main.controller.specialistModelClearedTitle", { name: specialist.name }),
+        detail: chosen
+          ? t(chosen.effort ? "main.controller.specialistModelSetDetailEffort" : "main.controller.specialistModelSetDetail", {
+              provider: providerName(chosen.provider),
+              model: chosen.model,
+              effort: chosen.effort ?? "",
+            })
+          : t("main.controller.specialistModelClearedDetail"),
+        tone: "info",
+      },
+      null,
+    );
     this.changed();
   }
 
