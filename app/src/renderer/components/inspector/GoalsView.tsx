@@ -19,7 +19,6 @@ import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { useWaitingItem, WaitingPointer } from "@/components/WaitingPointer";
-import { useT } from "@/lib/i18n";
 import { AgentName } from "@/components/AgentIdentity";
 
 const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondary"> = {
