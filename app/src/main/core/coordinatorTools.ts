@@ -26,7 +26,7 @@ import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
@@ -565,6 +565,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "supersede_candidate",
+    description:
+      "Declare an older candidate superseded by a newer candidate of the same work: the same slice or, outside slices, the same modules (for work without modules, the same issue). Do it yourself, without asking the person, when an older version of the work is still open next to the newer one, for example a verified candidate that was never merged: the superseded candidate is no longer merged and no longer compared with other work, so it stops blocking the newer one, and it stays in the history. candidate and newerCandidate are candidateIDs (C-…); reason says why in one plain line, in the person's language. Trama refuses a merged candidate, a candidate of other work and the newer candidate itself. The use goes to Activity, and an item the older candidate had in Aspetta te leaves the list with the reason.",
+    properties: { candidate: text, newerCandidate: text, reason: text },
+    required: ["candidate", "newerCandidate", "reason"],
+    readOnly: false,
+  },
+  {
     name: "propose_domain_docs",
     description:
       "Propose the glossary terms and ADRs of the domain-modeling skill, drawn from Pact decisions of the person (decisionIDs). You are read-only: Trama shows the proposal to the person as a card, and within the mandate (executeInWorktree on the modules of the files) the documentation and domain role writes it in its own worktree with the same skill; the result becomes a candidate. Outside the mandate the proposal waits, and the card says why. Each term follows CONTEXT-FORMAT.md: term, a definition of one or two sentences, the words to avoid. Each ADR follows ADR-FORMAT.md: title, a body of one to three sentences, and consideredOptions and consequences only when they add value. contextPath defaults to CONTEXT.md; the ADRs go to docs/adr next to it, with the next number.",
@@ -713,6 +721,8 @@ export interface ToolContext {
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
+  /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
+  waitingFor?(candidateId: string): { label: string; title: string } | null;
   headSHA(): Promise<string | null>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
@@ -1664,6 +1674,30 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const { route } = mergeRoute(document, candidate, context.github.repository);
         return toolSuccess({ candidateID: candidate.id, state: "decided", mergeRoute: route, note: MERGE_ROUTE_NOTES[route] });
       }
+      case "supersede_candidate": {
+        // Only candidate ids: an assignment id could stand for its newest candidate and supersede the wrong version.
+        const older = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!older) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}: name a candidateID (C-…).`);
+        const newer = findCandidate(document, typeof args.newerCandidate === "string" ? args.newerCandidate : "");
+        if (!newer) return toolFailure("unknown_candidate", `There is no candidate ${String(args.newerCandidate)}: name a candidateID (C-…).`);
+        const superseded = supersedeCandidate(document, {
+          candidateId: older.id,
+          byCandidateId: newer.id,
+          reason: typeof args.reason === "string" ? args.reason : "",
+          actor: "Coordinatore",
+          waiting: context.waitingFor?.(older.id) ?? null,
+        });
+        // The chat shows the use where it happened: the candidate's card, settled as one "Superato" line that opens it.
+        context.addCard("candidate", t("main.coordinatorTools.card.candidate"), superseded.id);
+        context.changed();
+        return toolSuccess({
+          candidateID: superseded.id,
+          newerCandidateID: newer.id,
+          state: "superseded",
+          leftWaitingForYou: superseded.supersession!.waiting !== null,
+          newerBlockers: candidateReport(document, newer, await context.headSHA()).blockers as unknown as Json,
+        });
+      }
       case "declare_next_step": {
         const request = document.requests.find((r) => r.id === context.runningRequestId);
         if (!request) return toolFailure("no_request", "A next step closes a turn that answers a message of the person.");
@@ -1793,7 +1827,7 @@ export function developerInstructions(
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. The person talks with you in one chat per project; goals are filters of that chat, not separate dialogs, and you stay one Coordinator with one mandate and one Pact for all of them. When the person writes with the chat filtered on a goal Trama says so and gives you the goal; answer about that goal, and the work you assign in that turn is linked to it. A goal has one active plan: a new plan for it replaces the earlier one. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
-    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. When an older candidate of the same work is still open next to a newer one, supersede it yourself with supersede_candidate, also when the person asks you to close or archive it: never answer that you have no tool for it. The person always reviews and publishes it: never claim that work is merged or published.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,
