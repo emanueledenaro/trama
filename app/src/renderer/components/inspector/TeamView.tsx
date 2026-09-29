@@ -5,14 +5,17 @@ import {
   IconChecklist,
   IconChevronDown,
   IconChevronRight,
+  IconChevronUp,
   IconDots,
   IconFileDiff,
   IconFocus2,
   IconHourglass,
   IconMessageCircle,
+  IconPinned,
   IconUsers,
 } from "@tabler/icons-react";
 import { useId, useState } from "react";
+import type { BacklogItem, BacklogReason, SquadBacklogView } from "@shared/backlog";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment, Squad } from "@shared/domain";
 import { findGoal } from "@shared/goals";
@@ -221,6 +224,7 @@ function SquadGroup({ squad }: { squad: Squad }) {
   const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id);
   const area = modules.length ? modules.join(", ") : t("teams.squad.wholeProject");
   const slices = squadSlices(document, project.sliceViews, squad);
+  const backlog = project.backlogs?.find((b) => b.squadId === squad.id);
   const [edit, setEdit] = useState<SquadEdit | null>(null);
   const done = () => setEdit(null);
   // The id stays on hover; a squad the person changed says the Coordinator leaves it as it is (A11).
@@ -248,7 +252,117 @@ function SquadGroup({ squad }: { squad: Squad }) {
           <PersonRow key={s.id} specialist={s} />
         ))}
       </div>
+      {backlog ? <SquadBacklog backlog={backlog} /> : null}
     </section>
+  );
+}
+
+/** The Coordinator's reason for an item's place (A13), in the person's language. */
+function backlogReason(t: Translate, reason: BacklogReason): string {
+  switch (reason.kind) {
+    case "unblocks":
+      return t("teams.backlog.reason.unblocks", { count: reason.count });
+    case "blocked":
+      return t("teams.backlog.reason.blocked", { slices: reason.waitingFor.join(", ") });
+    case "coordinator":
+      return reason.text;
+    default:
+      return t(`teams.backlog.reason.${reason.kind}`);
+  }
+}
+
+/**
+ * A squad's backlog (A13, Q20): the slices and the problems of its area not taken yet, from the top. Each item says
+ * why it sits there; the person moves it up or down, and their place wins over the Coordinator's order.
+ */
+function BacklogList({ backlog }: { backlog: SquadBacklogView }) {
+  const t = useT();
+  const items = backlog.items;
+  const move = (item: BacklogItem, to: "up" | "down") => void act("backlog:move", { squadId: backlog.squadId, key: item.key, to });
+  const release = (item: BacklogItem) => void act("backlog:release", { squadId: backlog.squadId, key: item.key });
+  return (
+    <ol aria-label={t("teams.backlog.label")} className="flex flex-col" data-testid="squad-backlog-items">
+      {items.map((item, index) => {
+        const name = item.label ? `${item.label} ${item.title}` : item.title;
+        return (
+          <li
+            key={item.key}
+            className="flex items-start gap-2 rounded-lg px-2 py-1 hover:bg-[var(--sidebar-accent)]"
+            data-testid="backlog-item"
+            data-key={item.key}
+            data-state={item.state}
+            data-placed={item.placedByPerson ? "person" : "coordinator"}
+          >
+            <span className="w-4 shrink-0 pt-px text-right text-ui-sm tabular-nums text-muted-foreground">{index + 1}</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-start gap-1.5 text-ui-sm text-foreground">
+                {item.label ? <span className="shrink-0 pt-px font-mono text-[11px] text-muted-foreground">{item.label}</span> : null}
+                {item.kind === "problem" ? <span className="shrink-0 pt-px text-ui-xs text-warning">{t("teams.backlog.problem")}</span> : null}
+                <span className="line-clamp-2 min-w-0 break-words" title={name}>
+                  {item.title}
+                </span>
+                {item.issue ? <span className="shrink-0 pt-px text-ui-xs text-muted-foreground">#{item.issue.number}</span> : null}
+              </span>
+              {/* The person's place is the reason of an item they moved; the Coordinator's stays on hover. */}
+              <span className="block truncate text-ui-xs text-muted-foreground" data-testid="backlog-reason" title={backlogReason(t, item.reason)}>
+                {item.placedByPerson ? t("teams.backlog.placed") : backlogReason(t, item.reason)}
+              </span>
+            </span>
+            <div className="cta-row shrink-0">
+              {item.placedByPerson ? (
+                <Tooltip label={t("teams.backlog.release", { name })}>
+                  <Button size="icon-xs" variant="ghost" onClick={() => release(item)} aria-label={t("teams.backlog.release", { name })} data-testid="backlog-release">
+                    <IconPinned className="text-info-foreground" />
+                  </Button>
+                </Tooltip>
+              ) : null}
+              <Button size="icon-xs" variant="ghost" disabled={index === items.length - 1} onClick={() => move(item, "down")} aria-label={t("teams.backlog.down", { name })}>
+                <IconChevronDown />
+              </Button>
+              <Button size="icon-xs" variant="ghost" disabled={index === 0} onClick={() => move(item, "up")} aria-label={t("teams.backlog.up", { name })}>
+                <IconChevronUp />
+              </Button>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** The backlog under a squad, opened on request, with its count and its top item beside the title (A13). */
+function SquadBacklog({ backlog }: { backlog: SquadBacklogView }) {
+  const t = useT();
+  const [open, toggle] = useFold();
+  const id = useId();
+  const top = backlog.items[0];
+  if (!top) return null;
+  return (
+    <div className="mt-1" data-testid="squad-backlog">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        data-testid="squad-backlog-toggle"
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 text-left text-ui-sm text-muted-foreground transition-colors hover:text-foreground"
+        onClick={toggle}
+      >
+        {open ? <IconChevronDown className="size-3.5 shrink-0" stroke={1.8} /> : <IconChevronRight className="size-3.5 shrink-0" stroke={1.8} />}
+        <span className="shrink-0">{t("teams.backlog.title", { count: backlog.items.length })}</span>
+        {open ? null : (
+          <>
+            <Sep />
+            <span className="min-w-0 truncate">{t("teams.backlog.top", { name: top.label ? `${top.label} ${top.title}` : top.title })}</span>
+          </>
+        )}
+      </button>
+      {open ? (
+        <div id={id}>
+          <p className="px-2 pb-1 text-ui-xs text-muted-foreground">{t("teams.backlog.note")}</p>
+          <BacklogList backlog={backlog} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -316,6 +430,7 @@ export function SquadsView() {
   const shared = sharedRoleMembers(document);
   const sharedAtWork = shared.filter((s) => memberSign(document, project.candidateReports, s) === "working").length;
   const limits = squadLimits(document);
+  const unowned = project.backlogs?.find((b) => b.squadId === null);
   const [sharedOpen, toggleShared] = useFold();
   const [formerOpen, toggleFormer] = useFold();
   const [aboutOpen, toggleAbout] = useFold();
@@ -347,6 +462,13 @@ export function SquadsView() {
               <PersonRow key={specialist.id} specialist={specialist} />
             ))}
           </div>
+        </section>
+      ) : null}
+      {unowned?.items.length ? (
+        <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="unowned-backlog">
+          <p className="px-2 text-ui-sm font-medium text-foreground">{t(squads.length ? "teams.backlog.unowned.title" : "teams.backlog.project.title")}</p>
+          <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground">{t(squads.length ? "teams.backlog.unowned.note" : "teams.backlog.project.note")}</p>
+          <SquadBacklog backlog={unowned} />
         </section>
       ) : null}
       <Fold

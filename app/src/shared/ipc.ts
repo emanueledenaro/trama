@@ -108,6 +108,8 @@ export interface ActionMap {
   "assignment:removeWorktree": [{ assignmentId: string }, void];
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
+  "backlog:move": [{ squadId: string | null; key: string; to: "up" | "down" }, void];
+  "backlog:release": [{ squadId: string | null; key: string }, void];
   /** The person renames, merges or splits a squad, or undoes such a change (A11). */
   "squad:rename": [{ squadId: string; name: string }, boolean];
   "squad:merge": [{ intoId: string; fromId: string; keepIds: string[] | null }, boolean];
