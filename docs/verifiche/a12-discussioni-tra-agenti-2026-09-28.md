@@ -33,3 +33,7 @@ Non verificato: nessuna esecuzione reale di Codex. Nel catalogo del server di pr
 ## Riallineamento con B07 (#384)
 
 Dopo il merge di main con B07 la discussione si apre in una scheda dell'editor accanto alla Conversazione, come gli altri dettagli; le righe delle discussioni restano nella vista Squadre e la riga della scheda attiva è segnata. I passi `41a`-`41f` di ui-check leggono la discussione nella scheda. Le schermate dopo in `docs/images/a12/` vengono da questo giro. Risultati su main `910dbfa`: `check-inventory` senza `--write` ok, `tsc` senza errori, `vitest` 168 file e 1627 test passati (3 saltati), `npm run build` ok, `ui-check` completato con 670 schermate.
+
+## Riallineamento con A13 (#439) e titolo della scheda
+
+Dopo il merge di main con A13 ogni squadra mostra le sue discussioni e sotto il suo backlog. La scheda dell'editor di una discussione porta il suo motivo come titolo, con l'id sul passaggio del mouse, così due discussioni aperte si distinguono; ui-check lo controlla nei passi `41b` e `41e`. Le schermate dopo in `docs/images/a12/` vengono da questo giro. Risultati su main `c551dcb`: `check-inventory` senza `--write` ok, `tsc` senza errori, `vitest` 171 file e 1646 test passati (3 saltati), `npm run build` ok, `ui-check` completato con 697 schermate.
