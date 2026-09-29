@@ -233,6 +233,8 @@ import {
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
 import { asksForRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
+import { moveBacklogItem, releaseBacklogItem } from "@shared/backlog";
+import { squadBacklogs } from "./core/backlog";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
@@ -877,6 +879,7 @@ export class TramaController {
     project.sliceViews = Object.fromEntries(
       project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
     );
+    project.backlogs = squadBacklogs(project.document, project.snapshot.modules);
     project.focus = focusView(project.document);
     project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project));
     project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
@@ -2252,6 +2255,10 @@ export class TramaController {
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
+          waitingFor: (candidateId) => {
+            const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
+            return item ? { label: item.label, title: item.title } : null;
+          },
           headSHA: () => this.headSHA(current.rootPath),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           runRequestedAction: (id) => this.runRequestedAction(current, id),
@@ -5584,6 +5591,26 @@ export class TramaController {
       });
     }
     this.changed();
+  }
+
+  /**
+   * The person moves an item of a squad's backlog one place up or down (A13). Their place wins over the
+   * Coordinator's order and is kept through a restart, as every record of the project.
+   */
+  async moveBacklogItemByPerson(squadId: string | null, key: string, to: "up" | "down"): Promise<void> {
+    const project = this.requireProject();
+    const backlog = squadBacklogs(project.document, project.snapshot.modules).find((b) => b.squadId === squadId);
+    const shown = backlog?.items.map((item) => item.key) ?? [];
+    const from = shown.indexOf(key);
+    if (from < 0) throw new Error(`Unknown backlog item ${key}.`);
+    const place = to === "up" ? from - 1 : from + 1;
+    if (moveBacklogItem(project.document, squadId, shown, key, place)) this.changed();
+  }
+
+  /** The person gives an item of a squad's backlog back to the Coordinator's order (A13). */
+  async releaseBacklogItemByPerson(squadId: string | null, key: string): Promise<void> {
+    const project = this.requireProject();
+    if (releaseBacklogItem(project.document, squadId, key)) this.changed();
   }
 
   /** The person picks another palette color for an agent (W15). */

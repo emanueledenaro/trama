@@ -1848,7 +1848,7 @@ describe("TramaController", () => {
     const choice = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
     expect(choice).toMatchObject({ text: "Confermo: Cancello feature/old" });
     expect(choice).not.toHaveProperty("composer");
-    expect(activityLog(document.requests, document.events, [], [], [], [], [], document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
+    expect(activityLog(document.requests, document.events, [], [], [], [], [], "it", document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
   });
 
 });

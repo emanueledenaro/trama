@@ -273,9 +273,16 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
   );
 }
 
-export function MandateCard({ requestId }: { requestId: string }) {
+/**
+ * A mandate request. In Aspetta te (`placement="waiting"`, issue #331) the decision comes first: the reason, the buttons
+ * right under it, what changes from the mandate in force, and the full proposal closed below.
+ */
+export function MandateCard({ requestId, placement = "chat" }: { requestId: string; placement?: "chat" | "waiting" }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  // Null until the person opens or closes it: then it follows whether there is a mandate in force to compare with.
+  const [fullChoice, setFullOpen] = useState<boolean | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const request = project.document.mandateRequests.find((r) => r.id === requestId);
@@ -287,6 +294,58 @@ export function MandateCard({ requestId }: { requestId: string }) {
   const superseded = resolution?.kind === "superseded";
   // Only a pending proposal compares with the mandate in force: an answered one describes the past.
   const diff = resolution ? null : mandateProposalDiff(project.document, request);
+  const waitingFirst = placement === "waiting";
+  // A first mandate has nothing to compare with: the whole proposal shows, since it is what the person grants.
+  const fullOpen = fullChoice ?? !diff;
+  const decision = !resolution ? (
+    rejecting ? (
+      <div className="mt-3 space-y-2">
+        <TextArea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
+          aria-label="Motivo del rifiuto"
+          className="min-h-12"
+          autoFocus
+        />
+        <p className="text-ui-xs text-muted-foreground">
+          {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
+        </p>
+        <div className="cta-row">
+          <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+            Annulla
+          </Button>
+          <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
+            Rifiuta la proposta
+          </Button>
+        </div>
+      </div>
+    ) : (
+      <div className="cta-row mt-3">
+        <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+          Rifiuta la proposta
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
+          Correggi
+        </Button>
+        <Button
+          size="sm"
+          onClick={() =>
+            void act("mandate:grant", {
+              requestId,
+              objectives: request.objectives,
+              priorities: request.priorities,
+              scopeModuleIds: request.scopeModuleIds,
+              authorizedActions: request.authorizedActions,
+              limits: request.limits,
+            })
+          }
+        >
+          Concedi
+        </Button>
+      </div>
+    )
+  ) : null;
 
   return (
     <CardFrame
@@ -327,79 +386,48 @@ export function MandateCard({ requestId }: { requestId: string }) {
           Sostituita da una richiesta più recente: non si può più concedere.
         </p>
       ) : null}
+      {waitingFirst ? decision : null}
       {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
-      <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
-        <ItemList items={request.objectives} />
-      </Field>
-      {request.priorities.length ? (
-        <Field label="Priorità">
-          <ItemList items={request.priorities} />
-        </Field>
+      {waitingFirst ? (
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+          aria-expanded={fullOpen}
+          onClick={() => setFullOpen(!fullOpen)}
+          data-testid="mandate-full-toggle"
+        >
+          <IconChevronRight className={cn("size-3.5 transition-transform", fullOpen && "rotate-90")} />
+          {t("waiting.mandate.fullComparison")}
+        </button>
       ) : null}
-      <Field label="Perimetro">
-        <ItemList items={request.scopeModuleIds.map(moduleName)} />
-      </Field>
-      <Field label="Azioni autorizzate">
-        <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
-      </Field>
-      {request.limits.length ? (
-        <Field label="Limiti">
-          <ItemList items={request.limits} testId="mandate-limits" />
-        </Field>
+      {!waitingFirst || fullOpen ? (
+        <div data-testid="mandate-full">
+          <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
+            <ItemList items={request.objectives} />
+          </Field>
+          {request.priorities.length ? (
+            <Field label="Priorità">
+              <ItemList items={request.priorities} />
+            </Field>
+          ) : null}
+          <Field label="Perimetro">
+            <ItemList items={request.scopeModuleIds.map(moduleName)} />
+          </Field>
+          <Field label="Azioni autorizzate">
+            <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+          </Field>
+          {request.limits.length ? (
+            <Field label="Limiti">
+              <ItemList items={request.limits} testId="mandate-limits" />
+            </Field>
+          ) : null}
+          <FixedBansField />
+        </div>
       ) : null}
-      <FixedBansField />
       {resolution?.kind === "rejected" ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">Hai rifiutato la proposta. Il mandato in vigore non è cambiato.</p>
       ) : null}
-      {!resolution ? (
-        rejecting ? (
-          <div className="mt-3 space-y-2">
-            <TextArea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
-              aria-label="Motivo del rifiuto"
-              className="min-h-12"
-              autoFocus
-            />
-            <p className="text-ui-xs text-muted-foreground">
-              {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
-            </p>
-            <div className="cta-row">
-              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
-                Annulla
-              </Button>
-              <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
-                Rifiuta la proposta
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="cta-row mt-3">
-            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
-              Rifiuta la proposta
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
-              Correggi
-            </Button>
-            <Button
-              size="sm"
-              onClick={() =>
-                void act("mandate:grant", {
-                  requestId,
-                  objectives: request.objectives,
-                  priorities: request.priorities,
-                  scopeModuleIds: request.scopeModuleIds,
-                  authorizedActions: request.authorizedActions,
-                  limits: request.limits,
-                })
-              }
-            >
-              Concedi
-            </Button>
-          </div>
-        )
-      ) : null}
+      {waitingFirst ? null : decision}
     </CardFrame>
   );
 }
@@ -1409,7 +1437,8 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const [rejection, setRejection] = useState("");
   const record = useRecord(candidateId);
   if (!candidate || !report) return null;
-  const state = candidateStatus(report);
+  // A candidate the Coordinator declared superseded (issue #421) reads "Superato", like its line in the chat.
+  const state = report.state === "superseded" && candidate.supersession ? { label: t("supersession.outcome"), tone: "secondary" as const } : candidateStatus(report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
   const approved = candidate.humanApproval && !report.approvalInvalidated;
   const quality = report.quality ?? [];
@@ -1434,8 +1463,12 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const supersededNote = (
     <>
       {report.state === "superseded" ? (
-        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded">
-          Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno.
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded" data-declared={candidate.supersession ? "coordinator" : undefined}>
+          {candidate.supersession ? (
+            <ReferenceText text={t("supersession.card", { id: candidate.supersession.byCandidateId, reason: candidate.supersession.reason })} />
+          ) : (
+            "Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno."
+          )}
         </p>
       ) : null}
     </>

@@ -369,6 +369,80 @@ export function blocksText(blocks: number): string {
   return blocks === 1 ? "Ferma 1 parte del lavoro" : `Ferma ${blocks} parti del lavoro`;
 }
 
+/** What the person did with an item that waited for them. */
+export type DecidedOutcome = "answered" | "withdrawn" | "granted" | "corrected" | "rejected" | "confirmed" | "approved" | "seen";
+
+/** An item the person decided, for the closed "Decise oggi" list at the end of Aspetta te (issue #331). */
+export interface DecidedItem {
+  key: string;
+  kind: WaitingKind;
+  targetId: string;
+  /** The question or the proposal in one line, as it waited; empty when the record has no text, for the view to name it. */
+  title: string;
+  outcome: DecidedOutcome;
+  decidedAt: string;
+}
+
+const sameDay = (iso: string, now: Date) => {
+  const date = new Date(iso);
+  return !Number.isNaN(date.getTime()) && date.toDateString() === now.toDateString();
+};
+
+/**
+ * The items the person decided on the day of `now`, the latest first. Like the list, it reads only the records of the
+ * project document: answered or withdrawn questions, answered mandate requests, confirmed teams, candidates the person
+ * approved or refused and refused actions they saw. Pure.
+ */
+export function decidedToday(document: ProjectDocument, now: Date): DecidedItem[] {
+  const items: DecidedItem[] = [];
+  const push = (item: DecidedItem) => {
+    if (sameDay(item.decidedAt, now)) items.push(item);
+  };
+  for (const question of document.decisionRequests) {
+    const title = oneLine(question.question);
+    if (question.outcome) push({ key: `question:${question.id}`, kind: "question", targetId: question.id, title, outcome: "answered", decidedAt: question.outcome.answeredAt });
+    else if (question.withdrawal) push({ key: `question:${question.id}`, kind: "question", targetId: question.id, title, outcome: "withdrawn", decidedAt: question.withdrawal.withdrawnAt });
+  }
+  for (const request of document.mandateRequests) {
+    const kind = request.resolution?.kind;
+    // A superseded request was replaced by a newer one, and a revoked one is the old way of declining: not a decision of today's list.
+    if (kind !== "granted" && kind !== "corrected" && kind !== "rejected") continue;
+    push({
+      key: `mandate:${request.id}`,
+      kind: "mandate",
+      targetId: request.id,
+      title: oneLine(request.reason),
+      outcome: kind,
+      decidedAt: request.resolution!.resolvedAt,
+    });
+  }
+  for (const proposal of document.team.proposals) {
+    const resolution = proposal.resolution;
+    if (!resolution || resolution.kind === "superseded") continue;
+    const title = oneLine(proposal.summary ?? "") || proposal.members.map((m) => m.name).join(", ");
+    push({ key: `team:${proposal.id}`, kind: "team", targetId: proposal.id, title, outcome: resolution.kind, decidedAt: resolution.resolvedAt });
+  }
+  for (const candidate of document.candidates) {
+    const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+    const title = oneLine(assignment?.objective ?? "");
+    const rejection = candidate.humanRejection;
+    if (rejection) push({ key: `candidate:${candidate.id}`, kind: "candidate", targetId: candidate.id, title, outcome: "rejected", decidedAt: rejection.at });
+    else if (candidate.humanApproval) push({ key: `candidate:${candidate.id}`, kind: "candidate", targetId: candidate.id, title, outcome: "approved", decidedAt: candidate.humanApproval.at });
+  }
+  for (const refusal of document.fixedBanRefusals ?? []) {
+    if (!refusal.acknowledgedAt) continue;
+    push({
+      key: `fixedBan:${refusal.id}`,
+      kind: "fixedBan",
+      targetId: refusal.id,
+      title: `${fixedBanInfo(refusal.ban).label}: ${oneLine(refusal.action)}`,
+      outcome: "seen",
+      decidedAt: refusal.acknowledgedAt,
+    });
+  }
+  return items.sort((a, b) => Date.parse(b.decidedAt) - Date.parse(a.decidedAt) || a.key.localeCompare(b.key));
+}
+
 /** The item a chat card stands for while it waits, or null when the card no longer waits for the person. */
 export function waitingItemFor(items: WaitingItem[], kind: WaitingKind | "plan", targetId: string): WaitingItem | null {
   return items.find((item) => item.targetId === targetId && (kind === "plan" ? item.kind === "seams" || item.kind === "slices" : item.kind === kind)) ?? null;

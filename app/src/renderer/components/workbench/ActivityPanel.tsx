@@ -87,6 +87,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   merge: "activity-merge",
   squad: "activity-squad",
   requested: "activity-requested",
+  supersede: "activity-supersede",
 };
 
 const ICON_BUTTON = "sidebar-icon-button size-6 shrink-0 rounded-md";
@@ -270,7 +271,7 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
               <IconMessageCircle className="size-3.5" stroke={1.8} />
             </RowIcon>
           ) : null}
-          {entry.kind === "move" || entry.kind === "step" ? (
+          {entry.kind === "move" || entry.kind === "step" || entry.kind === "supersede" ? (
             <RowIcon label={t("activity.openDialog")} onClick={() => openDialog(entry.goalId)}>
               <IconMessageCircle className="size-3.5" stroke={1.8} />
             </RowIcon>
@@ -542,10 +543,10 @@ export interface PanelHeight {
  */
 export function ActivityPanel({ size }: { size: PanelHeight }) {
   const t = useT();
+  const language = useLanguage();
   const document = useUi((s) => s.app?.project?.document);
   const running = useUi((s) => s.app?.project?.runningWork);
   const focus = useUi((s) => s.panelFocus);
-  const language = useLanguage();
   const openActivity = useUi((s) => s.openActivity);
   const closePanel = useUi((s) => s.closePanel);
   const [filter, setFilter] = useState<ActivityFilter>({ who: "all", kind: "all" });
@@ -559,8 +560,8 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       document.autonomousSteps ?? [],
       document.candidates,
       document.squadChanges ?? [],
-      document.requestedActions ?? [],
       language,
+      document.requestedActions ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);
