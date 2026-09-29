@@ -1,4 +1,4 @@
-import { IconChevronRight, IconHourglass } from "@tabler/icons-react";
+import { IconBan, IconChevronRight, IconHourglass } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
 import { fixedBans } from "@shared/fixedBans";
@@ -191,6 +191,12 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
         {mandate?.status === "revoked" ? (
           <p className="mt-1 text-ui-sm text-foreground/90">{t("rules.mandate.revokedReason", { reason: mandate.revocation?.reason ?? "" })}</p>
         ) : null}
+        {/* What asks the person something comes right under the state, before the rules (critique of 29 September 2026). */}
+        {pending ? (
+          <div className="mt-2">
+            <ProposalReference requestId={pending.id} />
+          </div>
+        ) : null}
         <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-ui-sm">
           {granted ? (
             <>
@@ -202,20 +208,23 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
               </RuleRow>
             </>
           ) : null}
-          {/* Every mandate, also one granted before the fixed bans existed, excludes them (issue #244). */}
+          {/* Every mandate, also one granted before the fixed bans existed, excludes them (issue #244). A short list, one
+              ban per line: the dense sentence read badly (critique of 29 September 2026). */}
           <RuleRow label={t("rules.mandate.never")} testId="fixed-bans" title={t("rules.mandate.neverNote")}>
-            {sentence(fixedBans(t).map((ban) => ban.label))}
+            <ul className="space-y-0.5">
+              {fixedBans(t).map((ban) => (
+                <li key={ban.id} className="flex min-w-0 items-baseline gap-1.5" data-testid="fixed-ban">
+                  <IconBan className="size-3 shrink-0 translate-y-0.5 text-muted-foreground" stroke={1.8} aria-hidden />
+                  <span className="min-w-0">{ban.label}</span>
+                </li>
+              ))}
+            </ul>
           </RuleRow>
         </dl>
         {granted?.restriction ? (
           <p className="mt-2 text-ui-sm text-muted-foreground" data-testid="mandate-restriction">
             {restrictionText(t, granted.restriction, moduleName)}
           </p>
-        ) : null}
-        {pending ? (
-          <div className="mt-2">
-            <ProposalReference requestId={pending.id} />
-          </div>
         ) : null}
       </div>
       <DelegationSection />

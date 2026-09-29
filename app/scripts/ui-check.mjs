@@ -2032,6 +2032,8 @@ await shot("09-mandate");
   const rulesBar = page.getByTestId("side-bar");
   for (const id of ["mandate-where", "mandate-can", "fixed-bans"]) await rulesBar.getByTestId(id).waitFor();
   if (!/Orders/.test(await rulesBar.getByTestId("mandate-where").innerText())) throw new Error("Dove does not name the modules of the mandate");
+  // Critique of 29 September 2026: Mai is a short list, one fixed ban per line, not a dense sentence.
+  if ((await rulesBar.getByTestId("fixed-bans").getByTestId("fixed-ban").count()) !== 6) throw new Error("Mai does not list the six fixed bans one per line");
   for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
     if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
   }
@@ -2064,6 +2066,14 @@ await shot("09-mandate");
     }
   }
   await page.setViewportSize({ width: 1280, height: 820 });
+  // The three tabs with the side bar at its narrowest and widest (29 September 2026).
+  await setLookTo(rulesLook.provider, rulesLook.dark);
+  await openView("Regole", "Mandato");
+  await sideBarEnds("53a-rules-mandate");
+  await openView("Regole", "Patto");
+  await sideBarEnds("53b-rules-pact");
+  await openView("Regole", "Standard");
+  await sideBarEnds("53c-rules-standard");
   // Cambia il mandato open: each button opens its form, nothing changes until the form is confirmed.
   await openView("Regole", "Mandato");
   await openSection("Cambia il mandato");
