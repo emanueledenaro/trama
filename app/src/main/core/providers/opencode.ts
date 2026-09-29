@@ -187,11 +187,45 @@ function basicAuthorization(password: string): string {
   return `Basic ${Buffer.from(`${SERVER_USERNAME}:${password}`, "utf8").toString("base64")}`;
 }
 
+/**
+ * Every `opencode serve` Trama started and has not seen exit: none may outlive the process that started it. Without
+ * this, a test process or an app that ended before the SIGKILL fallback left the server and its children running, and
+ * they piled up by the hundred.
+ */
+const liveServers = new Set<ChildProcess>();
+let exitHookInstalled = false;
+
+function trackServer(child: ChildProcess): void {
+  liveServers.add(child);
+  child.once("exit", () => liveServers.delete(child));
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  // Whatever ends Trama's process normally (the app quitting, a test worker ending), the servers go with it.
+  process.once("exit", () => {
+    for (const server of liveServers) killGroup(server, "SIGKILL");
+  });
+}
+
+/** Signals the server and every process it started: it runs in its own process group off Windows. */
+function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) return;
+  try {
+    if (process.platform === "win32") child.kill(signal);
+    else process.kill(-child.pid, signal);
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
 function stopProcess(child: ChildProcess): void {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
+  killGroup(child, "SIGTERM");
   setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) killGroup(child, "SIGKILL");
   }, 1_500).unref();
 }
 
@@ -215,7 +249,10 @@ export async function startOpenCodeServer(input: StartServerInput): Promise<Open
     stdio: ["ignore", "pipe", "pipe"],
     shell: process.platform === "win32" && input.executable.toLowerCase().endsWith(".cmd"),
     windowsHide: true,
+    // Its own process group, so stopping it stops the processes it starts too.
+    detached: process.platform !== "win32",
   });
+  trackServer(child);
   let stdout = "";
   let stderr = "";
   const exitListeners: ((code: number | null) => void)[] = [];

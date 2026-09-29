@@ -1260,6 +1260,13 @@ export class TramaController {
   }
 
   private async readProvider(id: ProviderId): Promise<void> {
+    // The tests never start the provider CLIs installed on the machine (vitest.config.ts): on CI there are none, and on a
+    // developer's Mac they would run for real.
+    if (process.env.TRAMA_PROVIDER_DISCOVERY === "off") {
+      this.setProviderState(id, { account: { kind: "unavailable", message: t("main.controller.providerNoAdapter", { name: providerName(id) }) }, models: [], checking: false });
+      this.publish();
+      return;
+    }
     if (!hasAdapter(id)) {
       this.setProviderState(id, { account: { kind: "unavailable", message: t("main.controller.providerNoAdapter", { name: providerName(id) }) }, models: [], checking: false });
       this.publish();
