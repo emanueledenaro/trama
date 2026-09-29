@@ -1403,7 +1403,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.next.assignWork": "assign the work",
   "main.statusLine.next.verifyTarget": "check {target}",
   "main.statusLine.next.verifyWork": "check the work",
-  "main.statusLine.next.settleReview": "I decide between the developer and the reviewers",
+  "main.statusLine.next.settleReview": "decide between the developer and the reviewers",
   "main.statusLine.next.clearCandidate": "give the candidate the green light",
   "main.statusLine.next.answerQuestion": "answer the developer",
   "main.statusLine.next.waitForYou": "wait for you",

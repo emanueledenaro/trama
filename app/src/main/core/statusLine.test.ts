@@ -6,6 +6,7 @@ import { emptyDocument } from "./document";
 import { createGoal } from "./goals";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { setPaused } from "./continuousWork";
+import { translate } from "@shared/i18n";
 import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON, PAUSED_SENTENCE, statusLine } from "./statusLine";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -318,6 +319,14 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
 
 describe("statusLine in the person's language (issue #301)", () => {
   afterEach(() => setPersonLanguage("it"));
+
+  it("never writes the subject twice when the next move follows what runs now", () => {
+    const keys = ["main.statusLine.next.settleReview", "main.statusLine.next.clearCandidate", "delegation.move.decide.next", "delegation.move.ticket.next"] as const;
+    for (const key of keys) {
+      const line = translate("en", "main.statusLine.nowThen", { now: "Checking S1", next: translate("en", key) });
+      expect(line).not.toMatch(/\bI I\b/);
+    }
+  });
 
   it("writes the line in English", () => {
     setPersonLanguage("en");
