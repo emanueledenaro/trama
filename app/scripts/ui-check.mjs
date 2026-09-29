@@ -5931,12 +5931,14 @@ await nightRecap.waitFor({ timeout: 20_000 }).catch(async (error) => {
   throw new Error(`The return recap is in the document but its card does not show: ${JSON.stringify(await delegationState())}`, { cause: error });
 });
 await nightRecap.getByText("Cosa ho deciso con la tua delega").waitFor();
-await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Dubbio: Non so se vale anche per gli ordini pagati con un buono").waitFor();
-await primaryLast(nightRecap.getByTestId("recap-delegated-choice").first(), "Delegated choice");
+// The goal the study proposed opened with the delegation too, as a choice of its own: the decision is found by its doubt.
+const decidedChoice = nightRecap.getByTestId("recap-delegated-choice").filter({ hasText: "Dubbio: Non so se vale anche per gli ordini pagati con un buono" }).first();
+await decidedChoice.waitFor();
+await primaryLast(decidedChoice, "Delegated choice");
 await nightRecap.scrollIntoViewIfNeeded();
 await lookShots("26h-morning-recap");
-await nightRecap.getByTestId("recap-delegated-choice").first().getByRole("button", { name: "Ho visto" }).click();
-await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Vista", { exact: true }).waitFor();
+await decidedChoice.getByRole("button", { name: "Ho visto" }).click();
+await decidedChoice.getByText("Vista", { exact: true }).waitFor();
 await openView("Regole", "Mandato");
 const delegationSection = page.getByTestId("side-bar").getByTestId("delegation-section");
 await page.getByTestId("side-bar").locator('[data-testid="delegation-section"][data-active="true"]').waitFor({ timeout: 20_000 });

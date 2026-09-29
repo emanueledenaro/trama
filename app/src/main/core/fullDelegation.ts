@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { DelegatedChoice, FullDelegation, GitHubIssue, MandateRequest, ProjectDocument } from "@shared/domain";
+import type { DelegatedChoice, FullDelegation, GitHubIssue, MandateRequest, ProjectDocument, ProjectGoal } from "@shared/domain";
 import { pendingMandateRequest } from "@shared/domain";
 import { activeDelegation } from "@shared/delegation";
+import { workingGoals } from "@shared/goals";
+import { updateGoal } from "./goals";
 import { shortId } from "@shared/ids";
 import { t } from "./personLanguage";
 import { DELEGABLE_ACTIONS } from "@shared/labels";
@@ -80,6 +82,21 @@ export function requireDelegation(document: ProjectDocument): FullDelegation {
     );
   }
   return current;
+}
+
+/**
+ * The goals the Coordinator proposed before the delegation, which waited for the person's yes (issue #423): with the
+ * delegation they open, as a goal proposed under it does, each recorded as a choice for the person to review. Returns
+ * the goals opened.
+ */
+export function openProposedGoals(document: ProjectDocument, now = new Date()): ProjectGoal[] {
+  requireDelegation(document);
+  const proposed = workingGoals(document).filter((g) => g.status === "proposed");
+  for (const goal of proposed) {
+    updateGoal(document, goal.id, { status: "open" }, now);
+    recordChoice(document, { kind: "goal", subject: goal.title, choice: goal.outcome, targetId: goal.id }, now);
+  }
+  return proposed;
 }
 
 /** Records a choice the Coordinator made with the delegation, and the doubt it had, for the person to review. */

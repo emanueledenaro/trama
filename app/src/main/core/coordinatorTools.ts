@@ -95,7 +95,7 @@ import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 import { ITALIAN } from "@shared/i18n";
 import { confirmByMessage, PersonRequestError, requestAction } from "./personRequest";
-import { activeDelegation, DelegationError, grantDelegation, recordChoice, requireDelegation, revokeDelegation } from "./fullDelegation";
+import { activeDelegation, DelegationError, grantDelegation, openProposedGoals, recordChoice, requireDelegation, revokeDelegation } from "./fullDelegation";
 import { answerDecisionRequest } from "./pact";
 import { updateGoal } from "./goals";
 import type { FullDelegation } from "@shared/domain";
@@ -2345,8 +2345,21 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
         const before = activeDelegation(document);
         const delegation = grantDelegation(document, { quote: typeof args.quote === "string" ? args.quote : "", tickets: args.tickets === true });
         if (delegation !== before || delegation.tickets !== (before?.tickets ?? false)) context.delegationChanged?.(delegation);
+        // The goals proposed before wait for nobody now: they open, as one proposed under the delegation does.
+        const opened = openProposedGoals(document);
         context.changed();
-        return toolSuccess({ delegationID: delegation.id, tickets: delegation.tickets, status: "in_force" });
+        return toolSuccess({
+          delegationID: delegation.id,
+          tickets: delegation.tickets,
+          status: "in_force",
+          ...(opened.length
+            ? {
+                openedGoals: opened.map((g) => ({ goalID: g.id, title: g.title })),
+                // @model-text
+                note: "The goals you proposed before are open with the delegation: work on them; the person reviews the choice in the recap.",
+              }
+            : {}),
+        });
       }
       case "revoke_full_delegation": {
         const delegation = revokeDelegation(document, { kind: "message", quote: typeof args.quote === "string" ? args.quote : "" });

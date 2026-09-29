@@ -2000,7 +2000,7 @@ describe("TramaController", () => {
     controller!.personReturned(30_000);
     const recap = document.recap?.recaps.at(-1);
     expect(recap).toMatchObject({ reason: "return" });
-    expect(recap?.delegated?.[0]).toMatchObject({ kind: "decision", doubt: "Non so se vale anche per gli ordini pagati con un buono" });
+    expect(recap?.delegated?.find((c) => c.kind === "decision")).toMatchObject({ doubt: "Non so se vale anche per gli ordini pagati con un buono" });
     expect(document.events.findLast((e) => e.content.type === "card" && e.content.kind === "recap")?.content).toMatchObject({ title: "Mentre non c'eri" });
     // A short absence, or nothing new, writes no recap.
     controller!.personAway(Date.now() - 1_000);

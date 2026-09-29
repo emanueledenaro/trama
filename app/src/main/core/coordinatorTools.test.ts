@@ -18,6 +18,8 @@ import { assign, beginTurn, confirmTeam, developers, endTurn, proposeTeam, recor
 import { NEXT_MOVES } from "./workPhase";
 import { formSquads } from "./squads";
 import { teamSquads } from "@shared/squads";
+import { waitingForYou } from "@shared/waitingForYou";
+import { translator } from "@shared/i18n";
 
 /** Only what read_team and propose_team use. */
 function teamContext(document: ProjectDocument): ToolContext {
@@ -1141,6 +1143,17 @@ describe("the full delegation in the Coordinator's tools (issue #423)", () => {
     expect(changes).toEqual(["granted", "revoked"]);
     const after = await runCoordinatorTool("propose_goal", { title: "Altro", outcome: "Altro risultato", acceptedExamples: ["x"] }, context);
     expect(parse(after).status).toBe("proposed");
+  });
+
+  it("opens with the delegation the goals it proposed before, which no longer wait for the person", async () => {
+    const { document, context } = delegatedContext();
+    const earlier = parse(await runCoordinatorTool("propose_goal", { title: "Revisione degli ordini", outcome: "Gli ordini annullati vanno in revisione", acceptedExamples: ["L'ordine 42 va in revisione"] }, context));
+    expect(earlier.status).toBe("proposed");
+    const granted = parse(await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu in automatico" }, context));
+    expect(granted.openedGoals).toEqual([{ goalID: earlier.goalID, title: "Revisione degli ordini" }]);
+    expect(document.goals?.find((g) => g.id === earlier.goalID)?.status).toBe("open");
+    expect(document.delegatedChoices).toMatchObject([{ kind: "goal", targetId: earlier.goalID, subject: "Revisione degli ordini" }]);
+    expect(waitingForYou(translator("it"), document).some((item) => item.kind === "goal")).toBe(false);
   });
 
   it("gives the ok to a candidate that waits for the person only after the screenshots, and Trama merges it", async () => {
