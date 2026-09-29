@@ -650,7 +650,7 @@ function assignedWork(
   // The gate passed, also after the turn that asked for it ended (ADR 0023): the Coordinator's green light takes the work
   // to the merge. Without this move a verified candidate the mandate lets Trama merge waited for nobody.
   for (const { candidate } of edits) {
-    if (candidate!.pullRequest || !greenLightMissing(document, candidate!)) continue;
+    if (candidate!.pullRequest || candidate!.humanRejection || !greenLightMissing(document, candidate!)) continue;
     if (authorize(document.mandate, "integrateCandidate", candidate!.touchedModules) === "authorized") moves.add(coordinator("clearCandidate", candidate!.id));
   }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);

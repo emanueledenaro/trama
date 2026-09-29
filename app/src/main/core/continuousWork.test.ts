@@ -622,6 +622,12 @@ describe("the green light after a gate that ended in the background (ADR 0023)",
     expect(projectMove(document, "round", free)?.move.move).toBe("clearCandidate");
   });
 
+  it("gives no green light to a candidate the person refused: it waits for its correction", () => {
+    const { document, candidate } = passed();
+    candidate.humanRejection = { actor: "Persona", note: "Il testo è sbagliato", fingerprint: "f", at: new Date(Date.UTC(2026, 8, 25, 10, 7)).toISOString() };
+    expect(projectMove(document, "round", free)?.move.move).not.toBe("clearCandidate");
+  });
+
   it("leaves the merge to the person when the mandate does not cover it", () => {
     const { document } = passed(["plan", "executeInWorktree"]);
     expect(projectMove(document, "gateEnded", free)).toBeNull();
