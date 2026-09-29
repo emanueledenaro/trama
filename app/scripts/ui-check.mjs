@@ -419,6 +419,35 @@ const primaryLast = async (row, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// The wave on the interface's priorities (29 September 2026): a view of the side bar at its narrowest (240 px, the sash
+// moved from the keyboard) and at its widest, light and dark, then back to the normal width and the look it had.
+const sideBarWidthNow = () => page.getByRole("separator", { name: /Larghezza della barra laterale/ }).getAttribute("aria-valuenow");
+const sideBarEnds = async (name) => {
+  const look = await lookOf();
+  const sash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
+  for (const end of ["narrow", "wide"]) {
+    if (end === "narrow") {
+      await sash.focus();
+      await page.keyboard.press("Shift+ArrowLeft");
+      for (let tries = 0; (await sideBarWidthNow()) !== "240"; tries++) {
+        if (tries > 20) throw new Error(`The side bar does not reach its narrowest width for ${name}: ${await sideBarWidthNow()}`);
+        await page.waitForTimeout(100);
+      }
+    } else {
+      await sash.focus();
+      await page.keyboard.press("Home");
+      await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
+    }
+    await page.waitForTimeout(400);
+    await noHorizontalScroll(`${name}, side bar ${end}`);
+    for (const dark of [false, true]) {
+      await setLookTo(look.provider, dark);
+      await shot(`${name}-${end}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await page.getByTestId("side-bar").getByRole("button", { name: "Larghezza normale" }).click();
+  await setLookTo(look.provider, look.dark);
+};
 const sizes = [
   ["wide", 1280, 820],
   ["narrow", 720, 640],
@@ -1173,6 +1202,11 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.waitFor();
     if ((await detailPane().getAttribute("aria-label")) !== "Persona della squadra") throw new Error("The detail is not titled Persona della squadra");
     await detail.getByTestId("specialist-now").waitFor();
+    // Critique of 29 September 2026: the page opens on its summary, and the settings come before the work.
+    await detail.getByTestId("specialist-brief").getByTestId("brief-next").waitFor();
+    if (!(await detail.evaluate((el) => el.querySelector('[data-testid="specialist-settings"]').compareDocumentPosition(el.querySelector('[data-testid="specialist-now"]')) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+      throw new Error("The person's settings do not come before the work");
+    }
     const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
     if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
     for (const fold of ["Perché è nella squadra", "Quando interviene"]) {
@@ -3286,7 +3320,8 @@ const assignmentCards = page.locator('.chat-card:not([data-testid="settled-card"
 const cardAssignment = (card) => recordId(card, "A");
 
 // V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
-await send("[assegna] [lento]");
+// "[con-decisioni]" gives the work the Pact decision just recorded, so the person's page lists it (29 September 2026).
+await send("[assegna] [lento] [con-decisioni]");
 const slowCard = assignmentCards.first();
 await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
 // Q01: the branch follows Conventional Branch and stays recognizable as Trama's work.
@@ -3303,6 +3338,54 @@ await stoppedTurn.scrollIntoViewIfNeeded();
 await shot("18a-specialist-stopped");
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await closePanels();
+// Critique of 29 September 2026: a stopped person is on top of Squadre, above the squads, and their page opens on a
+// summary (what it does, what holds it up, the next move), then the settings, then the work with its details folded
+// and its Pact decisions one per line.
+{
+  await openView("Squadre");
+  const attention = page.getByTestId("side-bar").getByTestId("squads-attention");
+  const stoppedAda = attention.locator('[data-testid="attention-person"][data-sign="stopped"]').filter({ hasText: "Ada" });
+  await stoppedAda.waitFor({ timeout: 20_000 });
+  // Above the squads and the lists of people, right under the summary's first lines.
+  const firstGroupTop = await page
+    .getByTestId("side-bar")
+    .locator('[data-testid="squad"], [data-testid="team-developer"], [data-testid="team-figure"]')
+    .first()
+    .evaluate((el) => el.getBoundingClientRect().top);
+  if ((await attention.evaluate((el) => el.getBoundingClientRect().bottom)) > firstGroupTop) throw new Error("Who is stopped is not above the squads");
+  await sideBarEnds("52a-squads-attention");
+  await stoppedAda.click();
+  const adaPage = detailPane().getByTestId("specialist");
+  const brief = adaPage.getByTestId("specialist-brief");
+  await brief.waitFor();
+  if ((await brief.getAttribute("data-sign")) !== "stopped") throw new Error("The summary of a stopped person does not say it is stopped");
+  await brief.getByTestId("brief-doing").getByText("Documenta l'annullamento").waitFor();
+  await brief.getByTestId("brief-blocker").getByText("Fermato dalla persona").waitFor();
+  await brief.getByTestId("brief-next").getByText("Riprendilo dalla scheda qui sotto, o chiedi al Coordinatore.").waitFor();
+  const tops = await adaPage.evaluate((el) => ["specialist-brief", "specialist-settings", "specialist-now"].map((id) => el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top));
+  if (!(tops[0] < tops[1] && tops[1] < tops[2])) throw new Error(`The person's page is not summary, settings and work in this order: ${tops}`);
+  const adaNow = adaPage.getByTestId("specialist-now");
+  const detailToggle = adaNow.getByTestId("assignment-detail-toggle");
+  if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
+  if (await adaNow.getByTestId("assignment-contract").count()) throw new Error("The assignment's contract shows before the person opens its details");
+  await adaNow.getByRole("button", { name: "Riprendi" }).waitFor();
+  await themeShots("52b-person-stopped");
+  await detailToggle.click();
+  const reliedOn = adaNow.getByTestId("contract-decisions");
+  await reliedOn.getByTestId("contract-decision").first().waitFor();
+  // One decision per line: each row starts at the list's left edge.
+  const decisionLefts = await reliedOn.getByTestId("contract-decision").evaluateAll((rows) => rows.map((row) => Math.round(row.getBoundingClientRect().left)));
+  if (new Set(decisionLefts).size !== 1) throw new Error(`The Pact decisions of the work are not one per line: ${decisionLefts}`);
+  await reliedOn.scrollIntoViewIfNeeded();
+  await themeShots("52c-person-stopped-detail");
+  await page.setViewportSize({ width: 720, height: 820 });
+  await page.waitForTimeout(300);
+  await noHorizontalScroll("person stopped at 720 px");
+  await adaPage.getByTestId("specialist-brief").scrollIntoViewIfNeeded();
+  await themeShots("52d-person-stopped-narrow");
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await closePanels();
+}
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 

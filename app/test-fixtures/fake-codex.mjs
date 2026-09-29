@@ -950,10 +950,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
         // "[segreto]" and "[bloccante]" are work outside the plan: they never take the ready slice.
         const slice = named ? { slice: named } : text.includes("[segreto]") || text.includes("[bloccante]") ? {} : readySlice(text);
+        // "[con-decisioni]" names every decision in force, so the card lists the Pact decisions the work relies on.
+        const relied = text.includes("[con-decisioni]") ? JSON.parse((await callTool(threadId, "read_pact", {})).content[0].text).decisions.map((d) => d.id) : null;
         callTool(threadId, "assign_task", {
           ...slice,
           // "[senza-contratto]" leaves out the seams and the Pact decisions: Trama refuses the assignment (W05).
           ...(text.includes("[senza-contratto]") ? { dependencies: [] } : contract(slice)),
+          ...(relied ? { decisionIDs: relied } : {}),
           specialist: "Ada",
           kind: "agreedTicket",
           // "[luna]" and "[luna-segue]" mark the work whose automatic verification replays the live run of issue #204.

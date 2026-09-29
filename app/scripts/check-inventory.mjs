@@ -59,7 +59,7 @@ export function testsOf(path, source) {
   return { tests, skipped, focused };
 }
 
-const SHOT_CALL = /\b(shot|themeShots|lookShots|introFrames)\(\s*(`[^`]*`|"[^"]*")|\bseamShots\(\s*"[^"]*",\s*(`[^`]*`|"[^"]*")/g;
+const SHOT_CALL = /\b(shot|themeShots|lookShots|introFrames|sideBarEnds)\(\s*(`[^`]*`|"[^"]*")|\bseamShots\(\s*"[^"]*",\s*(`[^`]*`|"[^"]*")/g;
 const CHECK_CALL = /throw new Error\(\s*(`[^`]*`|"[^"]*")/g;
 
 /** The screenshots ui-check takes, as written in its source, and the messages of its checks. */

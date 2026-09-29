@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate, ProjectDocument, Specialist, SpecialistAssignment, Squad } from "./domain";
 import type { PresenceView } from "./presence";
-import { memberSign, squadPart, squadSlices, teamSummary } from "./teamPeople";
+import { translator } from "./i18n";
+import { agentBrief, memberSign, squadPart, squadSlices, teamSummary } from "./teamPeople";
 
 const person = (id: string, extra: Partial<Specialist> = {}): Specialist =>
   ({
@@ -94,6 +95,44 @@ describe("teamSummary", () => {
   it("leaves out the people who left the team", () => {
     const document = project([person("D1", { status: "removed", assignments: [work("running")] })]);
     expect(teamSummary(document, {}, null).peopleAtWork).toBe(0);
+  });
+});
+
+describe("agentBrief", () => {
+  const t = translator("it");
+  const open = (status: SpecialistAssignment["status"], extra: Partial<SpecialistAssignment> = {}) =>
+    work(status, { objective: "Consolidare il riallineamento", stops: [], questions: [], failure: null, lastUpdate: "", ...extra });
+
+  it("says what a stopped developer does, why it stopped and that the person resumes it", () => {
+    const stopped = person("D1", { status: "stopped", assignments: [open("stopped", { stops: [{ requestedBy: "Persona", reason: "Fermato dalla persona", requestedAt: "", thenRemove: false, confirmedAt: "" }] })] });
+    expect(agentBrief(t, project([]), {}, stopped)).toEqual({
+      sign: "stopped",
+      doing: "Consolidare il riallineamento",
+      blocker: "Fermato dalla persona",
+      next: "Riprendilo dalla scheda qui sotto, o chiedi al Coordinatore.",
+    });
+  });
+
+  it("names the error of failed work and the provider's limit, which it waits for by itself", () => {
+    const failed = person("D1", { assignments: [open("failed", { failure: "Il comando npm run typecheck non passa." })] });
+    expect(agentBrief(t, project([]), {}, failed)).toMatchObject({ sign: "stopped", blocker: "Il comando npm run typecheck non passa.", next: "Riprendilo o cambia provider qui sotto, o chiedi al Coordinatore." });
+    const limited = person("D1", { assignments: [open("failed", { failure: "usage limit", waitingForProvider: { provider: "claudeAgent", until: null, since: "" } })] });
+    expect(agentBrief(t, project([]), {}, limited)).toMatchObject({ blocker: "Claude ha raggiunto il limite d'uso.", next: "Riprende da solo quando Claude torna disponibile." });
+  });
+
+  it("sends a question on a Pact card to Aspetta te, and says nothing blocks running work", () => {
+    const question = { id: "Q-1", question: "Il buono vale come la carta?", context: null, askedAt: "", resumedAt: null, answer: { kind: "person" as const, decisionRequestId: "R-1", since: "", text: null, answeredAt: null } };
+    const paused = person("D1", { assignments: [open("paused", { questions: [question] })] });
+    expect(agentBrief(t, project([]), {}, paused)).toMatchObject({ sign: "waiting", blocker: "Ha fatto una domanda: Il buono vale come la carta?", next: "Rispondi alla sua domanda in Aspetta te." });
+    const running = person("D1", { assignments: [open("running")] });
+    expect(agentBrief(t, project([]), {}, running)).toMatchObject({ sign: "working", blocker: null, next: "Lavora da solo: non serve niente da te." });
+  });
+
+  it("leaves a free person without work and says who moves next", () => {
+    expect(agentBrief(t, project([]), {}, person("D1", { assignments: [work("completed")] }))).toEqual({ sign: "free", doing: null, blocker: null, next: "Aspetta il prossimo incarico dal Coordinatore." });
+    expect(agentBrief(t, project([]), {}, person("Q", { role: "qa" })).next).toBe("Interviene da solo quando serve.");
+    const verified = project([], [candidate("C-1", "D1")]);
+    expect(agentBrief(t, verified, { "C-1": { state: "verified" } }, person("D1", { assignments: [work("completed")] })).next).toBe("Guarda il suo candidato in Aspetta te.");
   });
 });
 
