@@ -361,6 +361,22 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     expect(document.candidates).toEqual([]);
   });
 
+  it("resumes work the person stopped once the person wrote in its dialog, in any language", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    requestStop(document, marco.specialistId, "Person", "Enough for today", false, at(2));
+    endTurn(document, marco.id, null, { kind: "interrupted" }, at(2));
+    const { context: tools, started } = context(document);
+    const call = () => runCoordinatorTool("resume_assignment", { assignment: marco.id, instructions: "Riprendi", reason: "La persona lo chiede" }, tools);
+    expect((await call()).content[0]!.text).toContain("stopped_by_person");
+    // A turn Trama started by itself is not the person's word.
+    request(document, "r2", 3).step = { move: "assignWork", by: "trama" };
+    expect((await call()).content[0]!.text).toContain("stopped_by_person");
+    request(document, "r3", 4);
+    expect(parse(await call())).toMatchObject({ assignmentID: marco.id, status: "resumed" });
+    expect(started).toEqual([marco.id]);
+  });
+
   it("stays within the mandate", async () => {
     const document = shop(["plan"]);
     const marco = realignment(document);

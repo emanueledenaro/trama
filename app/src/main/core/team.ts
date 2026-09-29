@@ -904,8 +904,9 @@ export function findingsCannotReturn(document: ProjectDocument, assignment: Spec
   if (assignment.status !== "stopped" && assignment.status !== "failed") {
     return new TeamError("cannot_resume", `Assignment ${assignment.id} is not completed.`);
   }
+  // The Coordinator's stop is taken back with resume_assignment; the person's waits for their word.
   const stopper = stoppedBy(assignment);
-  if (stopper && stopper !== "Trama") {
+  if (stopper === "Coordinatore" || heldByPersonStop(document, assignment)) {
     return new TeamError("cannot_resume", `Assignment ${assignment.id} was stopped by ${stopper}: it resumes only on their request.`);
   }
   return decisionUnderReview(document, assignment);
@@ -922,6 +923,18 @@ export function stoppedBy(assignment: SpecialistAssignment): string | null {
 
 /** The actors whose stop is not the person's: Trama itself and the Coordinator. */
 const TRAMA_ACTORS = ["Trama", "Coordinatore"];
+
+/**
+ * Whether the person stopped this work and has not written in its dialog since: their stop is a choice, so nothing
+ * takes the work up again before their word. A turn Trama started by itself is not their word.
+ */
+export function heldByPersonStop(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
+  const stopper = stoppedBy(assignment);
+  if (!stopper || TRAMA_ACTORS.includes(stopper)) return false;
+  const stop = assignment.stops.at(-1)!;
+  const goalId = document.requests.find((r) => r.id === assignment.requestId)?.goalId ?? assignment.goalId ?? null;
+  return !document.requests.some((r) => (r.goalId ?? null) === goalId && r.step?.by !== "trama" && r.createdAt > stop.requestedAt);
+}
 
 /** Work that relies on a Pact decision under review waits for the answer. */
 function decisionUnderReview(document: ProjectDocument, assignment: SpecialistAssignment): TeamError | null {
@@ -1008,8 +1021,7 @@ export function resumeProblem(document: ProjectDocument, assignment: SpecialistA
   if (document.candidates.some((c) => c.assignmentId === assignment.id && c.pullRequest?.mergedAt)) {
     return new TeamError("already_merged", `Assignment ${assignment.id} is already merged: more work on it is new work, with assign_task.`);
   }
-  const stopper = stoppedBy(assignment);
-  if (stopper && !TRAMA_ACTORS.includes(stopper)) {
+  if (heldByPersonStop(document, assignment)) {
     return new TeamError("stopped_by_person", `The person stopped assignment ${assignment.id}: it resumes only when they ask. Tell them in one line why it should go on.`);
   }
   return decisionUnderReview(document, assignment);
