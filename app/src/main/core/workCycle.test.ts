@@ -184,6 +184,18 @@ describe("a correction continues in the working copy of the work it corrects", (
     expect(findSpecialist(document, "Bea")!.assignments.at(-1)!.workspace?.worktreeRoot).toBe(WORKTREE);
   });
 
+  it("leaves alone work the person stopped: new work does not take its working copy before the person writes", () => {
+    const document = shop();
+    const marco = realignment(document);
+    blockedCandidate(document, marco, 2);
+    stopByTrama(document, marco, 3);
+    marco.stops.at(-1)!.requestedBy = "Persona";
+    request(document, "r2", 4).step = { move: "assignWork", by: "trama" };
+    expect(openCorrections(document, "r2", { moduleIds: ["src/app"], slice: null })).toEqual([]);
+    request(document, "r3", 5);
+    expect(openCorrections(document, "r3", { moduleIds: ["src/app"], slice: null })).toEqual([marco.id]);
+  });
+
   it("gives other work on the same modules a working copy of its own", async () => {
     const document = shop();
     const marco = realignment(document);

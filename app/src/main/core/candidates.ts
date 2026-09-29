@@ -8,7 +8,7 @@ import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { t } from "./personLanguage";
-import { authorize, findAssignment } from "./team";
+import { authorize, findAssignment, heldByPersonStop } from "./team";
 import type { WorkspaceReview } from "./workspace";
 import { ITALIAN } from "@shared/i18n";
 
@@ -51,6 +51,8 @@ export function openCorrections(
     .filter((earlier) => {
       if (earlier.requestId === null || !scope.has(earlier.requestId)) return false;
       if (earlier.status !== "completed" && earlier.status !== "failed" && earlier.status !== "stopped") return false;
+      // Work the person stopped waits for their word: new work does not take it over before they write.
+      if (heldByPersonStop(document, earlier)) return false;
       const same = earlier.slice || work.slice
         ? earlier.slice?.planId === work.slice?.planId && earlier.slice?.sliceId === work.slice?.sliceId
         : earlier.moduleIds.some((m) => work.moduleIds.includes(m));
