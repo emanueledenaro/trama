@@ -35,7 +35,7 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { ReferenceText } from "./ReferenceText";
 import { SettledOr } from "./SettledCard";
 import { DisclosureChevron, WorkLabel } from "./WorkSteps";
-import { WaitingOr } from "@/components/WaitingView";
+import { useWaiting, WaitingOr, WaitingReference } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
 import { ContextRolloverCard } from "./ContextRolloverCard";
 import { Sep } from "@/components/ui/sep";
@@ -128,8 +128,21 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
 }
 
-/** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
+/**
+ * The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. A step
+ * that is the person's answer to an item of Aspetta te is the reference to that item (issue #331): the item's buttons,
+ * and the window's one filled button, are in Aspetta te.
+ */
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
+  const waiting = useWaiting();
+  const item = step.actor === "person" && step.targetId ? waiting.find((i) => i.targetId === step.targetId) : undefined;
+  if (item) {
+    return (
+      <div className="mt-2" data-testid="next-step" data-waiting-key={item.key}>
+        <WaitingReference item={item} lead={step.label} />
+      </div>
+    );
+  }
   return (
     <div className="cta-row mt-2" data-testid="next-step">
       {step.reason ? (

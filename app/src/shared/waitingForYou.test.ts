@@ -3,7 +3,7 @@ import type { Candidate, CandidateReport, DecisionRequest, MandateRequest, Proje
 import type { AskTramaRoute } from "./askTrama";
 import { emptyConsent } from "./presence";
 import { emptyDocument } from "../main/core/document";
-import { blocksText, sortWaiting, type WaitingItem, waitingForYou, waitingItemFor, waitingSummary } from "./waitingForYou";
+import { blocksText, decidedToday, sortWaiting, type WaitingItem, waitingForYou, waitingItemFor, waitingSummary } from "./waitingForYou";
 
 function withRequests(...ids: [string, string | null][]): ProjectDocument {
   const document = emptyDocument("p");
@@ -206,6 +206,40 @@ describe("Aspetta te (issue #240)", () => {
     expect(waitingItemFor(items, "mandate", "D1")).toBeNull();
     document.decisionRequests[0]!.outcome = { answer: "a", alternativeIndex: 0, decisionId: "PD1", version: 1, answeredAt: "" };
     expect(waitingItemFor(waitingForYou(document), "question", "D1")).toBeNull();
+  });
+
+  it("lists what the person decided today, the latest first, and leaves out other days and superseded requests (issue #331)", () => {
+    // The clock is passed explicitly: the list never reads the real time.
+    const now = new Date(2026, 8, 28, 15, 0);
+    const at = (hour: number, day = 28) => new Date(2026, 8, day, hour, 0).toISOString();
+    const document = withRequests(["R1", null]);
+    document.decisionRequests.push(
+      question("D1", "R1", at(8), { outcome: { answer: "a", alternativeIndex: 0, decisionId: "PD1", version: 1, answeredAt: at(9) } }),
+      question("D2", "R1", at(8), { withdrawal: { reason: "non serve", withdrawnAt: at(10) } }),
+      question("D3", "R1", at(8, 27), { outcome: { answer: "b", alternativeIndex: 1, decisionId: "PD2", version: 1, answeredAt: at(9, 27) } }),
+      question("D4", "R1", at(8)),
+    );
+    document.mandateRequests.push(
+      mandateRequest("M1", "R1", at(8), { kind: "superseded", version: null, resolvedAt: at(11), supersededBy: "M2" }),
+      mandateRequest("M2", "R1", at(8), { kind: "granted", version: 3, resolvedAt: at(12) }),
+    );
+    document.team.proposals.push({
+      id: "T1",
+      requestId: "R1",
+      summary: null,
+      members: [{ name: "Ada", competence: "Ordini", reason: "", moduleIds: [] }],
+      askedAt: at(8),
+      resolution: { kind: "confirmed", specialistIds: ["S1"], resolvedAt: at(13) },
+    });
+    const decided = decidedToday(document, now);
+    expect(decided.map((d) => [d.key, d.outcome])).toEqual([
+      ["team:T1", "confirmed"],
+      ["mandate:M2", "granted"],
+      ["question:D2", "withdrawn"],
+      ["question:D1", "answered"],
+    ]);
+    expect(decided.find((d) => d.kind === "team")!.title).toBe("Ada");
+    expect(decidedToday(document, new Date(2026, 8, 27, 15, 0)).map((d) => d.key)).toEqual(["question:D3"]);
   });
 
   describe("every card that waits for the person (issue #292)", () => {

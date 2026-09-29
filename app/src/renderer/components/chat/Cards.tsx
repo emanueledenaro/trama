@@ -277,10 +277,16 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
   );
 }
 
-export function MandateCard({ requestId }: { requestId: string }) {
+/**
+ * A mandate request. In Aspetta te (`placement="waiting"`, issue #331) the decision comes first: the reason, the buttons
+ * right under it, what changes from the mandate in force, and the full proposal closed below.
+ */
+export function MandateCard({ requestId, placement = "chat" }: { requestId: string; placement?: "chat" | "waiting" }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  // Null until the person opens or closes it: then it follows whether there is a mandate in force to compare with.
+  const [fullChoice, setFullOpen] = useState<boolean | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const request = project.document.mandateRequests.find((r) => r.id === requestId);
@@ -292,6 +298,58 @@ export function MandateCard({ requestId }: { requestId: string }) {
   const superseded = resolution?.kind === "superseded";
   // Only a pending proposal compares with the mandate in force: an answered one describes the past.
   const diff = resolution ? null : mandateProposalDiff(project.document, request);
+  const waitingFirst = placement === "waiting";
+  // A first mandate has nothing to compare with: the whole proposal shows, since it is what the person grants.
+  const fullOpen = fullChoice ?? !diff;
+  const decision = !resolution ? (
+    rejecting ? (
+      <div className="mt-3 space-y-2">
+        <TextArea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder={t("chat.card.mandate.rejectPlaceholder")}
+          aria-label={t("chat.card.mandate.rejectLabel")}
+          className="min-h-12"
+          autoFocus
+        />
+        <p className="text-ui-xs text-muted-foreground">
+          {hasMandate ? t("chat.card.mandate.rejectKeeps") : t("chat.card.mandate.rejectNone")}
+        </p>
+        <div className="cta-row">
+          <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
+            {t("chat.card.cancel")}
+          </Button>
+          <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
+            {t("chat.card.mandate.reject")}
+          </Button>
+        </div>
+      </div>
+    ) : (
+      <div className="cta-row mt-3">
+        <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+          {t("chat.card.mandate.reject")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
+          {t("chat.card.mandate.correct")}
+        </Button>
+        <Button
+          size="sm"
+          onClick={() =>
+            void act("mandate:grant", {
+              requestId,
+              objectives: request.objectives,
+              priorities: request.priorities,
+              scopeModuleIds: request.scopeModuleIds,
+              authorizedActions: request.authorizedActions,
+              limits: request.limits,
+            })
+          }
+        >
+          {t("chat.card.mandate.grant")}
+        </Button>
+      </div>
+    )
+  ) : null;
 
   return (
     <CardFrame
@@ -332,79 +390,48 @@ export function MandateCard({ requestId }: { requestId: string }) {
           {t("chat.card.mandate.supersededNote")}
         </p>
       ) : null}
+      {waitingFirst ? decision : null}
       {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
-      <Field label={diff ? t("chat.card.mandate.proposedObjectives") : t("chat.card.mandate.objectives")}>
-        <ItemList items={request.objectives} />
-      </Field>
-      {request.priorities.length ? (
-        <Field label={t("chat.card.mandate.priorities")}>
-          <ItemList items={request.priorities} />
-        </Field>
+      {waitingFirst ? (
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+          aria-expanded={fullOpen}
+          onClick={() => setFullOpen(!fullOpen)}
+          data-testid="mandate-full-toggle"
+        >
+          <IconChevronRight className={cn("size-3.5 transition-transform", fullOpen && "rotate-90")} />
+          {t("waiting.mandate.fullComparison")}
+        </button>
       ) : null}
-      <Field label={t("chat.card.mandate.scope")}>
-        <ItemList items={request.scopeModuleIds.map(moduleName)} />
-      </Field>
-      <Field label={t("chat.card.mandate.actions")}>
-        <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
-      </Field>
-      {request.limits.length ? (
-        <Field label={t("chat.card.mandate.limits")}>
-          <ItemList items={request.limits} testId="mandate-limits" />
-        </Field>
+      {!waitingFirst || fullOpen ? (
+        <div data-testid="mandate-full">
+          <Field label={diff ? t("chat.card.mandate.proposedObjectives") : t("chat.card.mandate.objectives")}>
+            <ItemList items={request.objectives} />
+          </Field>
+          {request.priorities.length ? (
+            <Field label={t("chat.card.mandate.priorities")}>
+              <ItemList items={request.priorities} />
+            </Field>
+          ) : null}
+          <Field label={t("chat.card.mandate.scope")}>
+            <ItemList items={request.scopeModuleIds.map(moduleName)} />
+          </Field>
+          <Field label={t("chat.card.mandate.actions")}>
+            <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+          </Field>
+          {request.limits.length ? (
+            <Field label={t("chat.card.mandate.limits")}>
+              <ItemList items={request.limits} testId="mandate-limits" />
+            </Field>
+          ) : null}
+          <FixedBansField />
+        </div>
       ) : null}
-      <FixedBansField />
       {resolution?.kind === "rejected" ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">{t("chat.card.mandate.rejectedNote")}</p>
       ) : null}
-      {!resolution ? (
-        rejecting ? (
-          <div className="mt-3 space-y-2">
-            <TextArea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={t("chat.card.mandate.rejectPlaceholder")}
-              aria-label={t("chat.card.mandate.rejectLabel")}
-              className="min-h-12"
-              autoFocus
-            />
-            <p className="text-ui-xs text-muted-foreground">
-              {hasMandate ? t("chat.card.mandate.rejectKeeps") : t("chat.card.mandate.rejectNone")}
-            </p>
-            <div className="cta-row">
-              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
-                {t("chat.card.cancel")}
-              </Button>
-              <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
-                {t("chat.card.mandate.reject")}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="cta-row mt-3">
-            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
-              {t("chat.card.mandate.reject")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
-              {t("chat.card.mandate.correct")}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() =>
-                void act("mandate:grant", {
-                  requestId,
-                  objectives: request.objectives,
-                  priorities: request.priorities,
-                  scopeModuleIds: request.scopeModuleIds,
-                  authorizedActions: request.authorizedActions,
-                  limits: request.limits,
-                })
-              }
-            >
-              {t("chat.card.mandate.grant")}
-            </Button>
-          </div>
-        )
-      ) : null}
+      {waitingFirst ? null : decision}
     </CardFrame>
   );
 }
