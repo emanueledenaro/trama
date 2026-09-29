@@ -773,12 +773,19 @@ describe("TramaController", () => {
       expect(rounds.at(-1)!.detail).toBe('Avviata la mossa "Prepara il piano".');
       expect(activityLog(t, reopened.document.requests, reopened.document.events, rounds).map((e) => e.kind)).toEqual(["move", "round"]);
 
-      // The move was not made: the next round does not repeat it and opens no provider turn.
+      // The move was not made: the round tries it again, three automatic turns in a row at most, then opens no provider turn.
+      const done = (count: number) => () => automaticRequests(reopened.document).length === count && automaticRequests(reopened.document).at(-1)!.state === "completed" && reopened.runningRequestId === null;
+      for (const count of [2, 3]) {
+        await controller.runRound();
+        await until(done(count), 20_000);
+      }
+      expect(automaticRequests(reopened.document).map((r) => r.step?.move)).toEqual(["preparePlan", "preparePlan", "preparePlan"]);
       const requests = reopened.document.requests.length;
+      const recorded = reopened.document.continuousWork!.rounds.length;
       await controller.runRound();
       await new Promise((r) => setTimeout(r, 300));
       expect(reopened.document.requests).toHaveLength(requests);
-      expect(reopened.document.continuousWork!.rounds).toHaveLength(rounds.length);
+      expect(reopened.document.continuousWork!.rounds).toHaveLength(recorded);
     } finally {
       delete process.env.FAKE_CODEX_AUTOMATIC;
     }
