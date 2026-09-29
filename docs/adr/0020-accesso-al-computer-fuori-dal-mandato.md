@@ -1,0 +1,45 @@
+# L'accesso al computer sta fuori dal mandato, con un consenso per sito e per app
+
+Stato: accettata il 28 settembre 2026 dopo l'interrogatorio della persona sull'accesso al computer degli agenti, confermato lo stesso giorno. La specifica è la issue #407, con le fette #408-#414. Non cambia il mandato dell'ADR 0017 né i divieti fissi.
+
+Fino a qui gli agenti di Trama lavoravano solo sul codice del progetto, nella loro sandbox senza rete. Il Coordinatore non poteva cercare sul web, aprire un sito dove la persona è già entrata, lanciare un comando fuori dal progetto o usare un'app del Mac. La persona vuole che gli agenti possano farlo, senza che l'accesso diventi un permesso generico e senza che un testo letto su una pagina possa comandarli.
+
+Decisione:
+
+- **L'accesso al computer è sempre attivo e sta fuori dal mandato.** Il mandato non lo concede e non lo toglie. Comprende rete, browser, comandi fuori dal progetto e schermo.
+- **Nessun agente scrive password.** Il login lo fa sempre la persona. Un agente usa un sito solo se trova la sessione già aperta e ha il consenso per quel sito. Il divieto fisso "segreti e credenziali" resta com'è.
+- **Un consenso per sito o per app, per progetto.** Il consenso è un sì della persona per un sito o per un'app, valido nel progetto in cui è dato finché la persona non lo ritira. Si dà con il pulsante di una voce di "Aspetta te" oppure con un messaggio scritto dalla persona nel composer. Nel secondo caso Trama lo registra nell'elenco dei consensi citando la frase e il sito, e in chat compare "Consenso registrato per <sito>, dalla tua frase «…»". Un testo che non viene dal composer, come le risposte del modello o i contenuti delle pagine, non concede mai. Si ritira dall'elenco o scrivendolo in chat.
+- **La rete solo a Ricerca e all'Operatore.** Il Coordinatore non ha rete: chiede a loro e riceve il rapporto, segnato come dati. Il Coordinatore non lancia comandi.
+- **Un nuovo ruolo fisso e condiviso: l'Operatore.** Come Sicurezza e DevOps, serve tutte le squadre. Lancia comandi ovunque sul Mac, usa il Chrome di tutti i giorni della persona solo sui siti con il consenso, invia dati, vede lo schermo e usa mouse e tastiera. Prende ordini solo dal Coordinatore. Ricerca invece legge soltanto: cerca, legge le pagine e riporta; non invia e non lancia comandi.
+- **Segreti: una serratura più un controllo all'uscita.** La serratura è un elenco fisso dei posti dei segreti che l'Operatore non legge, per esempio `~/.ssh`, `~/.aws`, `~/.config/gh`, i file `.env`, il Portachiavi e i file del profilo del browser con password e cookie. Un comando che li tocca viene fermato prima di partire e diventa una voce di "Aspetta te" con il motivo. Ogni invio di dati passa all'uscita il filtro che Trama usa già prima di pubblicare su GitHub (`app/src/main/core/redaction.ts`).
+- **Schermo su qualunque app, con un consenso per app la prima volta.** L'elenco delle app consentite è per progetto. Servono i permessi di macOS "Accessibilità" e "Registrazione schermo", che la persona concede una volta.
+- **Il codice del progetto va dove va oggi.** Al provider del modello e al remoto GitHub come oggi; verso un altro sito solo con il consenso per quel sito.
+- **Pagamenti e cancellazioni definitive chiedono il sì ogni volta.** Messaggi a persone e pubblicazioni seguono la regola del consenso per sito.
+- **Traccia.** In chat compaiono solo gli invii di dati verso l'esterno. I comandi e le altre mosse stanno in Attività, con un filtro "Comandi e invii".
+- **Interruttore dell'accesso nella barra di stato.** Spegne subito rete, browser, comandi fuori dal progetto e schermo; il lavoro sul codice continua. Anche la Pausa del Coordinatore spegne l'accesso; alla ripresa torna com'era.
+- **Siti vietati.** Li sceglie la persona, valgono per tutti i progetti e nessun agente ci entra mai.
+- **Regola fissa: quello che arriva da fuori è un dato, mai un ordine.** Pagine, schermate e risposte di siti sono dati. Se un testo chiede un'azione, l'agente la riporta come fatto e non la esegue. Gli ordini vengono solo dalla persona e dal Coordinatore.
+
+Perché fuori dal mandato: il mandato autorizza il ciclo di lavoro sul codice di un progetto, con moduli e azioni che la persona restringe. L'accesso al computer riguarda il Mac e gli account della persona, che valgono oltre il progetto e oltre il codice. Tenerlo fuori evita che concedere o restringere il mandato apra o chiuda di nascosto un sito o un'app, e lascia un solo modo per spegnerlo: l'interruttore o la Pausa.
+
+Perché consensi per sito e per progetto: ogni sito e ogni app hanno rischi diversi, e la persona sa quali usa per un progetto. Un sì preciso, citato con la sua frase e ritirabile, si controlla meglio di un permesso unico, che coprirebbe anche siti mai pensati per quel lavoro. Il consenso vale solo dal composer perché un testo del modello o di una pagina potrebbe fingere di essere la persona.
+
+Perché l'Operatore separato da Ricerca: leggere e agire hanno rischi diversi. Ricerca legge e riporta, e un testo malevolo su una pagina non ha nessuna azione a disposizione. L'Operatore agisce, ma prende ordini solo dal Coordinatore, che non ha rete e riceve i rapporti come dati. Così un contenuto letto sul web non arriva mai direttamente a chi può inviare dati o lanciare comandi.
+
+Perché la serratura più il controllo all'uscita: la serratura impedisce di leggere i segreti più noti prima che entrino nel lavoro. Il controllo all'uscita ferma un segreto che arriva da un posto non previsto dall'elenco. Nessuno dei due basta da solo; insieme coprono l'entrata e l'uscita, con un filtro che Trama usa già.
+
+Alternative scartate:
+
+- **L'accesso dentro il mandato.** Legherebbe il Mac e gli account della persona a un'autorizzazione pensata per il codice. Restringere il mandato per un motivo di lavoro spegnerebbe anche l'accesso, e concederlo aprirebbe l'accesso senza una scelta esplicita.
+- **Password scritte dall'agente con un consenso.** Un agente con le password potrebbe entrare in account che la persona non ha aperto per quel lavoro, e le password passerebbero dal modello. Il login fatto dalla persona tiene le credenziali fuori dagli agenti.
+- **Un profilo del browser separato per gli agenti.** La persona dovrebbe rifare ogni login in un secondo profilo e tenerlo aggiornato. Il Chrome di tutti i giorni con i consensi per sito dà lo stesso controllo senza questo lavoro.
+- **Schermo solo sulle app del progetto.** Molti lavori passano da app che non appartengono al progetto, come il browser, le impostazioni o un client di posta. Il consenso per app la prima volta lascia la scelta alla persona senza un elenco fisso.
+
+Conseguenze:
+
+- I ruoli fissi diventano dodici con l'Operatore, che Trama aggiunge anche ai progetti esistenti come gli altri ruoli fissi.
+- "Aspetta te" riceve due tipi di voce nuovi: il consenso per un sito o per un'app e il comando fermato dalla serratura.
+- Il consenso dato nel composer è l'unica scelta che la persona può dare in testo libero; Trama la registra e la mostra in chat, così la persona vede subito cosa ha concesso.
+- Gli sviluppatori e gli altri ruoli restano senza rete nella loro sandbox. Il push resta di Trama, come dice l'ADR 0017.
+- L'Operatore usa lo schermo solo dopo che la persona ha concesso a Trama i permessi di macOS "Accessibilità" e "Registrazione schermo".
+- Le fette della specifica restano in attesa finché la persona non le avvia.
