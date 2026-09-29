@@ -43,9 +43,11 @@ import {
   type ProviderModel,
   type RunTurnOptions,
   type RuntimeOptions,
+  interruptedTurnError,
   schemaInstruction,
   type TurnEvent,
 } from "./types";
+import { t } from "../personLanguage";
 import {
   attachedFilesBlock,
   compareVersions,
@@ -145,8 +147,6 @@ export function isAllowedAntigravityToolIn(profile: AntigravityProfile, name: st
   if (profile === "read-only" && ANTIGRAVITY_EDIT_TOOLS.includes(name)) return false;
   return isAllowedAntigravityTool(name, hostTools);
 }
-
-const NOT_FOUND = "Antigravity CLI (agy) non è installato o non è nel PATH.";
 
 /**
  * Steps agy streams before it calls PreInvocation. agy 1.2.12 echoes the person's message as a `user_input`
@@ -464,14 +464,14 @@ export function isAntigravityUnknownModelError(message: string): boolean {
   return /invalid model selection|not recognized as a known model|unknown model/i.test(message);
 }
 
-/** The refusal in plain Italian with the label Trama sent, so the person can pick another model. */
+/** The refusal in the person's language with the label Trama sent, so the person can pick another model. */
 export function antigravityUnknownModelMessage(cliModel: string, detail: string): string {
-  return `Il modello ${cliModel} non è disponibile in Antigravity CLI. Cambia modello e riprova. Dettaglio di agy: ${detail.trim()}`;
+  return t("main.antigravity.unknownModel", { model: cliModel, detail: detail.trim() });
 }
 
 export function antigravityPromptCommandLineIssue(prompt: string, platform: NodeJS.Platform = process.platform): string | null {
   if (platform !== "win32" || prompt.length <= WINDOWS_PROMPT_MAX_CHARS) return null;
-  return `Su Windows Antigravity accetta al massimo ${WINDOWS_PROMPT_MAX_CHARS.toLocaleString("it-IT")} caratteri, perché il prompt passa come argomento della riga di comando. Accorcia il messaggio o allega il contenuto come file.`;
+  return t("main.antigravity.promptTooLong", { max: WINDOWS_PROMPT_MAX_CHARS });
 }
 
 // ── Capture plugin (hooks + MCP stdio proxy) ─────────────────────────────
@@ -934,12 +934,13 @@ const sandboxFlagAvailable = (binary: string): Promise<boolean> => helpText(bina
 // ── Hook events and transcript ───────────────────────────────────────────
 
 const EDIT_TOOLS = new Set(ANTIGRAVITY_EDIT_TOOLS);
-const DENIED_COMMAND_OUTPUT = "Negato da Trama: Antigravity non può eseguire comandi di shell, perché non restano nel worktree né fuori dalla rete.";
-const DENIED_NETWORK_OUTPUT = "Negato da Trama: gli strumenti di rete non sono consentiti.";
-const DENIED_TOOL_OUTPUT = "Negato da Trama: con Antigravity sono consentiti solo lettura, modifiche nel worktree e gli strumenti di Trama.";
-const READ_ONLY_DENIED_COMMAND_OUTPUT = "Negato da Trama: in sola lettura Antigravity non può eseguire comandi di shell.";
-const DENIED_READ_OUTPUT = "Negato da Trama: Antigravity legge solo nel progetto, nel suo worktree e nelle cartelle che Trama permette.";
-const READ_ONLY_DENIED_TOOL_OUTPUT = "Negato da Trama: in sola lettura Antigravity può usare solo gli strumenti di lettura e quelli di Trama.";
+/** The Activity texts of the tools the capture hook denied, read in the person's language when the denial arrives. */
+const DENIED_COMMAND_OUTPUT = "main.antigravity.deniedCommand";
+const DENIED_NETWORK_OUTPUT = "main.antigravity.deniedNetwork";
+const DENIED_TOOL_OUTPUT = "main.antigravity.deniedTool";
+const READ_ONLY_DENIED_COMMAND_OUTPUT = "main.antigravity.readOnlyDeniedCommand";
+const DENIED_READ_OUTPUT = "main.antigravity.deniedRead";
+const READ_ONLY_DENIED_TOOL_OUTPUT = "main.antigravity.readOnlyDeniedTool";
 
 export function normalizeAntigravityCommandLine(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -1112,24 +1113,24 @@ export class AntigravityRuntime implements AgentRuntime {
 
   private binary(): string {
     const binary = resolveExecutable("agy", this.options.executable);
-    if (!binary) throw new ProviderError("executableNotFound", NOT_FOUND);
+    if (!binary) throw new ProviderError("executableNotFound", t("main.antigravity.notInstalled"));
     return binary;
   }
 
   async readAccount(): Promise<ProviderAccount> {
     const binary = resolveExecutable("agy", this.options.executable);
-    if (!binary) return { kind: "unavailable", message: NOT_FOUND };
+    if (!binary) return { kind: "unavailable", message: t("main.antigravity.notInstalled") };
     let version;
     try {
       version = await runHelper(binary, ["--version"], { timeoutMs: VERSION_TIMEOUT_MS });
     } catch (error) {
-      return { kind: "unavailable", message: `Controllo di Antigravity CLI non riuscito: ${(error as Error).message}` };
+      return { kind: "unavailable", message: t("main.antigravity.checkFailed", { error: (error as Error).message }) };
     }
-    if (version.timedOut) return { kind: "unavailable", message: "Il controllo della versione di Antigravity CLI è scaduto." };
+    if (version.timedOut) return { kind: "unavailable", message: t("main.antigravity.versionCheckTimeout") };
     if (version.code !== 0) {
       return {
         kind: "unavailable",
-        message: version.stderr.trim() || version.stdout.trim() || "Il controllo della versione di Antigravity CLI non è riuscito.",
+        message: version.stderr.trim() || version.stdout.trim() || t("main.antigravity.versionCheckFailed"),
       };
     }
     let parsed = parseCliVersion(`${version.stdout}\n${version.stderr}`);
@@ -1147,7 +1148,7 @@ export class AntigravityRuntime implements AgentRuntime {
     try {
       models = await runHelper(binary, ["models"], { timeoutMs: HEALTH_MODELS_TIMEOUT_MS });
     } catch (error) {
-      return { kind: "unavailable", message: `Controllo di Antigravity CLI non riuscito: ${(error as Error).message}` };
+      return { kind: "unavailable", message: t("main.antigravity.checkFailed", { error: (error as Error).message }) };
     }
     if (models.code === 0 && models.stdout.trim()) {
       this.rememberEfforts(parseAntigravityModelLines(models.stdout));
@@ -1160,9 +1161,9 @@ export class AntigravityRuntime implements AgentRuntime {
 
   async listModels(): Promise<ProviderModel[]> {
     const result = await runHelper(this.binary(), ["models"], { timeoutMs: MODEL_DISCOVERY_TIMEOUT_MS });
-    if (result.timedOut) throw new ProviderError("timedOut", "agy models non ha risposto in tempo.");
+    if (result.timedOut) throw new ProviderError("timedOut", t("main.antigravity.modelsTimeout"));
     if (result.code !== 0) {
-      throw new ProviderError("rpcError", result.stderr.trim() || "agy models non è riuscito.");
+      throw new ProviderError("rpcError", result.stderr.trim() || t("main.antigravity.modelsFailed"));
     }
     const models = parseAntigravityModelLines(result.stdout);
     this.rememberEfforts(models);
@@ -1182,7 +1183,7 @@ export class AntigravityRuntime implements AgentRuntime {
   }
 
   async openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
-    if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
+    if (!options.model.trim()) throw new ProviderError("invalidModel", t("main.provider.invalidModel", { model: options.model }));
     const readOnly = options.sandbox !== "workspace-write";
     const binary = this.binary();
     const cwd = resolve(options.cwd);
@@ -1293,7 +1294,7 @@ export class AntigravityRuntime implements AgentRuntime {
     }
     const thread = this.threads.get(options.threadId);
     const readOnly = !thread || thread.readOnly || !options.writableRoot;
-    const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
+    const pending = new PendingTurn(options.onEvent, t("main.provider.closed", { provider: "Antigravity" }));
     this.pending = pending;
     let report: RepairReport;
     try {
@@ -1317,23 +1318,23 @@ export class AntigravityRuntime implements AgentRuntime {
 
   private async runAttempt(options: RunTurnOptions, attempt: TurnAttempt): Promise<string> {
     const prompt = options.prompt.trim();
-    if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
-    if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
-    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (!prompt) throw new ProviderError("emptyPrompt", t("main.provider.emptyMessage"));
+    if (!options.model.trim()) throw new ProviderError("invalidModel", t("main.provider.invalidModel", { model: options.model }));
+    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const thread = this.threads.get(options.threadId);
-    if (!thread) throw new ProviderError("rpcError", "Thread Antigravity sconosciuto: aprilo prima di avviare un turno.");
+    if (!thread) throw new ProviderError("rpcError", t("main.antigravity.unknownThread"));
     const cwd = resolve(options.cwd);
     // Read-only when the thread was opened read-only or the turn has no writable root.
     const writableRoot = !thread.readOnly && options.writableRoot ? resolve(options.writableRoot) : null;
     const readOnly = writableRoot === null;
     if (writableRoot && !isInside(writableRoot, cwd)) {
-      throw new ProviderError("rpcError", "Antigravity lavora solo dentro il worktree dello specialista: la cartella del turno è fuori.");
+      throw new ProviderError("rpcError", t("main.antigravity.cwdOutsideWorktree"));
     }
     const block = currentUsageLimit("antigravity");
     if (block) throw new ProviderError("blocked", block.message);
     const binary = this.binary();
 
-    const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
+    const pending = new PendingTurn(options.onEvent, t("main.provider.closed", { provider: "Antigravity" }));
     let sandboxFlag = false;
     const named = parseAntigravityCliModelLabel(options.model);
     const contextWindow = antigravityContextWindow(options.model);
@@ -1437,7 +1438,7 @@ export class AntigravityRuntime implements AgentRuntime {
         });
       } catch (error) {
         void rm(runDir, { recursive: true, force: true });
-        rejectPromise(new ProviderError("processExited", `Avvio di Antigravity CLI non riuscito: ${(error as Error).message}`));
+        rejectPromise(new ProviderError("processExited", t("main.antigravity.startFailed", { error: (error as Error).message })));
         return;
       }
       const turn: ActiveTurn = {
@@ -1535,7 +1536,7 @@ export class AntigravityRuntime implements AgentRuntime {
           resolvePromise(outcome.text);
         } else if (outcome.kind === "interrupted") {
           options.onEvent({ type: "interrupted" });
-          rejectPromise(new Error("Turno interrotto."));
+          rejectPromise(interruptedTurnError());
         } else if (outcome.kind === "hookMissing") {
           if (thread.conversationId === null) thread.instructionsDelivered = instructionsDelivered;
           rejectPromise(new CaptureNotReady("notCalled", "agy did not call the capture hook in a read-only turn"));
@@ -1551,7 +1552,7 @@ export class AntigravityRuntime implements AgentRuntime {
           kind: "failed",
           error: new ProviderError(
             (error as NodeJS.ErrnoException).code === "ENOENT" ? "executableNotFound" : "processExited",
-            `Avvio di Antigravity CLI non riuscito: ${error.message}`,
+            t("main.antigravity.startFailed", { error: error.message }),
           ),
         });
       });
@@ -1595,8 +1596,8 @@ export class AntigravityRuntime implements AgentRuntime {
             const message =
               result?.error ||
               stderr.trim() ||
-              (result?.state === undefined && result !== undefined ? "Antigravity CLI è terminato senza un risultato completo." : "") ||
-              `Antigravity CLI è terminato con codice ${code ?? 1}.`;
+              (result?.state === undefined && result !== undefined ? t("main.antigravity.exitedWithoutResult") : "") ||
+              t("main.antigravity.exitedWithCode", { code: String(code ?? 1) });
             if (isAntigravityUnknownModelError(message)) {
               settle({ kind: "failed", error: new ProviderError("invalidModel", antigravityUnknownModelMessage(cliModel, message)) });
               return;
@@ -1669,7 +1670,7 @@ export class AntigravityRuntime implements AgentRuntime {
         // The hook refused a read outside the session's folders: record which path (issue #206).
         const itemId = `agy-tool-${turn.toolSequence++}`;
         const outside = antigravityReadPaths(toolArgs).map((path) => resolve(turn.cwd, path)).find((path) => !isReadable(turn.readableRoots, turn.cwd, path));
-        turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error: DENIED_READ_OUTPUT });
+        turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error: t(DENIED_READ_OUTPUT) });
         if (outside) turn.onEvent({ type: "readOutsideScope", itemId, path: outside, tool: name });
         continue;
       }
@@ -1682,7 +1683,7 @@ export class AntigravityRuntime implements AgentRuntime {
             itemId,
             command,
             exitCode: null,
-            output: turn.readOnly ? READ_ONLY_DENIED_COMMAND_OUTPUT : DENIED_COMMAND_OUTPUT,
+            output: t(turn.readOnly ? READ_ONLY_DENIED_COMMAND_OUTPUT : DENIED_COMMAND_OUTPUT),
             succeeded: false,
           });
           this.refusals.record({ itemId, tool: command || name, kind: "execute" }, turn.onEvent);
@@ -1694,11 +1695,9 @@ export class AntigravityRuntime implements AgentRuntime {
             succeeded: false,
           });
         } else {
-          const error = NETWORK_TOOL_PATTERN.test(name)
-            ? DENIED_NETWORK_OUTPUT
-            : turn.readOnly
-              ? READ_ONLY_DENIED_TOOL_OUTPUT
-              : DENIED_TOOL_OUTPUT;
+          const error = t(
+            NETWORK_TOOL_PATTERN.test(name) ? DENIED_NETWORK_OUTPUT : turn.readOnly ? READ_ONLY_DENIED_TOOL_OUTPUT : DENIED_TOOL_OUTPUT,
+          );
           turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error });
           this.refusals.record({ itemId, tool: name, kind: NETWORK_TOOL_PATTERN.test(name) ? "fetch" : null }, turn.onEvent);
         }
@@ -1846,7 +1845,7 @@ export class AntigravityRuntime implements AgentRuntime {
     const turn = this.active;
     if (!turn) return;
     turn.interrupted = true;
-    turn.settle({ kind: "failed", error: new ProviderError("processExited", "Antigravity è stato chiuso.") });
+    turn.settle({ kind: "failed", error: new ProviderError("processExited", t("main.provider.closed", { provider: "Antigravity" })) });
     teardownProcessTree(turn.child, 1_000);
   }
 }
@@ -1877,7 +1876,7 @@ export function accountFromFailedModels(output: string, timedOut: boolean): Prov
   return {
     kind: "unavailable",
     message: timedOut
-      ? "Antigravity CLI è installato, ma l'elenco dei modelli non ha risposto in tempo: Trama non ha potuto verificare l'accesso."
-      : "Antigravity CLI è installato, ma Trama non ha potuto verificare l'accesso elencando i modelli.",
+      ? t("main.antigravity.modelsCheckTimeout")
+      : t("main.antigravity.modelsCheckFailed"),
   };
 }

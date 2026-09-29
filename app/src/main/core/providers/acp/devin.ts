@@ -5,6 +5,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "../../personLanguage";
 import { ProviderError, type ProviderModel, type RuntimeOptions } from "../types";
 import {
   AcpAgentRuntime,
@@ -78,14 +79,11 @@ export function resolveDevinAuthMethod(advertised: string[], hasApiKey: boolean)
   if (ids.has(DEVIN_CACHED_TOKEN_AUTH_METHOD_ID)) return DEVIN_CACHED_TOKEN_AUTH_METHOD_ID;
   const nonInteractive = [...ids].find((id) => !DEVIN_INTERACTIVE_AUTH_METHOD_IDS.has(id));
   if (nonInteractive) return nonInteractive;
-  const list = ids.size ? [...ids].join(", ") : "nessuno";
+  const list = ids.size ? [...ids].join(", ") : t("main.provider.noMethods");
   if (!hasApiKey && ids.size > 0) {
-    throw new ProviderError(
-      "authenticationRequired",
-      `Devin offre solo un accesso dal browser (${list}). Imposta WINDSURF_API_KEY oppure esegui \`devin auth login\`, poi riprova.`,
-    );
+    throw new ProviderError("authenticationRequired", t("main.devin.browserOnly", { methods: list }));
   }
-  throw new ProviderError("authenticationRequired", `Devin non offre un metodo di accesso senza browser (metodi offerti: ${list}). Aggiorna Devin.`);
+  throw new ProviderError("authenticationRequired", t("main.devin.noHeadlessMethod", { methods: list }));
 }
 
 /**
@@ -97,10 +95,7 @@ function devinAuthenticateMeta(): { meta: JsonObject; apiKey: string | undefined
   const apiKey = firstEnv(DEVIN_API_KEY_ENV_KEYS);
   const url = validateDevinApiServerUrl(firstEnv(DEVIN_API_SERVER_URL_ENV_KEYS));
   if (url === "rejected") {
-    throw new ProviderError(
-      "authenticationRequired",
-      "L'indirizzo del server API di Devin non è accettato: serve HTTPS (HTTP solo su loopback) e nessuna credenziale nell'URL.",
-    );
+    throw new ProviderError("authenticationRequired", t("main.devin.serverUrlRejected"));
   }
   return { meta: { headless: true, ...(apiKey ? { api_key: apiKey } : {}), ...(url ? { api_server_url: url } : {}) }, apiKey };
 }
@@ -162,7 +157,7 @@ export const devinProfile: AcpProviderProfile = {
   label: LABEL,
   resolveExecutable: (configured) => {
     const extra = process.platform === "win32" && process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, "devin", "cli", "bin"), join(process.env.LOCALAPPDATA, "devin", "bin")] : [];
-    return resolveBinary(configured, ["devin"], "Devin CLI (devin) non trovato. Installalo e accedi con `devin auth login`.", extra);
+    return resolveBinary(configured, ["devin"], t("main.devin.notInstalled"), extra);
   },
   async launch(executable, input) {
     const args = ["acp"];
@@ -202,8 +197,8 @@ export const devinProfile: AcpProviderProfile = {
   async readAccount(executable) {
     const missing = await probeCliVersion(executable, buildChildEnvironment(executable, ["WINDSURF_API_KEY", "DEVIN_API_KEY"]), LABEL);
     if (missing) return missing;
-    if (firstEnv(DEVIN_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: "Chiave API Devin" };
-    return hasDevinCredentials() ? { kind: "authenticated", label: "Accesso Devin CLI" } : { kind: "signedOut" };
+    if (firstEnv(DEVIN_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: t("main.devin.apiKeyLabel") };
+    return hasDevinCredentials() ? { kind: "authenticated", label: t("main.devin.cliSignInLabel") } : { kind: "signedOut" };
   },
   async listModelsFromCli(executable) {
     const result = await runCli(executable, ["models", "list", "--format", "json"], buildChildEnvironment(executable, ["WINDSURF_API_KEY", "DEVIN_API_KEY"]));

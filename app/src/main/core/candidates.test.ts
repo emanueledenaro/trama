@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { approveCandidate, candidateAfterTurn, candidateReport, clearCandidate, declareCandidate, latestCandidate, rebindTramaCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { decide, grantMandate, revokeMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
 
 function setup() {
@@ -291,6 +292,20 @@ describe("candidates", () => {
         expect(report.state).toBe("building");
         expect(() => approveCandidate(document, candidate.id, "Persona", "base")).toThrow(/WORKTREE_CHANGED/);
         expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/WORKTREE_CHANGED/);
+      }
+    });
+
+    it("says in English that the candidate lags the working copy (issue #301)", () => {
+      setPersonLanguage("en");
+      try {
+        const { document, candidate, assignment } = corrected();
+        candidateAfterTurn(document, assignment.id, worktree("snap-2", []));
+        expect(candidateReport(document, candidate, "base").blockers[0]).toMatchObject({
+          code: "WORKTREE_CHANGED",
+          detail: "The working copy changed after this candidate: declare a new candidate from it.",
+        });
+      } finally {
+        setPersonLanguage("it");
       }
     });
 

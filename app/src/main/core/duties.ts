@@ -26,6 +26,7 @@ import { activeTerms, coversAssignment, workLeftOut } from "@shared/mandate";
 import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
 import { findCandidate } from "./candidates";
+import { t } from "./personLanguage";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { domainProposalText } from "./domainDocs";
@@ -79,7 +80,7 @@ export const DIAGNOSABLE_CHECKS: ReadOnlyCheck[] = ["swift_build", "swift_test",
  * failure says nothing about the code, so it never becomes a diagnosis of the project.
  */
 const ENVIRONMENT_FAILURES: RegExp[] = [
-  /\[Trama\] Alcuni fallimenti vengono dalla sandbox/,
+  /\[Trama\] (?:Alcuni fallimenti vengono dalla sandbox|Some failures come from the sandbox)/,
   /\b(?:EPERM|EACCES|EROFS|ENOSPC)\b/,
   /\bOperation not permitted\b/i,
   /\bread-only file system\b/i,
@@ -101,7 +102,7 @@ const toDiagnose = (ledger: DutyLedger) => ledger.failures.filter((f) => !f.diag
 const EVALUATED_STATES = TRIAGE_STATES.filter((state) => state !== "needs-triage");
 
 const clip = (text: string, limit: number) => (text.length > limit ? `…${text.slice(-limit)}` : text);
-const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "sconosciuto");
+const short = (sha: string | null) => (sha ? sha.slice(0, 7) : t("main.duties.unknownCommit"));
 
 export function dutyLedger(document: ProjectDocument): DutyLedger {
   document.duties ??= { issueBaseline: null, failures: [], checkoutChecks: {} };
@@ -243,15 +244,15 @@ export function observeIssues(document: ProjectDocument, context: Pick<DutyConte
 
 /** Why an issue no longer counts as new for triage; null while it still does. */
 function notNewReason(document: ProjectDocument, issue: GitHubIssue, pullRequests: PullRequestLink[] | null): string | null {
-  if (issue.state === "closed") return "è stata chiusa";
+  if (issue.state === "closed") return t("main.duties.droppedClosed");
   const role = issue.labels.find((label) => (EVALUATED_STATES as string[]).includes(label.toLowerCase()));
-  if (role) return `ha già lo stato di triage \`${role}\``;
+  if (role) return t("main.duties.droppedTriageState", { role });
   const work = allAssignments(document).find((a) => a.issueNumber === issue.number && a.duty?.skill !== "triage");
-  if (work) return `è già in lavoro nell'incarico ${work.id}`;
+  if (work) return t("main.duties.droppedInAssignment", { id: work.id });
   const plan = document.plans.find((p) => p.issueNumber === issue.number);
-  if (plan) return `è già in lavoro nel piano ${plan.id}`;
+  if (plan) return t("main.duties.droppedInPlan", { id: plan.id });
   const pull = pullRequests?.find((p) => p.linkedIssues.includes(issue.number));
-  if (pull) return `ha la pull request #${pull.number} collegata`;
+  if (pull) return t("main.duties.droppedPullRequest", { number: String(pull.number) });
   return null;
 }
 
@@ -279,7 +280,8 @@ function giveTriage(document: ProjectDocument, issue: GitHubIssue, runner: DutyR
     {
       role: "bugTriage",
       kind: "agreedTicket",
-      objective: `Triage della issue #${issue.number}: ${issue.title}`,
+      objective: t("main.duties.triageObjective", { number: String(issue.number), title: issue.title }),
+      // @model-text: instructions for the agent.
       instructions: `Triage della issue #${issue.number} con la skill triage, in sola lettura.`,
       moduleIds: [],
       issueNumber: issue.number,
@@ -298,8 +300,16 @@ function giveTriage(document: ProjectDocument, issue: GitHubIssue, runner: DutyR
   );
 }
 
+/** Where a check failed, in the person's language. */
 function failurePlace(failure: CheckFailure): string {
-  return failure.target === "candidate" ? `candidato ${failure.candidateId}` : `checkout al commit ${short(failure.version)}`;
+  return failure.target === "candidate"
+    ? t("main.duties.placeCandidate", { id: String(failure.candidateId) })
+    : t("main.duties.placeCheckout", { commit: short(failure.version) });
+}
+
+/** Where a check failed, for the instructions of a fix. @model-text */
+function modelFailurePlace(failure: CheckFailure): string {
+  return failure.target === "candidate" ? `candidato ${failure.candidateId}` : `checkout al commit ${failure.version ? failure.version.slice(0, 7) : "sconosciuto"}`;
 }
 
 function startDiagnosis(document: ProjectDocument, runner: DutyRunner, now: Date): SpecialistAssignment | null {
@@ -311,7 +321,11 @@ function startDiagnosis(document: ProjectDocument, runner: DutyRunner, now: Date
     {
       role: "bugTriage",
       kind: "decidedBehaviorCorrection",
-      objective: `Diagnosi: la verifica ${failure.title} non passa sul ${failurePlace(failure)}${failure.regression ? ", e prima passava" : ""}`,
+      objective: t(failure.regression ? "main.duties.diagnosisObjectiveRegression" : "main.duties.diagnosisObjective", {
+        check: failure.title,
+        place: failurePlace(failure),
+      }),
+      // @model-text: instructions for the agent.
       instructions: `Diagnosi con la skill diagnosing-bugs, in sola lettura, della verifica ${failure.check} (${failure.id}).`,
       moduleIds: [],
       issueNumber: null,
@@ -328,10 +342,10 @@ function startDiagnosis(document: ProjectDocument, runner: DutyRunner, now: Date
   return diagnosis;
 }
 
-/** The report a fix starts from: the diagnosis's loop, cause, regression test and fix. */
+/** The report a fix starts from: the diagnosis's loop, cause, regression test and fix. @model-text */
 function fixInstructions(failure: CheckFailure, diagnosis: SpecialistAssignment, outcome: DiagnosisOutcome): string {
   return [
-    `Correggi il bug diagnosticato in ${diagnosis.id}: la verifica ${failure.check} (\`${failure.command}\`) non passa sul ${failurePlace(failure)}${failure.regression ? ", e prima passava" : ""}.`,
+    `Correggi il bug diagnosticato in ${diagnosis.id}: la verifica ${failure.check} (\`${failure.command}\`) non passa sul ${modelFailurePlace(failure)}${failure.regression ? ", e prima passava" : ""}.`,
     `Ciclo di verifica della diagnosi: \`${outcome.loopCommand}\``,
     ...(outcome.loopOutput ? [`Uscita del ciclo:\n\`\`\`\n${outcome.loopOutput}\n\`\`\``] : []),
     ...(outcome.hypotheses.length ? [`Ipotesi della diagnosi, dalla più probabile:\n${outcome.hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}`] : []),
@@ -351,16 +365,16 @@ function startFix(document: ProjectDocument, runner: DutyRunner, knownModules: s
     const work = failure.assignmentId ? findAssignment(document, failure.assignmentId) : null;
     const moduleIds = work ? work.moduleIds : outcome.moduleIds.filter((id) => knownModules.includes(id));
     if (moduleIds.length === 0) {
-      outcome.fixWaiting = "La diagnosi non indica moduli del progetto: la correzione la assegna il Coordinatore.";
+      outcome.fixWaiting = t("main.duties.fixNoModules");
       continue;
     }
     if (work && (!work.workspace || work.workspaceRemovedAt)) {
-      outcome.fixWaiting = "La copia di lavoro del candidato non c'è più: la correzione la assegna il Coordinatore.";
+      outcome.fixWaiting = t("main.duties.fixWorkingCopyGone");
       continue;
     }
     const authorization = authorize(document.mandate, "executeInWorktree", moduleIds, "decidedBehaviorCorrection");
     if (authorization !== "authorized") {
-      outcome.fixWaiting = `Il mandato non copre la correzione su ${moduleIds.join(", ")}: parte quando il mandato lo permette.`;
+      outcome.fixWaiting = t("main.duties.fixNotCovered", { modules: moduleIds.join(", ") });
       continue;
     }
     if (!roleFree(document, "bugTriage")) return null;
@@ -370,7 +384,7 @@ function startFix(document: ProjectDocument, runner: DutyRunner, knownModules: s
         {
           role: "bugTriage",
           kind: "decidedBehaviorCorrection",
-          objective: `Correzione con test di regressione: la verifica ${failure.title} sul ${failurePlace(failure)}`,
+          objective: t("main.duties.fixObjective", { check: failure.title, place: failurePlace(failure) }),
           instructions: fixInstructions(failure, diagnosis, outcome),
           moduleIds,
           issueNumber: null,
@@ -389,8 +403,8 @@ function startFix(document: ProjectDocument, runner: DutyRunner, knownModules: s
       if (!(error instanceof TeamError)) throw error;
       outcome.fixWaiting =
         error.code === "work_not_independent"
-          ? `La correzione aspetta che finisca il lavoro in corso su ${moduleIds.join(", ")}.`
-          : "La correzione aspetta: il bug triage non può prenderla ora.";
+          ? t("main.duties.fixWaitsForWork", { modules: moduleIds.join(", ") })
+          : t("main.duties.fixRoleBusy");
     }
   }
   return null;
@@ -410,26 +424,21 @@ type RuleState = { state: "due" | "waiting" | "idle"; detail: string };
 function architectureRule(document: ProjectDocument, context: Pick<DutyContext, "headSHA" | "coordinatorBusy">): RuleState {
   const last = dutiesOf(document, "improve-codebase-architecture").at(-1);
   const busy = roleWork(document, "cleanCode");
-  if (busy) return { state: "waiting", detail: `Clean Code è al lavoro sull'incarico ${busy.id}: la revisione aspetta che finisca.` };
+  if (busy) return { state: "waiting", detail: t("main.duties.reviewCleanCodeBusy", { id: busy.id }) };
   if (last?.duty?.trigger.kind === "idleTeam" && context.headSHA && last.duty.trigger.headSHA === context.headSHA) {
-    return { state: "idle", detail: `Clean Code ha già rivisto il commit ${short(context.headSHA)}: torna a proporre dopo i prossimi cambiamenti al codice.` };
+    return { state: "idle", detail: t("main.duties.reviewAlreadyDone", { commit: short(context.headSHA) }) };
   }
   const card = openArchitectureCard(document);
-  if (card) return { state: "waiting", detail: `Aspetta la tua risposta alla scheda ${card} con le proposte della revisione precedente.` };
+  if (card) return { state: "waiting", detail: t("main.duties.reviewCardOpen", { card }) };
   const reviewed = new Set(last?.duty?.trigger.kind === "idleTeam" ? last.duty.trigger.afterWork : []);
   if (!codeWork(document).some((a) => !reviewed.has(a.id))) {
-    return {
-      state: "idle",
-      detail: last
-        ? "Nessun lavoro ha cambiato il codice dall'ultima revisione: parte quando il team finisce un lavoro che cambia il codice ed è libero."
-        : "Nessun lavoro del team ha ancora cambiato il codice: parte quando il team finisce un lavoro che cambia il codice ed è libero.",
-    };
+    return { state: "idle", detail: last ? t("main.duties.reviewNoChangeSinceLast") : t("main.duties.reviewNoChangeYet") };
   }
-  if (!context.headSHA) return { state: "waiting", detail: "Trama non legge il commit del checkout: la revisione parte quando lo legge." };
+  if (!context.headSHA) return { state: "waiting", detail: t("main.duties.reviewHeadUnknown") };
   const active = activeAssignments(document).length;
-  if (active > 0) return { state: "waiting", detail: `Aspetta che il team sia libero: ${active === 1 ? "un incarico è" : `${active} incarichi sono`} al lavoro.` };
-  if (context.coordinatorBusy) return { state: "waiting", detail: "Aspetta che il Coordinatore finisca il turno in corso." };
-  return { state: "due", detail: `Parte ora: il team è libero e ha cambiato il codice dall'ultima revisione (commit ${short(context.headSHA)}).` };
+  if (active > 0) return { state: "waiting", detail: t("main.duties.reviewTeamBusy", { count: active }) };
+  if (context.coordinatorBusy) return { state: "waiting", detail: t("main.duties.reviewCoordinatorBusy") };
+  return { state: "due", detail: t("main.duties.reviewDue", { commit: short(context.headSHA) }) };
 }
 
 function startArchitectureReview(document: ProjectDocument, context: DutyContext, runner: DutyRunner, now: Date): SpecialistAssignment | null {
@@ -444,7 +453,8 @@ function giveReview(document: ProjectDocument, headSHA: string, runner: DutyRunn
     {
       role: "cleanCode",
       kind: "agreedTicket",
-      objective: `Revisione dell'architettura al commit ${short(headSHA)}`,
+      objective: t("main.duties.reviewObjective", { commit: short(headSHA) }),
+      // @model-text: instructions for the agent.
       instructions: "Revisione dell'architettura con la skill improve-codebase-architecture, in sola lettura: le proposte diventano una scheda del Patto.",
       moduleIds: [],
       issueNumber: null,
@@ -476,17 +486,17 @@ export class DutyRequestError extends Error {
 
 /** Why the person or the Coordinator cannot start this work now; null when they can. */
 function requestBlocker(document: ProjectDocument, kind: AutomaticWorkRequest["kind"], context: Pick<DutyContext, "runner" | "headSHA" | "issues">): DutyRequestError | null {
-  if (document.mandate?.status !== "granted") return new DutyRequestError("mandate_missing", "Senza un mandato concesso Trama non avvia i compiti automatici dei ruoli fissi.");
-  if (!context.runner) return new DutyRequestError("provider_unavailable", "Nessun provider collegato può eseguire ora il lavoro dei ruoli fissi.");
+  if (document.mandate?.status !== "granted") return new DutyRequestError("mandate_missing", t("main.duties.requestMandateMissing"));
+  if (!context.runner) return new DutyRequestError("provider_unavailable", t("main.duties.requestProviderUnavailable"));
   const role = kind === "triage" ? "bugTriage" : "cleanCode";
   const busy = roleWork(document, role);
-  if (busy) return new DutyRequestError("role_busy", `${roleProfile(role).name} è già al lavoro sull'incarico ${busy.id}: riprova quando finisce.`);
+  if (busy) return new DutyRequestError("role_busy", t("main.duties.requestRoleBusy", { role: roleProfile(role).name, id: busy.id }));
   if (kind === "architectureReview") {
     const card = openArchitectureCard(document);
-    if (card) return new DutyRequestError("card_open", `La scheda ${card} con le proposte della revisione precedente aspetta ancora la tua risposta.`);
-    if (!context.headSHA) return new DutyRequestError("head_unknown", "Trama non legge il commit del checkout: la revisione non può partire.");
+    if (card) return new DutyRequestError("card_open", t("main.duties.requestCardOpen", { card }));
+    if (!context.headSHA) return new DutyRequestError("head_unknown", t("main.duties.requestHeadUnknown"));
   }
-  if (kind === "triage" && !context.issues) return new DutyRequestError("github_unavailable", "Trama non legge le issue di GitHub: il triage non può partire.");
+  if (kind === "triage" && !context.issues) return new DutyRequestError("github_unavailable", t("main.duties.requestGitHubUnavailable"));
   return null;
 }
 
@@ -508,45 +518,42 @@ export function startDutyOnRequest(
   const runner = context.runner!;
   if (request.kind === "architectureReview") return giveReview(document, context.headSHA!, runner, requestedBy, now);
   const issue = context.issues!.find((i) => i.number === request.issueNumber);
-  if (!issue) throw new DutyRequestError("issue_not_found", `La issue #${request.issueNumber} non è tra quelle che Trama legge su GitHub.`);
-  if (issue.state !== "open") throw new DutyRequestError("issue_closed", `La issue #${issue.number} è chiusa: il triage riguarda le issue aperte.`);
+  if (!issue) throw new DutyRequestError("issue_not_found", t("main.duties.requestIssueNotFound", { number: String(request.issueNumber) }));
+  if (issue.state !== "open") throw new DutyRequestError("issue_closed", t("main.duties.requestIssueClosed", { number: String(issue.number) }));
   return giveTriage(document, issue, runner, requestedBy, now);
 }
 
 // MARK: Status
 
-const RUNNER_MISSING = "Nessun provider collegato può eseguirlo ora: parte quando il provider del Coordinatore è disponibile.";
-const MANDATE_MISSING = "Senza un mandato concesso resta fermo: parte quando concedi un mandato.";
-
 /** The prerequisites every piece of automatic work shares, applied to work that is due or waiting for its turn. */
 function withPrerequisites(document: ProjectDocument, context: Pick<DutyContext, "runner">, rule: RuleState): RuleState {
   if (rule.state === "idle") return rule;
-  if (document.mandate?.status !== "granted") return { state: "waiting", detail: `${rule.detail} ${MANDATE_MISSING}` };
-  if (!context.runner) return { state: "waiting", detail: `${rule.detail} ${RUNNER_MISSING}` };
+  if (document.mandate?.status !== "granted") return { state: "waiting", detail: `${rule.detail} ${t("main.duties.mandateMissing")}` };
+  if (!context.runner) return { state: "waiting", detail: `${rule.detail} ${t("main.duties.runnerMissing")}` };
   return rule;
 }
 
 function triageRule(document: ProjectDocument, context: Pick<DutyContext, "issues">): RuleState {
-  if (!context.issues) return { state: "idle", detail: "Trama non legge le issue di GitHub: il triage parte quando le legge." };
+  if (!context.issues) return { state: "idle", detail: t("main.duties.triageNoGitHub") };
   const pending = newIssuesToTriage(document, context.issues);
   if (!pending.length) {
     const dropped = (readLedger(document).newIssues ?? []).filter((e) => e.dropped).at(-1);
     return {
       state: "idle",
       detail: [
-        "Nessuna issue nuova da smistare: parte quando arriva una issue aperta dopo che Trama ha iniziato a seguire il progetto, non ancora in lavoro e senza pull request collegate.",
-        ...(dropped ? [`Ultima esclusa: #${dropped.number}, che ${dropped.dropped}.`] : []),
+        t("main.duties.triageNothingNew"),
+        ...(dropped ? [t("main.duties.triageLastDropped", { number: String(dropped.number), reason: dropped.dropped! })] : []),
       ].join(" "),
     };
   }
-  const next = pending[0]!;
-  const others = pending.length > 1 ? ` (e altre ${pending.length - 1} dopo)` : "";
+  const number = String(pending[0]!.number);
+  const others = pending.length > 1 ? t("main.duties.triageOthers", { count: pending.length - 1 }) : "";
   const busy = roleWork(document, "bugTriage");
-  if (busy) return { state: "waiting", detail: `La issue #${next.number}${others} aspetta che il bug triage finisca l'incarico ${busy.id}.` };
+  if (busy) return { state: "waiting", detail: t("main.duties.triageWaitsRole", { number, others, id: busy.id }) };
   if (toDiagnose(readLedger(document)).length) {
-    return { state: "waiting", detail: `La issue #${next.number}${others} aspetta la diagnosi di una verifica non superata, che viene prima.` };
+    return { state: "waiting", detail: t("main.duties.triageWaitsDiagnosis", { number, others }) };
   }
-  return { state: "due", detail: `Parte ora sulla issue #${next.number}${others}.` };
+  return { state: "due", detail: t("main.duties.triageDue", { number, others }) };
 }
 
 function diagnosisRule(document: ProjectDocument): RuleState {
@@ -556,38 +563,40 @@ function diagnosisRule(document: ProjectDocument): RuleState {
     .find((o) => o?.kind === "diagnosis" && o.reproduced && !o.fixAssignmentId && o.fixWaiting);
   if (!failure) {
     if (waitingFix?.kind === "diagnosis") return { state: "waiting", detail: waitingFix.fixWaiting! };
-    return { state: "idle", detail: "Nessuna verifica non superata da diagnosticare: parte quando un test o una verifica di Trama fallisce." };
+    return { state: "idle", detail: t("main.duties.diagnosisNothing") };
   }
   const busy = roleWork(document, "bugTriage");
-  if (busy) return { state: "waiting", detail: `La verifica ${failure.title} aspetta che il bug triage finisca l'incarico ${busy.id}.` };
-  return { state: "due", detail: `Parte ora sulla verifica ${failure.title} non superata.` };
+  if (busy) return { state: "waiting", detail: t("main.duties.diagnosisWaitsRole", { check: failure.title, id: busy.id }) };
+  return { state: "due", detail: t("main.duties.diagnosisDue", { check: failure.title }) };
 }
 
 /** Where the writing of the first unwritten domain proposal stands, with the checks of startDomainWriting as they are now. */
 function domainWritingRule(document: ProjectDocument, context: Pick<DutyContext, "runner">): RuleState {
   const proposals = (document.domainProposals ?? []).filter((p) => !p.assignmentId);
-  if (!proposals.length) return { state: "idle", detail: "Nessuna proposta di glossario o ADR da scrivere: parte quando il Coordinatore ne trae una dalle tue decisioni." };
+  if (!proposals.length) return { state: "idle", detail: t("main.duties.domainNothing") };
   const ready = proposals.find((p) => authorize(document.mandate, "executeInWorktree", p.scopeModuleIds, "agreedTicket") === "authorized");
   if (!ready) {
     const proposal = proposals[0]!;
     const granted = document.mandate?.status === "granted";
     return {
       state: "waiting",
-      detail: granted
-        ? `Il mandato non permette di scrivere la proposta ${proposal.id}${proposal.scopeModuleIds.length ? ` su ${proposal.scopeModuleIds.join(", ")}` : ""}: aspetta una correzione del mandato.`
-        : `La proposta ${proposal.id} aspetta un mandato.`,
+      detail: !granted
+        ? t("main.duties.domainNoMandate", { id: proposal.id })
+        : proposal.scopeModuleIds.length
+          ? t("main.duties.domainNotAllowedOn", { id: proposal.id, modules: proposal.scopeModuleIds.join(", ") })
+          : t("main.duties.domainNotAllowed", { id: proposal.id }),
     };
   }
   const busy = roleWork(document, "documentation");
-  if (busy) return { state: "waiting", detail: `La proposta ${ready.id} aspetta che il ruolo Documentazione e dominio finisca l'incarico ${busy.id}.` };
+  if (busy) return { state: "waiting", detail: t("main.duties.domainWaitsRole", { id: ready.id, assignment: busy.id }) };
   // assignDuty refuses work on modules another assignment is working on (work_not_independent).
   const overlapping = activeAssignments(document).find((a) => a.moduleIds.some((id) => ready.moduleIds.includes(id)));
   if (overlapping) {
     const shared = overlapping.moduleIds.filter((id) => ready.moduleIds.includes(id));
-    return { state: "waiting", detail: `La scrittura della proposta ${ready.id} aspetta che finisca il lavoro in corso su ${shared.join(", ")} (incarico ${overlapping.id}).` };
+    return { state: "waiting", detail: t("main.duties.domainWaitsWork", { id: ready.id, modules: shared.join(", "), assignment: overlapping.id }) };
   }
-  if (!context.runner) return { state: "waiting", detail: `La proposta ${ready.id} aspetta. ${RUNNER_MISSING}` };
-  return { state: "due", detail: `Parte ora la scrittura della proposta ${ready.id}.` };
+  if (!context.runner) return { state: "waiting", detail: `${t("main.duties.domainWaitsRunner", { id: ready.id })} ${t("main.duties.runnerMissing")}` };
+  return { state: "due", detail: t("main.duties.domainDue", { id: ready.id }) };
 }
 
 const WORK: { kind: AutomaticWorkStatus["kind"]; role: DutyRole; skill: AssignmentDuty["skill"]; onRequest: AutomaticWorkRequest["kind"] | null }[] = [
@@ -607,7 +616,7 @@ export function automaticWorkStatus(document: ProjectDocument, context: Omit<Dut
     const request = onRequest ? requestBlocker(document, onRequest, context) : null;
     const base = { kind, role, onRequest: onRequest ? (request ? { allowed: false as const, reason: request.message } : { allowed: true as const }) : null };
     if (running?.duty?.skill === skill) {
-      return { ...base, state: "running" as const, assignmentId: running.id, detail: `In corso nell'incarico ${running.id}: ${running.objective}.` };
+      return { ...base, state: "running" as const, assignmentId: running.id, detail: t("main.duties.running", { id: running.id, objective: running.objective }) };
     }
     const rule =
       kind === "triage"
@@ -637,16 +646,18 @@ export function startDomainWriting(
   if (authorization !== "authorized") {
     proposal.waiting =
       authorization === "mandate_missing" || authorization === "mandate_revoked"
-        ? "Senza un mandato valido nessuno scrive i file: la proposta aspetta il mandato."
-        : `Il mandato non permette di lavorare in una copia di lavoro${proposal.scopeModuleIds.length ? ` su ${proposal.scopeModuleIds.join(", ")}` : ""}: la proposta aspetta una correzione del mandato.`;
+        ? t("main.duties.writingNoMandate")
+        : proposal.scopeModuleIds.length
+          ? t("main.duties.writingNotAllowedOn", { modules: proposal.scopeModuleIds.join(", ") })
+          : t("main.duties.writingNotAllowed");
     return null;
   }
   if (!runner) {
-    proposal.waiting = "Nessun provider può eseguire ora il lavoro del ruolo Documentazione e dominio.";
+    proposal.waiting = t("main.duties.writingNoRunner");
     return null;
   }
   if (!roleFree(document, "documentation")) {
-    proposal.waiting = "Il ruolo Documentazione e dominio è occupato: scrive la proposta appena è libero.";
+    proposal.waiting = t("main.duties.writingRoleBusy");
     return null;
   }
   const files = [...(proposal.terms.length ? [proposal.contextPath] : []), ...(proposal.adrs.length ? [`${proposal.adrDirectory}/`] : [])];
@@ -656,7 +667,8 @@ export function startDomainWriting(
       {
         role: "documentation",
         kind: "agreedTicket",
-        objective: `Glossario e ADR dalle decisioni ${proposal.decisionIds.join(", ")}`,
+        objective: t("main.duties.domainObjective", { decisions: proposal.decisionIds.join(", ") }),
+        // @model-text: instructions for the agent.
         instructions: `Scrivi la proposta ${proposal.id} con la skill domain-modeling in ${files.join(" e ")}.\n\n${domainProposalText(proposal)}`,
         moduleIds: proposal.moduleIds,
         issueNumber: null,
@@ -678,8 +690,8 @@ export function startDomainWriting(
     if (!(error instanceof TeamError)) throw error;
     proposal.waiting =
       error.code === "work_not_independent"
-        ? `La scrittura aspetta che finisca il lavoro in corso su ${proposal.moduleIds.join(", ")}.`
-        : "La scrittura aspetta: il ruolo Documentazione e dominio non può prenderla ora.";
+        ? t("main.duties.writingWaitsWork", { modules: proposal.moduleIds.join(", ") })
+        : t("main.duties.writingRoleUnavailable");
     return null;
   }
 }
@@ -715,8 +727,8 @@ export function isLightModel(model: string, models: ProviderModel[] = []): boole
 /** The model of the automatic work: the lightest of the catalogue, else the Coordinator's. */
 export function dutyModel(models: ProviderModel[], fallback: string | null): { model: string; reason: string } | null {
   const light = models.find((m) => isLightModel(m.model, [m]));
-  if (light) return { model: light.model, reason: "Scelto da Trama: il modello più leggero del catalogo, per il lavoro automatico dei ruoli fissi." };
-  if (fallback) return { model: fallback, reason: "Scelto da Trama: il catalogo non ha un modello leggero riconoscibile, quindi usa quello del Coordinatore." };
+  if (light) return { model: light.model, reason: t("main.duties.modelLight") };
+  if (fallback) return { model: fallback, reason: t("main.duties.modelFallback") };
   return null;
 }
 
@@ -873,6 +885,7 @@ function readOnlyInstructions(
   ].join("\n");
 }
 
+/** @model-text */
 function triagePrompt(assignment: SpecialistAssignment, issue: GitHubIssue | null): string {
   const trigger = assignment.duty!.trigger;
   const number = trigger.kind === "newIssue" ? trigger.issueNumber : assignment.issueNumber;
@@ -884,6 +897,7 @@ function triagePrompt(assignment: SpecialistAssignment, issue: GitHubIssue | nul
   ].join("\n\n");
 }
 
+/** @model-text */
 function diagnosisPrompt(document: ProjectDocument, assignment: SpecialistAssignment, moduleIds: string[]): string {
   const trigger = assignment.duty!.trigger;
   const failure = trigger.kind === "failedCheck" ? dutyLedger(document).failures.find((f) => f.id === trigger.failureId) : undefined;
@@ -900,6 +914,7 @@ function diagnosisPrompt(document: ProjectDocument, assignment: SpecialistAssign
   ].join("\n\n");
 }
 
+/** @model-text */
 function architecturePrompt(document: ProjectDocument, assignment: SpecialistAssignment, moduleIds: string[]): string {
   const trigger = assignment.duty!.trigger;
   const headSHA = trigger.kind === "idleTeam" ? trigger.headSHA : null;
@@ -1020,14 +1035,17 @@ function parseArchitecture(answer: Json): ArchitectureOutcome | null {
 
 function triageResult(issueNumber: number | null, outcome: TriageOutcome, openedByCoordinator: boolean): string {
   return [
-    `**Triage della issue #${issueNumber}: ${TRIAGE_CATEGORY_LABEL[outcome.category]}, \`${outcome.state}\` (${TRIAGE_STATE_LABEL[outcome.state]}).**`,
+    t("main.duties.triageResultTitle", {
+      number: String(issueNumber),
+      category: TRIAGE_CATEGORY_LABEL[outcome.category],
+      state: outcome.state,
+      stateLabel: TRIAGE_STATE_LABEL[outcome.state],
+    }),
     outcome.reasoning,
-    ...(outcome.verification ? [`### Verifica\n${outcome.verification}`] : []),
-    ...(outcome.alreadyImplemented ? [`### Già presente nel codice\n${outcome.alreadyImplemented}`] : []),
-    ...(outcome.comment ? [`### Commento proposto per la issue\n${outcome.comment}`] : []),
-    openedByCoordinator
-      ? "Il Coordinatore ha aperto questa issue per un problema trovato: Trama le applica le etichette di triage. Il commento resta una tua scelta."
-      : "Trama non pubblica niente su GitHub: etichette e commento restano una tua scelta.",
+    ...(outcome.verification ? [`${t("main.duties.headingVerification")}\n${outcome.verification}`] : []),
+    ...(outcome.alreadyImplemented ? [`${t("main.duties.headingAlreadyImplemented")}\n${outcome.alreadyImplemented}`] : []),
+    ...(outcome.comment ? [`${t("main.duties.headingProposedComment")}\n${outcome.comment}`] : []),
+    openedByCoordinator ? t("main.duties.triageOpenedByCoordinator") : t("main.duties.triageNothingPublished"),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -1035,14 +1053,16 @@ function triageResult(issueNumber: number | null, outcome: TriageOutcome, opened
 
 function diagnosisResult(outcome: DiagnosisOutcome): string {
   return [
-    outcome.reproduced ? "**Bug riprodotto: il ciclo di verifica va in rosso.**" : "**Bug non riprodotto: manca un ciclo di verifica che vada in rosso.**",
-    ...(outcome.loopCommand ? [`### Ciclo di verifica\n\`${outcome.loopCommand}\`${outcome.loopOutput ? `\n\`\`\`\n${outcome.loopOutput}\n\`\`\`` : ""}`] : []),
-    ...(outcome.hypotheses.length ? [`### Ipotesi\n${outcome.hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}`] : []),
-    ...(outcome.cause ? [`### Causa\n${outcome.cause}`] : []),
-    ...(outcome.regressionTest ? [`### Test di regressione\n${outcome.regressionTest}`] : []),
-    ...(outcome.seamNote ? [`### Punti di prova\n${outcome.seamNote}`] : []),
-    ...(outcome.fix ? [`### Correzione\n${outcome.fix}`] : []),
-    ...(outcome.openQuestions ? [`### Cosa serve\n${outcome.openQuestions}`] : []),
+    outcome.reproduced ? t("main.duties.diagnosisReproducedTitle") : t("main.duties.diagnosisNotReproducedTitle"),
+    ...(outcome.loopCommand
+      ? [`${t("main.duties.headingLoop")}\n\`${outcome.loopCommand}\`${outcome.loopOutput ? `\n\`\`\`\n${outcome.loopOutput}\n\`\`\`` : ""}`]
+      : []),
+    ...(outcome.hypotheses.length ? [`${t("main.duties.headingHypotheses")}\n${outcome.hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}`] : []),
+    ...(outcome.cause ? [`${t("main.duties.headingCause")}\n${outcome.cause}`] : []),
+    ...(outcome.regressionTest ? [`${t("main.duties.headingRegressionTest")}\n${outcome.regressionTest}`] : []),
+    ...(outcome.seamNote ? [`${t("main.duties.headingSeams")}\n${outcome.seamNote}`] : []),
+    ...(outcome.fix ? [`${t("main.duties.headingFix")}\n${outcome.fix}`] : []),
+    ...(outcome.openQuestions ? [`${t("main.duties.headingOpenQuestions")}\n${outcome.openQuestions}`] : []),
   ].join("\n\n");
 }
 
@@ -1057,16 +1077,16 @@ const STRENGTH_KEY: Record<ArchitectureProposal["strength"], MessageKey> = {
 };
 
 function architectureResult(outcome: ArchitectureOutcome, language: Language): string {
-  if (!outcome.proposals.length) return "**Niente da segnalare**: Clean Code non ha trovato occasioni di approfondimento.";
+  if (!outcome.proposals.length) return translate(language, "main.duties.architectureNothing");
   return [
-    `**${outcome.proposals.length === 1 ? "Una proposta" : `${outcome.proposals.length} proposte`} di Clean Code.**${outcome.topRecommendation ? ` ${outcome.topRecommendation}` : ""}`,
+    `${t("main.duties.architectureProposals", { count: outcome.proposals.length })}${outcome.topRecommendation ? ` ${outcome.topRecommendation}` : ""}`,
     ...strongestFirst(outcome.proposals).map((p) =>
       [
         `### ${p.title} (${translate(language, STRENGTH_KEY[p.strength])})`,
-        `File: ${p.files.map((f) => `\`${f}\``).join(", ") || "non indicati"}`,
-        `Problema: ${p.problem}`,
-        `Soluzione: ${p.solution}`,
-        `Benefici: ${p.benefits}`,
+        translate(language, "main.duties.proposalFiles", { files: p.files.map((f) => `\`${f}\``).join(", ") || translate(language, "main.duties.proposalFilesNotGiven") }),
+        translate(language, "main.duties.proposalProblem", { text: p.problem }),
+        translate(language, "main.duties.proposalSolution", { text: p.solution }),
+        translate(language, "main.duties.proposalBenefits", { text: p.benefits }),
         ...(p.adrConflict ? [`> [!WARNING]\n> ${p.adrConflict}`] : []),
       ].join("\n\n"),
     ),
@@ -1084,11 +1104,11 @@ function architectureCard(document: ProjectDocument, assignment: SpecialistAssig
     {
       requestId: null,
       category: "product",
-      question: "Quale miglioramento dell'architettura vuoi approfondire?",
+      question: t("main.duties.cardQuestion"),
       concreteCase: [
-        `Clean Code ha rivisto il progetto al commit ${short(trigger.kind === "idleTeam" ? trigger.headSHA : null)} (incarico ${assignment.id}).`,
-        outcome.topRecommendation ? `Consiglio: ${outcome.topRecommendation}` : null,
-        proposals.length > CARD_PROPOSALS ? `Le altre ${proposals.length - CARD_PROPOSALS} proposte sono nel risultato dell'incarico.` : null,
+        t("main.duties.cardReviewed", { commit: short(trigger.kind === "idleTeam" ? trigger.headSHA : null), id: assignment.id }),
+        outcome.topRecommendation ? t("main.duties.cardAdvice", { text: outcome.topRecommendation }) : null,
+        proposals.length > CARD_PROPOSALS ? t("main.duties.cardOtherProposals", { count: proposals.length - CARD_PROPOSALS }) : null,
       ]
         .filter(Boolean)
         .join(" "),
@@ -1096,10 +1116,10 @@ function architectureCard(document: ProjectDocument, assignment: SpecialistAssig
         ...proposals.slice(0, CARD_PROPOSALS).map((p) => ({
           // The question already asks what to deepen: each option is the proposal's own title (issues #270, #272).
           behavior: p.title,
-          example: `${p.files.join(", ") || "File non indicati"}: ${p.solution}`,
-          consequence: `${p.benefits}${p.adrConflict ? ` Attenzione: ${p.adrConflict}` : ""}`,
+          example: `${p.files.join(", ") || t("main.duties.cardFilesNotGiven")}: ${p.solution}`,
+          consequence: `${p.benefits}${p.adrConflict ? ` ${t("main.duties.cardWarning", { text: p.adrConflict })}` : ""}`,
         })),
-        { behavior: "Nessuno per ora", example: "Il codice resta com'è; Clean Code torna a proporre dopo i prossimi cambiamenti.", consequence: null },
+        { behavior: t("main.duties.cardNoneForNow"), example: t("main.duties.cardNoneExample"), consequence: null },
       ],
       revisesDecisionId: null,
       goalId: null,
@@ -1114,11 +1134,15 @@ function outcomeLine(assignment: SpecialistAssignment): string {
   const outcome = assignment.duty?.outcome;
   switch (outcome?.kind) {
     case "triage":
-      return `Triage della issue #${assignment.issueNumber}: ${TRIAGE_CATEGORY_LABEL[outcome.category]}, ${outcome.state}`;
+      return t("main.duties.triageLine", { number: String(assignment.issueNumber), category: TRIAGE_CATEGORY_LABEL[outcome.category], state: outcome.state });
     case "diagnosis":
-      return outcome.reproduced ? `Diagnosi: bug riprodotto.${outcome.cause ? ` ${outcome.cause}` : ""}` : "Diagnosi: bug non riprodotto";
+      return outcome.reproduced
+        ? `${t("main.duties.diagnosisLineReproduced")}${outcome.cause ? ` ${outcome.cause}` : ""}`
+        : t("main.duties.diagnosisLineNotReproduced");
     case "architecture":
-      return outcome.proposals.length ? `Revisione dell'architettura: ${outcome.proposals.length} proposte da decidere` : "Revisione dell'architettura: niente da segnalare";
+      return outcome.proposals.length
+        ? t("main.duties.architectureLineProposals", { count: outcome.proposals.length })
+        : t("main.duties.architectureLineNothing");
     default:
       return assignment.lastUpdate;
   }

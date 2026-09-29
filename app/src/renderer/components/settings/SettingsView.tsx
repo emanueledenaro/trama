@@ -323,6 +323,20 @@ function ConnectionsSection() {
   const language = useLanguage();
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
+  const capabilities = useUi((s) => s.app?.project?.github.capabilities ?? null);
+  // What the account can do in the open project's repository, which Issue showed before Lavoro (issue #332).
+  const access = !capabilities
+    ? null
+    : capabilities.status === "ready"
+      ? [
+          capabilities.login ? t("github.access.login", { login: capabilities.login }) : t("github.access.gh"),
+          capabilities.private === null ? null : capabilities.private ? t("github.access.private") : t("github.access.public"),
+          capabilities.canPush ? t("github.access.canPush") : t("github.access.readOnly"),
+          capabilities.rateRemaining !== null ? t("github.access.rate", { count: capabilities.rateRemaining }) : null,
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : capabilities.message;
   // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
   useEffect(() => {
     if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
@@ -388,7 +402,11 @@ function ConnectionsSection() {
           description={
             <>
               <GitHubCliDescription state={gitHubCli} />
-              <GitHubAccount />
+              {access ? (
+                <span className="mt-1 block" data-testid="github-access">
+                  {t("settings.connections.githubAccess", { access })}
+                </span>
+              ) : null}
             </>
           }
           control={
@@ -418,31 +436,6 @@ function ConnectionsSection() {
  * The GitHub account of the open project's repository: who is signed in, the repository's visibility, whether the
  * account can push and the API requests left. It was in Issue until issue #336.
  */
-function GitHubAccount() {
-  const t = useT();
-  const github = useUi((s) => (s.app?.project && !s.app.project.isDemo ? s.app.project.github : null));
-  const capabilities = github?.capabilities;
-  if (!github || !capabilities) return null;
-  const text =
-    capabilities.status === "ready"
-      ? [
-          capabilities.login ? t("settings.github.signedInAs", { login: capabilities.login }) : t("settings.github.signedInWithGh"),
-          capabilities.private ? t("settings.github.private") : t("settings.github.public"),
-          capabilities.canPush ? t("settings.github.canPush") : t("settings.github.readOnly"),
-          capabilities.rateRemaining !== null ? t("settings.github.rate", { count: capabilities.rateRemaining }) : null,
-        ]
-          .filter(Boolean)
-          .join(", ")
-      : capabilities.message;
-  return (
-    <span className="mt-0.5 block" data-testid="github-account">
-      {github.repository ? <span className="text-foreground/85">{github.repository}</span> : null}
-      {github.repository && text ? <span className="text-muted-foreground/70"> · </span> : null}
-      {text}
-    </span>
-  );
-}
-
 function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
