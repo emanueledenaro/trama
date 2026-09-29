@@ -796,6 +796,7 @@ export const it = {
   "waiting.decided.kind.fixedBan": "Azione vietata",
   "waiting.strip.decide": "Decidi",
   "waiting.strip.decideHint": "Apri Aspetta te con la prima voce",
+  "waiting.strip.label": "Lavoro in primo piano e ciò che aspetta te",
   "waiting.reference.lead": "Aspetta te",
   "waiting.reference.open": "Apri in Aspetta te",
   "waiting.pointer.proposal": "La proposta aspetta te",

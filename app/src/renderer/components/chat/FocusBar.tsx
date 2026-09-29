@@ -135,10 +135,12 @@ function QueueRow({ task }: { task: FocusTask }) {
 }
 
 /**
- * The work in focus and the queue (W02), opened from the status bar (issue #330): the task in focus and its phase,
- * what holds it, the overlaps with the colleagues, and the other tasks, queued or paused.
+ * The work in focus and the queue (W02): the task in focus and its phase, what holds it, the overlaps with the
+ * colleagues, and the other tasks, queued or paused. It opens from the bar above the composer (UI wave of 29
+ * September), or from the status bar over Progetti and Impostazioni (issue #330). `goTo` false leaves "Vai al lavoro"
+ * to the bar, which shows it itself while nothing waits for the person.
  */
-export function FocusPanel() {
+export function FocusPanel({ goTo = true }: { goTo?: boolean }) {
   const t = useT();
   const view = useUi((s) => s.app?.project?.focus);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
@@ -187,7 +189,7 @@ export function FocusPanel() {
                 {t("focus.pause")}
               </Button>
             ) : null}
-            {focus && elsewhere ? (
+            {focus && elsewhere && goTo ? (
               <Button size="xs" onClick={() => openDialog(focus.goalId)}>
                 {t("focus.goTo")}
               </Button>

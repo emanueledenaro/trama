@@ -175,9 +175,10 @@ const menuLabelBecomes = async (id, label, timeout = 5_000) => {
   for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(100)) if ((await menuLabel(id)) === label) return;
   throw new Error(`The menu item ${id} is "${await menuLabel(id)}", not "${label}"`);
 };
-// The work in focus and the queue open from the status bar (issue #330).
+// The work in focus and the queue open from the bar above the composer while the conversation shows (UI wave of 29
+// September), from the status bar over Progetti and Impostazioni (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
-  if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("status-focus").click({ timeout });
+  if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("work-bar-focus").or(page.getByTestId("status-focus")).first().click({ timeout });
   await page.getByTestId("focus-bar").waitFor();
 };
 // Issue #336: a detail (a person of the team, a candidate, a decision, a module, an issue, a goal) opens in a tab of
@@ -875,9 +876,25 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
-// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
-const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
-if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
+// UI wave of 29 September: the line is part of one bar attached to the top of the composer, with the work in focus.
+// Issue #392: its blur stays behind it, so the timeline does not read through it; and the chat leaves room for the
+// whole dock, so the last message ends above the bar.
+const workBar = page.getByTestId("work-bar");
+const waitingGlass = await workBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The bar above the composer lets the chat through: ${JSON.stringify(waitingGlass)}`);
+{
+  const layout = await page.evaluate(async () => {
+    const bar = document.querySelector('[data-testid="work-bar"]').getBoundingClientRect();
+    const composer = document.querySelector(".chat-composer-surface").getBoundingClientRect();
+    const scroller = document.querySelector(".chat-timeline-scroll");
+    scroller.scrollTop = scroller.scrollHeight;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const last = scroller.firstElementChild.lastElementChild.getBoundingClientRect();
+    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, lastBottom: last.bottom, barTop: bar.top };
+  });
+  if (Math.abs(layout.gap) > 2 || layout.inset < 12) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
+  if (layout.lastBottom > layout.barTop + 1) throw new Error(`The bar above the composer covers the last message: ${JSON.stringify(layout)}`);
+}
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -2815,9 +2832,12 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 
 // W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
 // lists the others. Pausing the task in focus passes the focus to the next one; "Metti in primo piano" takes it back.
-// Issue #330: the bar left the top of the chat; the status bar names the work in focus and opens the same panel.
+// Issue #330: the bar left the top of the chat. UI wave of 29 September: the bar above the composer names the work in
+// focus next to what waits for the person, and unfolds the panel inside it; the status bar no longer repeats it.
 await openFocusPanel();
 const focusBar = page.getByTestId("focus-bar");
+if (!(await page.getByTestId("work-bar").getByTestId("focus-bar").count())) throw new Error("The focus panel does not unfold inside the bar above the composer");
+if (await page.getByTestId("status-focus").count()) throw new Error("The status bar repeats the work in focus while the conversation shows");
 const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
 const firstFocus = await focusTitle();
 // Issue #241: the bar is titled with the goal, never with the first message of a dialog.
@@ -2893,6 +2913,9 @@ for (const dark of [false, true]) {
 await setLookTo(look.provider, look.dark);
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
+// The panel unfolds inside the bar above the composer (UI wave of 29 September); Escape folds it again.
+await page.keyboard.press("Escape");
+await focusBar.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
 
 // T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
@@ -3236,7 +3259,7 @@ await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scro
 await page.waitForTimeout(300);
 const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
 const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
-if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+if (await page.getByTestId("work-bar").count()) covers.push(await page.getByTestId("work-bar").boundingBox());
 for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
 await themeShots("29b-context-rollover-summary");
 await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
@@ -4598,8 +4621,9 @@ if (!(await overlapCard.first().innerText()).includes("riga 1")) throw new Error
 await overlapCard.first().scrollIntoViewIfNeeded();
 await shot("16d-overlap-chat");
 const focusOverlap = page.locator('[data-testid="focus-overlap"][data-level="conflict"]');
-// Issue #330: the work in focus in the status bar carries the overlap's badge and opens the panel with the warning.
-await page.locator('[data-testid="status-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
+// Issue #330: the work in focus carries the overlap's badge and opens the panel with the warning; since the UI wave of
+// 29 September it is in the bar above the composer.
+await page.locator('[data-testid="work-bar-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
 await openFocusPanel();
 await focusOverlap.waitFor({ timeout: 10_000 });
 // Issue #338: the details of the overlaps are a chevron with their number.

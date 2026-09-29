@@ -793,6 +793,7 @@ export const en: Record<keyof typeof it, string> = {
   "waiting.decided.kind.fixedBan": "Forbidden action",
   "waiting.strip.decide": "Decide",
   "waiting.strip.decideHint": "Open Waiting for you at the first item",
+  "waiting.strip.label": "Work in focus and what waits for you",
   "waiting.reference.lead": "Waiting for you",
   "waiting.reference.open": "Open in Waiting for you",
   "waiting.pointer.proposal": "The proposal waits for you",

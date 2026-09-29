@@ -32,8 +32,9 @@ import { RequestedActionCard } from "@/components/chat/RequestedAction";
 /**
  * "Aspetta te" (issue #240): one place for everything that waits for the person, derived from the project's records.
  * Issue #331 puts it in the side bar: a summary, the first item open with its buttons on top, the others as compact
- * rows, and what the person decided today closed at the end. One line above the composer names the first item and
- * hides while the view is open; a waiting card in the chat, and in the views that used to answer it, leaves a reference.
+ * rows, and what the person decided today closed at the end. The bar above the composer (chat/WorkBar.tsx) names the
+ * first item and hides it while the view is open; a waiting card in the chat, and in the views that used to answer it,
+ * leaves a reference.
  */
 
 const NOTHING_WAITING: WaitingItem[] = [];
@@ -71,41 +72,6 @@ const KIND_ICONS: Record<WaitingKind, React.ComponentType<{ className?: string; 
   fixedBan: IconBan,
   confirmation: IconLockOpen,
 };
-
-/**
- * The line above the composer: the first item, the count and the window's one filled button, Decidi, which opens the
- * item in Aspetta te. It does not show while nothing waits, nor while the view is open, where the item's own buttons are.
- */
-export function WaitingSummary() {
-  const t = useT();
-  const items = useWaiting();
-  const open = useWaitingOpen();
-  const setInspector = useUi((s) => s.setInspector);
-  if (!items.length || open) return null;
-  const first = items[0]!;
-  return (
-    <div className="mx-auto mb-1.5 w-full max-w-[var(--app-chat-max-width)] min-w-0">
-      <div className="translucent-popup cta-row rounded-[0.875rem] py-1 pr-1 pl-3" data-testid="waiting-summary" data-waiting-key={first.key}>
-        <span className="mr-auto flex min-w-0 flex-1 items-center gap-2 text-ui-sm">
-          <IconHourglass className="size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
-          <span className="min-w-0 truncate">
-            <span className="font-medium text-foreground">{first.label}</span>
-            <Sep />
-            <span className="text-muted-foreground">
-              <ReferenceText text={first.title} />
-            </span>
-          </span>
-        </span>
-        <span className="shrink-0 text-ui-xs text-muted-foreground" data-testid="waiting-summary-count">
-          {t("waiting.view.count", { count: items.length })}
-        </span>
-        <Button size="sm" title={t("waiting.strip.decideHint")} onClick={() => setInspector({ kind: "waiting", key: first.key })}>
-          {t("waiting.strip.decide")}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 /**
  * The view in the side bar. The open item is the one the person asked for (a reference, the line above the composer),

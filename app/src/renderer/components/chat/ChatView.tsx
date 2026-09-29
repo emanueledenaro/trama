@@ -1,6 +1,6 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { IconTarget, IconTrash, IconChevronDown, IconCheck } from "@tabler/icons-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
 import { chatEvents, chatRequests, findGoal, timelineRowGoalId, workingGoals } from "@shared/goals";
@@ -17,8 +17,9 @@ import { act, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Composer } from "./Composer";
-import { useWaiting, WaitingSummary } from "@/components/WaitingView";
+import { useWaiting } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
+import { WorkBar } from "./WorkBar";
 
 export const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
@@ -234,7 +235,6 @@ function Timeline() {
     pinned.current = true;
   }, [project.id, goalId]);
 
-  // The summary of Aspetta te sits above the composer: the timeline leaves room for it at the bottom (issue #240).
   const waiting = useWaiting().length > 0;
   const empty = rows.length === 0 && !studying && goalId === null;
   const offerFirstGoal = goalId === null && !empty && !studying && !hasConfirmedGoal(project.document.goals);
@@ -247,7 +247,9 @@ function Timeline() {
       }}
       className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
     >
-      <div className={cn("mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 sm:px-5", waiting ? "pb-52" : "pb-40")}>
+      {/* The dock (the bar above the composer and the composer) lies over the bottom of the timeline: the timeline leaves
+          room for all of it, measured, so the last message ends above the bar however tall the draft or the bar grow. */}
+      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-[max(10rem,calc(var(--chat-dock,8rem)+2rem))] sm:px-5">
         {empty ? <ProjectIntro /> : null}
         {goalId ? <GoalDialogHeader goalId={goalId} /> : null}
         {rows.map((row, index) => (
@@ -294,6 +296,22 @@ function Timeline() {
   );
 }
 
+/** The height of an element, followed as it changes; the ref is a callback, so it follows the element across mounts. */
+function useHeight(): [(element: HTMLElement | null) => void, number] {
+  const [height, setHeight] = useState(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((element: HTMLElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setHeight(Math.round(element.getBoundingClientRect().height));
+    observer.current = new ResizeObserver(measure);
+    observer.current.observe(element);
+    measure();
+  }, []);
+  return [ref, height];
+}
+
 /**
  * The main tab of the editor area (issue #330): the conversation with the Coordinator, or the overview, the settings or
  * the Benvenuto (issue #354). Without a project the Benvenuto is the only thing in the window. `cover` is a detail tab
@@ -307,6 +325,7 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
   const page: EditorPage = mainView === "dialog" && !project ? "welcome" : mainView;
+  const [dock, dockHeight] = useHeight();
   return (
     <div className="@container/chat relative flex min-h-0 min-w-0 flex-1 flex-col">
       {page === "overview" ? (
@@ -320,7 +339,11 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
         </FilledScope>
       ) : (
         <>
-          <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
+          <div
+            key={`pane-${project.id}`}
+            className="chat-pane-enter relative flex min-h-0 flex-1 flex-col"
+            style={dockHeight ? ({ "--chat-dock": `${dockHeight}px` } as React.CSSProperties) : undefined}
+          >
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
             {/* Under a covering tab the timeline stays mounted, out of sight, and keeps its place in the chat. */}
             <div className={cn("flex min-h-0 flex-1 flex-col", cover && "invisible")} aria-hidden={cover ? true : undefined}>
@@ -332,9 +355,9 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
               <ExercisePanel />
             </FilledScope>
             {/* The status bar sits right below: 8 px keep the composer off it and leave the conversation 580 px at 1280x800 (issue #330). */}
-            <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
+            <div ref={dock} className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
               <div className="pointer-events-auto">
-                <WaitingSummary />
+                <WorkBar attached={!cover} />
                 <div hidden={Boolean(cover)}>
                   {/* "Collega un provider" in place of sending is the composer's primary: outlined while something waits. */}
                   <FilledScope allowed={!waitingNow}>

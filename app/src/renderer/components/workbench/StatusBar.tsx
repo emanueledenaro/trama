@@ -241,12 +241,14 @@ function SetupItem({ back }: { back: NonNullable<ReturnType<typeof useSetupBack>
  * The status bar at the bottom of the window (issue #330, ADR 0018), in three groups split by a visible line (UI wave
  * of 29 September): the branch, quiet, since it is context; the problems, tinted, so the conflict with the default
  * branch or a step of Configura that went back read at a glance; the status line with the next step in the ink, then
- * the work in focus, Activity, Pause and the person's move on the right. Decisions wait in Aspetta te.
+ * Activity, Pause and the person's move on the right. The work in focus sits in the bar above the composer while the
+ * conversation shows; over Progetti or Impostazioni it comes back here. Decisions wait in Aspetta te.
  */
 export function StatusBar() {
   const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
   const setInspector = useUi((s) => s.setInspector);
+  const conversation = useUi((s) => s.mainView === "dialog");
   const setup = useSetupBack(project !== null);
   const [popup, setPopup] = useState<Popup>(null);
   const bar = useRef<HTMLElement>(null);
@@ -266,8 +268,9 @@ export function StatusBar() {
       document.removeEventListener("keydown", escape);
     };
   }, [popup]);
-  // A new project starts with its panels closed.
+  // A new project starts with its panels closed; the focus panel closes when the conversation takes the focus back.
   useEffect(() => setPopup(null), [project?.id]);
+  useEffect(() => setPopup((current) => (conversation && current === "focus" ? null : current)), [conversation]);
   const line = project?.statusLine ?? null;
   const branch = project?.snapshot.branch ?? null;
   const divergence = project?.document.branchDivergence ?? null;
@@ -309,7 +312,7 @@ export function StatusBar() {
           ) : null}
           {setup ? <SetupItem back={setup} /> : null}
           {(branch || problems) && line ? <Divider /> : null}
-          <StatusLine line={line} focus={<FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />} />
+          <StatusLine line={line} focus={conversation ? null : <FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />} />
           {popup === "focus" ? (
             <StatusPopup side="end">
               <FocusPanel />
