@@ -190,5 +190,9 @@ export function autonomyLine(document: ProjectDocument): string {
     authorize(document.mandate, "integrateCandidate") === "authorized"
       ? " Con il tuo via libera (clear_candidate) e il cancello dei revisori superato Trama pubblica e unisce il candidato da solo; un candidato che cambia l'interfaccia aspetta l'ok della persona in Aspetta te, con le schermate: non chiedere l'unione in chat."
       : "";
-  return `${steps}${merge} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
+  // A memory note that asks to wait for the person's yes does not hold a step the mandate covers (issue #423).
+  const memory = document.mandate?.status === "granted"
+    ? " Il mandato vale più delle note di memoria: una nota che chiede di aspettare il sì della persona per un passo che il mandato copre non ti ferma, a meno che la persona non lo chieda di nuovo in chat; in quel caso aggiorna la nota con memory."
+    : "";
+  return `${steps}${merge}${memory} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
 }

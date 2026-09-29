@@ -167,7 +167,7 @@ import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { availableButtons, currentStateText, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
+import { availableButtons, currentStateText, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
 import {
   automaticMoveDetail,
   automaticMove,
@@ -8202,11 +8202,8 @@ export class TramaController {
   /** Memory as a frozen block and the skills index, in the form the Coordinator receives them. @model-text */
   private learnedContext(project: ActiveProjectState): { memory: string; skills: string } {
     const context = this.learningFor(project).promptContext();
-    const blocks = [context.memory, context.user].filter(Boolean);
-    return {
-      memory: `## Memoria (note tue, non decisioni della persona)\n${blocks.length ? blocks.join("\n\n") : "La memoria è vuota."}`,
-      skills: context.skills,
-    };
+    const blocks = [context.memory, context.user].filter((block): block is string => Boolean(block));
+    return { memory: memorySection(blocks), skills: context.skills };
   }
 
   private learningChanged(): void {

@@ -5,12 +5,14 @@ import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candi
 import {
   availableButtons,
   currentStateText,
+  memorySection,
   missingButtonTitle,
   missingButtonDetail,
   missingButtonFeedback,
   missingButtons,
 } from "./coordinatorGrounding";
 import { appendEvent, emptyDocument } from "./document";
+import { grantDelegation } from "./fullDelegation";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { setPersonLanguage } from "./personLanguage";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -179,6 +181,25 @@ describe("missingButtonFeedback: the next turn reads the button that was not the
     } finally {
       setPersonLanguage("it");
     }
+  });
+});
+
+describe("memory notes against the delegation and the mandate (issue #423)", () => {
+  it("tells the Coordinator every turn that a note asking to wait for the person does not hold the work", () => {
+    const document = shop();
+    // Within the mandate: a note that asks for the person's yes on a step the mandate covers does not stop it.
+    expect(currentStateText(document, "r3")).toContain("Il mandato vale più delle note di memoria");
+    // With the full delegation: the note gives way, and the Coordinator corrects it and writes it down for the person.
+    document.events.push({ id: "E-d", sequence: 99, origin: "person", requestId: null, createdAt: at(1).toISOString(), content: { type: "personMessage", text: "devi essere autonomo tu coordinatore", moduleId: null, moduleName: null, composer: true } });
+    grantDelegation(document, { quote: "devi essere autonomo tu coordinatore", tickets: false });
+    const text = currentStateText(document, "r3");
+    expect(text).toContain("La delega vale più delle note di memoria");
+    expect(text).toContain("correggi la nota con memory");
+  });
+
+  it("heads the memory with what counts more than a note", () => {
+    expect(memorySection([])).toBe("## Memoria (note tue, non decisioni della persona: il mandato, la delega piena e i messaggi della persona valgono di più)\nLa memoria è vuota.");
+    expect(memorySection(["§ Nota uno", "§ Nota due"])).toContain("§ Nota uno\n\n§ Nota due");
   });
 });
 
