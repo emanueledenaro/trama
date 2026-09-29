@@ -1314,7 +1314,9 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     }
     // Issue #455: the settings are in view, never folded, and the tab has no way back to the Squads view in its head.
     await detail.getByTestId("specialist-settings").getByTestId("specialist-model-picker").waitFor();
-    await detail.getByTestId("specialist-look").getByRole("radiogroup", { name: "Colore dell'agente" }).waitFor();
+    // The look is one summary and one button in the settings; everything the person can change opens from it.
+    await detail.getByTestId("specialist-look").getByRole("button", { name: /^Personalizza l'aspetto di / }).waitFor();
+    if (await detail.getByTestId("specialist-look").getByRole("radiogroup").count()) throw new Error("The color palette is still spread in the settings");
     if (await detail.getByRole("button", { name: "Colore", exact: true }).count()) throw new Error("The color still waits in a closed section");
     if (await detail.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
     // UI wave of 29 September: at 1280x800 the tab covers the conversation and the work bar is its last row.
@@ -1394,9 +1396,19 @@ await personTab.getByTestId("specialist-header").locator(`h3[data-record-id="${d
 // The tab takes the new name too.
 await page.locator('[data-testid="editor-tab"][data-selected="true"]').getByText("Giulia", { exact: true }).waitFor();
 // W15: the person picks another color; only the avatar and the tag take it. The color is in the settings, in view (issue #455).
-await personTab.getByTestId("specialist-look").getByRole("radio", { name: "Rame" }).click();
-await personTab.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
+await personTab.getByTestId("agent-look-open").click();
+const lookPanel = page.getByRole("dialog");
+await lookPanel.getByTestId("agent-look-panel").waitFor();
+await lookPanel.getByTestId("agent-look-preview").waitFor();
+await lookPanel.getByRole("heading", { name: "Nome" }).waitFor();
+await shot("04e4a-agent-look-panel");
+await lookPanel.getByRole("radio", { name: "Rame" }).click();
+await lookPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
 await shot("04e4-team-color");
+await lookPanel.getByRole("button", { name: "Fatto" }).click();
+await lookPanel.waitFor({ state: "detached" });
+// The summary follows the color the person chose.
+await personTab.getByTestId("agent-look-summary").getByText("Colore: Rame").waitFor();
 // Issue #455: the head carries no way back; the squad stays written under the name.
 await personTab.getByTestId("specialist-squad").getByText(/^Squadra .+, sviluppatore\.$/).waitFor();
 if (await personTab.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
@@ -1456,7 +1468,7 @@ const narrowSettings = personTab.getByTestId("specialist-settings");
 await narrowSettings.scrollIntoViewIfNeeded();
 const settingsFit = await narrowSettings.evaluate((el) => {
   const tab = el.closest('[data-testid="editor-detail"]').getBoundingClientRect();
-  const parts = [el.querySelector('[data-testid="specialist-model-picker"]'), ...el.querySelectorAll('[data-testid="agent-color"]')].map((part) => part.getBoundingClientRect());
+  const parts = [el.querySelector('[data-testid="specialist-model-picker"]'), el.querySelector('[data-testid="agent-look-open"]')].map((part) => part.getBoundingClientRect());
   return { inside: parts.every((box) => box.left >= tab.left - 0.5 && box.right <= tab.right + 0.5), overflow: el.scrollWidth > el.clientWidth + 1 };
 });
 if (!settingsFit.inside || settingsFit.overflow) throw new Error(`The agent's settings do not fit the narrow tab: ${JSON.stringify(settingsFit)}`);
