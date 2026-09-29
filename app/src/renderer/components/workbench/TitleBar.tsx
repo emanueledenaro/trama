@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
-import { ExercisesChip, GoalFilterMenu, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
+import { ExercisesChip, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -165,10 +165,10 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
         </button>
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-1">
-        {project && mainView === "dialog" ? (
+        {/* The goal filter is in the summary of Lavoro (issue #332); the crumb after the project clears it. */}
+        {project && mainView === "dialog" && project.isDemo ? (
           <div className="no-drag flex min-w-0 items-center gap-1">
-            <GoalFilterMenu />
-            {project.isDemo ? <ExercisesChip /> : null}
+            <ExercisesChip />
           </div>
         ) : null}
         {project ? (

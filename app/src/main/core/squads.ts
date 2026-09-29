@@ -4,6 +4,7 @@ import { shortId } from "@shared/ids";
 import type { RepositoryModule } from "@shared/repository";
 import { roleProfile } from "@shared/roster";
 import { SQUAD_SIZE, squadOf, teamSquads } from "@shared/squads";
+import { t } from "./personLanguage";
 import { authorize, developers, isTeamConfirmed, newSpecialist, teamMembers } from "./team";
 
 /**
@@ -62,16 +63,16 @@ function addMember(document: ProjectDocument, role: TeamRole, area: SquadArea, n
   const draft =
     role === "developer"
       ? {
-          name: freeName(document, `Sviluppo ${area.name}`),
+          name: freeName(document, t("main.squads.developerName", { area: area.name })),
           tag: area.name,
-          competence: `Sviluppa l'area ${area.name}.`,
-          reason: `Il Coordinatore l'ha aggiunto dentro il mandato: la squadra ${area.name} non aveva uno sviluppatore.`,
+          competence: t("main.squads.developerCompetence", { area: area.name }),
+          reason: t("main.squads.developerReason", { area: area.name }),
         }
       : {
-          name: freeName(document, role === "squadLead" ? `Capo ${area.name}` : `${profile.name} ${area.name}`),
+          name: freeName(document, role === "squadLead" ? t("main.squads.leadName", { area: area.name }) : `${profile.name} ${area.name}`),
           tag: profile.tag,
           competence: profile.competence,
-          reason: `Ogni squadra ha ${role === "squadLead" ? "un capo squadra" : "un QA dedicato"}: questo è della squadra ${area.name}.`,
+          reason: t(role === "squadLead" ? "main.squads.leadReason" : "main.squads.qaReason", { area: area.name }),
         };
   const specialist = {
     ...newSpecialist({ ...draft, moduleIds: area.moduleIds }, role === "developer" ? "coordinator" : "fixedRole", document.team, now),
@@ -164,12 +165,18 @@ export function formationSummary(document: ProjectDocument, formation: SquadForm
   const name = (id: string) => document.team.specialists.find((s) => s.id === id)?.name ?? id;
   const squads = formation.created.map((s) => {
     const developers = s.developerIds.map(name);
-    return `Squadra ${s.name} con ${name(s.leadId)} (capo squadra), ${developers.join(", ")} (${developers.length === 1 ? "sviluppatore" : "sviluppatori"}) e ${name(s.qaId)} (QA dedicato).`;
+    return t("main.squads.summarySquad", {
+      squad: s.name,
+      lead: name(s.leadId),
+      developers: developers.join(", "),
+      role: t("main.squads.developers", { count: developers.length }),
+      qa: name(s.qaId),
+    });
   });
   const placed = formation.placed
     .filter((p) => !formation.created.includes(p.squad))
-    .map((p) => `${p.developer.name} entra nella squadra ${p.squad.name}.`);
-  const hired = formation.hired.length ? [`Aggiunti dentro il mandato: ${formation.hired.map((s) => s.name).join(", ")}.`] : [];
+    .map((p) => t("main.squads.joins", { developer: p.developer.name, squad: p.squad.name }));
+  const hired = formation.hired.length ? [t("main.squads.hired", { names: formation.hired.map((s) => s.name).join(", ") })] : [];
   return [...squads, ...placed, ...hired].join(" ");
 }
 

@@ -3,6 +3,7 @@
  *
  * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
+import { t } from "../../personLanguage";
 import type { ProviderAccount, ProviderModel, RuntimeOptions } from "../types";
 import {
   AcpAgentRuntime,
@@ -28,7 +29,7 @@ const NATIVE_SKILL_DIRS = [".cursor", ".agents", ".claude", ".codex"];
 export function parseCursorStatus(output: string, code: number): ProviderAccount {
   const lower = output.toLowerCase();
   if (lower.includes("unknown command") || lower.includes("unrecognized command") || lower.includes("unexpected argument")) {
-    return { kind: "unavailable", message: "Questa versione di Cursor Agent non permette di verificare l'accesso. Aggiorna cursor-agent." };
+    return { kind: "unavailable", message: t("main.cursor.cannotCheckAccess") };
   }
   if (
     ["authentication required", "not logged in", "not authenticated", "unauthenticated", "login required", "run 'agent login'", "run `agent login`", "run cursor-agent login"].some(
@@ -43,7 +44,7 @@ export function parseCursorStatus(output: string, code: number): ProviderAccount
   }
   if (code === 0) return { kind: "authenticated", label: null };
   const detail = output.trim().split("\n").at(-1) ?? "";
-  return { kind: "unavailable", message: `Trama non riesce a verificare l'accesso di Cursor Agent.${detail ? ` ${detail}` : ""}` };
+  return { kind: "unavailable", message: `${t("main.cursor.accessCheckFailed")}${detail ? ` ${detail}` : ""}` };
 }
 
 /** Parses `cursor-agent models` rows like `gpt-5 - GPT-5 (default)` (parseCursorCliModelList). */
@@ -79,7 +80,7 @@ export const cursorProfile: AcpProviderProfile = {
     resolveBinary(
       configured === "agent" ? null : configured,
       ["cursor-agent"],
-      "Cursor Agent CLI (cursor-agent) non trovato. Installalo e accedi con `cursor-agent login`.",
+      t("main.cursor.notInstalled"),
     ),
   async launch(executable) {
     return { command: executable, args: ["acp"], env: buildChildEnvironment(executable, CURSOR_CREDENTIALS, BROWSERLESS_ENV) };
@@ -107,10 +108,10 @@ export const cursorProfile: AcpProviderProfile = {
     if (missing) return missing;
     try {
       const status = await runCli(executable, ["status"], env);
-      if (status.timedOut) return { kind: "unavailable", message: "Cursor Agent non ha risposto alla verifica dell'accesso." };
+      if (status.timedOut) return { kind: "unavailable", message: t("main.cursor.accessCheckTimeout") };
       return parseCursorStatus(`${status.stdout}\n${status.stderr}`, status.code);
     } catch (error) {
-      return { kind: "unavailable", message: `Trama non riesce a verificare l'accesso di Cursor Agent: ${(error as Error).message}` };
+      return { kind: "unavailable", message: t("main.cursor.accessCheckError", { error: (error as Error).message }) };
     }
   },
   async listModelsFromCli(executable) {

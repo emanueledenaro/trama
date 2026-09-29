@@ -77,10 +77,11 @@ function EditorHeader() {
  * The goal filter of the chat (U01): the whole chat or the messages and events of one goal. It only changes what the
  * chat shows and what the next message is about; the Coordinator, the composer and the draft stay the same.
  */
-export function GoalFilterMenu() {
+/** The goal the chat is filtered on, with the menu of the goals; `wide` shows the title whatever the width (issue #332). */
+export function GoalFilterMenu({ wide = false }: { wide?: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const filter = useUi((s) => s.dialogGoalId);
-  const t = useT();
   const openDialog = useUi((s) => s.openDialog);
   const goals = workingGoals(project.document);
   const current = findGoal(project.document, filter);
@@ -89,15 +90,19 @@ export function GoalFilterMenu() {
   if (!options.length) return null;
   return (
     <Menu>
-      <MenuTrigger aria-label={t("chat.view.filterByGoal")} data-testid="chat-filter" className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE)}>
-        <IconTarget className="size-3.5 opacity-70" stroke={1.8} />
-        <span className="hidden max-w-[12rem] truncate @min-[520px]/chat:inline">{current ? current.title : t("chat.view.wholeChat")}</span>
-        <IconChevronDown className="size-3 opacity-60" stroke={1.8} />
+      <MenuTrigger
+        aria-label={t("work.summary.filter")}
+        data-testid="chat-filter"
+        className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE, wide && "max-w-full min-w-0 text-ui text-foreground/90")}
+      >
+        <IconTarget className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
+        <span className={cn("truncate", wide ? "min-w-0" : "hidden max-w-[12rem] @min-[520px]/chat:inline")}>{current ? current.title : t("work.summary.wholeChat")}</span>
+        <IconChevronDown className="size-3 shrink-0 opacity-60" stroke={1.8} />
       </MenuTrigger>
-      <MenuPopup align="end">
+      <MenuPopup align={wide ? "start" : "end"}>
         <MenuItem onClick={() => openDialog(null)}>
           <span className="flex size-4 items-center justify-center">{current ? null : <IconCheck className="size-3.5" stroke={1.8} />}</span>
-          <span className="flex-1">{t("chat.view.wholeChat")}</span>
+          <span className="flex-1">{t("work.summary.wholeChat")}</span>
         </MenuItem>
         {options.map((goal) => (
           <MenuItem key={goal.id} onClick={() => openDialog(goal.id)}>

@@ -18,7 +18,7 @@ import type { TimelineRow } from "./timeline";
 
 export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
   proposed: "Proposto dal Coordinatore",
-  open: "Aperto",
+  open: "Attivo",
   achieved: "Raggiunto",
   abandoned: "Abbandonato",
 };
