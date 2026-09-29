@@ -326,8 +326,11 @@ import { fixedBanInfo } from "@shared/fixedBans";
 import { interfaceFiles } from "@shared/interfaceChange";
 import { roleProfile } from "@shared/roster";
 import { confirmationModel, confirmationTurn, confirmFinding, noStrongerModel, readConfirmation, recheckFindings } from "./core/auditFindings";
+import { AuditError, type AxisSubject, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginLenses, beginVerification, closeAudit, failAudit, findAudit, finishAxis, lensTurn, openAudit, openScopedAudit, rangeSpec, readAxisAnswer, recordAuditCheck, type ReviewName } from "./core/audit";
+import { captureFocusRange, fixedPointSuggestions } from "./core/focusScope";
 import {
   assignFinding,
+  auditCandidateId,
   auditReportMarkdown,
   candidateName,
   findingIssueBody,
@@ -338,7 +341,6 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { AuditError, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginLenses, beginVerification, closeAudit, failAudit, findAudit, finishAxis, lensTurn, openAudit, readAxisAnswer, recordAuditCheck, type ReviewName } from "./core/audit";
 import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict, combineWorktrees } from "./core/conflicts";
@@ -868,6 +870,10 @@ export class TramaController {
       waiting: this.capacityQueue.filter((r) => this.waitsForCapacity(r)).length,
     };
     const project = this.state.project;
+    // Focus mode belongs to the project on screen: another project, or none, ends it (F03).
+    if (this.focusMode && this.focusMode.projectId !== project?.id) this.releaseFocusMode();
+    const focus = this.focusMode;
+    this.state.focusMode = focus ? { projectId: focus.projectId, auditId: focus.auditId, pausedNotifications: focus.held.length } : null;
     if ((project?.id ?? null) !== this.learningViewProject) {
       // The view is rebuilt when learning changes; here only when the selected project changes.
       this.learningViewProject = project?.id ?? null;
@@ -1706,7 +1712,7 @@ export class TramaController {
             if (shouldReproposeConsent(document.presence, assessment.classification)) this.proposePresence(project, "conflict", references);
             if (assessment.classification === "conflict") {
               this.continueWork(project, null, "worktreeConflict");
-              this.host.notify(
+              this.notify(
                 t("main.controller.conflictNotifyTitle", { references: references.join(", ") }),
                 t("main.controller.conflictNotifyBody", { candidate: candidate.id, references: references.join(", ") }),
                 this.state.settings.sounds === true,
@@ -1757,7 +1763,7 @@ export class TramaController {
     if (!divergence && !before) return;
     project.document.branchDivergence = divergence;
     if (divergence && !before) {
-      this.host.notify(t("main.controller.branchDivergenceNotifyTitle"), divergenceSummary(divergence), this.state.settings.sounds === true);
+      this.notify(t("main.controller.branchDivergenceNotifyTitle"), divergenceSummary(divergence), this.state.settings.sounds === true);
     }
     this.changedIn(project);
   }
@@ -5043,7 +5049,7 @@ export class TramaController {
           t("main.controller.waitingProviderUnblockDetail", { reason: `${providerUnavailableReason(provider, account)}` }),
           "info",
         );
-        this.host.notify(
+        this.notify(
           t("main.controller.providerBlockedNotificationTitle", { provider: providerName(provider) }),
           t("main.controller.providerBlockedNotificationBody", {
             specialist: specialist.name,
@@ -5455,7 +5461,7 @@ export class TramaController {
             const assignment = findAssignment(document, pair.mine.assignmentId);
             appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictCardTitle"), detail: null, referenceId: assessment.id }, assignment?.requestId ?? null);
             if (assessment.classification === "conflict") {
-              this.host.notify(
+              this.notify(
                 t("main.controller.worktreeConflictNotificationTitle"),
                 t("main.controller.worktreeConflictNotificationBody", { candidate: pair.mine.id, other: pair.other.id }),
                 this.state.settings.sounds === true,
@@ -6239,8 +6245,87 @@ export class TramaController {
     }
     this.changed();
     this.auditRuns.set(audit.id, { projectId: project.id, clients: new Set() });
-    void this.runAudit(project, audit.id);
+    void this.runAudit(project, audit.id, null);
     return audit.id;
+  }
+
+  /**
+   * The person opens focus mode on a module or the whole project with a fixed point of their choice (F03). Trama
+   * resolves the point and captures the diff first: a point that does not exist or an empty diff is a clear error
+   * here, before any check or axis starts. Returns the examination's id.
+   */
+  async startScopedFocusAudit(target: { kind: "module"; moduleId: string } | { kind: "project" }, fixedPoint: string): Promise<string> {
+    const project = this.requireProject();
+    const module = target.kind === "module" ? project.snapshot.modules.find((m) => m.id === target.moduleId) : null;
+    const language = this.state.language;
+    if (target.kind === "module" && !module) throw new DomainError(translate(language, "focus.error.moduleGone"));
+    const scoped = module ? { kind: "module" as const, moduleId: module.id, moduleName: module.name, path: module.relativePath } : { kind: "project" as const };
+    let audit: FocusAudit;
+    let diff: string;
+    try {
+      const range = await captureFocusRange(project.rootPath, fixedPoint, module ? { path: module.relativePath, name: module.name } : null, language);
+      if (this.state.project !== project) throw new DomainError(translate(language, "focus.error.projectChanged"));
+      audit = openScopedAudit(project.document, scoped, range, new Date(), language);
+      diff = range.diff;
+    } catch (error) {
+      if (error instanceof AuditError) throw new DomainError(error.message);
+      throw error;
+    }
+    this.changed();
+    this.auditRuns.set(audit.id, { projectId: project.id, clients: new Set() });
+    void this.runAudit(project, audit.id, diff);
+    return audit.id;
+  }
+
+  /** Revisions the person may pick as the fixed point of a module or the project (F03). */
+  async focusFixedPoints(): Promise<string[]> {
+    const project = this.requireProject();
+    return fixedPointSuggestions(project.rootPath);
+  }
+
+  // Full-screen focus mode (F03): while the person is in it, the other projects keep working and their notifications
+  // wait. Leaving it delivers what waited, in one notification.
+  private focusMode: { projectId: string; auditId: string; held: { title: string; body: string; sound: boolean }[] } | null = null;
+
+  enterFocusMode(auditId: string): void {
+    const project = this.requireProject();
+    if (!findAudit(project.document, auditId)) throw new DomainError(translate(this.state.language, "focus.notFound"));
+    this.focusMode = { projectId: project.id, auditId, held: this.focusMode?.held ?? [] };
+    this.changed();
+  }
+
+  exitFocusMode(): void {
+    if (!this.focusMode) return;
+    this.releaseFocusMode();
+    this.changed();
+  }
+
+  /** Leaves focus mode and delivers the notifications that waited: one as it was, several in one summary. */
+  private releaseFocusMode(): void {
+    const focus = this.focusMode;
+    if (!focus) return;
+    this.focusMode = null;
+    if (!focus.held.length) return;
+    const [only] = focus.held;
+    if (focus.held.length === 1 && only) this.host.notify(only.title, only.body, only.sound);
+    else {
+      const language = this.state.language;
+      this.host.notify(
+        translate(language, "focus.notify.title"),
+        translate(language, "focus.notify.body", { count: focus.held.length, titles: focus.held.map((n) => n.title.replace(/^Trama: /, "")).join("; ") }),
+        focus.held.some((n) => n.sound),
+      );
+    }
+  }
+
+  /** Every system notification goes through here: in focus mode it waits until the person leaves it (F03). */
+  private notify(title: string, body: string, sound = false): void {
+    if (this.focusMode) {
+      this.focusMode.held.push({ title, body, sound });
+      this.changed();
+      return;
+    }
+    this.host.notify(title, body, sound);
   }
 
   /**
@@ -6252,7 +6337,8 @@ export class TramaController {
     const document = project.document;
     const audit = findAudit(document, auditId);
     if (!audit) throw new DomainError(t("main.controller.auditNotFound"));
-    const candidate = findCandidate(document, audit.target.candidateId);
+    const candidateId = auditCandidateId(audit);
+    const candidate = candidateId ? findCandidate(document, candidateId) : null;
     const requestId = (candidate ? findAssignment(document, candidate.assignmentId)?.requestId : null) ?? null;
     try {
       if (kind === "ticket") {
@@ -6360,48 +6446,36 @@ export class TramaController {
   /** Running examinations are running work: their project stays loaded when the person leaves it (C07). */
   private readonly auditRuns = new Map<string, { projectId: string; clients: Set<AgentRuntime> }>();
 
-  private async runAudit(project: ActiveProjectState, auditId: string): Promise<void> {
+  private async runAudit(project: ActiveProjectState, auditId: string, diff: string | null): Promise<void> {
     const document = project.document;
     const audit = findAudit(document, auditId)!;
     try {
-      const candidate = findCandidate(document, audit.target.candidateId)!;
-      const assignment = findAssignment(document, candidate.assignmentId);
-      if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error(t("main.controller.focusNoWorktree"));
-      // The facts first: Trama's own checks in the sandbox, on the candidate as declared. Focus mode reads only: the
-      // evidence goes in the report and leaves the candidate's evidence, green light and approval as they are.
-      for (const check of candidate.requiredChecks) {
-        if (!(check in CHECKS)) continue;
-        const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check as ReadOnlyCheck);
-        if (snapshot.snapshotId !== candidate.snapshotId) {
-          throw new Error(t("main.controller.focusWorktreeChanged", { candidate: candidate.id }));
-        }
-        recordAuditCheck(audit, {
-          check,
-          result: result.exitCode === 0 ? "pass" : "fail",
-          command: result.command.join(" "),
-          output: result.output,
-          snapshotId: snapshot.snapshotId,
-          decisionVersions: { ...candidate.decisionVersions },
-          recordedAt: new Date().toISOString(),
-        });
-        this.changedIn(project);
+      const target = audit.target;
+      let subject: AxisSubject;
+      let cwd: string;
+      let spec: { source: string; text: string } | null;
+      if (target.kind === "candidate") {
+        ({ subject, cwd, spec } = await this.runCandidateAuditChecks(project, audit, target.candidateId));
+      } else {
+        await this.runCheckoutAuditChecks(project, audit);
+        subject = { diff: diff ?? "" };
+        cwd = project.rootPath;
+        spec = rangeSpec(audit.commits ?? [], project.github.issues);
       }
       // Cheap models for the axes (spec #124, Q3): the fixed roles' lightest model, read-only.
       const runner = this.dutyRunner(document);
       if (!runner) throw new Error(t("main.controller.noReadOnlyModelForAxes"));
       const skill = await this.nativeSkill("code-review");
-      const spec = auditSpec(document, assignment, project.github.issues);
       const axes = beginAxes(audit, spec?.source ?? null, runner.model);
       // Trama's lenses run next to the axes, on the same light model, with Trama's own brief (F05).
       const lenses = beginLenses(audit, runner.model);
       this.changedIn(project);
-      const input = { projectName: project.name, audit, candidate, assignment, spec, language: this.state.language };
-      const cwd = assignment.workspace.worktreeRoot;
+      const input = { projectName: project.name, audit, spec, language: this.state.language, ...subject };
       await Promise.all([
         ...axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, cwd)),
         ...lenses.map((lens) => this.runAuditAxis(project, audit, lens, lensTurn(input, lens), runner, cwd)),
       ]);
-      await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
+      await this.verifyAuditFindings(project, audit, target.kind === "candidate" ? target.candidateId : null, runner, cwd);
       closeAudit(audit);
     } catch (error) {
       failAudit(audit, (error as Error).message);
@@ -6413,10 +6487,66 @@ export class TramaController {
   }
 
   /**
+   * The checks of a module or the project (F03): every read-only check that applies to the checkout, in the sandbox.
+   * The checkout's HEAD must stay the one the diff was captured on, or the evidence would describe another version.
+   */
+  private async runCheckoutAuditChecks(project: ActiveProjectState, audit: FocusAudit): Promise<void> {
+    const executable = resolveCodexExecutable(this.host.codexExecutable);
+    for (const check of availableChecks(project.rootPath)) {
+      const result = await runReadOnlyCheck(check, project.rootPath, { codexExecutable: executable, scratchRoot: join(this.storage.root, "Checks") });
+      if (result.headSHA !== audit.snapshotId) {
+        throw new Error(translate(this.state.language, "focus.error.newCommit"));
+      }
+      recordAuditCheck(audit, {
+        check,
+        result: result.exitCode === 0 ? "pass" : "fail",
+        command: result.command.join(" "),
+        output: result.output,
+        snapshotId: audit.snapshotId,
+        decisionVersions: {},
+        recordedAt: new Date().toISOString(),
+      });
+      this.changedIn(project);
+    }
+  }
+
+  /** The checks of a candidate (F01), in its worktree; returns what the axes read. */
+  private async runCandidateAuditChecks(
+    project: ActiveProjectState,
+    audit: FocusAudit,
+    candidateId: string,
+  ): Promise<{ subject: AxisSubject; cwd: string; spec: { source: string; text: string } | null }> {
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId)!;
+    const assignment = findAssignment(document, candidate.assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error(t("main.controller.focusNoWorktree"));
+    // The facts first: Trama's own checks in the sandbox, on the candidate as declared. Focus mode reads only: the
+    // evidence goes in the report and leaves the candidate's evidence, green light and approval as they are.
+    for (const check of candidate.requiredChecks) {
+      if (!(check in CHECKS)) continue;
+      const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check as ReadOnlyCheck);
+      if (snapshot.snapshotId !== candidate.snapshotId) {
+        throw new Error(t("main.controller.focusWorktreeChanged", { candidate: candidate.id }));
+      }
+      recordAuditCheck(audit, {
+        check,
+        result: result.exitCode === 0 ? "pass" : "fail",
+        command: result.command.join(" "),
+        output: result.output,
+        snapshotId: snapshot.snapshotId,
+        decisionVersions: { ...candidate.decisionVersions },
+        recordedAt: new Date().toISOString(),
+      });
+      this.changedIn(project);
+    }
+    return { subject: { candidate, assignment }, cwd: assignment.workspace.worktreeRoot, spec: auditSpec(document, assignment, project.github.issues) };
+  }
+
+  /**
    * Verification of the findings (F02): Trama rechecks the proofs it can run itself, then a stronger model reads the
    * serious findings Trama could not recheck. What neither confirms stays a hypothesis.
    */
-  private async verifyAuditFindings(project: ActiveProjectState, audit: FocusAudit, candidateId: string, runner: DutyRunner, cwd: string): Promise<void> {
+  private async verifyAuditFindings(project: ActiveProjectState, audit: FocusAudit, candidateId: string | null, runner: DutyRunner, cwd: string): Promise<void> {
     beginVerification(audit);
     this.changedIn(project);
     const serious = await recheckFindings(audit, cwd);
@@ -7049,7 +7179,7 @@ export class TramaController {
           void this.refreshIssues(project);
         }
         if (incoming.length) {
-          this.host.notify(t("main.controller.monitorNotificationTitle"), t("main.controller.monitorNotificationBody", { count: incoming.length, repository }));
+          this.notify(t("main.controller.monitorNotificationTitle"), t("main.controller.monitorNotificationBody", { count: incoming.length, repository }));
         }
       }
     } finally {

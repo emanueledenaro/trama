@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
+import { latestCandidateAudit } from "@shared/findings";
 import type { ExerciseId, GuideStepId } from "@shared/onboarding";
 import { CONVERSATION_TAB, type EditorTab, SIDE_BAR_VIEWS, type SideBarView, detailKey, homeOf, opensInEditor, tabKey, viewOf } from "@/lib/workbench";
 
@@ -48,7 +49,10 @@ export type MainView = "dialog" | "overview" | "settings";
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
 export type SettingsSection = "general" | "connections" | "method" | "standard" | "learning" | "monitor" | "presence";
 
-export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | null;
+export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | "focusMode" | null;
+
+/** What the focus mode dialog opens on (F03): a module of the project or the whole project. */
+export type FocusStartTarget = { kind: "module"; moduleId: string } | { kind: "project" };
 
 /** The welcome (B02): its first page, or one of its configuration steps. */
 export type WelcomePage = "hello" | GuideStepId;
@@ -129,6 +133,9 @@ interface UiState {
   setInspector(target: InspectorTarget | null): void;
   toggleInspector(target: InspectorTarget): void;
   setDialog(dialog: DialogName, returnTo?: DialogName): void;
+  /** The target the focus mode dialog starts on; the person can change it there (F03). */
+  focusStart: FocusStartTarget;
+  openFocusStart(target: FocusStartTarget): void;
   setExercise(exercise: ExerciseId | null): void;
   setToast(message: string | null, tone?: "warning" | "info"): void;
   focusComposer(moduleId?: string | null): void;
@@ -201,7 +208,8 @@ const sideBarFor = (target: InspectorTarget | null, view: SideBarView) => {
 const editorTarget = (target: InspectorTarget, app: AppState | null): InspectorTarget => {
   if (target.kind !== "audit") return target;
   const audit = app?.project?.document.audits?.find((a) => a.id === target.id);
-  return audit ? { kind: "candidate", id: audit.target.candidateId, audit: audit.id } : target;
+  // A module's or the project's examination (F03) has no candidate: it keeps its own tab.
+  return audit?.target.kind === "candidate" ? { kind: "candidate", id: audit.target.candidateId, audit: audit.id } : target;
 };
 
 /** The main tab a main view needs in the tab list; the conversation has none. */
@@ -411,6 +419,8 @@ export const useUi = create<UiState>((set, get) => ({
     if (dialog === null && back) set({ dialog: back, dialogReturn: null });
     else set({ dialog, dialogReturn: returnTo });
   },
+  focusStart: { kind: "project" },
+  openFocusStart: (focusStart) => set({ focusStart, dialog: "focusMode", dialogReturn: null }),
   setExercise: (exercise) => set({ exercise }),
   setToast: (toast, toastTone = "warning") => set({ toast, toastTone }),
   // The composer lives in the dialog: from the overview or the settings, writing to the Coordinator goes back to it.
@@ -452,6 +462,13 @@ export async function act<K extends ActionName>(action: K, payload: ActionPayloa
     useUi.getState().setToast(errorText(error));
     return undefined;
   }
+}
+
+/** A candidate's examination in its tab: the latest one, or the first one when there is none (F01, issue #336). */
+export async function examineCandidate(candidateId: string): Promise<void> {
+  const latest = latestCandidateAudit(useUi.getState().app?.project?.document.audits, candidateId);
+  const auditId = latest?.id ?? (await act("candidate:focusAudit", { candidateId }));
+  if (auditId) useUi.getState().setInspector({ kind: "candidate", id: candidateId, audit: auditId });
 }
 
 /** Rescans the open project; a rescan that changes nothing still says it ran (W12). */

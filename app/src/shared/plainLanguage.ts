@@ -23,8 +23,9 @@ export const GLOSSARY: GlossaryTerm[] = [
   { term: "Candidato", meaning: "Il risultato di un incarico, pronto per le verifiche e per essere unito.", insteadOf: ["candidate"] },
   { term: "Verifiche", meaning: "I comandi di prova che Trama esegue davvero sul candidato, come i test.", insteadOf: ["check", "evidence"] },
   { term: "Revisori", meaning: "Gli agenti che leggono il candidato prima dell'unione e segnalano i problemi.", insteadOf: ["gate", "review gate"] },
-  { term: "Esame approfondito", meaning: "Una lettura completa di un candidato: prima le verifiche, poi il confronto con le regole del codice e con il piano.", insteadOf: ["Focus mode", "audit"] },
+  { term: "Esame approfondito", meaning: "Una lettura completa di un candidato, di un modulo o dell'intero progetto: prima le verifiche, poi il confronto con le regole del codice e con il piano. Per un modulo o per il progetto occupa tutta la finestra finché non esci; per un candidato è una sezione della sua scheda.", insteadOf: ["Focus mode", "audit"] },
   { term: "Lenti di Trama", meaning: "I controlli in più dell'esame approfondito, aggiunti da Trama: sicurezza, qualità dei test, documenti e codice.", insteadOf: ["lens"] },
+  { term: "Punto fisso", meaning: "Il commit, il branch o il tag da cui l'esame approfondito di un modulo o del progetto legge i cambiamenti.", insteadOf: ["fixed point"] },
   { term: "Punti di prova", meaning: "I punti del codice da cui i test controllano un comportamento senza toccare il resto.", insteadOf: ["seam"] },
   { term: "Copia di lavoro", meaning: "Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua.", insteadOf: ["worktree"] },
   {

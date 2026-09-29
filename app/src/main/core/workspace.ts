@@ -117,7 +117,7 @@ export async function validateWorktree(session: WorktreeSession, worktreesRoot: 
   if (branch !== session.branch) throw new Error(t("main.workspace.branchChanged"));
 }
 
-function isSensitive(path: string): boolean {
+export function isSensitive(path: string): boolean {
   return containsExcludedComponent(path.split("/").filter((c) => c !== ".gitignore"));
 }
 
