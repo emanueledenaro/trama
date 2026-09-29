@@ -362,7 +362,7 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
       const moved = document.candidates.some((candidate) => {
         const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
         if (!assignment?.requestId || !work?.has(assignment.requestId)) return false;
-        const times = [candidate.declaredAt, candidate.technicalReview?.at, ...Object.values(candidate.evidence).map((e) => e.recordedAt)];
+        const times = [candidate.declaredAt, candidate.technicalReview?.at, candidate.clearance?.at, ...Object.values(candidate.evidence).map((e) => e.recordedAt)];
         return times.some((time) => time !== undefined && time >= since);
       });
       if (moved) return null;

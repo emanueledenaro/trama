@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -274,6 +274,20 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(document, "r3").moves).toEqual([
       { move: "mergePullRequest", actor: "person", label: "Unisci la pull request", targetId: ready.id, url: "https://github.com/o/r/pull/7", message: null },
     ]);
+  });
+
+  it("leaves the green light of an approved candidate to the Coordinator within the mandate, also after a gate that ended in the background", () => {
+    const { document, assignment } = withAssignment();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    // The gate passed and nobody gave the green light yet: the move is the Coordinator's, never a wait for the person.
+    const state = workState(document, "r3");
+    expect(state).toMatchObject({ phase: "verification", verification: { undeclared: [], unverified: [], approved: [ready.id] } });
+    expect(state.moves).toEqual([{ move: "verifyCandidate", actor: "coordinator", label: "Esegui le verifiche", targetId: ready.id, url: null, message: "Esegui le verifiche del lavoro." }]);
+    expect(workStateText(state)).toContain(`Candidati approvati dal cancello che aspettano il tuo via libera: ${ready.id}. clear_candidate`);
+    // Once it has the green light, the work goes on towards the merge as before.
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    expect(workState(document, "r3")).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person", targetId: ready.id }] });
   });
 
   it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {

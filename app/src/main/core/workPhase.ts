@@ -21,7 +21,7 @@ import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
-import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
+import { candidateReport, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
@@ -71,13 +71,19 @@ export interface WorkState {
 
 /**
  * What verifying the work means now: the worktree assignments that ended without a candidate, which the Coordinator
- * declares first with declare_candidate, and the declared candidates still missing evidence or an approving review.
+ * declares first with declare_candidate, the declared candidates still missing evidence or an approving review, and the
+ * candidates the gate approved that wait for the Coordinator's green light.
  */
 export interface VerificationTargets {
   undeclared: string[];
   unverified: string[];
   /** Of the undeclared, the assignments whose latest candidate no longer matches their worktree (issue #388); absent when none. */
   outdated?: string[];
+  /**
+   * The candidates the gate approved that wait for the Coordinator's green light within the mandate, as after a gate
+   * that ended in the background (ADR 0023); absent when none.
+   */
+  approved?: string[];
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -634,6 +640,15 @@ function assignedWork(
     return { phase: "verification", blocker: null, verification };
   }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
+  // A candidate the gate approved gets the Coordinator's green light within the mandate (ADR 0017), also when the gate
+  // ended in the background after the turn that asked for it (ADR 0023): the move is the Coordinator's, not a wait.
+  const approved = edits
+    .map((i) => i.candidate!)
+    .filter((c) => !c.pullRequest && candidateReport(document, c, null).state === "verified" && authorize(document.mandate, "integrateCandidate", c.touchedModules) === "authorized");
+  if (approved.length) {
+    moves.add(coordinator("verifyCandidate", approved[0]!.id));
+    return { phase: "verification", blocker: null, verification: { undeclared: [], unverified: [], approved: approved.map((c) => c.id) } };
+  }
   if (unpublished) {
     moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
     return { phase: "candidate", blocker: null };
@@ -702,6 +717,9 @@ export function verificationText(targets: VerificationTargets): string[] {
   }
   if (targets.unverified.length) {
     lines.push(`Candidati da verificare: ${targets.unverified.join(", ")}. verify_candidate per ogni verifica richiesta che manca, poi review_candidate.`);
+  }
+  if (targets.approved?.length) {
+    lines.push(`Candidati approvati dal cancello che aspettano il tuo via libera: ${targets.approved.join(", ")}. clear_candidate per ognuno, senza chiedere alla persona.`);
   }
   return lines;
 }
