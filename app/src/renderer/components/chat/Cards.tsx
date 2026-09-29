@@ -55,7 +55,7 @@ import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
-import { act, useUi } from "@/lib/store";
+import { act, examineCandidate, useUi } from "@/lib/store";
 import { useT, withNodes } from "@/lib/i18n";
 import type { MessageKey, Translate } from "@shared/i18n";
 import { ACTION_LABELS } from "@/lib/labels";
@@ -507,6 +507,11 @@ export function DecisionCard({ requestId }: { requestId: string }) {
           {request.blocksWork && !closed ? (
             <span data-testid="blocks-work">
               <Badge tone="warning">{t("chat.card.decision.blocksWork")}</Badge>
+            </span>
+          ) : null}
+          {outcome?.byDelegation ? (
+            <span data-testid="decided-by-delegation">
+              <Badge tone="secondary">{t("delegation.decision.badge")}</Badge>
             </span>
           ) : null}
           {withdrawal ? (
@@ -1007,13 +1012,14 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
   const failed = evidence?.result === "fail";
   return (
     <div data-testid="candidate-evidence" data-check={check} data-result={evidence?.result ?? "missing"}>
-      <div className="flex items-center gap-1.5 text-ui-sm">
+      {/* Wraps in a narrow column, such as the progress of the full-screen focus mode (F03). */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-sm">
         {evidence?.result === "pass" ? (
-          <IconCircleCheck className="size-3.5 text-success" />
+          <IconCircleCheck className="size-3.5 shrink-0 text-success" />
         ) : failed ? (
-          <IconCircleX className="size-3.5 text-destructive" />
+          <IconCircleX className="size-3.5 shrink-0 text-destructive" />
         ) : (
-          <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
+          <span className="inline-block size-3.5 shrink-0 rounded-full border border-dashed border-muted-foreground/50" />
         )}
         <span title={check}>{checkName(check)}</span>
         <span className="text-muted-foreground">{checkResult(check, evidence?.result ?? null)}</span>
@@ -1613,12 +1619,8 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              // Focus mode opens the latest examination of this candidate, or starts the first one (F01).
-              const latest = (project.document.audits ?? []).filter((a) => a.target.candidateId === candidateId).at(-1);
-              if (latest) setInspector({ kind: "candidate", id: candidateId, audit: latest.id });
-              else void act("candidate:focusAudit", { candidateId }).then((id) => id && setInspector({ kind: "candidate", id: candidateId, audit: id }));
-            }}
+            // The candidate's tab opens on its latest examination, or starts the first one (F01, issue #336).
+            onClick={() => void examineCandidate(candidateId)}
           >
             <IconFocus2 /> {t("chat.card.candidate.deepReview")}
           </Button>

@@ -5129,7 +5129,9 @@ await cp(resolve("resources/DemoProject"), mandateProject, { recursive: true });
 execFileSync("git", ["-C", mandateProject, "init", "-q", "-b", "main"]);
 execFileSync("git", ["-C", mandateProject, "add", "."]);
 execFileSync("git", ["-C", mandateProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
-({ app, page } = await launch());
+// TRAMA_RETURN_AFTER_MS=0: coming back to the window counts as a return at once, for the recap of the night (issue #423).
+// The automatic moves run here (FAKE_CODEX_AUTOMATIC=run): the delegation makes the Coordinator decide by itself.
+({ app, page } = await launch({ TRAMA_RETURN_AFTER_MS: "0", FAKE_CODEX_AUTOMATIC: "run" }));
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), mandateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-mandato" }).waitFor({ timeout: 30_000 });
@@ -5238,6 +5240,50 @@ await declined.getByRole("button", { name: "Non farlo" }).click();
 await declined.waitFor({ state: "detached", timeout: 20_000 });
 await page.locator('[data-testid="requested-action"][data-status="declined"]').getByText(/^Non faccio la cancellazione di un branch o di un tag remoto: non l'hai confermato/).waitFor({ timeout: 20_000 });
 if (!remoteBranches().includes("feature/prova")) throw new Error("A declined deletion ran");
+
+// Issue #423: with "fai tutto tu" the Coordinator works on its own. The chat quotes the person, the mandate covers the
+// whole project, a product question is decided with the delegation, and when the person comes back the recap says
+// what it decided, with its doubt. The Mandate view shows the delegation and withdraws it.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await page.getByLabel("Messaggio al Coordinatore").fill("[delega:fai tutto tu in automatico] Vado a dormire, fai tutto tu in automatico");
+await page.keyboard.press("Enter");
+const grantLine = page.locator('[data-testid="delegation-line"][data-phase="granted"]').last();
+await grantLine.getByText("Da ora faccio tutto io, anche di notte, perché me l'hai chiesto: «fai tutto tu in automatico». Ti chiedo solo le conferme di cancellazione.").waitFor({ timeout: 20_000 });
+if (/[–—]/.test(await grantLine.innerText())) throw new Error("The delegation line has a dash");
+await lookShots("26g-full-delegation");
+await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] Gli ordini pagati annullati vanno in revisione");
+await page.keyboard.press("Enter");
+for (let tries = 0; ; tries++) {
+  const state = await page.evaluate(() => window.trama.getState());
+  if ((state.project?.document.delegatedChoices ?? []).some((c) => c.kind === "decision")) break;
+  if (tries > 240) throw new Error("The Coordinator did not decide the question with the delegation");
+  await page.waitForTimeout(250);
+}
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: true }));
+// The person comes back to the window: the recap of the night, with the choice and its doubt.
+await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit("blur"));
+await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit("focus"));
+const nightRecap = page.locator('[data-testid="recap-card"][data-reason="return"]').last();
+await nightRecap.waitFor({ timeout: 20_000 });
+await nightRecap.getByText("Cosa ho deciso con la tua delega").waitFor();
+await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Dubbio: Non so se vale anche per gli ordini pagati con un buono").waitFor();
+await primaryLast(nightRecap.getByTestId("recap-delegated-choice").first(), "Delegated choice");
+await nightRecap.scrollIntoViewIfNeeded();
+await lookShots("26h-morning-recap");
+await nightRecap.getByTestId("recap-delegated-choice").first().getByRole("button", { name: "Ho visto" }).click();
+await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Vista", { exact: true }).waitFor();
+await openView("Regole", "Mandato");
+const delegationSection = page.getByTestId("side-bar").getByTestId("delegation-section");
+await page.getByTestId("side-bar").locator('[data-testid="delegation-section"][data-active="true"]').waitFor({ timeout: 20_000 });
+await delegationSection.getByText("Dalla tua frase: «fai tutto tu in automatico»").waitFor();
+await primaryLast(delegationSection.locator(".cta-row"), "Full delegation");
+await lookShots("26i-delegation-view");
+await delegationSection.getByRole("button", { name: "Ritira la delega" }).click();
+await page.getByTestId("side-bar").locator('[data-testid="delegation-section"][data-active="false"]').waitFor({ timeout: 20_000 });
+await page.locator('[data-testid="delegation-line"][data-phase="revoked"]').getByText("Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te.").waitFor({ timeout: 20_000 });
+await lookShots("26j-delegation-revoked");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
@@ -5893,6 +5939,136 @@ const savedSetting = await page.evaluate(async () => (await window.trama.getStat
 if (savedSetting !== "automatic") throw new Error(`Cloud sessions: the setting was not saved: ${savedSetting}`);
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// F03 #127: focus mode on a module or on the whole project, from a fixed point the person chooses. A point that does
+// not exist or an empty diff is a clear error in the dialog; the examination then takes the whole window, with the
+// progress on the left, the findings in the middle and the proof on the right, the exit on the right of the header
+// and the notifications paused. Several window sizes, both themes.
+{
+  const focusProject = await mkdtemp(join(tmpdir(), "trama-ui-esame-"));
+  await cp(resolve("resources/DemoProject"), focusProject, { recursive: true });
+  // Only git's checks: a machine with Swift would build and test the package before the axes open.
+  await rm(join(focusProject, "Package.swift"));
+  const focusGit = (...args) => execFileSync("git", ["-C", focusProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", ...args], { stdio: "ignore" });
+  focusGit("init", "-q", "-b", "main");
+  focusGit("add", ".");
+  focusGit("commit", "-q", "-m", "Negozio");
+  focusGit("tag", "v1");
+  const focusOrder = join(focusProject, "Sources/Orders/Order.swift");
+  await writeFile(focusOrder, `${await readFile(focusOrder, "utf8")}\n// Paid orders go to review.\n`);
+  focusGit("add", ".");
+  focusGit("commit", "-q", "-m", "feat: send paid orders to review");
+  ({ app, page } = await launch());
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+  await page.evaluate((path) => window.trama.invoke("project:open", { path }), focusProject);
+  await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-esame" }).waitFor({ timeout: 30_000 });
+  await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+  // The primary action of a row is the last one, on the right.
+  const lastAction = async (row, label) => {
+    const labels = (await row.locator("button").allTextContents()).map((text) => text.trim());
+    if (labels.at(-1) !== label) throw new Error(`"${label}" is not the last action: ${labels}`);
+    const [button, box] = [await row.getByRole("button", { name: label }).boundingBox(), await row.boundingBox()];
+    if (!button || !box || box.x + box.width - (button.x + button.width) > 4) throw new Error(`"${label}" is not on the right`);
+  };
+  await openModules();
+  const inspectorPane = page.getByTestId("side-bar");
+  await inspectorPane.getByRole("button", { name: "Esame approfondito del progetto" }).waitFor();
+  await themeShots("31a-focus-map");
+  // The module opens in its editor tab (issue #336), with its actions on top.
+  await inspectorPane.getByRole("option", { name: /Orders/ }).click();
+  const moduleActions = detailPane().locator(".cta-row").first();
+  await lastAction(moduleActions, "Chiedi al Coordinatore su questo modulo");
+  await themeShots("31b-focus-module");
+
+  // The dialog starts on the module. A fixed point that does not exist, then a module with no change, fail there.
+  await moduleActions.getByRole("button", { name: "Esame approfondito" }).click();
+  const focusStart = page.getByRole("dialog", { name: "Esame approfondito" });
+  await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).and(page.locator('[aria-checked="true"]')).waitFor();
+  await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
+  await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
+  await focusStart.getByLabel("Punto fisso").fill("release-9");
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
+  await themeShots("31c-focus-start-missing-point");
+  await focusStart.getByRole("radio", { name: /Il modulo Payments/ }).click();
+  await focusStart.getByRole("button", { name: "v1", exact: true }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await focusStart.getByTestId("focus-start-error").getByText(/Nessun cambiamento nel modulo Payments tra il punto fisso "v1"/).waitFor();
+  await themeShots("31d-focus-start-empty-diff");
+  if (await page.locator("[data-focus-mode]").count()) throw new Error("Focus mode opened on a failed fixed point");
+
+  // The module from v1: full screen, three columns, the exit last on the right, notifications paused.
+  await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  const focusView = page.locator("[data-focus-mode]");
+  await focusView.waitFor({ timeout: 20_000 });
+  await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
+  await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito del modulo Orders").waitFor();
+  await focusView.getByTestId("focus-mode-notifications").getByText("Notifiche in pausa").waitFor();
+  await lastAction(focusView.locator("header .cta-row"), "Esci dall'esame");
+  // The examination takes the editor area with its tabs; the window's activity bar and status bar stay (issue #330).
+  if (await page.getByTestId("editor-area").count()) throw new Error("Focus mode leaves the editor tabs in view");
+  for (const bar of ["activity-bar", "status-bar"]) {
+    if (!(await page.getByTestId(bar).isVisible())) throw new Error(`Focus mode hides the ${bar}`);
+  }
+  await focusView.getByTestId("focus-progress").getByText("v1, ", { exact: false }).waitFor();
+  await focusView.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
+  const moduleFinding = focusView.locator('[data-testid="audit-axis"][data-axis="standards"] [data-testid="audit-finding"][data-status="verified"]');
+  await moduleFinding.getByText(/Mysterious Name in Sources\/Orders\/Order\.swift/).waitFor();
+  await focusView.getByTestId("focus-proof").getByText("Trama ha letto Sources/Orders/Order.swift:1 e la riga contiene il testo citato.").waitFor();
+  // Each column stays inside the window at every size, with no horizontal scroll.
+  const columnsFit = async (size) => {
+    const layout = await page.evaluate(() => {
+      const box = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect() ?? null;
+      return {
+        width: window.innerWidth,
+        scroll: document.documentElement.scrollWidth,
+        columns: ["focus-progress", "focus-findings", "focus-proof-column"].map((id) => {
+          const b = box(id);
+          return b && { left: b.left, right: b.right, width: b.width, height: b.height };
+        }),
+      };
+    });
+    if (layout.scroll > layout.width) throw new Error(`Focus mode scrolls sideways at ${size}: ${JSON.stringify(layout)}`);
+    for (const column of layout.columns) {
+      if (!column || column.width < 150 || column.height < 120 || column.left < 0 || column.right > layout.width + 1) throw new Error(`A focus mode column does not fit at ${size}: ${JSON.stringify(layout)}`);
+    }
+  };
+  for (const [width, height] of [[1280, 820], [1600, 1000], [1024, 700], [720, 640]]) {
+    await page.setViewportSize({ width, height });
+    await columnsFit(`${width}x${height}`);
+    await themeShots(`31e-focus-module-${width}x${height}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+  // The bottom panel (issue #383) opens under the examination: both stay in the editor area and the columns still fit.
+  const focusPanel = page.getByTestId("bottom-panel");
+  if (!(await focusPanel.count())) await page.getByRole("button", { name: "Pannello Attività" }).click();
+  await focusPanel.waitFor();
+  if (!(await focusView.isVisible())) throw new Error("The bottom panel hides focus mode");
+  const [focusBox, panelBox] = [await focusView.boundingBox(), await focusPanel.boundingBox()];
+  if (!focusBox || !panelBox || focusBox.y + focusBox.height > panelBox.y + 1) throw new Error("Focus mode runs under the bottom panel");
+  await columnsFit("1280x820 with the bottom panel");
+  await themeShots("31g-focus-module-activity-panel");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await focusPanel.waitFor({ state: "detached" });
+  // Esc leaves too; the module's tab is still where the person left it.
+  await page.keyboard.press("Escape");
+  await focusView.waitFor({ state: "detached" });
+  await detailPane().getByText("Sources/Orders").first().waitFor();
+
+  // The whole project from HEAD~1, left with the exit button.
+  await openModules();
+  await page.getByTestId("side-bar").getByRole("button", { name: "Esame approfondito del progetto" }).click();
+  await focusStart.getByRole("radio", { name: "L'intero progetto" }).and(page.locator('[aria-checked="true"]')).waitFor();
+  await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
+  await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito dell'intero progetto").waitFor();
+  await themeShots("31f-focus-project");
+  await focusView.getByRole("button", { name: "Esci dall'esame" }).click();
+  await focusView.waitFor({ state: "detached" });
+  await app.close();
+}
 
 // Issue #247: with the Coordinator's green light and the gate passed, Trama publishes and merges a candidate by itself,
 // and Activity says so. A candidate that changes the interface waits in Aspetta te with the screenshots before and
