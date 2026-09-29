@@ -1343,7 +1343,7 @@ await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
 // #305 and #313: the context meter reads the request that fills the window, the same rule for every provider: no
 // provider name and no number past the window. Past the threshold Trama reorders the context at the end of the turn
-// (ADR 0018), so the reading is taken under a 95% threshold. Light and dark.
+// (ADR 0019), so the reading is taken under a 95% threshold. Light and dark.
 {
   const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
   const noProviderName = (text, where) => {
@@ -2498,7 +2498,7 @@ const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).rep
 await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
 await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
 if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
-// ADR 0018: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
+// ADR 0019: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
 // Trama's context summary; the meter shows only the percent, the tokens on hover, and "Riordina ora" on the right.
 // Light and dark, and no provider named in the texts.
 await composer().fill("[pieno] Rileggi gli ordini annullati");

@@ -417,7 +417,7 @@ export const it = {
   "audit.lens.failed": "{lens}: non riuscita.",
   "audit.lens.running": "{lens}: in corso.",
 
-  // Context managed by Trama (ADR 0018)
+  // Context managed by Trama (ADR 0019)
   "context.meter.aria": "Contesto del Coordinatore: {percent}%, riordino sopra il {threshold}%",
   "context.meter.ariaUnknown": "Contesto del Coordinatore: misura non disponibile, riordino sopra il {threshold}%",
   "context.meter.unknown": "Misura non disponibile per questo modello.",
