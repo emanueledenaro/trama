@@ -3537,6 +3537,58 @@ if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was to
 await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("22c-recap-milestone");
 if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a slice while continuous work was off");
+// A13: the squad's backlog in the Squads view. S2 and S3 wait there in the Coordinator's order, each with its reason;
+// the person moves S3 up and their place wins, with the sign of the person's place. Narrow and wide, light and dark.
+// Given back to the Coordinator's order, S2 is on top again, so the free developer takes S2 below.
+{
+  await openView("Squadre");
+  // The window was opened again since the Squads view was first checked: the side bar of this one.
+  const squadsBar = page.getByTestId("side-bar");
+  await squadsBar.getByTestId("squad-backlog").filter({ hasText: /in cima S2 / }).waitFor({ timeout: 20_000 });
+  // Fixed by position: once open, the toggle no longer names the top item.
+  const backlogIndex = (await squadsBar.getByTestId("squad-backlog").allInnerTexts()).findIndex((text) => /in cima S2 /.test(text));
+  const backlog = squadsBar.getByTestId("squad-backlog").nth(backlogIndex);
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
+  await backlog.getByTestId("squad-backlog-toggle").click();
+  const backlogKeys = () => backlog.getByTestId("backlog-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-key")?.split(":").at(-1)));
+  if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The backlog is not in the Coordinator's order: ${await backlogKeys()}`);
+  for (const item of await backlog.getByTestId("backlog-item").all()) {
+    if (!(await item.getByTestId("backlog-reason").innerText()).trim()) throw new Error("A backlog item has no reason");
+  }
+  await backlog.getByRole("button", { name: /^Sposta su S3 / }).click();
+  await backlog.locator('[data-testid="backlog-item"][data-placed="person"]').first().waitFor();
+  if ((await backlogKeys()).join() !== "S3,S2") throw new Error(`The person's move did not win: ${await backlogKeys()}`);
+  const placed = backlog.locator('[data-testid="backlog-item"]').first();
+  await placed.getByTestId("backlog-reason").getByText(/^Posizione scelta da te/).waitFor();
+  const moveDown = await placed.getByRole("button", { name: /^Sposta giù S3 / }).boundingBox();
+  const release = await placed.getByTestId("backlog-release").boundingBox();
+  const row = await placed.boundingBox();
+  if (!moveDown || !release || !row || release.x > moveDown.x || row.x + row.width - (moveDown.x + moveDown.width) > 60) throw new Error("The backlog's buttons are not on the right of the row");
+  const backlogSize = page.viewportSize();
+  for (const [width, height] of [
+    [1280, 800],
+    [1680, 1050],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await backlog.evaluate((node) => node.scrollIntoView({ block: "center" }));
+    await noHorizontalScroll(`squad backlog ${width}x${height}`);
+    await themeShots(`22c1-squad-backlog-${width}x${height}`);
+  }
+  await page.setViewportSize(backlogSize);
+  // The same backlog in English: the title, the Coordinator's reasons and the person's place come from the catalog.
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 items").waitFor();
+  await placed.getByTestId("backlog-reason").getByText("Place chosen by you", { exact: true }).waitFor();
+  await backlog.getByTestId("backlog-item").nth(1).getByTestId("backlog-reason").getByText("Ready, in the order of the breakdown").waitFor();
+  await backlog.evaluate((node) => node.scrollIntoView({ block: "center" }));
+  await shot("22c1-squad-backlog-english");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
+  await placed.getByTestId("backlog-release").click();
+  await backlog.locator('[data-testid="backlog-item"][data-placed="person"]').waitFor({ state: "detached" });
+  if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The item did not go back to the Coordinator's order: ${await backlogKeys()}`);
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
