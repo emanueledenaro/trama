@@ -105,8 +105,9 @@ export function delegatedSteps(document: ProjectDocument, guards: ContinuationGu
   }
   for (const requestId of openDialogs(document)) {
     const latest = document.requests.find((r) => r.id === requestId)!;
-    // After an error or an interruption the person decides how to go on, as for the Coordinator's moves (W04).
-    if (latest.state !== "completed") continue;
+    // After an error or an interruption the person decides how to go on, as for the Coordinator's moves (W04), except
+    // after an automatic turn that failed: nobody wrote it, so nobody would come back to it.
+    if (latest.state !== "completed" && !(latest.state === "failed" && latest.step?.by === "trama")) continue;
     const state = workState(document, requestId);
     // A product question of the person holds the work: the Coordinator does not confirm around it.
     if (state.moves.some((m) => m.actor === "person" && m.move === "answerQuestions" && !state.questionsHoldOnlyTheirWork)) continue;
@@ -189,5 +190,9 @@ export function autonomyLine(document: ProjectDocument): string {
     authorize(document.mandate, "integrateCandidate") === "authorized"
       ? " Con il tuo via libera (clear_candidate) e il cancello dei revisori superato Trama pubblica e unisce il candidato da solo; un candidato che cambia l'interfaccia aspetta l'ok della persona in Aspetta te, con le schermate: non chiedere l'unione in chat."
       : "";
-  return `${steps}${merge} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
+  // A memory note that asks to wait for the person's yes does not hold a step the mandate covers (issue #423).
+  const memory = document.mandate?.status === "granted"
+    ? " Il mandato vale più delle note di memoria: una nota che chiede di aspettare il sì della persona per un passo che il mandato copre non ti ferma, a meno che la persona non lo chieda di nuovo in chat; in quel caso aggiorna la nota con memory."
+    : "";
+  return `${steps}${merge}${memory} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
 }

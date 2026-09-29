@@ -367,6 +367,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The assignment is gone: a new assignment is needed.",
   "main.controller.findingsWaitProjectClosed":
     "The project is not open: the work resumes when you open it again.",
+  "main.controller.findingsWaitPaused": "The Coordinator is paused: the work resumes when you press Resume.",
   "main.controller.findingsWaitMandate":
     "The current mandate no longer covers this assignment: the work resumes when you grant it again.",
   // Focus mode and publication
@@ -715,6 +716,9 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.workPhase.verifyCandidateMessage": "Run the checks of the work.",
   "main.workPhase.answerQuestion": "Answer the developer",
   "main.workPhase.answerQuestionMessage": "Answer the developer's question.",
+  "main.workPhase.clearCandidate": "Give the green light",
+  "main.workPhase.clearCandidateMessage":
+    "The candidate passed its gate: give the green light with clear_candidate, so Trama takes it to the merge.",
   "main.workPhase.settleReview": "Decide between the developer and the reviewers",
   "main.workPhase.settleReviewMessage":
     "The review stopped the same work again: read the reviewers' findings and the developer's answer, decide with settle_review, then carry the work on.",
@@ -1392,6 +1396,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.running.verifyWork": "Checking the work",
   "main.statusLine.running.answerQuestion": "Answering a developer",
   "main.statusLine.running.answerMessage": "Answering your message",
+  "main.statusLine.running.clearCandidate": "Giving the candidate the green light",
   "main.statusLine.running.writingPlan": "Writing the plan",
   "main.statusLine.running.slicingPlan": "Splitting the plan into slices",
   "main.statusLine.next.preparePlan": "prepare the plan",
@@ -1399,7 +1404,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.next.assignWork": "assign the work",
   "main.statusLine.next.verifyTarget": "check {target}",
   "main.statusLine.next.verifyWork": "check the work",
-  "main.statusLine.next.settleReview": "I decide between the developer and the reviewers",
+  "main.statusLine.next.settleReview": "decide between the developer and the reviewers",
+  "main.statusLine.next.clearCandidate": "give the candidate the green light",
   "main.statusLine.next.answerQuestion": "answer the developer",
   "main.statusLine.next.waitForYou": "wait for you",
   "main.statusLine.nowThen": "{now}, then I {next}.",
@@ -1483,7 +1489,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.continuousWork.blockResolved":
     "Block resolved by the Coordinator: {kind}",
   "main.continuousWork.blockOpen": "Block still open: {kind}",
-  "main.continuousWork.stall.unsettled": "The turn did not decide between the developer and the reviewers: use settle_review.",
+  "main.continuousWork.stall.unsettled": "the turn did not decide between the developer and the reviewers: use settle_review.",
+  "main.continuousWork.stall.uncleared": "the turn gave the verified candidate no green light: use clear_candidate, or assign the correction.",
   "main.continuousWork.block.checkFailed": "red check",
   "main.continuousWork.block.worktreeConflict":
     "conflict between pieces of work",
@@ -1531,6 +1538,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.askTrama.firstStep": "First step: {skill}.",
   "main.askTrama.firstStepFlow": "First step: {skill} ({flow}).",
   "main.askTrama.boundary": "Phase boundary: {boundary}.",
+  "main.askTrama.startLabel": "Start the Ask Trama route",
+  "main.askTrama.startedByDelegation": "Trama started Ask Trama route {id} with your delegation",
+  "main.askTrama.startedByMandate": "Trama started Ask Trama route {id} within the mandate",
+  "main.askTrama.startedChoice": "Started without waiting for your answer: {steps}.",
 
   // Agent chat
   "main.agentThreads.sliceSubject": "slice {slice}",
@@ -2369,6 +2380,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Taken with the full delegation ({label}).",
   "main.delegation.stalled": "the Coordinator did not decide what waited for the person.",
+  "main.delegation.ticketStalled": "the turn did not turn issue #{number} into work.",
   "main.delegation.candidateSubject": "Candidate {id}",
   "main.delegation.approvedAfterShots": "Approved after the screenshots",
   "main.delegation.mandateObjective": "Carry on all the project's work with the full delegation",

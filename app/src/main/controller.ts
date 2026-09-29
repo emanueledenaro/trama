@@ -167,7 +167,7 @@ import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { availableButtons, currentStateText, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
+import { availableButtons, currentStateText, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
 import {
   automaticMoveDetail,
   automaticMove,
@@ -454,7 +454,7 @@ import { confirmSquadMerge, dismissSquadMerge, mergeSquads, renameSquad, splitSq
 import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
-import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
+import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, routeToStart, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, boundaryLabel, findRoute } from "@shared/askTrama";
 import {
   automaticWorkStatus,
@@ -2843,7 +2843,7 @@ export class TramaController {
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
       sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
-      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document));
+      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document, request.id));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
@@ -3252,7 +3252,7 @@ export class TramaController {
     if (this.quitting || this.state.project !== project) return;
     if (!requestId && !PROJECT_EVENTS.includes(event)) return;
     const guards = this.continuationGuards(project);
-    // In pause the event waits for Riprendi: the round alone would not repeat a move the event calls for again.
+    // In pause the event waits for Riprendi, which weighs it before the round: an event is news, a round only retries.
     if (guards.busy || (guards.enabled && guards.paused)) {
       if (!this.deferredWork.some((d) => d.projectId === project.id && d.requestId === requestId && d.event === event)) {
         this.deferredWork.push({ projectId: project.id, requestId, event });
@@ -3399,6 +3399,8 @@ export class TramaController {
   private startAutomaticMove(project: ActiveProjectState, events: { requestId: string | null; event: WorkEvent }[]): string | null {
     this.takeDelegatedSteps(project);
     const guards = this.continuationGuards(project);
+    const route = this.startRouteByItself(project, guards);
+    if (route) return route;
     for (const { requestId, event } of events) {
       const move = requestId && !PROJECT_EVENTS.includes(event)
         ? automaticMove(project.document, requestId, event, guards)
@@ -3422,6 +3424,35 @@ export class TramaController {
   }
 
   /**
+   * Starts the proposed Ask Trama route that needs no answer of the person (issue #423): with the full delegation, or
+   * when the mandate covers its steps. Told in Activity and, with the delegation, among the choices to review. Returns
+   * its name, or null.
+   */
+  private startRouteByItself(project: ActiveProjectState, guards: ContinuationGuards): string | null {
+    if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+    const document = project.document;
+    const route = routeToStart(document);
+    if (!route) return null;
+    const steps = route.steps.map((step) => step.skill).join(" → ");
+    const delegated = activeDelegation(document) !== null;
+    if (delegated) recordChoice(document, { kind: "route", subject: route.situation, choice: t("main.askTrama.startedChoice", { steps }), targetId: route.id });
+    appendEvent(
+      document,
+      "trama",
+      { type: "activity", title: t(delegated ? "main.askTrama.startedByDelegation" : "main.askTrama.startedByMandate", { id: route.id }), detail: `${route.reason} (${steps})`, tone: "info" },
+      route.requestId,
+    );
+    const starting = { projectId: project.id };
+    this.automaticStarting = starting;
+    void this.answerRoute(route.id, true)
+      .catch((error) => this.fail(error))
+      .finally(() => {
+        if (this.automaticStarting === starting) this.automaticStarting = null;
+      });
+    return t("main.askTrama.startLabel");
+  }
+
+  /**
    * With the full delegation and "fai tutti i ticket" (issue #423), takes the next open issue with clear criteria when no
    * work is open: the choice is recorded for the recap and the Coordinator turns the issue into work. Returns its name.
    */
@@ -3431,13 +3462,16 @@ export class TramaController {
     const latest = document.requests.at(-1) ?? null;
     const move = ticketMove(document, issue, this.continuationGuards(project), latest);
     if (!move || !issue) return null;
-    recordChoice(document, {
-      kind: "ticket",
-      subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
-      choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
-      targetId: String(issue.number),
-    });
-    const step: RequestStep = { move: move.move, by: "trama", trigger: "round" };
+    // An issue whose earlier turn made no work is taken again (nextTicket): the recap tells the choice once.
+    if (!(document.delegatedChoices ?? []).some((c) => c.kind === "ticket" && c.targetId === String(issue.number))) {
+      recordChoice(document, {
+        kind: "ticket",
+        subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
+        choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
+        targetId: String(issue.number),
+      });
+    }
+    const step: RequestStep = { move: move.move, by: "trama", trigger: "round", issue: issue.number };
     const starting = { projectId: project.id };
     this.automaticStarting = starting;
     void this.send(move.message, null, move.model, move.model ? move.effort : null, [], null, null, false, step)
@@ -6585,6 +6619,8 @@ export class TramaController {
     const assignment = findAssignment(document, gate.assignmentId);
     if (!assignment) return t("main.controller.findingsWaitAssignmentGone");
     if (project !== this.state.project) return t("main.controller.findingsWaitProjectClosed");
+    // In pause nothing starts, a gate that ended in the background included (A05): Riprendi's round sends them back.
+    if (isPaused(document)) return t("main.controller.findingsWaitPaused");
     if (!withinMandate(document, assignment)) return t("main.controller.findingsWaitMandate");
     try {
       reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: [...decision, ...returnFindings(document, gate)] });
@@ -8254,11 +8290,8 @@ export class TramaController {
   /** Memory as a frozen block and the skills index, in the form the Coordinator receives them. @model-text */
   private learnedContext(project: ActiveProjectState): { memory: string; skills: string } {
     const context = this.learningFor(project).promptContext();
-    const blocks = [context.memory, context.user].filter(Boolean);
-    return {
-      memory: `## Memoria (note tue, non decisioni della persona)\n${blocks.length ? blocks.join("\n\n") : "La memoria è vuota."}`,
-      skills: context.skills,
-    };
+    const blocks = [context.memory, context.user].filter((block): block is string => Boolean(block));
+    return { memory: memorySection(blocks), skills: context.skills };
   }
 
   private learningChanged(): void {

@@ -375,6 +375,7 @@ export const mainIt = {
     "L'incarico non c'è più: serve un nuovo incarico.",
   "main.controller.findingsWaitProjectClosed":
     "Il progetto non è aperto: il lavoro riprende quando lo riapri.",
+  "main.controller.findingsWaitPaused": "Il Coordinatore è in pausa: il lavoro riprende quando premi Riprendi.",
   "main.controller.findingsWaitMandate":
     "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.",
   // Focus mode and publication
@@ -743,6 +744,9 @@ export const mainIt = {
   "main.workPhase.answerQuestion": "Rispondi allo sviluppatore",
   "main.workPhase.answerQuestionMessage":
     "Rispondi alla domanda dello sviluppatore.",
+  "main.workPhase.clearCandidate": "Dai il via libera",
+  "main.workPhase.clearCandidateMessage":
+    "Il cancello del candidato è superato: dai il via libera con clear_candidate, così Trama lo porta all'unione.",
   "main.workPhase.settleReview": "Decidi fra sviluppatore e revisori",
   "main.workPhase.settleReviewMessage":
     "La revisione ha fermato di nuovo lo stesso lavoro: leggi i rilievi dei revisori e la risposta dello sviluppatore e decidi tu con settle_review, poi porta avanti il lavoro.",
@@ -1444,6 +1448,7 @@ export const mainIt = {
   "main.statusLine.running.answerQuestion":
     "Sto rispondendo a uno sviluppatore",
   "main.statusLine.running.answerMessage": "Sto rispondendo al tuo messaggio",
+  "main.statusLine.running.clearCandidate": "Sto dando il via libera al candidato",
   "main.statusLine.running.writingPlan": "Sto scrivendo il piano",
   "main.statusLine.running.slicingPlan": "Sto dividendo il piano in fette",
   "main.statusLine.next.preparePlan": "preparo il piano",
@@ -1452,6 +1457,7 @@ export const mainIt = {
   "main.statusLine.next.verifyTarget": "verifico {target}",
   "main.statusLine.next.verifyWork": "verifico il lavoro",
   "main.statusLine.next.settleReview": "decido fra lo sviluppatore e i revisori",
+  "main.statusLine.next.clearCandidate": "do il via libera al candidato",
   "main.statusLine.next.answerQuestion": "rispondo allo sviluppatore",
   "main.statusLine.next.waitForYou": "aspetto te",
   "main.statusLine.nowThen": "{now}, poi {next}.",
@@ -1535,7 +1541,8 @@ export const mainIt = {
   "main.continuousWork.blockResolved":
     "Blocco risolto dal Coordinatore: {kind}",
   "main.continuousWork.blockOpen": "Blocco ancora aperto: {kind}",
-  "main.continuousWork.stall.unsettled": "Il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+  "main.continuousWork.stall.unsettled": "il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+  "main.continuousWork.stall.uncleared": "il turno non ha dato il via libera al candidato verificato: usa clear_candidate, o assegna la correzione.",
   "main.continuousWork.block.checkFailed": "verifica rossa",
   "main.continuousWork.block.worktreeConflict": "conflitto tra lavori",
   "main.continuousWork.block.stalledAssignment": "incarico fermo",
@@ -1586,6 +1593,10 @@ export const mainIt = {
   "main.askTrama.firstStep": "Primo passo: {skill}.",
   "main.askTrama.firstStepFlow": "Primo passo: {skill} ({flow}).",
   "main.askTrama.boundary": "Confine di fase: {boundary}.",
+  "main.askTrama.startLabel": "Avvia il percorso di Ask Trama",
+  "main.askTrama.startedByDelegation": "Percorso {id} di Ask Trama avviato da Trama con la tua delega",
+  "main.askTrama.startedByMandate": "Percorso {id} di Ask Trama avviato da Trama dentro il mandato",
+  "main.askTrama.startedChoice": "Avviato senza aspettare la tua risposta: {steps}.",
 
   // Agent chat
   "main.agentThreads.sliceSubject": "fetta {slice}",
@@ -2445,6 +2456,7 @@ export const mainIt = {
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Presa con la delega piena ({label}).",
   "main.delegation.stalled": "il Coordinatore non ha deciso quello che aspettava la persona.",
+  "main.delegation.ticketStalled": "il turno non ha trasformato la issue #{number} in lavoro.",
   "main.delegation.candidateSubject": "Candidato {id}",
   "main.delegation.approvedAfterShots": "Approvato dopo le schermate",
   "main.delegation.mandateObjective": "Portare avanti tutto il lavoro del progetto con la delega piena",

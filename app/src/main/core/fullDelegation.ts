@@ -117,9 +117,26 @@ export function markChoiceSeen(document: ProjectDocument, id: string, now = new 
 export const choicesToReview = (document: Pick<ProjectDocument, "delegatedChoices">): DelegatedChoice[] =>
   (document.delegatedChoices ?? []).filter((c) => !c.seenAt);
 
+/** How many takeTicket turns an issue gets while none of them turns it into work: then the next issue goes first. */
+export const TICKET_ATTEMPTS = 3;
+
+/** The takeTicket turns that took issue `number`. */
+const ticketTurns = (document: ProjectDocument, number: number) => document.requests.filter((r) => r.step?.move === "takeTicket" && r.step.issue === number);
+
+/**
+ * Whether issue `number` became work: a plan or an assignment that names it, or one that a takeTicket turn for it
+ * started. Pure.
+ */
+export function ticketWorked(document: ProjectDocument, number: number): boolean {
+  const turns = new Set(ticketTurns(document, number).map((r) => r.id));
+  const started = (work: { issueNumber: number | null; requestId: string | null }) => work.issueNumber === number || (work.requestId !== null && turns.has(work.requestId));
+  return document.plans.some(started) || document.team.specialists.some((s) => s.assignments.some(started));
+}
+
 /**
  * The next open issue to take with "fai tutti i ticket": one with clear criteria (the `ready-for-agent` label), not
- * already worked on by a request, a plan or an assignment, nor taken before with the delegation; the oldest first.
+ * already worked on by a request, a plan or an assignment, nor taken before with the delegation; the oldest first. An
+ * issue whose takeTicket turns made no work, as after a provider error, is taken again, TICKET_ATTEMPTS times at most.
  * Null when the delegation does not cover the tickets or none is left. Pure.
  */
 export function nextTicket(document: ProjectDocument, issues: GitHubIssue[]): GitHubIssue | null {
@@ -127,7 +144,13 @@ export function nextTicket(document: ProjectDocument, issues: GitHubIssue[]): Gi
   const taken = new Set<number>();
   for (const plan of document.plans) if (plan.issueNumber) taken.add(plan.issueNumber);
   for (const assignment of document.team.specialists.flatMap((s) => s.assignments)) if (assignment.issueNumber) taken.add(assignment.issueNumber);
-  for (const choice of document.delegatedChoices ?? []) if (choice.kind === "ticket" && choice.targetId) taken.add(Number(choice.targetId));
+  for (const choice of document.delegatedChoices ?? []) {
+    if (choice.kind !== "ticket" || !choice.targetId) continue;
+    const number = Number(choice.targetId);
+    const turns = ticketTurns(document, number).length;
+    // A ticket taken before the turns named their issue stays taken.
+    if (!turns || turns >= TICKET_ATTEMPTS || ticketWorked(document, number)) taken.add(number);
+  }
   return (
     issues
       .filter((i) => i.state === "open" && i.labels.some((l) => l.toLowerCase() === READY_LABEL) && !taken.has(i.number))

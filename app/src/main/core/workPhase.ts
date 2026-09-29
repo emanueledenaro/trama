@@ -1,4 +1,4 @@
-import { ITALIAN } from "@shared/i18n";
+import { ITALIAN, LANGUAGES, translate } from "@shared/i18n";
 import { blockerText } from "@shared/plainLanguage";
 import type {
   Candidate,
@@ -21,7 +21,7 @@ import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
-import { candidateReport, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
+import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
@@ -71,19 +71,13 @@ export interface WorkState {
 
 /**
  * What verifying the work means now: the worktree assignments that ended without a candidate, which the Coordinator
- * declares first with declare_candidate, the declared candidates still missing evidence or an approving review, and the
- * candidates the gate approved that wait for the Coordinator's green light.
+ * declares first with declare_candidate, and the declared candidates still missing evidence or an approving review.
  */
 export interface VerificationTargets {
   undeclared: string[];
   unverified: string[];
   /** Of the undeclared, the assignments whose latest candidate no longer matches their worktree (issue #388); absent when none. */
   outdated?: string[];
-  /**
-   * The candidates the gate approved that wait for the Coordinator's green light within the mandate, as after a gate
-   * that ended in the background (ADR 0023); absent when none.
-   */
-  approved?: string[];
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -175,7 +169,15 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 });
 
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "settleReview" | "decideWithDelegation" | "takeTicket";
+export type CoordinatorMove =
+  | "preparePlan"
+  | "assignWork"
+  | "verifyCandidate"
+  | "answerQuestion"
+  | "settleReview"
+  | "clearCandidate"
+  | "decideWithDelegation"
+  | "takeTicket";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -195,6 +197,8 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   answerQuestion: moveWords("main.workPhase.answerQuestion", "main.workPhase.answerQuestionMessage"),
   // The review stopped the same work twice (ADR 0023): the Coordinator settles it, never the person.
   settleReview: moveWords("main.workPhase.settleReview", "main.workPhase.settleReviewMessage"),
+  // The gate passed, also after the turn that asked for it ended (ADR 0023): the green light is the Coordinator's.
+  clearCandidate: moveWords("main.workPhase.clearCandidate", "main.workPhase.clearCandidateMessage"),
   // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
   decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
   takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
@@ -437,7 +441,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("blocked", t("main.workPhase.blockerPlanStale", { id: plan.id }), undefined, t("main.workPhase.whyPlanStale"));
       default:
         if (open.length) return finish("spec");
-        return readyPlan(plan, { assignWork, add, finish });
+        return readyPlan(plan, { assignWork, preparePlan, add, finish });
     }
   }
   if (grilled) {
@@ -457,6 +461,7 @@ function readyPlan(
   plan: WorkPlan,
   moves: {
     assignWork(): void;
+    preparePlan(): void;
     add(option: MoveOption): void;
     finish(phase: WorkPhase, blocker?: string | null, verification?: VerificationTargets, why?: string | null): WorkState;
   },
@@ -470,6 +475,8 @@ function readyPlan(
       moves.add(person("confirmSlices", PERSON_MOVE_LABELS.confirmSlices, plan.id));
       return moves.finish("slices");
     case "failed":
+      // Within the mandate the Coordinator prepares the plan again, and the slices with it: nobody waits for the button.
+      moves.preparePlan();
       moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       return moves.finish(
         "blocked",
@@ -538,7 +545,8 @@ function assignedWork(
       };
     }
     if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
-      moves.assignWork();
+      // Work the person stopped waits for their word: no automatic move takes it up again before they write.
+      if (!stoppedByPerson(document, assignment)) moves.assignWork();
       const failed = assignment.status === "failed";
       const blocker = !failed
         ? t("main.workPhase.blockerStopped", { id: assignment.id })
@@ -639,16 +647,13 @@ function assignedWork(
     }
     return { phase: "verification", blocker: null, verification };
   }
-  const unpublished = edits.find((i) => !i.candidate!.pullRequest);
-  // A candidate the gate approved gets the Coordinator's green light within the mandate (ADR 0017), also when the gate
-  // ended in the background after the turn that asked for it (ADR 0023): the move is the Coordinator's, not a wait.
-  const approved = edits
-    .map((i) => i.candidate!)
-    .filter((c) => !c.pullRequest && candidateReport(document, c, null).state === "verified" && authorize(document.mandate, "integrateCandidate", c.touchedModules) === "authorized");
-  if (approved.length) {
-    moves.add(coordinator("verifyCandidate", approved[0]!.id));
-    return { phase: "verification", blocker: null, verification: { undeclared: [], unverified: [], approved: approved.map((c) => c.id) } };
+  // The gate passed, also after the turn that asked for it ended (ADR 0023): the Coordinator's green light takes the work
+  // to the merge. Without this move a verified candidate the mandate lets Trama merge waited for nobody.
+  for (const { candidate } of edits) {
+    if (candidate!.pullRequest || candidate!.humanRejection || !greenLightMissing(document, candidate!)) continue;
+    if (authorize(document.mandate, "integrateCandidate", candidate!.touchedModules) === "authorized") moves.add(coordinator("clearCandidate", candidate!.id));
   }
+  const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
     moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
     return { phase: "candidate", blocker: null };
@@ -660,6 +665,30 @@ function assignedWork(
     return { phase: "candidate", blocker: null };
   }
   return { phase: "merged", blocker: null };
+}
+
+/** The name Trama records for the person who stops a developer's work, in every language: a record keeps its language. */
+const PERSON_ACTORS = LANGUAGES.map((language) => translate(language, "main.controller.personActor"));
+
+/**
+ * Whether the person stopped this work and has not written in its dialog since: their stop is a choice, so the work waits
+ * for their word instead of starting again by itself.
+ */
+function stoppedByPerson(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
+  const stop = assignment.stops.at(-1);
+  if (assignment.status !== "stopped" || !stop || !PERSON_ACTORS.includes(stop.requestedBy)) return false;
+  const goalId = document.requests.find((r) => r.id === assignment.requestId)?.goalId ?? null;
+  return !document.requests.some((r) => (r.goalId ?? null) === goalId && r.step?.by !== "trama" && r.createdAt > stop.requestedAt);
+}
+
+/**
+ * Whether the candidate lacks a green light that covers it: none yet, one given on other content, or one given under
+ * another mandate, which a merge by the Coordinator does not accept (issue #41).
+ */
+export function greenLightMissing(document: ProjectDocument, candidate: Candidate): boolean {
+  const clearance = candidate.clearance;
+  if (!clearance || clearance.fingerprint !== contentFingerprint(document, candidate)) return true;
+  return document.mandate?.status === "granted" && clearance.mandateVersion !== document.mandate.version;
 }
 
 /**
@@ -690,6 +719,8 @@ export function workStateText(state: WorkState): string {
   if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork, state.slices.limit));
   if (state.verification) lines.push(...verificationText(state.verification));
   if (state.questions) lines.push(questionsText(state.questions));
+  const clear = state.moves.find((m) => m.move === "clearCandidate");
+  if (clear?.targetId) lines.push(`Candidato verificato, con il cancello superato, che aspetta il tuo via libera: ${clear.targetId}.`);
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`
@@ -717,9 +748,6 @@ export function verificationText(targets: VerificationTargets): string[] {
   }
   if (targets.unverified.length) {
     lines.push(`Candidati da verificare: ${targets.unverified.join(", ")}. verify_candidate per ogni verifica richiesta che manca, poi review_candidate.`);
-  }
-  if (targets.approved?.length) {
-    lines.push(`Candidati approvati dal cancello che aspettano il tuo via libera: ${targets.approved.join(", ")}. clear_candidate per ognuno, senza chiedere alla persona.`);
   }
   return lines;
 }

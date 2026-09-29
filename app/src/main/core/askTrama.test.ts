@@ -13,11 +13,15 @@ import {
   type RouteInput,
   routeReferences,
   routeReport,
+  routeToStart,
   skillInRouteBinding,
 } from "./askTrama";
 import { setPersonLanguage } from "./personLanguage";
 import { COORDINATOR_SKILLS, COORDINATOR_TOOLS, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
+import type { ProjectDocument } from "@shared/domain";
 import { emptyDocument } from "./document";
+import { grantDelegation } from "./fullDelegation";
+import { grantMandate } from "./pact";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
 import { SELECTED_SKILLS } from "./skillSetup";
 
@@ -133,6 +137,36 @@ describe("Ask Trama, the ask-trama skill run by Trama (M07)", () => {
     expect(() => answerRoute(route, false)).toThrow("Hai già risposto a questo percorso.");
     const other = proposeRoute(document, await input());
     expect(answerRoute(other, false)).toBe(`Non avvio il percorso ${other.id} di Ask Trama (grill-with-docs → to-spec → to-tickets → implement).`);
+  });
+
+  it("starts a proposed route without the person with the full delegation, or when the mandate covers its steps", async () => {
+    const ask = (document: ProjectDocument) =>
+      document.requests.push({ id: "R-1", text: "/ask-trama", moduleId: null, state: "completed", model: null, effort: null, createdAt: "", completedAt: null, failure: null, goalId: null });
+    // Without the delegation and without a mandate the route waits for the person's answer.
+    const waiting = emptyDocument("p");
+    ask(waiting);
+    const route = proposeRoute(waiting, await input());
+    expect(routeToStart(waiting)).toBeNull();
+    // A mandate that allows planning but not the worktree does not cover implement.
+    grantMandate(waiting, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(routeToStart(waiting)).toBeNull();
+    grantMandate(waiting, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan", "executeInWorktree"], limits: [] });
+    expect(routeToStart(waiting)?.id).toBe(route.id);
+    // A turn of the dialog that failed leaves the answer to the person.
+    waiting.requests[0]!.state = "failed";
+    expect(routeToStart(waiting)).toBeNull();
+
+    // With the full delegation it starts even without a mandate that covers it; once answered, it is not started again.
+    const delegated = emptyDocument("p");
+    ask(delegated);
+    delegated.events.push({ id: "E-1", sequence: 1, origin: "person", requestId: null, createdAt: "2026-09-29T14:35:00.000Z", content: { type: "personMessage", text: "devi essere autonomo tu coordinatore", moduleId: null, moduleName: null, composer: true } });
+    grantDelegation(delegated, { quote: "devi essere autonomo tu coordinatore", tickets: false });
+    const started = proposeRoute(delegated, await input());
+    expect(routeToStart(delegated)?.id).toBe(started.id);
+    // The Coordinator hears it will not wait for the person's answer.
+    expect(routeReport(started, true)).toMatchObject({ status: "starts_by_itself", note: expect.stringContaining("do not wait for their answer") });
+    answerRoute(started, true);
+    expect(routeToStart(delegated)).toBeNull();
   });
 
   it("applies PHASE-BOUNDARIES.md with Trama's sessions", () => {

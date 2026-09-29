@@ -22,6 +22,7 @@ import type {
   WorktreeSession,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
+import { workRequests } from "@shared/grilling";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 import { DEFAULT_DEVELOPERS_PER_SQUAD, foreignSquad, squadLimitError, squadLimitProblem } from "@shared/squads";
@@ -462,6 +463,22 @@ function requireIndependent(document: ProjectDocument, moduleIds: string[], spec
   }
 }
 
+/**
+ * Whether the order continues work the developer already has in hand (A10): a correction of their own work, the same
+ * slice or issue, or the same request on modules their latest work touched, as the follow-up of a merge with the main
+ * branch that reached another squad's files. The squad of the area does not take that work from them.
+ */
+function continuesOwnWork(document: ProjectDocument, specialist: Specialist, order: AssignmentOrder, moduleIds: string[], requestId: string | null): boolean {
+  const own = specialist.assignments.filter((a) => !a.duty);
+  if (order.replaces?.some((id) => own.some((a) => a.id === id))) return true;
+  const slice = order.slice;
+  if (slice) return own.some((a) => a.slice?.planId === slice.planId && a.slice.sliceId === slice.sliceId);
+  if (order.issueNumber !== null && own.some((a) => a.issueNumber === order.issueNumber)) return true;
+  const latest = own.at(-1);
+  const scope = requestId ? workRequests(document, requestId) : null;
+  return Boolean(latest?.requestId && scope?.has(latest.requestId) && latest.moduleIds.some((id) => moduleIds.includes(id)));
+}
+
 export function assign(
   document: ProjectDocument,
   order: AssignmentOrder,
@@ -494,8 +511,11 @@ export function assign(
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
   const owner = foreignSquad(document, specialist, moduleIds);
-  if (owner) {
-    throw new TeamError("squad_owner", `The work on ${moduleIds.join(", ")} belongs to squad ${owner.name}: assign it to one of its developers.`);
+  if (owner && !continuesOwnWork(document, specialist, order, moduleIds, requestId)) {
+    throw new TeamError(
+      "squad_owner",
+      `The work on ${moduleIds.join(", ")} belongs to squad ${owner.name}: assign it to one of its developers. A developer of another squad takes it only when it continues their own work: a correction of it (replaces), the same slice or issue, or the same request on modules their latest work touched.`,
+    );
   }
   requireSquadRoom(document, specialist);
   const decisionVersions: Record<string, number> = {};

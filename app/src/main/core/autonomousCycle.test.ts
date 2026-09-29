@@ -154,6 +154,20 @@ describe("delegatedSteps: the person's steps the Coordinator takes within the ma
     expect(moves(document)).toEqual([]);
   });
 
+  it("takes the step after an automatic turn that failed: nobody wrote that turn, so nobody would come back to it", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    mandate(document, ["plan"]);
+    // The automatic turn ordered the plan, then the provider failed it; the planner proposed the seams meanwhile.
+    const automatic = request(document, "r2", { state: "failed" });
+    automatic.step = { move: "preparePlan", by: "trama" };
+    const seamsPlan = plan(document, "r2", { status: "seams", spec: seams });
+    expect(delegatedSteps(document, free)).toEqual([{ move: "confirmSeams", requestId: "r2", goalId: null, targetId: seamsPlan.id }]);
+    // A turn the person stopped stays theirs.
+    automatic.state = "interrupted";
+    expect(moves(document)).toEqual([]);
+  });
+
   it("confirms the seams and the slices of a plan in the mandate's modules", () => {
     const document = emptyDocument("p");
     request(document, "r1");
@@ -273,6 +287,21 @@ describe("technical blocks the Coordinator resolves by itself (A06, Q3)", () => 
     expect(workState(stopped, "r1")).toMatchObject({ phase: "blocked" });
     expect(workState(stopped, "r1").block).toBeUndefined();
     expect(automaticMove(stopped, "r1", "assignmentEnded", free)).toBeNull();
+  });
+
+  it("never starts again in the round work the person stopped, until the person writes", () => {
+    const document = stalled();
+    const assignment = document.team.specialists.flatMap((s) => s.assignments)[0]!;
+    assignment.status = "stopped";
+    assignment.stops.push({ requestedBy: "Persona", reason: "Fermato dalla persona", requestedAt: tick(), thenRemove: false, confirmedAt: tick() });
+    expect(automaticMove(document, "r1", "round", free)).toBeNull();
+    // A stop of Trama, as when Esci closed the work, is not the person's choice: the round takes it up.
+    assignment.stops.at(-1)!.requestedBy = "Trama";
+    expect(automaticMove(document, "r1", "round", free)?.move).toBe("assignWork");
+    // The person's word after the stop lets the work go on.
+    assignment.stops.at(-1)!.requestedBy = "Person";
+    request(document, "r2");
+    expect(automaticMove(document, "r2", "round", free)?.move).toBe("assignWork");
   });
 
   it("reads the outcome when the turn ends: resolved when the work is no longer blocked by it", () => {

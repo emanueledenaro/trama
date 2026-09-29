@@ -166,6 +166,8 @@ export interface RequestStep {
   stalled?: string | null;
   /** What started Trama's automatic move (A05): the event of the work, or the periodic round; absent on older records. */
   trigger?: WorkEvent;
+  /** The issue a takeTicket move takes (issue #423); absent on other moves and on older records. */
+  issue?: number;
   /**
    * The technical block the automatic move resolves (A06): its kind, the reason for the Coordinator and for the person,
    * and the outcome Trama read when the turn ended; absent on a move that resolves no block.
@@ -365,6 +367,8 @@ export type NextMove =
   | "answerQuestion"
   /** The review stopped the same work again (ADR 0023): the Coordinator settles the developer and the reviewers. */
   | "settleReview"
+  /** A verified candidate the mandate lets Trama merge waits for the Coordinator's green light (ADR 0023). */
+  | "clearCandidate"
   /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
   | "decideWithDelegation"
   /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
@@ -516,8 +520,8 @@ export interface FullDelegation {
 export interface DelegatedChoice {
   id: string;
   delegationId: string;
-  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, or another doubt. */
-  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "doubt";
+  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, an Ask Trama route started, or another doubt. */
+  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "route" | "doubt";
   /** What was to decide, in the person's words. */
   subject: string;
   /** What the Coordinator chose. */

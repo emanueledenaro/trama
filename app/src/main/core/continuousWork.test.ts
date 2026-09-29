@@ -21,7 +21,7 @@ import {
 } from "./continuousWork";
 import { grantDelegation, revokeDelegation } from "./fullDelegation";
 import { setPersonLanguage } from "./personLanguage";
-import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { approveCandidate, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -315,12 +315,58 @@ describe("projectMove: events of the whole project and the round (A05)", () => {
     expect(projectMove(failed, "round", free)?.move.move).toBe("preparePlan");
   });
 
-  it("does not repeat in the round the move the latest automatic turn already made or tried", () => {
+  it("tries again in the round a move the automatic turns did not carry through, three times in a row at most", () => {
     const document = confirmed();
     request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    request(document, "r4", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    // The new attempt knows the one before did not get there, and why.
+    document.requests.at(-2)!.step!.stalled = "La mossa automatica non è riuscita: il Coordinatore non ha avviato il piano.";
+    expect(automaticMoveSection("preparePlan", null, document, "r4")).toContain("il Coordinatore non ha avviato il piano");
+    expect(automaticMoveSection("preparePlan", null, document, "r3")).not.toContain("Tentativo");
+    request(document, "r5", { step: { move: "preparePlan", by: "trama" } });
     expect(projectMove(document, "round", free)).toBeNull();
     // A new event of the work is not the round: it weighs the move again.
     expect(projectMove(document, "issueOpened", free)?.move.move).toBe("preparePlan");
+    // A message of the person in between starts the count again.
+    request(document, "r6");
+    request(document, "r7", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+  });
+
+  it("prepares the plan again when the plan of the automatic turn failed", () => {
+    const document = confirmed();
+    request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    plan(document, "r3", "failed");
+    expect(moveOf(document, "r3", "planEnded")).toBeNull();
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+  });
+
+  it("prepares the plan again when its slices failed, instead of waiting for the person's button", () => {
+    const document = confirmed();
+    request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    const failed = plan(document, "r3");
+    failed.slicing = { status: "failed", tickets: [], feedback: null, approvedAt: null, failure: "Risposta illeggibile", publishFailure: null };
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    // Without a mandate for planning the slices wait for the person.
+    document.mandate!.authorizedActions = ["executeInWorktree"];
+    expect(projectMove(document, "round", free)).toBeNull();
+  });
+
+  it("takes the work up again in the round after an automatic turn that failed, never after the person's stop", () => {
+    const failed = confirmed();
+    request(failed, "r3", { step: { move: "preparePlan", by: "trama" }, state: "failed" });
+    expect(projectMove(failed, "round", free)?.move.move).toBe("preparePlan");
+    // Only the round: the other events after an error still wait.
+    expect(projectMove(failed, "issueOpened", free)).toBeNull();
+
+    const stopped = confirmed();
+    request(stopped, "r3", { step: { move: "preparePlan", by: "trama" }, state: "interrupted" });
+    expect(projectMove(stopped, "round", free)).toBeNull();
+    const person = confirmed();
+    request(person, "r3", { state: "failed" });
+    expect(projectMove(person, "round", free)).toBeNull();
   });
 
   it("weighs the task in focus first and leaves paused tasks alone", () => {
@@ -547,6 +593,64 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
   });
 });
 
+describe("the green light after a gate that ended in the background (ADR 0023)", () => {
+  /** The Coordinator's checks ran, its turn ended while the reviewers worked, then the gate passed. */
+  function passed(actions: MandateAction[] = ["plan", "executeInWorktree", "integrateCandidate"]) {
+    const document = confirmed(actions);
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+    const assignment = work(document, "r4");
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    request(document, "r5", { step: { move: "verifyCandidate", by: "trama" } });
+    const at = new Date(Date.UTC(2026, 8, 25, 10, 6));
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["Sources/Orders/Review.swift"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at,
+    );
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, at);
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Cancello superato" }, at);
+    return { document, candidate };
+  }
+
+  it("starts the Coordinator's green light, so Trama can merge the work without the person", () => {
+    const { document, candidate } = passed();
+    expect(projectMove(document, "gateEnded", free)).toMatchObject({ requestId: "r5", move: { move: "clearCandidate" } });
+    // The round starts it too: the latest automatic turn made another move.
+    expect(projectMove(document, "round", free)?.move.move).toBe("clearCandidate");
+    expect(automaticMoveSection("clearCandidate")).toContain("clear_candidate");
+    clearCandidate(document, candidate.id, "Coordinatore", null);
+    expect(projectMove(document, "round", free)).toBeNull();
+    // A green light that no longer covers the content, as after a new check, is given again.
+    candidate.clearance!.fingerprint = "old";
+    expect(projectMove(document, "round", free)?.move.move).toBe("clearCandidate");
+  });
+
+  it("gives no green light to a candidate the person refused: it waits for its correction", () => {
+    const { document, candidate } = passed();
+    candidate.humanRejection = { actor: "Persona", note: "Il testo è sbagliato", fingerprint: "f", at: new Date(Date.UTC(2026, 8, 25, 10, 7)).toISOString() };
+    expect(projectMove(document, "round", free)?.move.move).not.toBe("clearCandidate");
+  });
+
+  it("leaves the merge to the person when the mandate does not cover it", () => {
+    const { document } = passed(["plan", "executeInWorktree"]);
+    expect(projectMove(document, "gateEnded", free)).toBeNull();
+  });
+
+  it("says the move stalled when the turn gave no green light", () => {
+    const { document, candidate } = passed();
+    const move = request(document, "r6", { step: { move: "clearCandidate", by: "trama" } });
+    move.createdAt = new Date(Date.UTC(2026, 8, 25, 10, 7)).toISOString();
+    expect(stalledMove(document, "r6")?.reason).toContain("clear_candidate");
+    clearCandidate(document, candidate.id, "Coordinatore", null, new Date(Date.UTC(2026, 8, 25, 10, 8)));
+    candidate.clearance!.fingerprint = "old";
+    expect(stalledMove(document, "r6")).toBeNull();
+  });
+});
+
 describe("choicesInText: options for the person to pick written in a reply (issue #228)", () => {
   it("finds numbered or lettered options with a request to pick one", () => {
     const reply = "Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo\n\nRispondimi con 1, 2 o 3.";
@@ -611,9 +715,84 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     // The move lists the questions with the ids the tool takes and the Coordinator's own recommendation.
     const section = automaticMoveSection("decideWithDelegation", null, document);
     expect(section).toContain(`- ${question.id}: Chi vede la revisione? (alternative 0: Solo il supporto; 1: Anche il cliente; consigliata 1)`);
-    // A round does not repeat the decision the latest automatic turn already tried.
+    // The round tries the decision again, three automatic turns in a row at most.
     request(document, "r2", { step: { move: "decideWithDelegation", by: "trama" } });
-    expect(moveOf(document, "r2", "round")).toBeNull();
+    expect(moveOf(document, "r2", "round")).toBe("decideWithDelegation");
+    request(document, "r3", { step: { move: "decideWithDelegation", by: "trama" } });
+    request(document, "r4", { step: { move: "decideWithDelegation", by: "trama" } });
+    expect(moveOf(document, "r4", "round")).toBeNull();
+  });
+
+  it("decides with the delegation only a candidate that waits for the person's ok, and gives the others the green light", () => {
+    /** A verified candidate of the work, with the gate passed, that touches `file`. */
+    function verified(file: string) {
+      const document = delegated();
+      request(document, "r1");
+      answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+      mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+      request(document, "r2", { step: { move: "confirmUnderstanding", by: "person" } });
+      request(document, "r3");
+      plan(document, "r3");
+      team(document);
+      request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+      const assignment = work(document, "r4");
+      endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+      request(document, "r5", { step: { move: "verifyCandidate", by: "trama" } });
+      const candidate = declareCandidate(
+        document,
+        { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+        { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: [file], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      );
+      recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+      recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Cancello superato" });
+      return { document, candidate };
+    }
+    // Nothing waits for the person: no empty decision turn, the green light goes first.
+    expect(projectMove(verified("Sources/Orders/Review.swift").document, "round", free)?.move.move).toBe("clearCandidate");
+    // An interface candidate waits for the person's ok: the delegation gives it, then the green light follows.
+    const screen = verified("Sources/Orders/ReviewView.swift");
+    expect(projectMove(screen.document, "round", free)?.move.move).toBe("decideWithDelegation");
+    approveCandidate(screen.document, screen.candidate.id, "Coordinatore con la delega", null);
+    expect(projectMove(screen.document, "round", free)?.move.move).toBe("clearCandidate");
+  });
+
+  it("does not let a mandate request hold the work while the delegation, which brings the full mandate, is in force", () => {
+    const document = delegated();
+    request(document, "r1");
+    answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+    mandate(document, ["plan", "executeInWorktree"]);
+    request(document, "r2", { step: { move: "confirmUnderstanding", by: "person" } });
+    createMandateRequest(document, { requestId: "r2", reason: "Serve anche docs/", objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(moveOf(document, "r2")).toBe("preparePlan");
+    // Without the delegation the request is the person's, and it holds the work.
+    revokeDelegation(document, { kind: "view" });
+    expect(moveOf(document, "r2")).toBeNull();
+  });
+
+  it("says a ticket stalled when its turn made no work, and asks for the issue on the plan", () => {
+    const document = delegated(true);
+    mandate(document, ["plan"]);
+    expect(ticketMove(document, { number: 42, title: "Annullo" }, free, null)?.message).toContain("issueNumber 42");
+    request(document, "t1", { step: { move: "takeTicket", by: "trama", issue: 42 } });
+    expect(stalledMove(document, "t1")).toEqual({ move: "takeTicket", reason: "La mossa automatica non è riuscita: il turno non ha trasformato la issue #42 in lavoro." });
+    plan(document, "t1", "planning");
+    expect(stalledMove(document, "t1")).toBeNull();
+    // Open work holds the next ticket: never two at once.
+    expect(ticketMove(document, { number: 43, title: "Resi" }, free, null)).toBeNull();
+  });
+
+  it("says the decision stalled when the turn left the question open, and not once it decided", () => {
+    const document = delegated();
+    request(document, "r1");
+    const question = grill(document, "r1");
+    mandate(document, ["plan"]);
+    request(document, "r2", { step: { move: "decideWithDelegation", by: "trama" } });
+    expect(stalledMove(document, "r2")).toEqual({
+      move: "decideWithDelegation",
+      reason: "La mossa automatica non è riuscita: il Coordinatore non ha deciso quello che aspettava la persona.",
+    });
+    answerDecisionRequest(document, question.id, { alternativeIndex: 1, freeText: null });
+    expect(stalledMove(document, "r2")).toBeNull();
   });
 
   it("leaves the questions to the person without the delegation, or once it is withdrawn", () => {

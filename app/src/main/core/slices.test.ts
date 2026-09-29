@@ -360,12 +360,15 @@ describe("the phase of sliced work (M05)", () => {
     expect(focusView(document).focus).toMatchObject({ id: "work:r1", phase: "slices", phaseLabel: "fette", waitingFor: "Conferma le fette" });
   });
 
-  it("is blocked when the breakdown failed, with the plan card to try again", () => {
+  it("is blocked when the breakdown failed, with the Coordinator's move to prepare it again and the plan card to try again", () => {
     const { document, plan } = project("failed");
     expect(workState(document, "r1")).toMatchObject({
       phase: "blocked",
       blocker: `La divisione in fette del piano ${plan.id} non è riuscita: Il divisore non ha risposto.`,
-      moves: [{ move: "reviewPlan", actor: "person" }],
+      moves: [
+        { move: "preparePlan", actor: "coordinator" },
+        { move: "reviewPlan", actor: "person" },
+      ],
     });
   });
 

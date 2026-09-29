@@ -282,9 +282,8 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     const ready = candidate(document, assignment.id, "pass", "approved");
     // The gate passed and nobody gave the green light yet: the move is the Coordinator's, never a wait for the person.
     const state = workState(document, "r3");
-    expect(state).toMatchObject({ phase: "verification", verification: { undeclared: [], unverified: [], approved: [ready.id] } });
-    expect(state.moves).toEqual([{ move: "verifyCandidate", actor: "coordinator", label: "Esegui le verifiche", targetId: ready.id, url: null, message: "Esegui le verifiche del lavoro." }]);
-    expect(workStateText(state)).toContain(`Candidati approvati dal cancello che aspettano il tuo via libera: ${ready.id}. clear_candidate`);
+    expect(state.moves).toContainEqual(expect.objectContaining({ move: "clearCandidate", actor: "coordinator", targetId: ready.id }));
+    expect(workStateText(state)).toContain(`che aspetta il tuo via libera: ${ready.id}`);
     // Once it has the green light, the work goes on towards the merge as before.
     clearCandidate(document, ready.id, "Coordinatore", null);
     expect(workState(document, "r3")).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person", targetId: ready.id }] });
