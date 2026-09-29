@@ -1613,6 +1613,53 @@ const noteActions = await memoryView.getByTestId("memory-entry").locator(".cta-r
 if (noteActions.join("|") !== "Togli|Annulla|Salva") throw new Error(`The note editor's buttons: ${noteActions.join(", ")}`);
 await memoryView.getByTestId("memory-entry").getByRole("button", { name: "Togli" }).click();
 await addedNote.waitFor({ state: "detached", timeout: 10_000 });
+// Critique of 29 September 2026: a nearly full section says what to do (Riordina, whose changes wait in Aspetta te), and
+// a note in another language than the person's says so and stays as it was written. The profile is filled to 94% of
+// its limit with the person's own notes, one of them in English, and emptied of them afterwards.
+{
+  const profileNow = async () => (await page.evaluate(() => window.trama.getState())).learning.user;
+  const profileNote = async (action, text) => {
+    const result = await page.evaluate(([what, note]) => window.trama.invoke("learning:memory", { target: "user", action: what, content: note, oldText: note }), [action, text]);
+    if (!result?.success) throw new Error(`A note of the profile was not ${action === "add" ? "added" : "removed"}: ${result?.error}`);
+  };
+  const englishNote = "Wants short answers and one step at a time, with the recommended option already marked on the card.";
+  await profileNote("add", englishNote);
+  const before = await profileNow();
+  const room = Math.floor(before.limit * 0.94) - before.chars - 3;
+  if (room < 40) throw new Error(`The profile has no room for the test of Riordina: ${before.chars} of ${before.limit}`);
+  const filler = "La persona legge le spiegazioni sul telefono tra un cliente e l'altro, quindi preferisce frasi brevi e un passaggio alla volta. ";
+  const italianNote = filler.repeat(Math.ceil(room / filler.length)).slice(0, room).trim();
+  await profileNote("add", italianNote);
+  const tidy = memoryView.locator('[data-testid="memory-tidy"][data-state="full"]');
+  const tidyButton = tidy.getByRole("button", { name: "Riordina il tuo profilo" });
+  await tidyButton.waitFor({ timeout: 10_000 });
+  if ((await tidyButton.innerText()).trim() !== "Riordina") throw new Error("The action of a nearly full profile does not read Riordina");
+  const english = memoryView.locator('[data-testid="memory-entry"][data-language="en"]').filter({ hasText: "Wants short answers" });
+  await english.getByTestId("memory-entry-language").getByText("In inglese").waitFor();
+  if (!(await english.innerText()).includes(englishNote)) throw new Error("A note in another language changed its words");
+  if (await memoryView.getByTestId("memory-entry").filter({ hasText: "La persona legge le spiegazioni" }).getByTestId("memory-entry-language").count()) {
+    throw new Error("A note in the person's language is marked as in another language");
+  }
+  await tidy.scrollIntoViewIfNeeded();
+  await sideBarEnds("54-memory-profile-full");
+  // Riordina starts a review of the profile the person asked for; what it changes becomes a proposal, never a rewrite.
+  const reviewsBefore = (await page.evaluate(() => window.trama.getState())).learning.reviews.length;
+  await tidyButton.click();
+  for (let tries = 0; ; tries++) {
+    const learning = (await page.evaluate(() => window.trama.getState())).learning;
+    if (learning.reviews.length > reviewsBefore && learning.reviews[0].trigger === "person" && learning.reviews[0].status !== "running") break;
+    if (tries > 120) throw new Error("Riordina did not run a review of the profile");
+    await page.waitForTimeout(250);
+  }
+  if (!(await memoryView.getByTestId("memory-entry").filter({ hasText: englishNote }).count())) throw new Error("Riordina rewrote a note without the person's yes");
+  // The proposals of this review and the notes of the test leave, so the rest of the run finds Memoria as before.
+  for (const id of (await page.evaluate(() => window.trama.getState())).learning.proposals.map((p) => p.id)) {
+    await page.evaluate((proposal) => window.trama.invoke("learning:proposal", { id: proposal, approve: false }), id);
+  }
+  await profileNote("remove", italianNote);
+  await profileNote("remove", englishNote);
+  await tidy.waitFor({ state: "detached", timeout: 10_000 });
+}
 // Skills: Apri, Fissa and Archivia are icons with a tooltip and a name; Elimina keeps its text.
 const learnedSkill = memoryView.getByTestId("learned-skill").filter({ hasText: "release-flow" });
 for (const name of ["Apri", "Fissa", "Archivia"]) await learnedSkill.getByRole("button", { name, exact: true }).waitFor();

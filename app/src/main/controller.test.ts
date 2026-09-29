@@ -2169,6 +2169,18 @@ describe("the learning loop (ADR 0014)", () => {
     expect(learning.reviews[0]).toMatchObject({ trigger: "skills", actions: ["Skill 'release-flow' creata"] });
   });
 
+  it("tidies a section on the person's Riordina with a review whose removals wait for the person", async () => {
+    await setup();
+    await controller!.send("[memoria] ricorda pnpm", null, null, null);
+    await controller!.tidyLearnedMemory("memory");
+    const learning = controller!.snapshot.learning!;
+    // The person asked for it, yet the notes stay as they are until the person applies the proposal.
+    expect(learning.reviews[0]).toMatchObject({ trigger: "person" });
+    expect(learning.memory.entries).toEqual(["Il progetto usa pnpm 9"]);
+    expect(learning.proposals).toHaveLength(1);
+    await expect(controller!.tidyLearnedMemory("other" as "memory")).rejects.toThrow("Unknown memory section");
+  });
+
   it("moves the old single-text memory into MEMORY.md once", async () => {
     const { data, project } = await setup();
     await controller!.closeProject();

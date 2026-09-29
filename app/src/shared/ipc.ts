@@ -186,7 +186,8 @@ export interface ActionMap {
   "learning:proposal": [{ id: string; approve: boolean }, void];
   "learning:skill": [{ name: string; action: "pin" | "unpin" | "adopt" | "archive" | "restore" | "delete" | "edit"; content?: string }, void];
   "learning:skillContent": [{ name: string }, string];
-  "learning:review": [{ focus: string }, void];
+  /** `tidy`: Riordina on a nearly full section; the review proposes its changes to the person instead of applying them. */
+  "learning:review": [{ focus: string; tidy?: "memory" | "user" }, void];
   "learning:curator": [{ action: "run" | "dryRun" | "pause" | "resume" | "rollback"; backupId?: string | null }, void];
   "providers:refresh": [{ provider?: ProviderId }, void];
   "provider:login": [{ provider: ProviderId }, { url: string | null; command: string | null }];
