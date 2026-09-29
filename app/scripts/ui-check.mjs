@@ -1317,6 +1317,8 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.getByTestId("specialist-look").getByRole("radiogroup", { name: "Colore dell'agente" }).waitFor();
     if (await detail.getByRole("button", { name: "Colore", exact: true }).count()) throw new Error("The color still waits in a closed section");
     if (await detail.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
+    // UI wave of 29 September: at 1280x800 the tab covers the conversation and the work bar is its last row.
+    await workBarPlace(`the person's tab at ${size}`, width === 1280 ? "tab" : "composer");
     await noHorizontalScroll(`person of the squad ${size}`);
     for (const provider of ["codex", "claudeAgent"]) {
       for (const dark of [false, true]) {
