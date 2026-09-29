@@ -1681,9 +1681,14 @@ await page.getByRole("button", { name: /CancelPaidOrder.swift/ }).first().click(
 await shot("07-file");
 // C13: the first exercise's steps come from the document and from observed navigation.
 // Issue #354: the exercises start from Impara in the Benvenuto, which replaced the Esercizi button of the title bar. The
-// Benvenuto opens beside the example project, with its way back to the conversation.
+// Benvenuto opens as a tab of the editor next to the conversation, and the person closes it when they want.
 await openWelcomeFromProjectMenu();
 await page.getByRole("button", { name: "Chiudi Benvenuto", exact: true }).waitFor();
+{
+  const editorTabs = page.getByTestId("editor-tabs");
+  await editorTabs.getByRole("tab", { name: "Benvenuto", selected: true }).waitFor();
+  if (!(await editorTabs.getByRole("tab", { name: "Conversazione" }).count())) throw new Error("The Benvenuto tab is not next to the conversation");
+}
 await page.getByTestId("welcome").getByRole("button", { name: /^(Riprendi|Inizia|Rifai): Conosci il progetto$/ }).click();
 await page.getByTestId("welcome").waitFor({ state: "detached" });
 const exercise = page.getByRole("complementary", { name: "Esercizio" });

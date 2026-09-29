@@ -28,11 +28,26 @@ describe("the Benvenuto in the editor area (issue #354)", () => {
     expect(useUi.getState()).toMatchObject({ mainView: "dialog", welcomeStep: null });
   });
 
+  it("is a tab of the editor next to the conversation, which the person closes (issue #354)", () => {
+    useUi.getState().setApp(state({ project: project("a") }));
+    useUi.getState().openWelcome();
+    useUi.getState().openWelcome();
+    expect(useUi.getState().editorTabs.filter((tab) => tab.kind === "welcome")).toHaveLength(1);
+    useUi.getState().focusTab("conversation");
+    expect(useUi.getState().mainView).toBe("dialog");
+    useUi.getState().focusTab("welcome");
+    expect(useUi.getState().mainView).toBe("welcome");
+    useUi.getState().closeTab("welcome");
+    expect(useUi.getState()).toMatchObject({ mainView: "dialog" });
+    expect(useUi.getState().editorTabs.some((tab) => tab.kind === "welcome")).toBe(false);
+  });
+
   it("gives way to the conversation when a project opens from it", () => {
     useUi.getState().setApp(state({ project: project("a") }));
     useUi.getState().openWelcome();
     useUi.getState().setApp(state({ project: project("b") }));
     expect(useUi.getState().mainView).toBe("dialog");
+    expect(useUi.getState().editorTabs.some((tab) => tab.kind === "welcome")).toBe(false);
   });
 
   it("starts the clone again by itself once GitHub CLI is ready", () => {
