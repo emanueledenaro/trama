@@ -5,7 +5,7 @@ import { GATE_ROLES } from "@shared/gate";
 import { ITALIAN, translator } from "@shared/i18n";
 import { REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
 import { waitingForYou } from "@shared/waitingForYou";
-import { candidateReport, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
+import { candidateReport, clearCandidate, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
 import { automaticMove } from "./continuousWork";
 import { emptyDocument } from "./document";
 import { beginReviews, closeGate, finishReview, openGate, pendingReturns, settleGate } from "./gate";
@@ -223,6 +223,20 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     expect(inspectCandidate(document, candidate, null).map((b) => b.code)).not.toContain("GATE_BLOCKED");
     expect(workState(document, "r1").block).not.toBe("reviewLoop");
     expect(coordinatorMoves(document, "r1")).not.toContain("settleReview");
+  });
+
+  it("takes the candidate the Coordinator settled with the developer to the green light and the merge (ADR 0023)", () => {
+    const document = project();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    const { candidate, gate } = heldWork(document);
+    expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/not verified/);
+    settleGate(gate, candidate, { side: "developer", reason: "Il Patto chiede i dati aziendali nel sito" }, at(40));
+    const cleared = clearCandidate(document, candidate.id, "Coordinatore", "base", at(41));
+    expect(cleared.clearance).toMatchObject({ actor: "Coordinatore" });
+    expect(candidateReport(document, candidate, "base").state).toBe("decided");
+    // Nothing is left for anyone to settle or to assign: the merge goes on by itself.
+    expect(coordinatorMoves(document, "r1")).toEqual([]);
+    expect(pendingReturns(document)).toEqual([]);
   });
 
   it("starts the count again when the Coordinator sides with the reviewers (ADR 0023)", () => {
