@@ -79,6 +79,8 @@ export const mainIt = {
   "main.controller.retryTemporaryLimitDetail":
     "Dopo il limite temporaneo di {provider}, Trama riprova il messaggio.",
   "main.controller.turnInterruptedTitle": "Turno interrotto",
+  "main.controller.moveSetAsideTitle": "Mossa messa da parte per il tuo messaggio",
+  "main.controller.moveSetAsideDetail": "Messa da parte per il tuo messaggio: Trama la riprende dopo.",
   "main.controller.turnFailedTitle": "Il turno non è riuscito",
   "main.controller.turnNotRepeatable": "Questo turno non si può più ripetere.",
   "main.controller.quotaWaitStoppedTitle": "Attesa della quota fermata",
@@ -1532,6 +1534,7 @@ export const mainIt = {
   "main.recap.outcome.done": "fatta",
   "main.recap.outcome.stalled": "non riuscita",
   "main.recap.outcome.stopped": "fermata",
+  "main.recap.outcome.setAside": "messa da parte per un tuo messaggio",
   "main.recap.outcome.failed": "finita con un errore",
   "main.recap.outcome.corrected": "corretta da te",
   "main.recap.outcome.undone": "annullata",

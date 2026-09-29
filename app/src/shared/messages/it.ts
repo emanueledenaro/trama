@@ -1381,6 +1381,7 @@ export const it = {
   "activity.outcome.done": "Fatta",
   "activity.outcome.stalled": "Non riuscita",
   "activity.outcome.stopped": "Fermata",
+  "activity.outcome.setAside": "Messa da parte",
   "activity.outcome.failed": "Errore",
   "activity.outcome.corrected": "Corretto",
   "activity.turn.failed": "{count} errori",

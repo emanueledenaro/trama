@@ -245,6 +245,14 @@ describe("the recap of the full delegation (issue #423)", () => {
     expect(recapTitle(translator("en"), { reason: "return", milestones: [] })).toBe("While you were away");
   });
 
+  it("leaves out of what it did a move the person's message set aside, since Trama takes it up again (ADR 0023)", () => {
+    const document = emptyDocument("p");
+    move(document, "r1", 1, "Assegna il lavoro", "interrupted");
+    document.requests[0]!.step!.setAside = "Messa da parte per il tuo messaggio: Trama la riprende dopo.";
+    move(document, "r2", 3, "Assegna il lavoro", "interrupted");
+    expect(doneSince(document, null)).toHaveLength(1);
+  });
+
   it("tells a disagreement the Coordinator settled since the last recap, which makes the person's return worth a recap (ADR 0023)", () => {
     const document = emptyDocument("p");
     expect(decidedSinceLastRecap(document)).toBe(false);

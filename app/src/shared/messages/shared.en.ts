@@ -93,6 +93,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.activity.outcome.done": "Done",
   "shared.activity.outcome.stalled": "Not done",
   "shared.activity.outcome.stopped": "Stopped",
+  "shared.activity.outcome.setAside": "Set aside",
   "shared.activity.outcome.failed": "Error",
   "shared.activity.outcome.corrected": "Corrected",
   "shared.activity.step.confirmUnderstanding": "Understanding confirmed by the Coordinator",

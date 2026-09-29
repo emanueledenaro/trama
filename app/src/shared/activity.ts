@@ -10,11 +10,11 @@ import { requestedActionEntries } from "./requestedActions";
  */
 
 /**
- * How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, or failed on an error.
- * A step the Coordinator took for the person (A06) is made, or corrected by the person. A change of the person to the
- * squads (A11) is made, or undone.
+ * How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, set aside for a
+ * message the person typed (ADR 0023), or failed on an error. A step the Coordinator took for the person (A06) is made,
+ * or corrected by the person. A change of the person to the squads (A11) is made, or undone.
  */
-export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed" | "corrected" | "undone";
+export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "setAside" | "failed" | "corrected" | "undone";
 
 export interface ActivityEntry {
   /** The request of the move, or the round's id. */
@@ -165,7 +165,8 @@ function outcomeOf(request: CoordinatorRequest): { outcome: ActivityOutcome; det
     case "running":
       return { outcome: "running", detail: null };
     case "interrupted":
-      return { outcome: "stopped", detail: null };
+      // A move that gave way to the person's message is no stop of theirs (ADR 0023).
+      return request.step?.setAside ? { outcome: "setAside", detail: request.step.setAside } : { outcome: "stopped", detail: null };
     case "failed":
       return { outcome: "failed", detail: request.failure };
     case "completed": {

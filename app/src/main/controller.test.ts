@@ -705,6 +705,71 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("sets an automatic move aside for the message the person types, even before its turn reaches the provider, and the work goes on after it (ADR 0023)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "wait";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document).length === 1, 20_000);
+      const move = automaticRequests(document)[0]!;
+      // The person writes as soon as Trama starts the move: whether or not its turn reached the provider, it gives way.
+      await controller!.send("Prima dimmi quali moduli tocca il piano", null, null, null);
+      await until(() => move.state === "interrupted", 20_000);
+      const message = () => document.requests.find((r) => r.text === "Prima dimmi quali moduli tocca il piano");
+      await until(() => message()?.state === "completed", 20_000);
+      expect(move.step).toMatchObject({ move: "preparePlan", by: "trama", setAside: "Messa da parte per il tuo messaggio: Trama la riprende dopo." });
+      // The chat shows the person's message and no stopped turn; Activity says the move was set aside for it.
+      const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
+      expect(rows.some((r) => r.kind === "failure")).toBe(false);
+      expect(activityLog(t, document.requests, document.events).find((e) => e.requestId === move.id)).toMatchObject({
+        outcome: "setAside",
+        detail: "Messa da parte per il tuo messaggio: Trama la riprende dopo.",
+      });
+      // It was no stop of the person's: after their message the work goes on with the same move.
+      await until(() => automaticRequests(document).length === 2, 20_000);
+      expect(automaticRequests(document)[1]!.step).toMatchObject({ move: "preparePlan", by: "trama" });
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
+  it("never sets aside the person's own turn, and keeps a recorded choice and a recap as before, beside an automatic move (ADR 0023)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "wait";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document).length === 1, 20_000);
+      const move = automaticRequests(document)[0]!;
+      await until(() =>
+        document.events.some((e) => e.requestId === move.id && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
+      );
+      // A recap comes from Trama's records, and a choice Trama writes for the person waits in the queue: the move goes on.
+      await controller!.send("A che punto siamo?", null, null, null);
+      expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "recap")).toHaveLength(1);
+      await controller!.send("Ho risposto alla domanda sul piano.", null, null, null, [], null, null, false);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(move.state).toBe("running");
+      expect(project.queuedMessages.map((q) => q.text)).toEqual(["Ho risposto alla domanda sul piano."]);
+      // The person types: the move gives way, and the choice they made first leaves before their message.
+      await controller!.send("[attesa] Spiegami il piano", null, null, null);
+      await until(() => move.state === "interrupted", 20_000);
+      const typed = () => document.requests.find((r) => r.text === "[attesa] Spiegami il piano");
+      await until(() => typed()?.state === "running", 20_000);
+      expect(document.requests.find((r) => r.text === "Ho risposto alla domanda sul piano.")?.state).toBe("completed");
+      // A turn of the person is never set aside by another message of theirs: that one waits in the queue.
+      await controller!.send("E poi aggiungi i test", null, null, null);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(typed()!.state).toBe("running");
+      expect(project.queuedMessages.map((q) => q.text)).toEqual(["E poi aggiungi i test"]);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
   it("does not retry a move the Coordinator did not make, and starts nothing while its provider is blocked (W04)", async () => {
     process.env.FAKE_CODEX_AUTOMATIC = "idle";
     try {

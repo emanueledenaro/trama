@@ -79,6 +79,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.retryTemporaryLimitDetail":
     "After the {provider} temporary limit, Trama tries the message again.",
   "main.controller.turnInterruptedTitle": "Turn interrupted",
+  "main.controller.moveSetAsideTitle": "Move set aside for your message",
+  "main.controller.moveSetAsideDetail": "Set aside for your message: Trama takes it up again later.",
   "main.controller.turnFailedTitle": "The turn failed",
   "main.controller.turnNotRepeatable": "This turn can no longer be repeated.",
   "main.controller.quotaWaitStoppedTitle": "Quota wait stopped",
@@ -1480,6 +1482,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.recap.outcome.done": "done",
   "main.recap.outcome.stalled": "did not succeed",
   "main.recap.outcome.stopped": "stopped",
+  "main.recap.outcome.setAside": "set aside for a message of yours",
   "main.recap.outcome.failed": "ended with an error",
   "main.recap.outcome.corrected": "corrected by you",
   "main.recap.outcome.undone": "undone",

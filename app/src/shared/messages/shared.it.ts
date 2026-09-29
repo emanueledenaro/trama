@@ -92,6 +92,7 @@ export const sharedIt = {
   "shared.activity.outcome.done": "Fatta",
   "shared.activity.outcome.stalled": "Non riuscita",
   "shared.activity.outcome.stopped": "Fermata",
+  "shared.activity.outcome.setAside": "Messa da parte",
   "shared.activity.outcome.failed": "Errore",
   "shared.activity.outcome.corrected": "Corretto",
   "shared.activity.step.confirmUnderstanding": "Comprensione confermata dal Coordinatore",

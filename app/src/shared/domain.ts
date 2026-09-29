@@ -171,6 +171,11 @@ export interface RequestStep {
   by: "person" | "trama";
   /** Set when Trama's automatic turn ended without making the move: why, in the person's words (issue #204). */
   stalled?: string | null;
+  /**
+   * Set when a message the person typed set Trama's automatic turn aside (ADR 0023): the line Activity shows, in the
+   * person's words. The move is no stop of theirs: the work goes on from it.
+   */
+  setAside?: string | null;
   /** What started Trama's automatic move (A05): the event of the work, or the periodic round; absent on older records. */
   trigger?: WorkEvent;
   /** The issue a takeTicket move takes (issue #423); absent on other moves and on older records. */

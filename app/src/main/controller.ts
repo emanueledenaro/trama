@@ -77,7 +77,7 @@ import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
-import { type AgentRuntime, extractJsonAnswer, isInterruptedTurn } from "./core/providers/types";
+import { type AgentRuntime, extractJsonAnswer, interruptedTurnError, isInterruptedTurn } from "./core/providers/types";
 import {
   COORDINATOR_TOOLS,
   learningTools,
@@ -2743,6 +2743,8 @@ export class TramaController {
         step,
       });
       if (typed) project.document.composerDraft = "";
+      // What the person types goes before Trama's automatic move (ADR 0023): the move gives way, never their own turn.
+      if (typed) this.setAsideAutomaticMove(project);
       this.changed();
       return;
     }
@@ -2821,6 +2823,8 @@ export class TramaController {
     project.runningRequestId = request.id;
     // The running request now keeps the Coordinator busy in place of the starting move.
     if (this.automaticStarting?.projectId === project.id) this.automaticStarting = null;
+    // Only an automatic move gives way to the person's message: behind any other turn the message waits in the queue.
+    if (!automatic) this.personFirst.delete(project.id);
     const learning = this.learningFor(project);
     learning.memory.resetConsolidationFailures("foreground");
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
@@ -2847,6 +2851,8 @@ export class TramaController {
       this.keepMandateUnderDelegation(project, request.id);
       const study = await buildStudy(project.snapshot, document, project.github);
       if (closed()) return;
+      // The person wrote while Trama prepared the move (ADR 0023): it gives way before its turn starts.
+      if (automatic && this.personFirst.has(project.id)) throw interruptedTurnError();
       document.coordinator.study = study;
       this.formSquads(project);
       const parts = partsToInject(study, document.coordinator.injectedStudy);
@@ -3020,13 +3026,16 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       request.failure = message;
       const failure = interrupted ? null : classifyProviderFailure(this.t, message, { provider: providerName(activeProvider) });
+      // The move gave way to the person's message (ADR 0023): no stop of theirs, and its line says so.
+      const setAside = interrupted && request.step && automatic && this.personFirst.has(project.id) ? request.step : null;
+      if (setAside) setAside.setAside = t("main.controller.moveSetAsideDetail");
       appendEvent(
         document,
         "trama",
         {
           type: "activity",
-          title: t(interrupted ? "main.controller.turnInterruptedTitle" : "main.controller.turnFailedTitle"),
-          detail: failure ? (failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`) : null,
+          title: t(setAside ? "main.controller.moveSetAsideTitle" : interrupted ? "main.controller.turnInterruptedTitle" : "main.controller.turnFailedTitle"),
+          detail: setAside ? (setAside.setAside ?? null) : failure ? (failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`) : null,
           tone: interrupted ? "info" : "error",
         },
         request.id,
@@ -3047,6 +3056,9 @@ export class TramaController {
       this.turnToolErrors.delete(request.id);
       this.turnMemoryRefusals.delete(request.id);
       this.turnLearningWrites.delete(request.id);
+      this.coordinatorTurnsStarted.delete(request.id);
+      // The move gave way, or ended first: the person's message leaves now from the queue.
+      if (automatic) this.personFirst.delete(project.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
@@ -3257,6 +3269,31 @@ export class TramaController {
   private automaticStarting: { projectId: string } | null = null;
   /** The projects whose next Coordinator turn Trama prepares now (saving its images): the Coordinator is taken. */
   private readonly preparingTurn = new Set<string>();
+  /**
+   * The projects where a message the person typed waits for Trama's automatic move to give way (ADR 0023): the move's
+   * turn is interrupted, or does not start, and the message leaves from the queue as soon as the move ends.
+   */
+  private readonly personFirst = new Set<string>();
+  /** The Coordinator requests whose turn the provider started: only those can be interrupted without losing the prompt. */
+  private readonly coordinatorTurnsStarted = new Set<string>();
+
+  /**
+   * The person typed while the Coordinator is taken (ADR 0023): when what holds it is Trama's automatic move, running or
+   * about to start, the move gives way. Its turn is interrupted once the provider started it; before that it gives way
+   * when its prompt is ready or as soon as the provider starts it. The work the move started goes on in the background.
+   */
+  private setAsideAutomaticMove(project: ActiveProjectState): void {
+    const running = project.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
+    const automatic = running ? running.step?.by === "trama" : this.automaticStarting?.projectId === project.id;
+    if (!automatic) return;
+    this.personFirst.add(project.id);
+    if (running && this.coordinatorTurnsStarted.has(running.id)) void this.interruptCoordinator(project);
+  }
+
+  private async interruptCoordinator(project: ActiveProjectState): Promise<void> {
+    if (this.runtime?.projectId !== project.id) return;
+    await this.runtime.client.interrupt().catch(() => undefined);
+  }
   /** The periodic round of continuous work (A05), on while Trama is open. */
   private roundTimer: NodeJS.Timeout | null = null;
   /** The round that runs now: a tick meanwhile waits for the next one. */
@@ -3832,6 +3869,11 @@ export class TramaController {
       this.changed();
     };
     switch (event.type) {
+      case "turnStarted":
+        this.coordinatorTurnsStarted.add(request.id);
+        // The person wrote while the move's prompt was on its way (ADR 0023): the move gives way now its turn exists.
+        if (request.step?.by === "trama" && this.personFirst.has(project.id)) void this.interruptCoordinator(project);
+        return;
       case "textDelta":
         if (project.streaming?.requestId === request.id) {
           project.streaming.text += event.delta;

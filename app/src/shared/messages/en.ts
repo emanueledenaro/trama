@@ -1379,6 +1379,7 @@ export const en: Record<keyof typeof it, string> = {
   "activity.outcome.done": "Done",
   "activity.outcome.stalled": "Not done",
   "activity.outcome.stopped": "Stopped",
+  "activity.outcome.setAside": "Set aside",
   "activity.outcome.failed": "Error",
   "activity.outcome.corrected": "Corrected",
   "activity.turn.failed": "{count} errors",

@@ -156,6 +156,7 @@ const FACT_OUTCOMES: Record<ActivityOutcome, MessageKey> = {
   done: "main.recap.outcome.done",
   stalled: "main.recap.outcome.stalled",
   stopped: "main.recap.outcome.stopped",
+  setAside: "main.recap.outcome.setAside",
   failed: "main.recap.outcome.failed",
   corrected: "main.recap.outcome.corrected",
   undone: "main.recap.outcome.undone",
@@ -220,11 +221,12 @@ export function decidedSinceLastRecap(document: ProjectDocument): boolean {
 
 /**
  * "Cosa ho fatto": the moves and rounds in Activity since the last recap, oldest first, the disagreements the
- * Coordinator settled and the issues it opened, with their number. Moves still running belong to "Cosa faccio". Pure.
+ * Coordinator settled and the issues it opened, with their number. Moves still running belong to "Cosa faccio"; a move
+ * set aside for the person's message is taken up again, so it is not told (ADR 0023). Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
   const entries = activityLog(t, document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates, [], document.requestedActions ?? [])
-    .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
+    .filter((entry) => entry.outcome !== "running" && entry.outcome !== "setAside" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({
     at: entry.startedAt,

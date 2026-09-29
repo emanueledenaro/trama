@@ -233,7 +233,7 @@ describe("the checks after an ended assignment (issue #204)", () => {
   /**
    * The sequence of ui-check (V04, then issue #204): with continuous work off the person stops Ada's work and resumes
    * it, and it ends without a candidate. Turned back on, continuous work runs a round at once and starts its checks.
-   * FAKE_CODEX_AUTOMATIC=wait keeps that move running, as in ui-check, so the person's next message waits behind it.
+   * FAKE_CODEX_AUTOMATIC=wait keeps that move running, as in ui-check: the person's next message sets it aside (ADR 0023).
    */
   it("checks the work the person resumed as soon as continuous work is back on, and the next work's own checks follow", async () => {
     process.env.FAKE_CODEX_AUTOMATIC = "wait";
@@ -286,16 +286,20 @@ describe("the checks after an ended assignment (issue #204)", () => {
     await until(() => automatic().length === 1 && project.runningRequestId === automatic()[0]!.id);
     // Started by Trama, from the round or from the end of the work that waited while continuous work was off.
     expect(automatic()[0]!.step).toMatchObject({ move: "verifyCandidate", by: "trama" });
-    // The person writes while that move runs: the message waits in the queue and no new work starts beside it.
+    // The person writes while that move runs (ADR 0023): the move gives way at once, without a stop of theirs, and the
+    // message runs and becomes Ada's second assignment, a work of its own.
+    const setAside = automatic()[0]!;
     await controller.send("[assegna] [luna]", null, null, null);
-    await until(() => project.queuedMessages.length > 0);
-    expect(project.queuedMessages.map((q) => q.text)).toEqual(["[assegna] [luna]"]);
-    await new Promise((r) => setTimeout(r, 300));
-    expect(ada.assignments).toHaveLength(1);
-
-    // Stopped, the move frees the Coordinator: the message runs and becomes Ada's second assignment, a work of its own.
-    await controller.interrupt();
+    await until(() => setAside.state === "interrupted", 20_000);
     await until(() => ada.assignments.length === 2 && ada.assignments[1]!.status === "completed", 20_000);
+    expect(project.queuedMessages).toEqual([]);
+    // The move's line says it was set aside for the person's message; it is no stop of theirs, and nothing it holds stops.
+    expect(setAside.step?.setAside).toBe("Messa da parte per il tuo messaggio: Trama la riprende dopo.");
+    expect(activityLog(t, document.requests, document.events).find((e) => e.requestId === setAside.id)).toMatchObject({
+      outcome: "setAside",
+      detail: "Messa da parte per il tuo messaggio: Trama la riprende dopo.",
+    });
+    expect(resumed.status).toBe("completed");
     const luna = ada.assignments[1]!;
     expect(luna.objective).toContain("[luna]");
     expect(luna.replaces).toBeUndefined();
