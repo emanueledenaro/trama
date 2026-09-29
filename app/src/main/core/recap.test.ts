@@ -89,7 +89,7 @@ function recap(document: ProjectDocument, minute: number, reason: "milestone" | 
 }
 
 describe("asking for a recap", () => {
-  it.each(["/riepilogo", "Riepilogo", "Fammi un riepilogo", "fammi il riepilogo, per favore", "Mi fai un riepilogo?", "A che punto siamo?", "Coordinatore, a che punto siamo?", "Come procede il lavoro?"])(
+  it.each(["/riepilogo", "Riepilogo", "Fammi un riepilogo", "fammi il riepilogo, per favore", "Mi fai un riepilogo?", "A che punto siamo?", "Coordinatore, a che punto siamo?", "Come procede il lavoro?", "Come va il lavoro?"])(
     "recognizes %s",
     (text) => expect(asksForRecap(text)).toBe(true),
   );
@@ -99,6 +99,8 @@ describe("asking for a recap", () => {
     "Aggiungi un riepilogo dell'ordine nella pagina di conferma",
     "/ask-trama riepilogo",
     "Come va?",
+    "Come va il lavoro? E poi aggiungi i test",
+    "A che punto siamo? Intanto apri una issue per il checkout",
   ])("leaves %s to the Coordinator", (text) => expect(asksForRecap(text)).toBe(false));
 
   it("titles the card by what made it", () => {

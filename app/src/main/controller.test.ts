@@ -824,6 +824,26 @@ describe("TramaController", () => {
     expect(document.requests).toHaveLength(requests + 1);
   }, 60_000);
 
+  it("answers a question on the state at once while a turn runs, and queues a question that also asks for work", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const running = controller!.send("[attesa] Prepara il riepilogo degli ordini", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    const turn = project.runningRequestId!;
+    // The state comes from Trama's records: the person does not wait for the turn that runs.
+    await controller!.send("Come va il lavoro?", null, null, null);
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "recap")).toHaveLength(1);
+    expect(controller!.snapshot.project!.queuedMessages).toEqual([]);
+    // A question that also asks for work is the Coordinator's: it waits for the turn and leaves then, never lost.
+    await controller!.send("Come va il lavoro? E poi aggiungi i test", null, null, null);
+    expect(controller!.snapshot.project!.queuedMessages.map((q) => q.text)).toEqual(["Come va il lavoro? E poi aggiungi i test"]);
+    await interruptOnceSent(document, turn);
+    await running;
+    await until(() => document.requests.at(-1)!.text === "Come va il lavoro? E poi aggiungi i test" && document.requests.at(-1)!.state === "completed");
+    expect(controller!.snapshot.project!.queuedMessages).toEqual([]);
+  }, 60_000);
+
   it("writes one recap for a milestone, and tells it once (A03)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
