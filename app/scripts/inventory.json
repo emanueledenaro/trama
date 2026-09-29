@@ -18,6 +18,7 @@
     "src/main/askTrama.integration.test.ts :: Ask Trama in the conversation (M07) > proposes a route for /ask-trama and starts its first flow in Trama once the person confirms",
     "src/main/askTrama.integration.test.ts :: Ask Trama in the conversation (M07) > refuses a step ask-trama does not name, and records a declined route",
     "src/main/askTrama.integration.test.ts :: Ask Trama in the conversation (M07) > starts by itself a route the mandate covers, once the turn that proposed it ends, and tells it in Activity (issue #423)",
+    "src/main/candidate.integration.test.ts :: the checks after an ended assignment (issue #204) > checks the work the person resumed as soon as continuous work is back on, and the next work's own checks follow",
     "src/main/candidate.integration.test.ts :: the checks after an ended assignment (issue #204) > declares the candidate and verifies it when the Coordinator follows what verify_candidate answers",
     "src/main/candidate.integration.test.ts :: the checks after an ended assignment (issue #204) > does not stop in silence when the Coordinator verifies the assignment instead of a candidate",
     "src/main/candidate.integration.test.ts :: verified candidate in the chat (V05) > blocks a candidate on a failed check with its original output, verifies the correction as a new candidate and reviews it from a distinct thread",
