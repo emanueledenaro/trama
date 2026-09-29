@@ -10,6 +10,7 @@ import {
   referenceText,
   referenceTitle,
   splitReferences,
+  leadingPunctuation,
   unknownReferences,
 } from "./references";
 import { translator } from "@shared/i18n";
@@ -183,5 +184,18 @@ describe("routes of Ask Trama (issue #270)", () => {
     expect(referenceTitle(reference)).toBe("AT-66666666: Serve un chiarimento");
     expect(parseReferenceHref(referenceHref(reference.target))).toEqual({ kind: "route", id: "AT-66666666" });
     expect(unknownReferences("Avvia il percorso AT-77777777", index)).toEqual(["AT-77777777"]);
+  });
+});
+
+describe("leadingPunctuation", () => {
+  it("splits the closing punctuation that follows a reference from the rest of the text", () => {
+    expect(leadingPunctuation(", domanda «Il cliente riceve una email?».")).toEqual({ glued: ",", rest: " domanda «Il cliente riceve una email?»." });
+    expect(leadingPunctuation(".")).toEqual({ glued: ".", rest: "" });
+    expect(leadingPunctuation("»).")).toEqual({ glued: "»).", rest: "" });
+  });
+
+  it("leaves a text that does not start with punctuation whole", () => {
+    expect(leadingPunctuation(" e poi")).toEqual({ glued: "", rest: " e poi" });
+    expect(leadingPunctuation("")).toEqual({ glued: "", rest: "" });
   });
 });
