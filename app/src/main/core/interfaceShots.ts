@@ -4,6 +4,7 @@ import { copyFile, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { InterfaceShot } from "@shared/domain";
 import { detectLocalSandbox, lendNodeDependencies, localSandboxedCommand, nodePackage, sandboxedCommand } from "./checks";
+import { t } from "./personLanguage";
 import { git, runProcess } from "./process";
 
 /**
@@ -39,7 +40,7 @@ export const screenName = (file: string): string =>
     .replace(/\.png$/i, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "schermata";
+    .replace(/^-+|-+$/g, "") || t("main.shots.defaultName");
 
 /** Runs the script once in `root`, in one theme, and returns the PNG files it saved, sorted by name. */
 async function runScript(root: string, theme: (typeof THEMES)[number], scratch: string, codexExecutable: string, timeoutMs: number): Promise<{ files: string[]; failure: string | null }> {
@@ -51,13 +52,13 @@ async function runScript(root: string, theme: (typeof THEMES)[number], scratch: 
   const local = await detectLocalSandbox();
   const [executable, ...args] = local ? localSandboxedCommand(local, inner, scratch) : sandboxedCommand(codexExecutable, inner, scratch);
   const result = await runProcess(executable!, args, { cwd: scratch, timeoutMs });
-  if (result.timedOut) return { files: [], failure: `Lo script ${SCREENSHOT_SCRIPT} non ha finito entro ${Math.round(timeoutMs / 1000)} secondi.` };
+  if (result.timedOut) return { files: [], failure: t("main.shots.timeout", { script: SCREENSHOT_SCRIPT, seconds: String(Math.round(timeoutMs / 1000)) }) };
   if (result.exitCode !== 0) {
-    const line = `${result.stderr}\n${result.stdout}`.trim().split("\n").filter(Boolean).at(-1) ?? `uscita ${result.exitCode ?? "?"}`;
-    return { files: [], failure: `Lo script ${SCREENSHOT_SCRIPT} non è riuscito: ${line}` };
+    const line = `${result.stderr}\n${result.stdout}`.trim().split("\n").filter(Boolean).at(-1) ?? t("main.push.exitCode", { code: String(result.exitCode ?? "?") });
+    return { files: [], failure: t("main.shots.failed", { script: SCREENSHOT_SCRIPT, detail: line }) };
   }
   const files = (await readdir(out).catch(() => [] as string[])).filter((f) => /\.png$/i.test(f)).sort().slice(0, MAX_SCREENS);
-  return { files: files.map((f) => join(out, f)), failure: files.length ? null : `Lo script ${SCREENSHOT_SCRIPT} non ha salvato nessun PNG in TRAMA_SCREENSHOTS_DIR.` };
+  return { files: files.map((f) => join(out, f)), failure: files.length ? null : t("main.shots.noPng", { script: SCREENSHOT_SCRIPT }) };
 }
 
 /**
@@ -76,7 +77,7 @@ export async function captureInterfaceShots(input: {
   if (!hasScreenshotScript(input.candidateRoot)) {
     return {
       status: "unavailable",
-      reason: `Il progetto non dichiara lo script "${SCREENSHOT_SCRIPT}" nel package.json: Trama non può fare le schermate prima e dopo. Guarda il diff o prova il branch del candidato.`,
+      reason: t("main.shots.noScript", { script: SCREENSHOT_SCRIPT }),
       shots: [],
     };
   }
@@ -97,7 +98,7 @@ export async function captureInterfaceShots(input: {
     ];
     for (const { side, root } of sides) {
       if (!hasScreenshotScript(root)) {
-        notes.push(`La base non ha ancora lo script "${SCREENSHOT_SCRIPT}": ci sono solo le schermate dopo.`);
+        notes.push(t("main.shots.baseWithoutScript", { script: SCREENSHOT_SCRIPT }));
         continue;
       }
       // The sandbox has no network: the dependencies are the project checkout's, when it has them.
@@ -107,7 +108,17 @@ export async function captureInterfaceShots(input: {
       }
       for (const theme of THEMES) {
         const run = await runScript(root, theme, join(resolvedScratch, side), input.codexExecutable, input.timeoutMs ?? SHOT_TIMEOUT_MS);
-        if (run.failure) return { status: "failed", reason: `${side === "before" ? "Prima" : "Dopo"}, tema ${theme === "light" ? "chiaro" : "scuro"}: ${run.failure}`, shots };
+        if (run.failure) {
+          return {
+            status: "failed",
+            reason: t("main.shots.sideFailed", {
+              side: t(side === "before" ? "main.shots.before" : "main.shots.after"),
+              theme: t(theme === "light" ? "main.shots.light" : "main.shots.dark"),
+              failure: run.failure,
+            }),
+            shots,
+          };
+        }
         for (const file of run.files) {
           const name = screenName(file.split("/").at(-1)!);
           const path = join(input.outputDir, `${side}-${theme}-${name}.png`);
@@ -117,7 +128,7 @@ export async function captureInterfaceShots(input: {
       }
     }
   } catch (error) {
-    return { status: "failed", reason: `Trama non ha preparato le schermate: ${(error as Error).message.split("\n")[0]}`, shots };
+    return { status: "failed", reason: t("main.shots.notPrepared", { detail: (error as Error).message.split("\n")[0] ?? "" }), shots };
   } finally {
     await git(["worktree", "remove", "--force", baseRoot], input.projectRoot, false).catch(() => undefined);
     await rm(resolvedScratch, { recursive: true, force: true }).catch(() => undefined);

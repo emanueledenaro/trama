@@ -13,6 +13,7 @@ import { git, runProcess } from "./process";
 import { pushAuthorization } from "./push";
 import { secretFindings } from "./quality";
 import { buildClaudeEnvironment, resolveClaudeExecutable } from "./providers/claudeAgent";
+import { t } from "./personLanguage";
 import { slug, type WorkspaceReview } from "./workspace";
 
 /**
@@ -61,7 +62,7 @@ export function claudeCloudTransport(configured: string | null = null): CloudTra
           if (outcome instanceof Error) reject(outcome);
           else resolve(outcome);
         };
-        const timer = setTimeout(() => finish(new Error("Claude Code non ha aperto la sessione cloud entro cinque minuti.")), START_TIMEOUT_MS);
+        const timer = setTimeout(() => finish(new Error(t("main.cloud.startTimeout"))), START_TIMEOUT_MS);
         const read = (chunk: Buffer) => {
           output = (output + chunk.toString("utf8")).slice(-20_000);
           const url = parseSessionUrl(output);
@@ -72,7 +73,7 @@ export function claudeCloudTransport(configured: string | null = null): CloudTra
         child.on("error", (error) => finish(error));
         child.on("close", (code) => {
           if (code === 0) finish({ url: parseSessionUrl(output) });
-          else finish(new Error(output.trim().split("\n").at(-1) || `claude --cloud è uscito con ${code ?? "?"}.`));
+          else finish(new Error(output.trim().split("\n").at(-1) || t("main.cloud.exited", { code: String(code ?? "?") })));
         });
       }),
   };
@@ -90,7 +91,7 @@ export function fixtureCloudTransport(url = "https://claude.ai/code/session_fixt
 export function cloudBranchName(prefix: string, title: string, issue: number | null, conventions?: CommitConventions): string {
   const branch = workBranchName(prefix, slug(title), randomUUID(), issue);
   const problems = validateBranchName(branch, conventions);
-  if (problems.length) throw new Error(`Nome di branch non valido: ${problems.join(" ")}`);
+  if (problems.length) throw new Error(t("main.cloud.invalidBranch", { problems: problems.join(" ") }));
   return branch;
 }
 
@@ -150,7 +151,7 @@ export async function readBranchPullRequest(
     env: ghEnvironment(),
     timeoutMs: 30_000,
   });
-  if (listed.exitCode !== 0) throw new Error(`GitHub non ha elencato le pull request: ${listed.stderr.trim() || listed.stdout.trim()}`);
+  if (listed.exitCode !== 0) throw new Error(t("main.cloud.pullsNotListed", { error: listed.stderr.trim() || listed.stdout.trim() }));
   const rows = JSON.parse(listed.stdout) as { html_url: string; number: number; state: string; draft?: boolean; body?: string | null }[];
   const row = rows[0];
   return row ? { number: row.number, url: row.html_url, state: row.state, draft: row.draft === true, body: row.body ?? "" } : null;
@@ -162,9 +163,9 @@ export async function markPullRequestReady(repository: string, number: number, b
     env: ghEnvironment(),
     timeoutMs: 30_000,
   });
-  if (edited.exitCode !== 0) throw new Error(`GitHub non ha aggiornato la pull request: ${edited.stderr.trim() || edited.stdout.trim()}`);
+  if (edited.exitCode !== 0) throw new Error(t("main.cloud.pullNotUpdated", { error: edited.stderr.trim() || edited.stdout.trim() }));
   const ready = await runProcess("gh", ["pr", "ready", String(number), "--repo", repository], { env: ghEnvironment(), timeoutMs: 30_000 });
-  if (ready.exitCode !== 0) throw new Error(`GitHub non ha tolto la bozza: ${ready.stderr.trim() || ready.stdout.trim()}`);
+  if (ready.exitCode !== 0) throw new Error(t("main.cloud.draftNotRemoved", { error: ready.stderr.trim() || ready.stdout.trim() }));
 }
 
 /**
@@ -174,13 +175,13 @@ export async function markPullRequestReady(repository: string, number: number, b
 export function macPublicationProblems(review: Pick<WorkspaceReview, "diff" | "changedFiles" | "whitespaceErrors" | "excludedSensitiveFiles">, messages: string[], conventions: CommitConventions): string[] {
   const problems: string[] = [];
   const secrets = secretFindings(review);
-  if (secrets.length) problems.push(`Segreti o file sensibili: ${secrets.join(", ")}.`);
-  if (review.excludedSensitiveFiles.length) problems.push(`File sensibili nel branch: ${review.excludedSensitiveFiles.join(", ")}.`);
-  if (review.whitespaceErrors.length) problems.push(`git diff --check non è pulito: ${review.whitespaceErrors.slice(0, 3).join("; ")}.`);
-  if (!messages.length) problems.push("Il branch non ha commit oltre la base.");
+  if (secrets.length) problems.push(t("main.cloud.secrets", { items: secrets.join(", ") }));
+  if (review.excludedSensitiveFiles.length) problems.push(t("main.cloud.sensitiveFiles", { files: review.excludedSensitiveFiles.join(", ") }));
+  if (review.whitespaceErrors.length) problems.push(t("main.cloud.diffCheck", { errors: review.whitespaceErrors.slice(0, 3).join("; ") }));
+  if (!messages.length) problems.push(t("main.cloud.noCommits"));
   for (const message of messages) {
     const invalid = validateCommitMessage(message, conventions);
-    if (invalid.length) problems.push(`Messaggio di commit non valido "${message.split("\n")[0]}": ${invalid.join(" ")}`);
+    if (invalid.length) problems.push(t("main.cloud.invalidCommit", { subject: message.split("\n")[0]!, problems: invalid.join(" ") }));
   }
   return problems;
 }

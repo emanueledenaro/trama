@@ -32,6 +32,7 @@ import {
   extractJsonAnswer,
   HOST_TOOL_TIMEOUT_MS,
   type HostToolServer,
+  interruptedTurnError,
   isInside,
   type OpenThreadOptions,
   type ProviderAccount,
@@ -44,6 +45,7 @@ import {
 } from "./types";
 import { currentUsageLimit, PendingTurn, usageLimitError } from "./providerSupport";
 import { externalToolKind, refusalReason } from "./toolRefusal";
+import { t } from "../personLanguage";
 
 const HOSTNAME = "127.0.0.1";
 const SERVER_USERNAME = "opencode";
@@ -128,10 +130,7 @@ export function resolveOpenCodeExecutable(configured?: string | null): string {
       // Try the next candidate.
     }
   }
-  throw new ProviderError(
-    "executableNotFound",
-    "OpenCode CLI non trovato. Installa OpenCode (https://opencode.ai) o indica il percorso del comando nelle impostazioni.",
-  );
+  throw new ProviderError("executableNotFound", t("main.opencode.notInstalled"));
 }
 
 /** Parses the ready line of `opencode serve`, old and new spellings. */
@@ -155,7 +154,7 @@ export function redactStartupOutput(value: string): string {
       (_m, q: string, key: string, sepText: string, vq: string) => `${q}${key}${q}${sepText}${vq}[redacted]${vq}`,
     )
     .trim();
-  return redacted.length > STARTUP_OUTPUT_MAX_CHARS ? `${redacted.slice(0, STARTUP_OUTPUT_MAX_CHARS)}\n[troncato]` : redacted;
+  return redacted.length > STARTUP_OUTPUT_MAX_CHARS ? `${redacted.slice(0, STARTUP_OUTPUT_MAX_CHARS)}\n${t("main.opencode.truncated")}` : redacted;
 }
 
 export interface OpenCodeServerHandle {
@@ -226,12 +225,13 @@ export async function startOpenCodeServer(input: StartServerInput): Promise<Open
   child.stderr?.on("error", () => undefined);
 
   const url = await new Promise<string>((resolve, reject) => {
+    const empty = t("main.opencode.emptyOutput");
     const detail = () =>
-      [`stdout:\n${redactStartupOutput(stdout) || "<vuoto>"}`, `stderr:\n${redactStartupOutput(stderr) || "<vuoto>"}`].join("\n\n");
+      [`stdout:\n${redactStartupOutput(stdout) || empty}`, `stderr:\n${redactStartupOutput(stderr) || empty}`].join("\n\n");
     const timer = setTimeout(() => {
       cleanup();
       stopProcess(child);
-      reject(new ProviderError("timedOut", `Timeout in attesa dell'avvio del server OpenCode.\n\n${detail()}`));
+      reject(new ProviderError("timedOut", `${t("main.opencode.serverStartTimeout")}\n\n${detail()}`));
     }, input.timeoutMs ?? SERVER_START_TIMEOUT_MS);
     const onStdout = (chunk: Buffer) => {
       stdout = (stdout + chunk.toString("utf8")).slice(-64_000);
@@ -246,14 +246,15 @@ export async function startOpenCodeServer(input: StartServerInput): Promise<Open
     };
     const onExit = (code: number | null) => {
       cleanup();
-      reject(new ProviderError("processExited", `Il server OpenCode è terminato prima di avviarsi (codice ${code ?? "?"}).\n\n${detail()}`));
+      const exited = t("main.opencode.serverExitedBeforeStart", { code: String(code ?? "?") });
+      reject(new ProviderError("processExited", `${exited}\n\n${detail()}`));
     };
     const onError = (error: NodeJS.ErrnoException) => {
       cleanup();
       reject(
         error.code === "ENOENT" || error.code === "EACCES"
-          ? new ProviderError("executableNotFound", "OpenCode CLI non trovato o non eseguibile. Installa OpenCode (https://opencode.ai).")
-          : new ProviderError("processExited", `Impossibile avviare OpenCode: ${error.message}`),
+          ? new ProviderError("executableNotFound", t("main.opencode.notExecutable"))
+          : new ProviderError("processExited", t("main.opencode.cannotStart", { error: error.message })),
       );
     };
     const cleanup = () => {
@@ -281,15 +282,13 @@ export async function startOpenCodeServer(input: StartServerInput): Promise<Open
     }
     if (response && (response.status === 404 || response.status === 405)) {
       stopProcess(child);
-      throw new ProviderError(
-        "rpcError",
-        `Questa versione di OpenCode non espone l'API richiesta da Trama (GET /provider → HTTP ${response.status}). Aggiorna OpenCode.`,
-      );
+      throw new ProviderError("rpcError", t("main.opencode.apiMissing", { status: String(response.status) }));
     }
     status = response?.status ?? null;
   }
   stopProcess(child);
-  throw new ProviderError("rpcError", `Il server OpenCode non risponde (GET /provider → ${status === null ? "irraggiungibile" : `HTTP ${status}`}).`);
+  const outcome = status === null ? t("main.opencode.unreachable") : `HTTP ${status}`;
+  throw new ProviderError("rpcError", t("main.opencode.serverNotResponding", { outcome }));
 }
 
 // ── Config and permissions ───────────────────────────────────────────
@@ -410,7 +409,7 @@ export function preferredProviders(list: ProviderList): OpenCodeProvider[] {
 }
 
 export function accountFromProviderList(list: ProviderList | undefined | null): ProviderAccount {
-  if (!list || !Array.isArray(list.all)) return { kind: "unavailable", message: "OpenCode ha restituito un elenco provider non valido." };
+  if (!list || !Array.isArray(list.all)) return { kind: "unavailable", message: t("main.opencode.invalidProviderList") };
   const providers = preferredProviders(list);
   if (providers.length === 0) return { kind: "signedOut" };
   return { kind: "authenticated", label: providers.map((provider) => provider.name.trim() || provider.id).join(", ") };
@@ -467,7 +466,7 @@ export function parseModelSlug(slug: string): { providerID: string; modelID: str
 
 function requireModel(model: string): { providerID: string; modelID: string } {
   const parsed = parseModelSlug(model);
-  if (!parsed) throw new ProviderError("invalidModel", `Modello OpenCode non valido: ${model}. Usa il formato provider/modello.`);
+  if (!parsed) throw new ProviderError("invalidModel", t("main.opencode.invalidModel", { model }));
   return parsed;
 }
 
@@ -611,10 +610,10 @@ function isTerminalAssistant(info: AssistantMessage): boolean {
 }
 
 export function sessionErrorMessage(error: unknown): string {
-  if (!error || typeof error !== "object") return "La sessione OpenCode non è riuscita.";
+  if (!error || typeof error !== "object") return t("main.opencode.sessionFailed");
   const record = error as { data?: { message?: unknown }; message?: unknown };
   const message = record.data?.message ?? record.message;
-  return typeof message === "string" && message.trim() ? message.trim() : "La sessione OpenCode non è riuscita.";
+  return typeof message === "string" && message.trim() ? message.trim() : t("main.opencode.sessionFailed");
 }
 
 function isContextOverflow(error: unknown): boolean {
@@ -753,7 +752,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       const list = await client.provider.list(undefined, { signal: this.timeout() });
       return accountFromProviderList(list.data);
     } catch (error) {
-      return { kind: "unavailable", message: error instanceof ProviderError ? error.message : `OpenCode non risponde: ${errorDetail(error)}` };
+      return { kind: "unavailable", message: error instanceof ProviderError ? error.message : t("main.opencode.notResponding", { error: errorDetail(error) }) };
     }
   }
 
@@ -763,10 +762,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       client.provider.list(undefined, { signal: this.timeout() }),
       client.config.get(undefined, { signal: this.timeout() }).catch(() => null),
     ]);
-    if (!list.data) throw new ProviderError("malformedMessage", "OpenCode ha restituito un elenco provider vuoto.");
+    if (!list.data) throw new ProviderError("malformedMessage", t("main.opencode.emptyProviderList"));
     this.rememberContextLimits(list.data);
     if (accountFromProviderList(list.data).kind === "signedOut") {
-      throw new ProviderError("authenticationRequired", "Collega un provider in OpenCode con `opencode auth login` per usarlo in Trama.");
+      throw new ProviderError("authenticationRequired", t("main.opencode.connectProvider"));
     }
     return modelsFromProviderList(list.data, config?.data?.model ?? null);
   }
@@ -793,7 +792,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           await client.session.update({ sessionID: existing.data.id, permission: rules }, { signal: this.timeout() });
         } catch (error) {
           await client.session.abort({ sessionID: existing.data.id }).catch(() => undefined);
-          throw new ProviderError("rpcError", `OpenCode non ha applicato i permessi di Trama: ${errorDetail(error)}`);
+          throw new ProviderError("rpcError", t("main.opencode.permissionsNotApplied", { error: errorDetail(error) }));
         }
         remember(existing.data.id);
         await this.ensureSubscription(client, options.cwd);
@@ -805,7 +804,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       { signal: this.timeout(60_000) },
     );
     const id = created.data?.id;
-    if (!id) throw new ProviderError("malformedMessage", "OpenCode session.create non ha restituito una sessione.");
+    if (!id) throw new ProviderError("malformedMessage", t("main.opencode.noSessionCreated"));
     remember(id);
     await this.ensureSubscription(client, options.cwd);
     return { threadId: id, replaced: Boolean(options.resumeThreadId) };
@@ -813,12 +812,12 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
-    if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
+    if (!prompt) throw new ProviderError("emptyPrompt", t("main.provider.emptyMessage"));
     const model = requireModel(options.model);
-    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const block = currentUsageLimit("opencode");
     if (block) throw new ProviderError("blocked", block.message);
-    const pending = new PendingTurn(options.onEvent, "OpenCode è stato chiuso.");
+    const pending = new PendingTurn(options.onEvent, t("main.provider.closed", { provider: "OpenCode" }));
     this.pending = pending;
     try {
       return await this.startTurn(options, prompt, model, pending);
@@ -845,7 +844,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const rulesKey = JSON.stringify(rules);
     if (session.rulesKey !== rulesKey) {
       await client.session.update({ sessionID: session.id, permission: rules }, { signal: this.timeout() }).catch((error) => {
-        throw new ProviderError("rpcError", `OpenCode non ha applicato i permessi di Trama: ${errorDetail(error)}`);
+        throw new ProviderError("rpcError", t("main.opencode.permissionsNotApplied", { error: errorDetail(error) }));
       });
       session.rulesKey = rulesKey;
       pending.checkpoint();
@@ -860,7 +859,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     }
     if (options.outputSchema) text += schemaInstruction(options.outputSchema);
     pending.checkpoint();
-    if (this.turn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.turn) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
 
     return new Promise<string>((resolve, reject) => {
       const turn: ActiveTurn = {
@@ -907,7 +906,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           else if (turn.interrupted) void client.session.abort({ sessionID: turn.sessionId }).catch(() => undefined);
         })
         .catch((error: unknown) => {
-          if (this.turn === turn) this.settle(turn, { failed: `OpenCode non ha accettato il messaggio: ${errorDetail(error)}`, emit: false });
+          if (this.turn === turn) this.settle(turn, { failed: t("main.opencode.messageNotAccepted", { error: errorDetail(error) }), emit: false });
         });
     });
   }
@@ -915,7 +914,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   /** Never throws: when OpenCode does not confirm the abort, the server is stopped and the turn still ends. */
   /** OpenCode's own summary of the session (`session.summarize`), Trama's fallback when a new session cannot open (ADR 0019). */
   async compact(threadId: string): Promise<void> {
-    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const directory = this.session?.id === threadId ? this.session.directory : this.discoveryDirectory();
     const client = await this.clientFor(directory);
     let failure: unknown = null;
@@ -925,7 +924,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     } catch (error) {
       failure = error;
     }
-    if (failure) throw new ProviderError("rpcError", `OpenCode non ha compattato la sessione: ${errorDetail(failure)}`);
+    if (failure) throw new ProviderError("rpcError", t("main.opencode.compactFailed", { error: errorDetail(failure) }));
   }
 
   async interrupt(): Promise<void> {
@@ -959,7 +958,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (this.pending) this.pending.stopped = true;
     this.pending = null;
     const turn = this.turn;
-    if (turn) this.settle(turn, { error: new ProviderError("processExited", "OpenCode è stato chiuso.") });
+    if (turn) this.settle(turn, { error: new ProviderError("processExited", t("main.provider.closed", { provider: "OpenCode" })) });
     this.subscription?.controller.abort();
     this.subscription = null;
     const server = this.server;
@@ -1023,7 +1022,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       this.subscription?.controller.abort();
       this.subscription = null;
       const turn = this.turn;
-      if (turn) this.settle(turn, { error: new ProviderError("processExited", `Il server OpenCode è terminato (codice ${code ?? "?"}).`) });
+      if (turn) this.settle(turn, { error: new ProviderError("processExited", t("main.opencode.serverExited", { code: String(code ?? "?") })) });
     });
     return server;
   }
@@ -1072,7 +1071,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const config = await client.config.get(undefined, { signal: this.timeout() });
     const mcp = config.data?.mcp ?? {};
     if (toolServer && mcp[toolServer.name]) {
-      throw new ProviderError("malformedMessage", `Un server MCP di OpenCode usa il nome ${toolServer.name}, riservato agli strumenti di Trama.`);
+      throw new ProviderError("malformedMessage", t("main.opencode.reservedServerName", { name: toolServer.name }));
     }
     const foreign = Object.entries(mcp)
       .filter(([name, value]) => !this.disabledMcpServers.has(name) && (value as { enabled?: boolean }).enabled !== false)
@@ -1089,8 +1088,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         throw new ProviderError(
           "rpcError",
           status?.status === "failed" && status.error
-            ? `OpenCode non ha collegato gli strumenti di Trama: ${status.error}`
-            : "OpenCode non ha collegato gli strumenti di Trama.",
+            ? t("main.opencode.toolsNotConnectedDetail", { error: status.error })
+            : t("main.opencode.toolsNotConnected"),
         );
       }
     }
@@ -1381,6 +1380,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   ): void {
     if (this.handledRequests.has(requestId)) return;
     this.handledRequests.add(requestId);
+    // @model-text: OpenCode hands the refusal to the agent.
     let message = "Trama non concede questo permesso.";
     if (request && !OPENCODE_FILE_PERMISSIONS.has(request.permission)) {
       const tool = [request.permission, ...request.patterns.filter((p) => p !== "*")].join(" ").trim();
@@ -1396,7 +1396,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       // A turn must never wait on a human approval: abort it and report why.
       const session = this.session;
       if (session) await client.session.abort({ sessionID: session.id }).catch(() => undefined);
-      if (turn && this.turn === turn) this.settle(turn, { failed: `OpenCode non ha applicato la politica dei permessi di Trama: ${errorDetail(error)}` });
+      if (turn && this.turn === turn) this.settle(turn, { failed: t("main.opencode.permissionPolicyNotApplied", { error: errorDetail(error) }) });
     });
   }
 
@@ -1445,7 +1445,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     }
     if (finalText === null) finalText = this.localFinalText(turn);
     if (turn.failure && !finalText.trim()) this.settle(turn, { failed: turn.failure });
-    else if (!sawAssistant) this.settle(turn, { failed: "OpenCode ha chiuso il turno senza una risposta." });
+    else if (!sawAssistant) this.settle(turn, { failed: t("main.opencode.turnWithoutAnswer") });
     else this.settle(turn, { completed: finalText });
   }
 
@@ -1476,7 +1476,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       turn.resolve(text);
     } else if ("interrupted" in outcome) {
       turn.onEvent({ type: "interrupted" });
-      turn.reject(new Error("Turno interrotto."));
+      turn.reject(interruptedTurnError());
     } else if ("failed" in outcome) {
       // Session errors such as "429 rate limit" or "quota exceeded" block the provider for everyone.
       const blocked = usageLimitError("opencode", "OpenCode", outcome.failed);

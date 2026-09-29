@@ -8,6 +8,7 @@ import { ClaudeAgentRuntime } from "./claudeAgent";
 import { CodexRuntime } from "./codex";
 import { OpenCodeRuntime } from "./opencode";
 import { PiRuntime } from "./pi";
+import { t } from "../personLanguage";
 import type { AgentRuntime, RuntimeOptions } from "./types";
 
 type Factory = (options: RuntimeOptions) => AgentRuntime;
@@ -31,6 +32,6 @@ export function hasAdapter(id: ProviderId): boolean {
 
 export function createRuntime(id: ProviderId, options: RuntimeOptions = {}): AgentRuntime {
   const factory = FACTORIES[id];
-  if (!factory) throw new Error(`Il provider ${id} non ha ancora un adattatore in Trama.`);
+  if (!factory) throw new Error(t("main.registry.noAdapter", { id }));
   return factory(options);
 }

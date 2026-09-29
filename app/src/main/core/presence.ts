@@ -27,6 +27,7 @@ import {
 } from "@shared/presence";
 import { type RemoteSource, remoteTransport } from "./conflicts";
 import { parseGitHubRemote } from "./github";
+import { t } from "./personLanguage";
 import { gitEnvironment, runProcess } from "./process";
 
 /**
@@ -81,7 +82,7 @@ export async function presenceCache(cacheRoot: string, projectRoot: string, sour
   const cache = join(root, `${createHash("sha256").update(`${url}\0${projectRoot}`).digest("hex").slice(0, 32)}.git`);
   if (!existsSync(join(cache, "HEAD"))) {
     const init = await runProcess("git", [...LOCAL_SAFE_OPTIONS, "init", "--quiet", "--bare", cache], { cwd: root, env: gitEnvironment(false) });
-    if (init.exitCode !== 0) throw new Error(`Cache della presenza non creata: ${init.stderr.trim()}`);
+    if (init.exitCode !== 0) throw new Error(t("main.presence.cacheFailed", { detail: init.stderr.trim() }));
   }
   return cache;
 }
@@ -89,7 +90,7 @@ export async function presenceCache(cacheRoot: string, projectRoot: string, sour
 /** Writes the record as a commit with one file and returns its id. */
 async function writeRecordCommit(cache: string, record: PresenceRecord): Promise<string> {
   const body = `${JSON.stringify(record, null, 2)}\n`;
-  if (Buffer.byteLength(body) > MAXIMUM_PRESENCE_BYTES) throw new Error("Il record della presenza supera il limite.");
+  if (Buffer.byteLength(body) > MAXIMUM_PRESENCE_BYTES) throw new Error(t("main.presence.recordTooLarge"));
   const file = join(cache, "presence-record.json");
   const index = join(cache, "presence-index");
   await writeFile(file, body);
@@ -141,7 +142,7 @@ export async function withdrawPresence(cache: string, source: RemoteSource, user
 export async function readRemotePresence(cache: string, source: RemoteSource): Promise<PresenceRecord[]> {
   const { url } = remoteTransport(source);
   const fetch = await cacheGit(source, ["fetch", "--quiet", "--no-tags", "--prune", "--force", url, `+${PRESENCE_REF_PREFIX}*:${PRESENCE_REF_PREFIX}*`], cache);
-  if (fetch.exitCode !== 0) throw new Error(lastLine(fetch.stderr) || "Il remoto non risponde.");
+  if (fetch.exitCode !== 0) throw new Error(lastLine(fetch.stderr) || t("main.presence.remoteSilent"));
   const refs = await runProcess("git", [...LOCAL_SAFE_OPTIONS, "for-each-ref", "--format=%(refname)", PRESENCE_REF_PREFIX], { cwd: cache, env: gitEnvironment(true) });
   const records: PresenceRecord[] = [];
   for (const ref of refs.stdout.split("\n").filter(Boolean).slice(0, 100)) {
@@ -165,7 +166,7 @@ export async function readRemotePresence(cache: string, source: RemoteSource): P
 export async function remoteHeads(cache: string, source: RemoteSource): Promise<Map<string, string>> {
   const { url } = remoteTransport(source);
   const result = await cacheGit(source, ["ls-remote", "--heads", url], cache);
-  if (result.exitCode !== 0) throw new Error(lastLine(result.stderr) || "Il remoto non risponde.");
+  if (result.exitCode !== 0) throw new Error(lastLine(result.stderr) || t("main.presence.remoteSilent"));
   const heads = new Map<string, string>();
   for (const line of result.stdout.split("\n")) {
     const [sha, ref] = line.trim().split(/\s+/);
@@ -370,7 +371,7 @@ export class PresenceService {
     }
     this.running = this.run()
       .catch((error) => {
-        this.message = `La presenza non è aggiornata: ${(error as Error).message}`;
+        this.message = t("main.presence.notUpdated", { detail: (error as Error).message });
       })
       .finally(() => {
         this.running = null;
@@ -444,7 +445,7 @@ export class PresenceService {
     const record: PresenceRecord = {
       version: 1,
       user: identity.user ?? "",
-      name: identity.name || "Tu",
+      name: identity.name || t("main.presence.you"),
       activeBranch: choice.active,
       alsoOn: choice.alsoOn,
       localBranches: local.branches.map((b) => b.name),
@@ -463,7 +464,7 @@ export class PresenceService {
       try {
         this.others = await readRemotePresence(this.cache, source);
       } catch (error) {
-        this.message = `Il remoto non ha risposto: ${(error as Error).message}`;
+        this.message = t("main.presence.remoteDidNotAnswer", { detail: (error as Error).message });
       }
       await this.share(context, source, this.cache, identity.user, record, now);
     }
@@ -476,7 +477,7 @@ export class PresenceService {
       mode,
       consent,
       canShare: this.canShare,
-      message: this.message ?? (source ? null : "Il progetto non ha un remoto: la presenza resta su questo computer."),
+      message: this.message ?? (source ? null : t("main.presence.noRemote")),
       self: { record, self: true, ...presenceFreshness(record, now) },
       others: presenceEntries(this.others, identity.user, now),
       refreshedAt: now.toISOString(),
@@ -489,7 +490,7 @@ export class PresenceService {
   private async share(context: PresenceContext, source: RemoteSource, cache: string, user: string | null, record: PresenceRecord, now: Date): Promise<void> {
     if (context.canPush === false) this.canShare = false;
     if (!user) {
-      if (context.consent?.choice === "shared") this.message = "Trama non conosce ancora il tuo account: la presenza parte appena lo legge.";
+      if (context.consent?.choice === "shared") this.message = t("main.presence.noAccount");
       return;
     }
     const remote = this.others.find((r) => r.user === user) ?? null;
@@ -504,7 +505,7 @@ export class PresenceService {
       return;
     }
     if (this.canShare === false) {
-      this.message = "Hai solo la lettura su questo remoto: vedi la presenza dei colleghi senza condividere la tua.";
+      this.message = t("main.presence.readOnly");
       return;
     }
     const outgoing = consent.paused ? closedRecord(record, now) : record;
@@ -517,9 +518,9 @@ export class PresenceService {
       this.others = [...this.others.filter((r) => r.user !== user), outgoing];
     } else if (result.status === "rejected") {
       this.canShare = false;
-      this.message = `Il remoto non accetta la tua presenza (${result.detail}): vedi quella dei colleghi senza condividere la tua.`;
+      this.message = t("main.presence.rejected", { detail: result.detail });
     } else {
-      this.message = `La presenza non è stata pubblicata: ${result.detail}`;
+      this.message = t("main.presence.notPublished", { detail: result.detail });
     }
   }
 }
