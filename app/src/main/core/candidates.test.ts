@@ -221,6 +221,20 @@ describe("candidates", () => {
     expect(report.approvalInvalidated).toBe(false);
   });
 
+  it("keeps a merged candidate decided when the integration base moves on: merging is what moves it", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
+    clearCandidate(document, candidate.id, "Coordinatore", "base");
+    expect(candidateReport(document, candidate, "base").state).toBe("decided");
+    candidate.pullRequest = { url: "https://github.com/x/y/pull/40", number: 40, branch: "b", at: "2026-09-29T10:00:00Z", mergedAt: "2026-09-29T10:05:00Z" } as never;
+    // The base is now the merge commit: the candidate was not built on it, and never will be. It is finished work.
+    expect(candidateReport(document, candidate, "merge-commit")).toMatchObject({ state: "decided", blockers: [] });
+    // A pull request that is open, not merged, still has to sit on the current base.
+    candidate.pullRequest = { url: "https://github.com/x/y/pull/40", number: 40, branch: "b", at: "2026-09-29T10:00:00Z" } as never;
+    expect(candidateReport(document, candidate, "merge-commit").blockers.map((b) => b.code)).toEqual(["BASE_CHANGED"]);
+  });
+
   describe("the candidate after a developer's turn (issue #388)", () => {
     const worktree = (snapshotId: string, changedFiles = ["a"]) => ({
       snapshotId,

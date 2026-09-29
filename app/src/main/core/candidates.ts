@@ -369,6 +369,11 @@ export function contentFingerprint(document: ProjectDocument, candidate: Candida
 }
 
 export function candidateReport(document: ProjectDocument, candidate: Candidate, headSHA: IntegrationHeads): CandidateReport {
+  // A merged candidate is finished work: the base it was built on is now behind the merge that took it, so no check on
+  // the base or the worktree applies to it any more. Without this it fell back to "not ready yet" after every merge.
+  if (candidate.pullRequest?.mergedAt) {
+    return { state: "decided", blockers: [], clearanceInvalidated: false, approvalInvalidated: false };
+  }
   const blockers = inspectCandidate(document, candidate, headSHA);
   const fingerprint = contentFingerprint(document, candidate);
   const clearanceInvalidated = candidate.clearance !== null && candidate.clearance.fingerprint !== fingerprint;
