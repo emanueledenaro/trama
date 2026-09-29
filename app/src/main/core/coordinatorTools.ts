@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH, translator } from "@shared/i18n";
 import type { ProviderId } from "@shared/codex";
 import { catalogOffers, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import type {
@@ -34,6 +34,7 @@ import { isFixedRole, roleDuties } from "@shared/roster";
 import { squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
 import { recordCoordinatorOrder } from "@shared/backlog";
 import { backlogForTool, squadBacklogs } from "./backlog";
+import { renameSquad, requestSquadMerge, splitSquad } from "./squadChanges";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import { DomainProposalError, proposeDomainDocs } from "./domainDocs";
@@ -412,6 +413,30 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "rename_squad",
+    description:
+      "Rename a squad, named by id or current name, only when the person asks you to in this conversation; it needs no mandate. The id, the area, the people and the slices stay. Trama records it in Activity as the person's change, which the person can undo there, and you never rename that squad again by yourself.",
+    properties: { squad: text, name: text },
+    required: ["squad", "name"],
+    readOnly: false,
+  },
+  {
+    name: "merge_squads",
+    description:
+      "Merge the squad `squad` into the squad `into` (each by id or name), only when the person asks you to in this conversation; it needs no mandate. `into` keeps its id, name, lead and QA; areas, developers and slices come together; the lead and QA of `squad` leave the team. With up to three developers together Trama merges now (status merged). With more, Trama proposes who stays and the person confirms it in the Squads view (status waiting_for_person): tell the person so, and do not ask them to choose in the chat. Trama refuses a merge that would break the limits, with the reason: tell it to the person.",
+    properties: { squad: text, into: text },
+    required: ["squad", "into"],
+    readOnly: false,
+  },
+  {
+    name: "split_squad",
+    description:
+      "Split a squad (by id or name) by areas, only when the person asks you to in this conversation; it needs no mandate. moduleIDs are the squad's areas (Map module ids, from read_team) that go to a new squad called name, developerIDs the squad's developers who go with them; each squad keeps at least one area and one developer. The new squad gets its own lead and QA and the slices of its areas; running work stays with the developer who has it. Trama refuses a split that would break the limits, with the reason: tell it to the person.",
+    properties: { squad: text, name: text, moduleIDs: list(1), developerIDs: list(1) },
+    required: ["squad", "name", "moduleIDs", "developerIDs"],
+    readOnly: false,
+  },
+  {
     name: "assign_task",
     description:
       "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and work beyond the squads' limits (read_team: developers at work per squad and squads at work together, three and three unless the person changes them; work in a cloud session counts too). A slice belongs to the squad of its area: give it to that squad's developers. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
@@ -626,6 +651,15 @@ const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
   interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
   person: "The person reviews and publishes the candidate: the mandate does not cover its integration, or the project has no GitHub remote.",
 };
+
+/** The squad the Coordinator names by id or name, as read_team lists it (A11). */
+function findSquad(document: ProjectDocument, named: unknown) {
+  const key = typeof named === "string" ? named.trim().toLowerCase() : "";
+  return teamSquads(document).find((s) => s.id.toLowerCase() === key || s.name.toLowerCase() === key) ?? null;
+}
+
+/** The squads' refusals reach the Coordinator in English, as the other tool errors. */
+const TOOL_WORDS = translator("en");
 
 export interface ToolContext {
   document: ProjectDocument;
@@ -1057,6 +1091,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             status: squadStatusLine(document, squad),
             // The squad's backlog (A13), from the top: take work from there, skipping blocked and paused slices.
             backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json,
+            // The person renamed, merged or split it (A11): leave it as it is.
+            changedByPerson: Boolean(squad.touchedAt),
           })),
           unownedBacklog: backlogForTool(backlogs.find((b) => b.squadId === null) ?? { squadId: null, items: [] }) as unknown as Json,
           squadLimits: squadLimits(document) as unknown as Json,
@@ -1158,6 +1194,32 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.changed();
         const ordered = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId)!;
         return toolSuccess({ squadID: squadId, backlog: backlogForTool(ordered) as unknown as Json });
+      }
+      case "rename_squad": {
+        const squad = findSquad(document, args.squad);
+        if (!squad) return toolFailure("unknown_squad", `Unknown squad: ${String(args.squad)}. read_team lists the squads.`);
+        const previous = squad.name;
+        renameSquad(document, squad.id, typeof args.name === "string" ? args.name : "", "coordinator", TOOL_WORDS);
+        context.changed();
+        return toolSuccess({ squadID: squad.id, previousName: previous, name: squad.name, status: "renamed" });
+      }
+      case "merge_squads": {
+        const squad = findSquad(document, args.squad);
+        const into = findSquad(document, args.into);
+        if (!squad || !into) return toolFailure("unknown_squad", `Unknown squad: ${String(squad ? args.into : args.squad)}. read_team lists the squads.`);
+        const result = requestSquadMerge(document, into.id, squad.id, TOOL_WORDS);
+        context.changed();
+        if (result.proposal) {
+          return toolSuccess({ status: "waiting_for_person", intoID: into.id, squadID: squad.id, proposedKeepIDs: result.proposal.keepIds, note: "The person confirms who stays in the Squads view." });
+        }
+        return toolSuccess({ status: "merged", squadID: into.id, name: into.name, developerIDs: into.developerIds, moduleIDs: into.moduleIds });
+      }
+      case "split_squad": {
+        const squad = findSquad(document, args.squad);
+        if (!squad) return toolFailure("unknown_squad", `Unknown squad: ${String(args.squad)}. read_team lists the squads.`);
+        const change = splitSquad(document, squad.id, strings(args.moduleIDs), strings(args.developerIDs), typeof args.name === "string" ? args.name : "", "coordinator", TOOL_WORDS);
+        context.changed();
+        return toolSuccess({ status: "split", squadID: squad.id, newSquadID: change.afterIds[1] ?? null });
       }
       case "assign_task": {
         const kind = WORK_KINDS.includes(args.kind as WorkKind) ? (args.kind as WorkKind) : null;
@@ -1759,7 +1821,7 @@ export function developerInstructions(
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
-    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line and their backlog: the slices and the found problems of the area not taken yet, in order. Take work from the top of a squad's backlog, skipping blocked and paused slices; reorder it with order_backlog, a one-line reason for each item, and never move the items the person placed, whose order wins. When the person wants a squad renamed, merged or split, tell them what changes and do it only when Trama offers a tool for it; never invent squads in the chat.",
+    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line and their backlog: the slices and the found problems of the area not taken yet, in order. Take work from the top of a squad's backlog, skipping blocked and paused slices; reorder it with order_backlog, a one-line reason for each item, and never move the items the person placed, whose order wins. When the person asks to rename, merge or split a squad, do it with rename_squad, merge_squads or split_squad, without a mandate, and say what changed; the person can also do it in the Squads view and undo it in Activity. Never rename, merge, split or recreate a squad the person did not ask about, and never undo the person's choices; never invent squads in the chat.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "read_team shows that automatic work in automaticWork: whether each one is running, when it starts and why it has not started yet. When the person asks about it, answer from there, with the reason and what starts it. When the person asks for a triage or a Clean Code review now, start it with start_automatic_work within the mandate; never simulate it with assign_task, and never say it cannot be asked for.",
     `At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two words in ${LANGUAGE_NAMES_IN_ENGLISH[language]} (Interfaccia, Provider in Italian; Interface, Provider in English), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.`,

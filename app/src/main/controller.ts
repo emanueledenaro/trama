@@ -416,6 +416,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
+import { confirmSquadMerge, dismissSquadMerge, mergeSquads, renameSquad, splitSquad, undoSquadChange } from "./core/squadChanges";
 import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
@@ -5461,6 +5462,47 @@ export class TramaController {
   async removeSpecialistByPerson(specialistId: string, reason: string): Promise<void> {
     const project = this.requireProject();
     removeSpecialist(project.document, specialistId, reason, t("main.controller.personActor"));
+    this.changed();
+  }
+
+  /** The person renames a squad from the Squads view (A11): the id, the people and the slices stay. Told in Activity. */
+  async renameSquadByPerson(squadId: string, name: string): Promise<boolean> {
+    renameSquad(this.requireProject().document, squadId, name, "person", translator(this.state.language));
+    this.changed();
+    return true;
+  }
+
+  /** The person merges two squads from the Squads view (A11), choosing who stays beyond three developers. */
+  async mergeSquadsByPerson(intoId: string, fromId: string, keepIds: string[] | null): Promise<boolean> {
+    mergeSquads(this.requireProject().document, intoId, fromId, keepIds, "person", translator(this.state.language));
+    this.changed();
+    return true;
+  }
+
+  /** The person splits a squad by areas from the Squads view (A11). */
+  async splitSquadByPerson(squadId: string, moduleIds: string[], developerIds: string[], name: string): Promise<boolean> {
+    splitSquad(this.requireProject().document, squadId, moduleIds, developerIds, name, "person", translator(this.state.language));
+    this.changed();
+    return true;
+  }
+
+  /** The person undoes a change to the squads from Activity (A11). */
+  async undoSquadChangeByPerson(changeId: string): Promise<boolean> {
+    undoSquadChange(this.requireProject().document, changeId, translator(this.state.language));
+    this.changed();
+    return true;
+  }
+
+  /** The person confirms the merge they asked the Coordinator for, with who stays (A11). */
+  async confirmSquadMergeByPerson(proposalId: string, keepIds: string[]): Promise<boolean> {
+    confirmSquadMerge(this.requireProject().document, proposalId, keepIds, translator(this.state.language));
+    this.changed();
+    return true;
+  }
+
+  /** The person sets aside the merge the Coordinator proposed (A11): the squads stay as they are. */
+  async dismissSquadMergeByPerson(proposalId: string): Promise<void> {
+    dismissSquadMerge(this.requireProject().document, proposalId);
     this.changed();
   }
 

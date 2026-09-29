@@ -110,6 +110,14 @@ export interface ActionMap {
   "specialist:remove": [{ specialistId: string; reason: string }, void];
   "backlog:move": [{ squadId: string | null; key: string; to: "up" | "down" }, void];
   "backlog:release": [{ squadId: string | null; key: string }, void];
+  /** The person renames, merges or splits a squad, or undoes such a change (A11). */
+  "squad:rename": [{ squadId: string; name: string }, boolean];
+  "squad:merge": [{ intoId: string; fromId: string; keepIds: string[] | null }, boolean];
+  "squad:split": [{ squadId: string; moduleIds: string[]; developerIds: string[]; name: string }, boolean];
+  "squad:undo": [{ changeId: string }, boolean];
+  /** The person confirms the merge they asked the Coordinator for, with who stays, or sets it aside (A11). */
+  "squad:confirmMerge": [{ proposalId: string; keepIds: string[] }, boolean];
+  "squad:dismissMerge": [{ proposalId: string }, void];
   "specialist:rename": [{ specialistId: string; name: string }, void];
   "specialist:setColor": [{ specialistId: string; color: AgentColor }, void];
   /** The person starts a fixed role's automatic work now (issue #231). */
