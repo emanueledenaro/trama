@@ -284,7 +284,8 @@ describe("the checks after an ended assignment (issue #204)", () => {
 
     await controller.updateSettings({ continuousWork: true });
     await until(() => automatic().length === 1 && project.runningRequestId === automatic()[0]!.id);
-    expect(automatic()[0]!.step).toEqual({ move: "verifyCandidate", by: "trama", trigger: "round" });
+    // Started by Trama, from the round or from the end of the work that waited while continuous work was off.
+    expect(automatic()[0]!.step).toMatchObject({ move: "verifyCandidate", by: "trama" });
     // The person writes while that move runs: the message waits in the queue and no new work starts beside it.
     await controller.send("[assegna] [luna]", null, null, null);
     await until(() => project.queuedMessages.length > 0);
@@ -300,7 +301,8 @@ describe("the checks after an ended assignment (issue #204)", () => {
     expect(luna.replaces).toBeUndefined();
     expect(luna.workspace!.worktreeRoot).not.toBe(resumed.workspace!.worktreeRoot);
     // Its end starts its own checks, which stall on the assignment id as in the live run, naming only this work.
-    const ended = () => automatic().find((r) => r.step?.trigger === "assignmentEnded");
+    // The first automatic move, the resumed work's checks, may also come from an ended assignment: take the one after it.
+    const ended = () => automatic().slice(1).find((r) => r.step?.trigger === "assignmentEnded");
     await until(() => ended()?.state === "completed" && project.runningRequestId === null, 30_000);
     expect(ended()!.step?.stalled).toBe(`La mossa automatica non è riuscita: l'incarico ${luna.id} è concluso ma il suo candidato non è stato dichiarato.`);
     await until(() => Boolean(project.nextSteps[ended()!.id]));
