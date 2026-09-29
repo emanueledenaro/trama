@@ -145,8 +145,11 @@ describe("the only pushes in Trama's code (issue #273)", () => {
     const presencePushes = found.filter((l) => l.startsWith("main/core/presence.ts:"));
     // The fixed bans read `git push` commands to refuse them (issue #244); they run nothing.
     const recognised = found.filter((l) => l.startsWith("shared/fixedBans.ts:") && /case "push":/.test(l));
+    // A push the person asked for in the composer (issue #422, ADR 0021): personRequest recognises it, Trama runs it.
+    const requested = found.filter((l) => l.startsWith("main/core/personRequest.ts:") && /words\[1\] === "push"/.test(l));
     // A new push anywhere else must go through pushBranch and its mandate check.
-    expect(found.filter((l) => !branchPushes.includes(l) && !presencePushes.includes(l) && !recognised.includes(l))).toEqual([]);
+    expect(found.filter((l) => !branchPushes.includes(l) && !presencePushes.includes(l) && !recognised.includes(l) && !requested.includes(l))).toEqual([]);
+    expect(requested).toHaveLength(1);
     expect(branchPushes).toHaveLength(1);
     // Presence writes only refs/trama/presence/<user> (ADR 0015), never a branch.
     expect(presencePushes.length).toBeGreaterThan(0);

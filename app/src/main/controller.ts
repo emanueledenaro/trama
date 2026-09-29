@@ -54,6 +54,7 @@ import type {
   ProjectOverview,
   ProviderState,
   FixedBanRefusal,
+  RequestedAction,
   MandateAction,
   ProjectDocument,
   WorkKind,
@@ -345,7 +346,7 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampActiveSquads, clampDevelopersPerSquad } from "@shared/squads";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
-import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
+import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
 import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
@@ -388,7 +389,10 @@ import {
 } from "./core/learning/review";
 import { type ReviewCall, runReviewSession } from "./core/learning/reviewRunner";
 import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
-import { git } from "./core/process";
+import { git, runProcess } from "./core/process";
+import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
+import { redactSensitiveData } from "./core/redaction";
+import { runnableCommand } from "@shared/fixedBans";
 import { AppStorage } from "./core/storage";
 import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
@@ -1097,7 +1101,7 @@ export class TramaController {
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     const goal = goalId ? requireGoal(project.document, goalId).id : null;
     if (text) {
-      appendEvent(project.document, "person", { type: "personMessage", text, moduleId: null, moduleName: null, imageCount: 0 }, null, new Date(), null, goal);
+      appendEvent(project.document, "person", { type: "personMessage", text, moduleId: null, moduleName: null, imageCount: 0, composer: true }, null, new Date(), null, goal);
       project.document.composerDraft = "";
     }
     // Milestones reached and not told yet are part of this recap, so they are not told again right after it.
@@ -2257,6 +2261,9 @@ export class TramaController {
           },
           headSHA: () => this.headSHA(current.rootPath),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
+          runRequestedAction: (id) => this.runRequestedAction(current, id),
+          mainBranches: current.github.snapshot?.defaultBranch ? [current.github.snapshot.defaultBranch] : [],
+          checkedOutBranch: () => checkedOutBranch(current.rootPath),
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
         });
         // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
@@ -2650,7 +2657,15 @@ export class TramaController {
       appendEvent(
         document,
         "person",
-        { type: "personMessage", text: trimmed, moduleId: module?.id ?? null, moduleName: module?.name ?? null, imageCount: attachments.length },
+        {
+          type: "personMessage",
+          text: trimmed,
+          moduleId: module?.id ?? null,
+          moduleName: module?.name ?? null,
+          imageCount: attachments.length,
+          // Only a message the person typed can ask for an action a fixed ban stops (issue #422).
+          ...(typed ? { composer: true } : {}),
+        },
         request.id,
       );
     }
@@ -4516,6 +4531,56 @@ export class TramaController {
     const refusal = recordFixedBanRefusal(document, { ban: event.ban, action: event.action, by });
     appendEvent(document, by.kind === "specialist" ? "specialist" : "trama", fixedBanActivity(refusal), requestId, new Date(), work);
     this.changedIn(project);
+  }
+
+  /**
+   * Runs an action the person asked for (issue #422, ADR 0021) in the project's checkout, once it is ready: Trama runs
+   * the git or gh command itself, without a shell, and never the model. The output goes back filtered of sensitive data.
+   */
+  private async runRequestedAction(project: ActiveProjectState, id: string): Promise<RequestedAction> {
+    const action = project.document.requestedActions?.find((a) => a.id === id);
+    if (!action) throw new DomainError(t("main.requestedAction.notFound"));
+    const words = runnableCommand(action.command);
+    if (action.status !== "running" || !words) return action;
+    this.changedIn(project);
+    let ok = false;
+    let output = "";
+    try {
+      const { program, args } = runnableArgs(words);
+      const result = await runProcess(program, args, {
+        cwd: project.rootPath,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1" },
+        timeoutMs: 120_000,
+        outputLimit: 64_000,
+      });
+      ok = result.exitCode === 0 && !result.timedOut;
+      output = [result.stdout, result.stderr].filter((part) => part.trim()).join("\n");
+    } catch (error) {
+      output = (error as Error).message;
+    }
+    finishAction(action, { ok, output: await redactSensitiveData(output) });
+    this.changedIn(project);
+    return action;
+  }
+
+  /**
+   * The person confirmed an action that deletes something or cannot be undone, with the button of its item in "Aspetta
+   * te" (issue #422): Trama runs it, and the Coordinator hears it as the person's choice.
+   */
+  async confirmRequestedAction(id: string): Promise<void> {
+    const project = this.requireProject();
+    const action = confirmByButton(project.document, id);
+    this.changed();
+    await this.runRequestedAction(project, action.id);
+    await this.send(translate(this.state.language, "requestedAction.message.confirmed", { summary: action.summary }), null, null, null, [], null, null, false);
+  }
+
+  /** The person said no to an action waiting for confirmation: it never runs (issue #422). */
+  async declineRequestedAction(id: string): Promise<void> {
+    const project = this.requireProject();
+    const action = declineAction(project.document, id);
+    this.changed();
+    await this.send(translate(this.state.language, "requestedAction.message.declined", { summary: action.summary }), null, null, null, [], null, null, false);
   }
 
   /** The person has seen an action a fixed ban stopped: it leaves "Aspetta te" (issue #244). */
