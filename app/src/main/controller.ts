@@ -1399,6 +1399,7 @@ export class TramaController {
         this.publishNow();
         if (overtaken()) return;
         if (!isDemo) void this.refreshGitHub();
+        this.readBranchBaseSoon(parked);
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
         void this.loadSkills();
@@ -1487,6 +1488,7 @@ export class TramaController {
       this.publishNow();
       if (overtaken()) return;
       if (!isDemo) void this.refreshGitHub();
+      this.readBranchBaseSoon(project);
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
       // Paused work whose question got its answer before a restart resumes now (W06).
@@ -1577,6 +1579,7 @@ export class TramaController {
     if (generation !== this.scanGeneration || this.state.project !== project) return;
     project.snapshot = snapshot;
     this.publish();
+    this.readBranchBaseSoon(project);
     const stale = this.dropStaleDivergence(project);
     // Aggiorna in the title bar is the one refresh of the project (issue #332): map, GitHub and the colleagues' presence.
     if (refreshGitHub && !project.isDemo) {
@@ -6370,6 +6373,16 @@ export class TramaController {
     const base = await readBranchBase(project.rootPath, { fetch }).catch(() => null);
     if (base) this.branchBases.set(project.id, base);
     return base;
+  }
+
+  /**
+   * Reads the branch against the last known copy on the remote, without the network, and shows the candidates again:
+   * at the opening and after a rescan, the candidates built on the remote's copy are current before any fetch.
+   */
+  private readBranchBaseSoon(project: ActiveProjectState): void {
+    void this.readBranchBase(project, false).then((base) => {
+      if (base && this.state.project === project) this.publish();
+    });
   }
 
   /** The heads a candidate may be built on now: the checkout's head and the commits of the remote's copy it lags by. */

@@ -679,27 +679,32 @@ describe("a checkout that lags its branch on GitHub (negozio, chore/pre-apertura
     await git(["push", "-q", "origin", "HEAD:chore/pre-apertura"], other, false);
     const onGitHub = (await git(["rev-parse", "HEAD"], other)).trim();
 
-    controller = new TramaController(await mkdtemp(join(tmpdir(), "trama-data-")), {
-      publish: () => undefined,
-      openExternal: async () => undefined,
-      applyTheme: () => undefined,
-      notify: () => undefined,
-      setOpenAtLogin: () => undefined,
-      aiHeroResourceDirectory: join(root, "resources/AIHero"),
-      demoResourceDirectory: "",
-      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
-    });
-    await controller.start();
-    await controller.updateSettings({ continuousWork: false });
-    await controller.openProject(repo);
-    await until(() => controller!.snapshot.project?.phase.kind === "ready");
-    const document = controller.snapshot.project!.document;
-    await controller.send("[proponi-team]", null, null, null);
-    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
-    controller.recordDecision({ id: null, value: "La pre-apertura resta attiva", acceptedExample: "Checkout spento", rationale: "Il negozio non è aperto" });
-    await controller.grantMandate({ requestId: null, objectives: ["Pre-apertura"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const open = async () => {
+      controller = new TramaController(data, {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: "",
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await controller.updateSettings({ continuousWork: false });
+      await controller.openProject(repo);
+      await until(() => controller!.snapshot.project?.phase.kind === "ready");
+      return controller;
+    };
+    await open();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[proponi-team]", null, null, null);
+    await controller!.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    controller!.recordDecision({ id: null, value: "La pre-apertura resta attiva", acceptedExample: "Checkout spento", rationale: "Il negozio non è aperto" });
+    await controller!.grantMandate({ requestId: null, objectives: ["Pre-apertura"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
 
-    await controller.send("[assegna]", null, null, null);
+    await controller!.send("[assegna]", null, null, null);
     const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
     await until(() => assignment.status === "completed");
     // The work starts from chore/pre-apertura as it is on GitHub, with the realignment the checkout never pulled.
@@ -711,10 +716,18 @@ describe("a checkout that lags its branch on GitHub (negozio, chore/pre-apertura
     expect((await git(["status", "--porcelain", "--untracked-files=no"], repo)).trim()).toBe("");
 
     // Its candidate is built on the current base: nothing asks to rebuild it on the checkout's older head.
-    await controller.send(`[candidato:${assignment.id}:${document.decisions[0]!.id}]`, null, null, null);
+    await controller!.send(`[candidato:${assignment.id}:${document.decisions[0]!.id}]`, null, null, null);
     const candidate = document.candidates[0]!;
     expect(candidate.baseSHA).toBe(onGitHub);
     await until(() => Boolean(controller!.snapshot.project!.candidateReports[candidate.id]));
-    expect(controller.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => b.code)).not.toContain("BASE_CHANGED");
-  }, 30_000);
+    expect(controller!.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => b.code)).not.toContain("BASE_CHANGED");
+
+    // Trama opens again on the same project: the candidate is still current, before any work or reading of GitHub.
+    await controller!.stop();
+    await open();
+    const reports = () => controller!.snapshot.project!.candidateReports[candidate.id];
+    await until(() => Boolean(reports()));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(reports()!.blockers.map((b) => b.code)).not.toContain("BASE_CHANGED");
+  }, 45_000);
 });
