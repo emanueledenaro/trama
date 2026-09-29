@@ -28,10 +28,10 @@ afterEach(async () => {
   controller = null;
 });
 
-async function until(check: () => boolean, timeout = 10_000): Promise<void> {
+async function until(check: () => boolean, timeout = 10_000, describe?: () => string): Promise<void> {
   const start = Date.now();
   while (!check()) {
-    if (Date.now() - start > timeout) throw new Error("timeout");
+    if (Date.now() - start > timeout) throw new Error(describe ? `timeout: ${describe()}` : "timeout");
     await new Promise((r) => setTimeout(r, 20));
   }
 }
@@ -2142,10 +2142,19 @@ describe("TramaController", () => {
     // The person left the window in the evening, then Trama closed; in the morning it opens again.
     controller!.personAway(Date.now() - 8 * 3_600_000);
     document = await restart();
-    // The recap of the return is written once the project opened: wait for it, as a slower machine writes it later.
-    await until(() => controller!.snapshot.project!.document.recap?.recaps.at(-1)?.reason === "return");
+    // The recap of the return is written once the project opened: wait for it, as a slower machine writes it later. It
+    // is looked up among the recaps, not read as the last one: another recap may be written after it on a loaded machine.
+    const returnRecap = () => controller!.snapshot.project!.document.recap?.recaps.find((r) => r.reason === "return");
+    await until(
+      () => returnRecap() !== undefined,
+      10_000,
+      () => {
+        const current = controller!.snapshot.project!.document;
+        return `no recap of the return; recaps=${JSON.stringify(current.recap?.recaps.map((r) => r.reason) ?? [])} personLeftAt=${current.personLeftAt ?? "none"} choices=${current.delegatedChoices?.length ?? 0}`;
+      },
+    );
     document = controller!.snapshot.project!.document;
-    const recap = document.recap?.recaps.at(-1);
+    const recap = returnRecap();
     expect(recap).toMatchObject({ reason: "return" });
     expect(recap?.delegated?.find((c) => c.kind === "decision")).toMatchObject({ doubt: "Non so se vale per i buoni" });
     expect(document.events.findLast((e) => e.content.type === "card" && e.content.kind === "recap")?.content).toMatchObject({ title: "Mentre non c'eri" });
