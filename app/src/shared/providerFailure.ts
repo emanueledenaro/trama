@@ -4,6 +4,8 @@
  * The provider's own text, often a JSON body, stays apart as the technical detail.
  */
 
+import { localeOf, type Translate } from "./i18n";
+
 export type ProviderFailureKind =
   /** A temporary or shared limit: an upstream 429, a rate limit, an overloaded model. It passes by itself. */
   | "temporaryLimit"
@@ -20,20 +22,13 @@ export type ProviderFailureKind =
 /** What the person can do about a failure. The last action of a list is the primary one (cta-row). */
 export type RecoveryAction = "retry" | "changeModel" | "changeProvider" | "addKey" | "signIn" | "checkAgain";
 
-export const RECOVERY_LABELS: Record<RecoveryAction, string> = {
-  retry: "Riprova",
-  changeModel: "Cambia modello",
-  changeProvider: "Cambia provider",
-  addKey: "Aggiungi la tua chiave",
-  signIn: "Accedi di nuovo",
-  checkAgain: "Controlla di nuovo",
-};
+export const recoveryLabel = (t: Translate, action: RecoveryAction): string => t(`shared.recovery.${action}`);
 
 export interface ProviderFailure {
   kind: ProviderFailureKind;
   /** One line, for the card title. */
   title: string;
-  /** The cause and what happens next, in plain Italian; never a JSON body. */
+  /** The cause and what happens next, in the person's language; never a JSON body. */
   explanation: string;
   /** True when the failure passes by itself, so Trama may retry. */
   temporary: boolean;
@@ -183,16 +178,18 @@ function keyUrlOf(text: string): string | null {
   return null;
 }
 
-const formatUntil = (until: string) =>
-  new Date(until).toLocaleString("it-IT", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+const formatUntil = (t: Translate, until: string) =>
+  new Date(until).toLocaleString(localeOf(t.language), { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
 /**
  * Classifies a provider or turn failure. `raw` is whatever the adapter or the turn reported, JSON bodies and
  * Trama's own Italian prefixes included; `provider` names the provider in the sentences.
  */
-export function classifyProviderFailure(raw: string, options: { provider?: string | null; now?: Date } = {}): ProviderFailure {
+export function classifyProviderFailure(t: Translate, raw: string, options: { provider?: string | null; now?: Date } = {}): ProviderFailure {
   const text = raw.trim();
-  const who = options.provider ?? "Il provider";
+  const who = options.provider ?? t("shared.provider.generic");
+  // In the middle of a sentence an unnamed provider is "this provider".
+  const whom = options.provider ?? t("shared.provider.this");
   const { message, json, fields } = providerMessageOf(text);
   const haystack = `${text}\n${fields}`;
   const until = parseResetTime(haystack, options.now);
@@ -208,8 +205,8 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
     return {
       ...base,
       kind: "modelUnavailable",
-      title: "Il modello scelto non è disponibile",
-      explanation: `${who} non offre questo modello con l'account collegato. Scegli un altro modello o un altro provider, poi riprova.`,
+      title: t("shared.provider.model.title"),
+      explanation: t("shared.provider.model.explanation", { who }),
       temporary: false,
       actions: ["changeProvider", "changeModel"],
     };
@@ -218,8 +215,8 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
     return {
       ...base,
       kind: "signIn",
-      title: "Serve un nuovo accesso",
-      explanation: `L'accesso a ${who === "Il provider" ? "questo provider" : who} manca o è scaduto. Accedi di nuovo, poi controlla lo stato.`,
+      title: t("shared.provider.signIn.title"),
+      explanation: t("shared.provider.signIn.explanation", { who: whom }),
       temporary: false,
       actions: ["changeProvider", "checkAgain", "signIn"],
     };
@@ -228,10 +225,8 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
     return {
       ...base,
       kind: "quotaExhausted",
-      title: "Quota del provider esaurita",
-      explanation: until
-        ? `${who} ha esaurito la quota del piano. Si sblocca il ${formatUntil(until)}: puoi aspettare o passare a un altro provider.`
-        : `${who} ha esaurito la quota del piano. Puoi passare a un altro provider o aggiungere crediti all'account.`,
+      title: t("shared.provider.quota.title"),
+      explanation: until ? t("shared.provider.quota.until", { who, until: formatUntil(t, until) }) : t("shared.provider.quota.explanation", { who }),
       temporary: false,
       actions: keyUrl ? ["changeModel", "addKey", "changeProvider"] : ["changeModel", "changeProvider"],
     };
@@ -240,12 +235,12 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
     return {
       ...base,
       kind: "temporaryLimit",
-      title: "Limite temporaneo del provider",
+      title: t("shared.provider.temporary.title"),
       explanation: /overloaded|capacity|\b529\b/i.test(haystack)
-        ? `${who} è sovraccarico in questo momento. Non è la quota del tuo account: passa da solo.`
+        ? t("shared.provider.temporary.overloaded", { who })
         : shared
-          ? `Il modello scelto su ${who === "Il provider" ? "questo provider" : who} è molto richiesto e ha un limite condiviso temporaneo. Non è la quota del tuo account: passa da solo.`
-          : `${who} ha chiesto di rallentare le richieste per un po'. Non è la quota del tuo account: passa da solo.`,
+          ? t("shared.provider.temporary.shared", { who: whom })
+          : t("shared.provider.temporary.slowDown", { who }),
       temporary: true,
       actions: keyUrl ? ["addKey", "changeModel", "retry"] : ["changeModel", "retry"],
     };
@@ -254,8 +249,8 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
     return {
       ...base,
       kind: "unreachable",
-      title: "Provider non raggiungibile",
-      explanation: `${who} o la rete non rispondono. Controlla la connessione, poi riprova.`,
+      title: t("shared.provider.unreachable.title"),
+      explanation: t("shared.provider.unreachable.explanation", { who }),
       temporary: true,
       actions: ["checkAgain", "retry"],
     };
@@ -263,8 +258,8 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
   return {
     ...base,
     kind: "unknown",
-    title: "Il Coordinatore non ha potuto rispondere",
-    explanation: providerMessage ?? `${who} ha interrotto il turno senza dire perché.`,
+    title: t("shared.provider.unknown.title"),
+    explanation: providerMessage ?? t("shared.provider.unknown.explanation", { who }),
     // The sentence is already the explanation: the detail keeps only a JSON body.
     providerMessage: null,
     technical: json ? text : null,
@@ -274,17 +269,17 @@ export function classifyProviderFailure(raw: string, options: { provider?: strin
 }
 
 /** The one line a notice or a settings row shows for a provider failure: cause and, when known, the reset. */
-export function failureSummary(raw: string, provider?: string | null): string {
-  const failure = classifyProviderFailure(raw, { provider });
-  return failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`;
+export function failureSummary(t: Translate, raw: string, provider?: string | null): string {
+  const failure = classifyProviderFailure(t, raw, { provider });
+  return failure.kind === "unknown" ? failure.explanation : t("shared.provider.summary", { title: failure.title, explanation: failure.explanation });
 }
 
 /** A failure text a card or an activity shows: one with a provider's JSON body becomes its summary; any other stays. */
-export function readableFailure(text: string, provider?: string | null): string;
-export function readableFailure(text: string | null, provider?: string | null): string | null;
-export function readableFailure(text: string | null, provider?: string | null): string | null {
+export function readableFailure(t: Translate, text: string, provider?: string | null): string;
+export function readableFailure(t: Translate, text: string | null, provider?: string | null): string | null;
+export function readableFailure(t: Translate, text: string | null, provider?: string | null): string | null {
   if (!text || !containsJson(text)) return text;
-  return failureSummary(text, provider);
+  return failureSummary(t, text, provider);
 }
 
 /** The failures after which Trama waits and resumes the Coordinator's turn by itself while it stays open (P10, C11). */
@@ -312,15 +307,13 @@ export interface ProviderRetryView {
 }
 
 /** The sentence under a failure while Trama waits to resume the turn, from the seconds left. */
-export function providerWaitText(view: Pick<ProviderRetryView, "reason" | "attempt" | "maxAttempts">, seconds: number): string {
-  const wait = seconds >= 90 ? `${Math.round(seconds / 60)} minuti` : seconds === 1 ? "1 secondo" : `${seconds} secondi`;
+export function providerWaitText(t: Translate, view: Pick<ProviderRetryView, "reason" | "attempt" | "maxAttempts">, seconds: number): string {
+  const wait = seconds >= 90 ? t("shared.provider.wait.minutes", { count: Math.round(seconds / 60) }) : t("shared.provider.wait.seconds", { count: seconds });
   if (view.reason === "quotaExhausted") {
-    return seconds > 0
-      ? `Trama controlla di nuovo la quota tra ${wait} e riprende il turno da sola appena si sblocca.`
-      : "Trama controlla di nuovo la quota ora.";
+    return seconds > 0 ? t("shared.provider.wait.quota", { wait }) : t("shared.provider.wait.quotaNow");
   }
-  const attempt = `tentativo ${view.attempt} di ${view.maxAttempts}`;
-  return seconds > 0 ? `Trama riprova da sola tra ${wait}, ${attempt}.` : `Trama riprova ora, ${attempt}.`;
+  const attempt = t("shared.provider.wait.attempt", { attempt: view.attempt, max: view.maxAttempts });
+  return seconds > 0 ? t("shared.provider.wait.retry", { wait, attempt }) : t("shared.provider.wait.retryNow", { attempt });
 }
 
 /** How long Trama waits before checking a used up quota again: until the reset when it is sooner than `checkMs`. */

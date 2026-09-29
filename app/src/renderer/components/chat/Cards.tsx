@@ -39,15 +39,15 @@ import {
   developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
-import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
+import { cleanCodeRules, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
-import { candidateSuperseded, CONFLICT_SIDE_TITLE, conflictSide, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
+import { candidateSuperseded, conflictSide, conflictSideTitle, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
 import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
-import { FIXED_BANS, fixedBanInfo } from "@shared/fixedBans";
+import { fixedBanInfo, fixedBans } from "@shared/fixedBans";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
-import { BOUNDARY_LABELS, findRoute, firstRunnableStep, ROUTE_PATH_LABELS, type RouteStatus, STEP_KIND_LABELS, TRAMA_FLOWS } from "@shared/askTrama";
+import { boundaryLabel, findRoute, firstRunnableStep, flowLabel, routePathLabel, type RouteStatus, stepKindLabel } from "@shared/askTrama";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
@@ -58,10 +58,10 @@ import { cn } from "@/lib/cn";
 import { act, examineCandidate, useUi } from "@/lib/store";
 import { useT, withNodes } from "@/lib/i18n";
 import type { MessageKey, Translate } from "@shared/i18n";
-import { ACTION_LABELS } from "@/lib/labels";
+import { actionLabel } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RecordName, ReferenceText } from "./ReferenceText";
-import { BLOCKER_TEXT, plainConflictReference, plainText } from "@shared/plainLanguage";
+import { blockerText, plainConflictReference, plainText } from "@shared/plainLanguage";
 import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
@@ -72,7 +72,7 @@ import { RuleLabel } from "./RuleLabel";
 import { InterfaceShotsField } from "./InterfaceShots";
 import { latestGate } from "@shared/gate";
 import { assignmentLine } from "@shared/duties";
-import { ASSIGNMENT_STATUS, CANDIDATE_STATE, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
+import { assignmentStatus, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
 import { Sep } from "@/components/ui/sep";
 import { formatTime } from "@/lib/format";
 import { AgentName } from "@/components/AgentIdentity";
@@ -161,6 +161,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
 }
 
 export function ContextNoticeCard({ title, detail }: { title: string; detail: string | null }) {
+  const t = useT();
   return (
     <div className="my-3 flex items-start gap-2 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5 text-ui" data-testid="context-notice">
       <IconInfoCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
@@ -170,7 +171,7 @@ export function ContextNoticeCard({ title, detail }: { title: string; detail: st
         </div>
         {detail ? (
           <div className="text-ui-sm text-muted-foreground">
-            <ReferenceText text={readableFailure(detail)} />
+            <ReferenceText text={readableFailure(t, detail)} />
           </div>
         ) : null}
       </div>
@@ -203,7 +204,7 @@ export function FixedBansField() {
         <IconLock className="size-3" stroke={1.8} /> {t("chat.card.fixedBans.label")}
       </div>
       <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-ui text-foreground/90">
-        {FIXED_BANS.map((ban) => (
+        {fixedBans(t).map((ban) => (
           <li key={ban.id} className="break-words">
             {ban.label}
           </li>
@@ -249,7 +250,7 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
         ) : (
           <>
             <ChangeRow label={t("chat.card.mandate.scope")} change={named(diff.modules, moduleName)} testId="mandate-diff-modules" />
-            <ChangeRow label={t("chat.card.mandate.actions")} change={named(diff.actions, (a) => ACTION_LABELS[a as MandateAction])} testId="mandate-diff-actions" />
+            <ChangeRow label={t("chat.card.mandate.actions")} change={named(diff.actions, (a) => actionLabel(t, a as MandateAction))} testId="mandate-diff-actions" />
             <ChangeRow label={t("chat.card.mandate.objectives")} change={diff.objectives} testId="mandate-diff-objectives" />
             <ChangeRow label={t("chat.card.mandate.priorities")} change={diff.priorities} testId="mandate-diff-priorities" />
             <ChangeRow label={t("chat.card.mandate.limits")} change={diff.limits} testId="mandate-diff-limits" />
@@ -357,27 +358,27 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
       title={
         resolution
           ? request.projectCycle
-            ? t("chat.card.mandate.titleProject")
-            : t("chat.card.mandate.title")
+            ? t("shared.settled.projectMandate")
+            : t("shared.settled.mandate")
           : hasMandate
             ? t("chat.card.mandate.titleNewProposal")
             : request.projectCycle
               ? t("chat.card.mandate.titleProjectProposal")
-              : t("chat.card.mandate.titleProposal")
+              : t("shared.waiting.mandateProposal")
       }
       className={cn(superseded && "opacity-60")}
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "granted" || resolution.kind === "corrected" ? "success" : "secondary"}>
             {resolution.kind === "granted"
-              ? t("chat.card.mandate.granted", { version: String(resolution.version) })
+              ? t("shared.settled.mandateGranted", { version: String(resolution.version) })
               : resolution.kind === "corrected"
-                ? t("chat.card.mandate.corrected", { version: String(resolution.version) })
+                ? t("shared.settled.mandateCorrected", { version: String(resolution.version) })
                 : superseded
-                  ? t("chat.card.mandate.superseded")
+                  ? t("shared.settled.superseded")
                   : resolution.kind === "rejected"
-                    ? t("chat.card.mandate.rejected")
-                    : t("chat.card.mandate.notGranted")}
+                    ? t("shared.settled.rejected")
+                    : t("shared.settled.revoked")}
           </Badge>
         ) : (
           <Badge tone="info">{t("chat.card.pending")}</Badge>
@@ -418,7 +419,7 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
             <ItemList items={request.scopeModuleIds.map(moduleName)} />
           </Field>
           <Field label={t("chat.card.mandate.actions")}>
-            <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+            <ItemList items={request.authorizedActions.map((a) => actionLabel(t, a))} />
           </Field>
           {request.limits.length ? (
             <Field label={t("chat.card.mandate.limits")}>
@@ -445,7 +446,7 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const refusal = project.document.fixedBanRefusals?.find((r) => r.id === refusalId);
   if (!refusal) return null;
-  const info = fixedBanInfo(refusal.ban);
+  const info = fixedBanInfo(t, refusal.ban);
   const by = refusal.by;
   const specialist = by.kind === "specialist" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
   return (
@@ -500,7 +501,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   return (
     <CardFrame
       icon={<IconRosetteDiscountCheck stroke={1.8} />}
-      title={grilling ? t("chat.card.decision.question", { number: grilling.number }) : t("chat.card.decision.title")}
+      title={grilling ? t("shared.settled.question", { number: grilling.number }) : t("shared.settled.decision")}
       className={grilling ? "my-2" : undefined}
       aside={
         <span className="flex items-center gap-1.5">
@@ -515,9 +516,9 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             </span>
           ) : null}
           {withdrawal ? (
-            <Badge tone="secondary">{t("chat.card.decision.withdrawn")}</Badge>
+            <Badge tone="secondary">{t("shared.settled.withdrawn")}</Badge>
           ) : (
-            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? t("chat.card.decision.destructive") : t("chat.card.decision.product")}</Badge>
+            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? t("shared.waiting.destructive") : t("chat.card.decision.product")}</Badge>
           )}
         </span>
       }
@@ -564,12 +565,12 @@ export function DecisionCard({ requestId }: { requestId: string }) {
               )}
             >
               <div className="flex items-start gap-2">
-                <span className="min-w-0 flex-1 text-ui text-foreground">{plainText(alternative.behavior)}</span>
+                <span className="min-w-0 flex-1 text-ui text-foreground">{plainText(t, alternative.behavior)}</span>
                 {grilling?.recommendedIndex === index ? <Badge tone="success">{t("chat.card.decision.recommended")}</Badge> : null}
               </div>
               {/* Inside a button a reference cannot be a link: the text reads plain (issue #270). */}
-              <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.card.decision.example", { example: plainText(alternative.example) })}</div>
-              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.card.decision.consequence", { consequence: plainText(alternative.consequence) })}</div> : null}
+              <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.card.decision.example", { example: plainText(t, alternative.example) })}</div>
+              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.card.decision.consequence", { consequence: plainText(t, alternative.consequence) })}</div> : null}
             </button>
           );
         })}
@@ -674,10 +675,10 @@ export function GrillingRoundCard({
     <section aria-label={t("chat.card.grilling.label", { round })} className="my-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-2.5 pt-2 pb-0.5">
       <div className="flex items-center gap-2 px-1 text-ui-sm">
         <IconListCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{t("chat.card.grilling.title", { round })}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{t("shared.settled.grillingTitle", { round })}</span>
         {withdrawn ? <Badge tone="secondary">{t("chat.card.grilling.withdrawn", { count: withdrawn })}</Badge> : null}
         <Badge tone={complete ? "success" : "info"}>
-          {complete ? t("chat.card.grilling.complete") : t("chat.card.grilling.answers", { answered, total: asked.length })}
+          {complete ? t("shared.settled.roundComplete") : t("chat.card.grilling.answers", { answered, total: asked.length })}
         </Badge>
       </div>
       {questions.map((q) => renderQuestion(q.id))}
@@ -686,7 +687,6 @@ export function GrillingRoundCard({
 }
 
 // The one vocabulary of states (issue #272): the other views import these from here or from @shared/states.
-export { ASSIGNMENT_STATUS, CANDIDATE_STATE };
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   const t = useT();
@@ -704,17 +704,17 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   return (
     <CardFrame
       icon={<IconUsersGroup stroke={1.8} />}
-      title={t("chat.card.team.title")}
+      title={t("shared.settled.teamProposal")}
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "superseded" ? "secondary" : "success"}>
             {resolution.kind === "confirmed"
               ? byCoordinator
                 ? t("chat.card.team.confirmedByCoordinator")
-                : t("chat.card.team.confirmed")
+                : t("shared.settled.teamConfirmed")
               : resolution.kind === "corrected"
-                ? t("chat.card.team.corrected")
-                : t("chat.card.team.superseded")}
+                ? t("shared.settled.teamCorrected")
+                : t("shared.settled.teamSuperseded")}
           </Badge>
         ) : (
           <Badge tone="info">{t("chat.card.pending")}</Badge>
@@ -790,7 +790,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   if (!specialist || !assignment) return null;
   const goal = findGoal(project.document, assignment.goalId);
   const lastTurn = assignment.turns.at(-1);
-  const status = ASSIGNMENT_STATUS[assignment.status];
+  const status = assignmentStatus(t, assignment.status);
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
   // Paused work whose question has its answer (W06): Trama resumes it by itself, the person can resume it now.
@@ -854,7 +854,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
         {/* Work in a cloud session has no copy on the Mac until its branch comes back (A19). */}
         {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? t("chat.card.assignment.ownWorkingCopy") : t("chat.card.assignment.readOnly")}</span>}
-        {assignment.requiredChecks.length ? <span>{t("chat.card.assignment.checks", { checks: assignment.requiredChecks.map(checkName).join(", ") })}</span> : null}
+        {assignment.requiredChecks.length ? <span>{t("chat.card.assignment.checks", { checks: assignment.requiredChecks.map((check) => checkName(t, check)).join(", ") })}</span> : null}
       </div>
       {assignment.workspace ? (
         <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
@@ -862,9 +862,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </div>
       ) : null}
       <p className="mt-2 text-ui-sm text-muted-foreground">
-        <ReferenceText text={assignmentLine(project.document, assignment)} />
+        <ReferenceText text={assignmentLine(t, project.document, assignment)} />
       </p>
-      {assignment.failure ? <Field label={t("chat.card.error")}>{readableFailure(assignment.failure)}</Field> : null}
+      {assignment.failure ? <Field label={t("chat.card.error")}>{readableFailure(t, assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
       <ThreadLinks assignmentId={assignment.id} />
@@ -1021,8 +1021,8 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
         ) : (
           <span className="inline-block size-3.5 shrink-0 rounded-full border border-dashed border-muted-foreground/50" />
         )}
-        <span title={check}>{checkName(check)}</span>
-        <span className="text-muted-foreground">{checkResult(check, evidence?.result ?? null)}</span>
+        <span title={check}>{checkName(t, check)}</span>
+        <span className="text-muted-foreground">{checkResult(t, check, evidence?.result ?? null)}</span>
         {failed ? (
           <button
             type="button"
@@ -1273,7 +1273,7 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
   const findings = [...(review.findings ?? [])].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
   const standard = review.standard;
   const ruleLabel = (id: string | null) => {
-    const rule = CLEAN_CODE_RULES.find((r) => r.id === id);
+    const rule = cleanCodeRules(t).find((r) => r.id === id);
     return rule ? <RuleLabel rule={rule} /> : t("chat.card.review.otherRule");
   };
   return (
@@ -1465,7 +1465,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const record = useRecord(candidateId);
   if (!candidate || !report) return null;
   // A candidate the Coordinator declared superseded (issue #421) reads "Superato", like its line in the chat.
-  const state = report.state === "superseded" && candidate.supersession ? { label: t("supersession.outcome"), tone: "secondary" as const } : candidateStatus(report);
+  const state = report.state === "superseded" && candidate.supersession ? { label: t("supersession.outcome"), tone: "secondary" as const } : candidateStatus(t, report);
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
   const approved = candidate.humanApproval && !report.approvalInvalidated;
   const quality = report.quality ?? [];
@@ -1533,11 +1533,11 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
-                {b.code === "WORKTREE_CHANGED" ? t("candidate.blocker.worktreeChanged") : (BLOCKER_TEXT[b.code] ?? b.code)}
+                {blockerText(t, b.code)}
                 {b.code === "BASE_CHANGED" || b.code === "WORKTREE_CHANGED" ? null : (
                   <span className="text-muted-foreground">
                     <Sep />
-                    <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(b.detail) : b.detail} />
+                    <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(t, b.detail) : b.detail} />
                   </span>
                 )}
               </li>
@@ -1746,7 +1746,7 @@ export function PlanCard({ planId }: { planId: string }) {
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
-  const status = planStatus(plan);
+  const status = planStatus(t, plan);
   if (plan.status === "superseded") {
     // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
     return (
@@ -1781,7 +1781,7 @@ export function PlanCard({ planId }: { planId: string }) {
       <p className="text-ui-sm text-muted-foreground">
         {plan.orderedBy === "coordinator" ? t("chat.card.plan.byCoordinator") : t("chat.card.plan.byYou")}<Sep />{plan.summary}
       </p>
-      {plan.failure ? <Field label={t("chat.card.error")}>{readableFailure(plan.failure)}</Field> : null}
+      {plan.failure ? <Field label={t("chat.card.error")}>{readableFailure(t, plan.failure)}</Field> : null}
       {plan.spec ? <PlanSpecBody plan={plan} /> : null}
       {proposal ? (
         <>
@@ -1997,7 +1997,7 @@ function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<strin
       {shown.map((file) => (
         <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
           {file}
-          {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(lines[file]!)}</span> : null}
+          {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(t, lines[file]!)}</span> : null}
         </span>
       ))}
       {files.length > shown.length ? (
@@ -2018,11 +2018,11 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const label = CONFLICT_LABEL[assessment.classification];
   const exercise = isExerciseAssessment(assessment);
   const side = conflictSide(assessment, (project.presence?.others ?? []).map((o) => o.record));
-  const title = exercise ? t("chat.card.conflict.exerciseTitle") : CONFLICT_SIDE_TITLE[side];
+  const title = exercise ? t("chat.card.conflict.exerciseTitle") : conflictSideTitle(t, side);
   // The divergence of the project's branch is one notice above the chat (U02): the card only points to it.
   if (!exercise && explainedByDivergence(project.document, assessment)) {
     return (
-      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">{t("chat.card.conflict.inNotice")}</Badge>}>
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">{t("shared.settled.inProjectNotice")}</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="conflict-in-divergence">
           {t("chat.card.conflict.divergence", { branch: project.document.branchDivergence!.defaultBranch })}
         </p>
@@ -2048,7 +2048,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   if (superseded) {
     return (
-      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">{t("chat.card.conflict.superseded")}</Badge>}>
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">{t("shared.settled.conflictSuperseded")}</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="conflict-superseded">
           {worktree ? t("chat.card.conflict.supersededOne") : t("chat.card.conflict.supersededCandidate")}
         </p>
@@ -2161,30 +2161,30 @@ export function RouteCard({ routeId }: { routeId: string }) {
     <CardFrame
       anchor="route"
       icon={<IconRoute stroke={1.8} />}
-      title={t("chat.card.route.title")}
+      title={t("shared.waiting.route")}
       hint={route.id}
       className={cn(route.status === "superseded" && "opacity-80")}
       aside={<Badge tone={status.tone}>{t(status.label)}</Badge>}
     >
       <div data-testid="route" data-route={route.id}>
         <Field label={t("chat.card.route.situation")}>{route.situation}</Field>
-        <Field label={ROUTE_PATH_LABELS[route.path]}>
+        <Field label={routePathLabel(t, route.path)}>
           <ol className="mt-1 space-y-1">
             {route.steps.map((step, index) => (
               <li key={step.skill} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
                 <code className="rounded bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
                 {step.kind === "unavailable" ? (
-                  <Badge tone="warning">{STEP_KIND_LABELS.unavailable}</Badge>
+                  <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge>
                 ) : (
-                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? TRAMA_FLOWS[step.skill] : STEP_KIND_LABELS.skill}</span>
+                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? flowLabel(t, step.skill) : stepKindLabel(t, "skill")}</span>
                 )}
               </li>
             ))}
           </ol>
         </Field>
-        <Field label={t("chat.card.route.boundary", { boundary: BOUNDARY_LABELS[route.boundary].label })}>
-          <span className="text-ui-sm text-muted-foreground">{BOUNDARY_LABELS[route.boundary].detail}</span>
+        <Field label={t("chat.card.route.boundary", { boundary: boundaryLabel(t, route.boundary).label })}>
+          <span className="text-ui-sm text-muted-foreground">{boundaryLabel(t, route.boundary).detail}</span>
         </Field>
         <Field label={t("chat.card.route.reason")}>{route.reason}</Field>
         {route.status === "proposed" && !runnable ? (

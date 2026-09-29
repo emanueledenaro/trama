@@ -11,7 +11,7 @@ import type {
   Specialist,
   SpecialistAssignment,
 } from "@shared/domain";
-import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, LENS_NAMES, lensTitle } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, findingStatusText, LENS_NAMES, lensTitle } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import type { PresenceView } from "@shared/presence";
@@ -61,7 +61,7 @@ export function findingProof(finding: AuditFinding): string {
   const evidence = finding.evidence;
   if (!evidence) return t("main.findingWork.noProof");
   if (evidence.kind === "fileLine") {
-    const label = `\`${evidenceLabel(evidence)}\``;
+    const label = `\`${evidenceLabel(t, evidence)}\``;
     return evidence.quote ? t("main.findingWork.quotedLine", { label, quote: `\`${evidence.quote}\`` }) : label;
   }
   if (evidence.kind === "command") return t("main.findingWork.command", { command: `\`${evidence.command}\`` });
@@ -96,7 +96,7 @@ export function candidateName(document: ProjectDocument, audit: FocusAudit): str
 export function findingMarkdown(document: ProjectDocument, audit: FocusAudit, finding: AuditFinding): string {
   return [
     t(finding.severity === "serious" ? "main.findingWork.markdown.titleSerious" : "main.findingWork.markdown.title", { source: sourceOf(finding).of, title: finding.title }),
-    `${t("main.findingWork.markdown.status", { status: FINDING_STATUS_TEXT[finding.status] })}${finding.basis ? ` ${finding.basis}` : ""}`,
+    `${t("main.findingWork.markdown.status", { status: findingStatusText(t, finding.status) })}${finding.basis ? ` ${finding.basis}` : ""}`,
     t("main.findingWork.markdown.proof", { proof: findingProof(finding) }),
     ...(finding.observed ? [`${t("main.findingWork.markdown.observed")}\n\n\`\`\`\n${finding.observed}\n\`\`\``] : []),
     t("main.findingWork.markdown.origin", { candidate: candidateName(document, audit), point: `\`${audit.fixedPoint.slice(0, 10)}\`` }),
@@ -137,7 +137,7 @@ export function recordFindingTicket(
     evidence: {
       kind: "finding",
       reference: audit.id,
-      label: t("main.findingWork.evidenceLabel", { candidate: candidateName(document, audit), proof: evidenceLabel(finding.evidence) }),
+      label: t("main.findingWork.evidenceLabel", { candidate: candidateName(document, audit), proof: evidenceLabel(t, finding.evidence) }),
     },
     foundAt: at,
     issue: issue ? { number: issue.number, url: issue.url, at, opened: true } : null,
@@ -244,7 +244,7 @@ export function assignFinding(document: ProjectDocument, audit: FocusAudit, find
           findingMarkdown(document, audit, finding),
           "Correggi solo questo rilievo, nei moduli dell'incarico. Se la correzione chiede di cambiare un comportamento deciso, fermati e chiedi al Coordinatore.",
         ].join("\n\n"),
-        seams: [{ number: 1, seam: t("main.findingWork.seam", { proof: evidenceLabel(finding.evidence) }), tests: null }],
+        seams: [{ number: 1, seam: t("main.findingWork.seam", { proof: evidenceLabel(t, finding.evidence) }), tests: null }],
       },
       mandate!.version,
       candidateWork?.requestId ?? null,
@@ -269,7 +269,7 @@ export function findingPactCard(document: ProjectDocument, audit: FocusAudit, fi
   requireNoFollowUp(finding, "pactCard");
   const candidate = (auditCandidateId(audit) ? findCandidate(document, auditCandidateId(audit)!) : null);
   const work = candidate ? findAssignment(document, candidate.assignmentId) : null;
-  const proof = evidenceLabel(finding.evidence);
+  const proof = evidenceLabel(t, finding.evidence);
   const request = createDecisionRequest(
     document,
     {
@@ -312,8 +312,8 @@ export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit
         `- ${t("main.findingWork.report.item", {
           serious: f.severity === "serious" ? t("main.findingWork.report.serious") : "",
           title: f.title,
-          status: FINDING_STATUS_TEXT[f.status].toLowerCase(),
-          proof: evidenceLabel(f.evidence),
+          status: findingStatusText(t, f.status).toLowerCase(),
+          proof: evidenceLabel(t, f.evidence),
         })}`,
     );
   const axis = (name: "standards" | "spec", title: string) => {

@@ -5,8 +5,8 @@ import { coordinatorDefaultModel } from "@shared/providers";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
-import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
-import { RECAP_COMMAND } from "@shared/recap";
+import { aiHeroAttribution, skillCandidates } from "@shared/skills";
+import { recapCommand } from "@shared/recap";
 import { ASK_TRAMA_SKILL } from "@shared/askTrama";
 import { chatComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -56,6 +56,7 @@ const PILL =
 const unsentByProject = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
 
 export function Composer() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const providers = useUi((s) => s.app!.providers);
   const preferredModels = useUi((s) => s.app!.settings.coordinatorModels);
@@ -78,7 +79,6 @@ export function Composer() {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const setToast = useUi((s) => s.setToast);
-  const t = useT();
 
   const addFiles = async (files: File[]) => {
     const accepted = files.filter((f) => IMAGE_TYPES.includes(f.type));
@@ -151,15 +151,16 @@ export function Composer() {
     element.style.height = `${Math.min(element.scrollHeight, 240)}px`;
   }, [text]);
 
+  const recap = recapCommand(t);
   const mentionSources = { modules: project.snapshot.modules, issues: project.github.issues, decisions: project.document.decisions };
   const candidates: MentionCandidate[] = !mention
     ? []
     : mention.sigil === "@"
-      ? mentionCandidates(mention.query, mentionSources).slice(0, 12)
+      ? mentionCandidates(t, mention.query, mentionSources).slice(0, 12)
       : [
           // Trama's own command (A03) comes first, while the query can still become it.
-          ...(mention.sigil === "/" && RECAP_COMMAND.slice(1).startsWith(mention.query.toLowerCase())
-            ? [{ mention: { kind: "file" as const, key: RECAP_COMMAND }, title: RECAP_COMMAND, subtitle: t("chat.composer.recapCommand") }]
+          ...(mention.sigil === "/" && recap.slice(1).startsWith(mention.query.toLowerCase())
+            ? [{ mention: { kind: "file" as const, key: recap }, title: recap, subtitle: t("shared.recap.commandHint") }]
             : []),
           ...skillCandidates(mention.query, project.skills)
             .slice(0, 12)
@@ -170,8 +171,8 @@ export function Composer() {
   const trackMention = (value: string, cursor: number) => {
     const before = value.slice(0, cursor);
     const match = before.match(/(^|\s)([@$/])([^\s@"$/]*)$/);
-    const recap = match?.[2] === "/" && RECAP_COMMAND.slice(1).startsWith(match[3]!.toLowerCase());
-    if (match && (match[2] === "@" || project.skills.length || recap)) {
+    const recapQuery = match?.[2] === "/" && recap.slice(1).startsWith(match[3]!.toLowerCase());
+    if (match && (match[2] === "@" || project.skills.length || recapQuery)) {
       setMention({ start: cursor - match[3]!.length - 1, query: match[3]!, index: 0, sigil: match[2] as "@" | "$" | "/" });
     } else setMention(null);
   };
@@ -180,7 +181,7 @@ export function Composer() {
     if (!mention) return;
     const element = textarea.current;
     const cursor = element?.selectionStart ?? text.length;
-    const bare = candidate.mention.key.startsWith("$") || candidate.mention.key === RECAP_COMMAND;
+    const bare = candidate.mention.key.startsWith("$") || candidate.mention.key === recap;
     const token = `${bare ? candidate.mention.key : mentionToken(candidate.mention)} `;
     const next = text.slice(0, mention.start) + token + text.slice(cursor);
     updateText(next);
@@ -259,7 +260,7 @@ export function Composer() {
                 <span className="max-w-[45%] shrink-0 truncate text-ui-xs text-muted-foreground">{candidate.subtitle}</span>
               </button>
             ))}
-            {mention.sigil === "/" && (project.aiHeroPrepared || candidates.some((c) => c.title === `/${ASK_TRAMA_SKILL}`)) ? <p className="px-2 pt-1 pb-0.5 text-ui-xs text-muted-foreground">{AIHERO_ATTRIBUTION}.</p> : null}
+            {mention.sigil === "/" && (project.aiHeroPrepared || candidates.some((c) => c.title === `/${ASK_TRAMA_SKILL}`)) ? <p className="px-2 pt-1 pb-0.5 text-ui-xs text-muted-foreground">{aiHeroAttribution(t)}.</p> : null}
           </div>
         ) : null}
         <form
@@ -302,7 +303,7 @@ export function Composer() {
                   className="group/paste relative flex max-w-64 min-w-0 flex-col rounded-lg border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-2.5 py-1.5"
                 >
                   <span className="truncate text-ui-sm text-foreground">{pasteTitle(paste.text) || t("chat.composer.pasted")}</span>
-                  <span className="text-ui-xs text-muted-foreground">{t("chat.composer.pasted")}<Sep />{pasteSizeLabel(paste.text)}</span>
+                  <span className="text-ui-xs text-muted-foreground">{t("chat.composer.pasted")}<Sep />{pasteSizeLabel(t, paste.text)}</span>
                   <button
                     type="button"
                     aria-label={t("chat.composer.removePasted")}

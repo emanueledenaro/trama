@@ -3,7 +3,7 @@ import { IconAlertTriangle, IconChevronRight, IconClockPause, IconCopy, IconFile
 import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { NextStepView } from "@shared/domain";
-import { providerWaitText, RECOVERY_LABELS, type RecoveryAction } from "@shared/providerFailure";
+import { providerWaitText, recoveryLabel, type RecoveryAction } from "@shared/providerFailure";
 import { PROVIDERS, canCoordinate } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { compactSteps, failedSteps } from "@shared/technicalSteps";
@@ -68,7 +68,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
                   onClick={() => setOpenPaste(openPaste === index ? null : index)}
                   className="rounded-md bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] px-2 py-1 text-left text-ui-xs text-muted-foreground hover:text-foreground"
                 >
-                  {pasteTitle(paste) || t("chat.timeline.pastedText")}<Sep />{pasteSizeLabel(paste)}
+                  {pasteTitle(paste) || t("chat.timeline.pastedText")}<Sep />{pasteSizeLabel(t, paste)}
                 </button>
               ))}
             </div>
@@ -254,7 +254,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
   }
 
   // The provider's error in the person's words (P10): cause, whether it passes, the actions; the raw text only on request.
-  const { failure } = turnFailureText(row.message, descriptor?.name ?? null);
+  const { failure } = turnFailureText(t, row.message, descriptor?.name ?? null);
   const other = (Object.keys(providers) as ProviderId[]).find(
     (id) => id !== row.provider && canCoordinate(id) && isUsableAccount(providers[id]?.account),
   );
@@ -306,7 +306,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           ) : null}
           {waiting && seconds !== null ? (
             <p className="mt-1.5 text-ui-sm text-foreground/90" data-testid="provider-retry">
-              {providerWaitText(waiting, seconds)}
+              {providerWaitText(t, waiting, seconds)}
             </p>
           ) : null}
           {hint ? <p className="mt-1 text-ui-sm text-foreground/80">{hint}</p> : null}
@@ -340,7 +340,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
         ) : (
           actions.map((action, index) => (
             <Button key={action} size="xs" variant={index === actions.length - 1 ? "default" : "outline"} onClick={() => run(action)}>
-              {RECOVERY_LABELS[action]}
+              {recoveryLabel(t, action)}
             </Button>
           ))
         )}

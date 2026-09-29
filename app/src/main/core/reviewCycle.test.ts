@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Candidate, CoordinatorRequest, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { GATE_ROLES } from "@shared/gate";
+import { ITALIAN, translator } from "@shared/i18n";
 import { REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
 import { waitingForYou } from "@shared/waitingForYou";
 import { candidateReport, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
@@ -200,14 +201,14 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     for (const event of ["round", "checkFailed", "assignmentEnded"] as const) expect(automaticMove(document, "r1", event, guards)).toBeNull();
 
     const reports = Object.fromEntries(document.candidates.map((c) => [c.id, candidateReport(document, c, null)]));
-    const waiting = waitingForYou(document, { candidateReports: reports });
+    const waiting = waitingForYou(ITALIAN, document, { candidateReports: reports });
     expect(waiting.map((item) => item.key)).toEqual([`candidate:${last!.id}`]);
     expect(waiting[0]).toMatchObject({ label: "Lavoro fermato più volte", title: `Ordini in revisione: la revisione l'ha fermato ${REVIEW_LOOP_LIMIT} volte di seguito. Scrivi al Coordinatore come andare avanti.` });
-    expect(waitingForYou(document, { candidateReports: reports, language: "en" })[0]).toMatchObject({ label: "Work stopped several times" });
+    expect(waitingForYou(translator("en"), document, { candidateReports: reports })[0]).toMatchObject({ label: "Work stopped several times" });
 
     // Once the person writes how to go on, the Coordinator takes the work again.
     request(document, "r2", minute + 1);
-    expect(waitingForYou(document, { candidateReports: reports })).toEqual([]);
+    expect(waitingForYou(ITALIAN, document, { candidateReports: reports })).toEqual([]);
     expect(workState(document, "r2").block).toBe("checkFailed");
   });
 

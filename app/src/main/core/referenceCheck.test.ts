@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest } from "@shared/domain";
 import { buildReferenceIndex } from "@shared/references";
 import { emptyDocument, recordReply } from "./document";
-import { setPersonLanguage } from "./personLanguage";
+import { setPersonLanguage, t as personT } from "./personLanguage";
 import { recordUnknownReferences, unknownReferencesFeedback, unknownReferencesTitle } from "./referenceCheck";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const github = { repository: "o/r", status: "ready" as const, message: null, issues: [], snapshot: null, events: [] };
 
@@ -19,7 +22,7 @@ describe("unknown references in the Coordinator's replies (issue #277)", () => {
 
   it("records the ids that name nothing and tells the next turn", () => {
     const document = setup();
-    const index = buildReferenceIndex({ document, modules: [], github });
+    const index = buildReferenceIndex(t, { document, modules: [], github });
     const reply = "La decisione D-AAAAAAAA vale; il candidato C-AC540E8F e la #99 sono pronti.";
     recordReply(document, "r1", reply, "m", []);
     expect(recordUnknownReferences(document, "r1", reply, index)).toEqual(["C-AC540E8F", "#99"]);
@@ -33,7 +36,7 @@ describe("unknown references in the Coordinator's replies (issue #277)", () => {
   it("records the activity in English and still tells the next turn (issue #301)", () => {
     setPersonLanguage("en");
     const document = setup();
-    const index = buildReferenceIndex({ document, modules: [], github });
+    const index = buildReferenceIndex(personT, { document, modules: [], github });
     const reply = "Il candidato C-AC540E8F è pronto.";
     recordReply(document, "r1", reply, "m", []);
     recordUnknownReferences(document, "r1", reply, index);
@@ -45,7 +48,7 @@ describe("unknown references in the Coordinator's replies (issue #277)", () => {
 
   it("stays quiet when every id is real", () => {
     const document = setup();
-    const index = buildReferenceIndex({ document, modules: [], github });
+    const index = buildReferenceIndex(t, { document, modules: [], github });
     expect(recordUnknownReferences(document, "r1", "La decisione D-AAAAAAAA vale.", index)).toEqual([]);
     expect(document.events).toHaveLength(0);
     expect(unknownReferencesFeedback(document, "r2")).toBeNull();

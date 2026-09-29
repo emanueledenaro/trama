@@ -21,6 +21,9 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "./onboarding";
 import { PROVIDERS } from "./providers";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 function appState(overrides: Partial<AppState> = {}): AppState {
   const providers = Object.fromEntries(PROVIDERS.map((p) => [p.id, { account: { kind: "signedOut" }, models: [], checking: false }])) as unknown as AppState["providers"];
@@ -297,7 +300,7 @@ describe("gh auth status", () => {
 describe("first exercise", () => {
   it("advances only on the study, observed navigation, a referenced reply and an answered decision", () => {
     const document = emptyDocument("demo");
-    const steps = () => statusOf(exerciseSteps("first", document, { providerReady: true }));
+    const steps = () => statusOf(exerciseSteps(t, "first", document, { providerReady: true }));
     expect(Object.values(steps()).every((s) => s === "pending")).toBe(true);
 
     document.events.push({ id: "e1", sequence: 1, origin: "coordinator", requestId: null, createdAt: "", content: { type: "card", kind: "study", title: "Studio", detail: "Stack Swift", referenceId: null } });
@@ -319,13 +322,13 @@ describe("first exercise", () => {
       askedAt: "",
       outcome: null,
     });
-    expect(isComplete(exerciseSteps("first", document, { providerReady: true }))).toBe(false);
+    expect(isComplete(exerciseSteps(t, "first", document, { providerReady: true }))).toBe(false);
     document.decisionRequests[0]!.outcome = { answer: "a", alternativeIndex: 0, decisionId: "D-1", version: 1, answeredAt: "" };
-    expect(isComplete(exerciseSteps("first", document, { providerReady: true }))).toBe(true);
+    expect(isComplete(exerciseSteps(t, "first", document, { providerReady: true }))).toBe(true);
   });
 
   it("declares the limit without a provider instead of pretending", () => {
-    const steps = exerciseSteps("first", emptyDocument("demo"), { providerReady: false });
+    const steps = exerciseSteps(t, "first", emptyDocument("demo"), { providerReady: false });
     expect(statusOf(steps)).toMatchObject({ study: "blocked", read: "pending", ask: "blocked", map: "pending", decision: "blocked" });
   });
 });
@@ -333,7 +336,7 @@ describe("first exercise", () => {
 describe("change exercise", () => {
   it("needs a worktree exercise, a recorded failure, a later passing candidate and an approved review", () => {
     const document = emptyDocument("demo");
-    const steps = () => statusOf(exerciseSteps("change", document, { providerReady: true }));
+    const steps = () => statusOf(exerciseSteps(t, "change", document, { providerReady: true }));
     document.mandate = {
       version: 1,
       objectives: ["o"],
@@ -359,14 +362,14 @@ describe("change exercise", () => {
     document.candidates.push(candidate("C-3", "A-1", "2026-09-23T10:03:00.000Z", "pass"));
     expect(steps()).toMatchObject({ passing: "done", review: "pending" });
     document.candidates[2]!.technicalReview = { id: "T", reviewerThreadId: "r", authorThreadId: null, verdict: "approved", summary: "", at: "" };
-    expect(isComplete(exerciseSteps("change", document, { providerReady: true }))).toBe(true);
+    expect(isComplete(exerciseSteps(t, "change", document, { providerReady: true }))).toBe(true);
   });
 });
 
 describe("revision exercise", () => {
   it("sees dependent work stop and independent work continue", () => {
     const document = emptyDocument("demo");
-    const steps = () => statusOf(exerciseSteps("revision", document, { providerReady: true }));
+    const steps = () => statusOf(exerciseSteps(t, "revision", document, { providerReady: true }));
     withAssignments(document, [
       assignment("A-1", { decisionVersions: { "D-1": 1 } }),
       assignment("A-2", { moduleIds: ["Sources/Catalog"] }),
@@ -392,7 +395,7 @@ describe("revision exercise", () => {
     expect(steps()).toMatchObject({ stopped: "done", answered: "pending" });
 
     document.decisionRequests[0]!.outcome = { answer: "a", alternativeIndex: null, decisionId: "D-1", version: 2, answeredAt: "" };
-    expect(isComplete(exerciseSteps("revision", document, { providerReady: true }))).toBe(true);
+    expect(isComplete(exerciseSteps(t, "revision", document, { providerReady: true }))).toBe(true);
 
     // If the revision had also stopped the independent work, the exercise would not be complete.
     document.team.specialists[0]!.assignments[1]!.stops.push({ requestedBy: "Trama", reason: "La decisione D-1 è cambiata.", requestedAt: "", thenRemove: false, confirmedAt: null });
@@ -403,7 +406,7 @@ describe("revision exercise", () => {
 describe("conflict exercise", () => {
   it("completes only with exercise assessments and the conflict card", () => {
     const document = emptyDocument("demo");
-    const steps = () => statusOf(exerciseSteps("conflict", document, { providerReady: true }));
+    const steps = () => statusOf(exerciseSteps(t, "conflict", document, { providerReady: true }));
     document.candidates.push(candidate("C-1", "A-1", "t", "pass"));
     const assessment = (id: string, classification: "clean" | "conflict", reference: string) => ({
       id,
@@ -421,7 +424,7 @@ describe("conflict exercise", () => {
     document.conflicts.push(assessment("c", "clean", "Esercizio · modifica compatibile simulata"), assessment("i", "conflict", "Esercizio · modifica incompatibile simulata"));
     expect(steps()).toMatchObject({ compatible: "done", incompatible: "pending" });
     document.events.push({ id: "e", sequence: 1, origin: "trama", requestId: null, createdAt: "", content: { type: "card", kind: "conflict", title: "", detail: null, referenceId: "i" } });
-    expect(isComplete(exerciseSteps("conflict", document, { providerReady: true }))).toBe(true);
+    expect(isComplete(exerciseSteps(t, "conflict", document, { providerReady: true }))).toBe(true);
   });
 });
 
@@ -452,20 +455,20 @@ describe("project picker", () => {
   });
 
   it("says what a recent project is doing from its records only", () => {
-    expect(recentProjectStatus(null)).toEqual({ work: [], colleagues: null });
-    expect(recentProjectStatus(entry())).toEqual({ work: ["Niente in attesa"], colleagues: null });
-    expect(recentProjectStatus(entry({ source: "live", runningWork: 2, pendingDecisions: 1, colleagues: 3 }))).toEqual({
+    expect(recentProjectStatus(t, null)).toEqual({ work: [], colleagues: null });
+    expect(recentProjectStatus(t, entry())).toEqual({ work: ["Niente in attesa"], colleagues: null });
+    expect(recentProjectStatus(t, entry({ source: "live", runningWork: 2, pendingDecisions: 1, colleagues: 3 }))).toEqual({
       work: ["2 agenti al lavoro", "1 decisione in attesa"],
       colleagues: "3 colleghi attivi",
     });
-    expect(recentProjectStatus(entry({ runningWork: 1, blockedWork: 2, toApprove: 1, colleagues: 1 })).work).toEqual([
+    expect(recentProjectStatus(t, entry({ runningWork: 1, blockedWork: 2, toApprove: 1, colleagues: 1 })).work).toEqual([
       "1 agente al lavoro",
       "2 lavori fermi",
       "1 risultato da approvare",
     ]);
-    expect(recentProjectStatus(entry({ colleagues: 0 })).colleagues).toBe("Nessun collega attivo");
-    expect(recentProjectStatus(entry({ source: "unreadable" })).work).toEqual(["Stato non leggibile"]);
-    expect(recentProjectStatus(entry({ source: "notSaved" })).work).toEqual(["Ancora da studiare"]);
+    expect(recentProjectStatus(t, entry({ colleagues: 0 })).colleagues).toBe("Nessun collega attivo");
+    expect(recentProjectStatus(t, entry({ source: "unreadable" })).work).toEqual(["Stato non leggibile"]);
+    expect(recentProjectStatus(t, entry({ source: "notSaved" })).work).toEqual(["Ancora da studiare"]);
   });
 
   it("reads a GitHub repository typed as owner/name or as a URL", () => {

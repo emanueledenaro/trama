@@ -50,8 +50,8 @@ export function ModelPicker({
   busy: boolean;
   fastMode: boolean;
 }) {
-  const providers = useUi((s) => s.app!.providers);
   const t = useT();
+  const providers = useUi((s) => s.app!.providers);
   const [open, setOpen] = useState(false);
   const [browsing, setBrowsing] = useState<ProviderId>(selectedProvider);
   // A recovery action (Cambia modello, Cambia provider) opens the picker on the provider it names (P10).
@@ -151,7 +151,7 @@ export function ModelPicker({
           {!usable ? (
             <PickerNote>
               {account?.kind === "blocked"
-                ? failureSummary(account.message, descriptor?.name)
+                ? failureSummary(t, account.message, descriptor?.name)
                 : descriptor?.signInCommand
                   ? t("chat.model.signInTerminal", { command: descriptor.signInCommand })
                   : t("chat.model.signInSettings")}
@@ -176,7 +176,7 @@ export function ModelPicker({
           )}
         </PickerList>
 
-        {coordinatorUnavailableReason(browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(browsing)}</p> : null}
+        {coordinatorUnavailableReason(t, browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(t, browsing)}</p> : null}
 
         {modelMissing && browsing === selectedProvider ? (
           <p className="px-4 pb-2 text-ui-xs text-warning">{t("chat.model.missing", { model: selectedModel ?? "" })}</p>

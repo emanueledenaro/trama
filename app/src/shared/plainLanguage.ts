@@ -4,6 +4,8 @@
  * terms for whoever reads the documentation; a test keeps the two aligned.
  */
 
+import type { Translate } from "./i18n";
+
 export interface GlossaryTerm {
   /** The word the interface shows. */
   term: string;
@@ -13,6 +15,10 @@ export interface GlossaryTerm {
   insteadOf: string[];
 }
 
+/**
+ * i18n-exempt: the glossary is written for the Coordinator and the agents, and docs/glossario.md keeps the same rows;
+ * the English words of the interface are in the catalog and in CONTEXT.md.
+ */
 export const GLOSSARY: GlossaryTerm[] = [
   { term: "Coordinatore", meaning: "L'agente con cui parli. Organizza il lavoro del team e ti chiede solo le scelte che spettano a te.", insteadOf: [] },
   { term: "Sviluppatore", meaning: "Un agente del team che scrive il codice di una fetta, nella sua copia di lavoro.", insteadOf: ["specialista", "specialist"] },
@@ -43,45 +49,50 @@ export const GLOSSARY: GlossaryTerm[] = [
   { term: "Lavoro in primo piano", meaning: "Il lavoro su cui il progetto si concentra ora, in cima alla chat.", insteadOf: ["task in focus", "focus"] },
 ];
 
-/** A candidate's blocker, by code, in the person's words. */
-export const BLOCKER_TEXT: Record<string, string> = {
-  BASE_CHANGED: "Il codice di partenza è cambiato",
-  WORKTREE_CHANGED: "La copia di lavoro è cambiata dopo il candidato",
-  DECISION_CHANGED: "Una decisione è cambiata",
-  UNRESOLVED_CHOICE: "Resta una scelta da fare",
-  EXTERNAL_EFFECT_UNSUPPORTED: "Ha un effetto esterno che Trama non sa verificare",
-  EVIDENCE_MISSING: "Verifica da eseguire",
-  EVIDENCE_STALE: "Verifica da ripetere",
-  CHECK_FAILED: "Verifica non superata",
-  GATE_BLOCKED: "I revisori hanno trovato un problema da correggere",
-  GATE_RUNNING: "I revisori stanno leggendo",
-  GATE_FAILED: "La lettura dei revisori va ripetuta",
-  REMOTE_CONFLICT: "In conflitto con il lavoro su GitHub",
-  CLOUD_CHECK_FAILED: "Il lavoro della sessione cloud non ha superato i controlli sul Mac",
-  WORKTREE_CONFLICT: "Tocca gli stessi file di un altro lavoro",
-  SEMANTIC_CONFLICT: "Incompatibile con un altro lavoro",
-};
+/** The codes of a candidate's blockers that the catalog explains. */
+export const BLOCKER_CODES = [
+  "BASE_CHANGED",
+  "WORKTREE_CHANGED",
+  "DECISION_CHANGED",
+  "UNRESOLVED_CHOICE",
+  "EXTERNAL_EFFECT_UNSUPPORTED",
+  "EVIDENCE_MISSING",
+  "EVIDENCE_STALE",
+  "CHECK_FAILED",
+  "GATE_BLOCKED",
+  "GATE_RUNNING",
+  "GATE_FAILED",
+  "REMOTE_CONFLICT",
+  "CLOUD_CHECK_FAILED",
+  "WORKTREE_CONFLICT",
+  "SEMANTIC_CONFLICT",
+] as const;
+type BlockerCode = (typeof BLOCKER_CODES)[number];
+const isBlockerCode = (code: string): code is BlockerCode => (BLOCKER_CODES as readonly string[]).includes(code);
+
+/** A candidate's blocker, by code, in the person's words; a code Trama does not know stays as it is. */
+export const blockerText = (t: Translate, code: string): string => (isBlockerCode(code) ? t(`shared.blocker.${code}`) : code);
 
 /** What code-review writes when there is no spec to compare with (the skill's own words, kept in the records). */
 const NO_SPEC = "no spec available";
-export const NO_SPEC_TEXT = "Nessun piano da confrontare";
 
-const CODE = new RegExp(`\\b(${Object.keys(BLOCKER_TEXT).join("|")})\\b`, "g");
+const CODE = new RegExp(`\\b(${BLOCKER_CODES.join("|")})\\b`, "g");
 
 /**
  * A text written by Trama or by an agent, made plain for the person: a skill cited with its path shows its name,
- * the technical codes and the skill's fixed phrases read in Italian. What the text says stays the same.
+ * the technical codes and the skill's fixed phrases read in the person's language. What the text says stays the same.
  */
-export function plainText(text: string): string {
+export function plainText(t: Translate, text: string): string {
+  const noSpec = t("shared.plain.noSpec");
   return (
     text
       // "skill:improve-codebase-architecture:/home/.../SKILL.md" is how a session names the skill it received.
       .replace(/\bskill:([\w.-]+):(?:[A-Za-z]:)?[/\\][^\s,;)]*/g, "$1")
       .replace(/(?<![\w/.-])(?:[A-Za-z]:)?(?:\/[\w.@ -]+)+\/([\w.-]+)\/SKILL\.md\b/g, "$1")
       .replace(new RegExp(`\\b${NO_SPEC}\\b`, "gi"), (_match: string, offset: number, whole: string) =>
-        offset === 0 || /[.!?]\s*$/.test(whole.slice(0, offset)) ? NO_SPEC_TEXT : NO_SPEC_TEXT.toLowerCase(),
+        offset === 0 || /[.!?]\s*$/.test(whole.slice(0, offset)) ? noSpec : noSpec.toLowerCase(),
       )
-      .replace(CODE, (code: string) => BLOCKER_TEXT[code]!.toLowerCase())
+      .replace(CODE, (code: string) => blockerText(t, code).toLowerCase())
   );
 }
 

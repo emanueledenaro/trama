@@ -11,6 +11,9 @@ import {
   type PresenceProbe,
 } from "./overlap";
 import type { PresenceEntry, PresenceRecord } from "./presence";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const now = "2026-09-26T10:00:00.000Z";
 
@@ -65,7 +68,7 @@ describe("overlap levels (decision 3)", () => {
     };
     const [conflict] = compare(["src/payments/refund.ts"], [bea], [probe]);
     expect(conflict!.level).toBe("conflict");
-    expect(overlapSummary(conflict!)).toBe("Conflitto con Bea in src/payments/refund.ts (righe 3-5).");
+    expect(overlapSummary(t, conflict!)).toBe("Conflitto con Bea in src/payments/refund.ts (righe 3-5).");
     // A clean probe leaves the file level.
     expect(compare(["src/payments/refund.ts"], [bea], [{ ...probe, status: "clean" }])[0]!.level).toBe("file");
     expect(compare(["src/cart/cart.ts"], [bea])).toEqual([]);
@@ -75,7 +78,7 @@ describe("overlap levels (decision 3)", () => {
     const bea = entry("bea", "Bea", ["src/payments/refund.ts"]);
     const [item] = compare([], [bea], [], ["m-pay"]);
     expect(item!.level).toBe("module");
-    expect(overlapSummary(item!)).toBe("Bea lavora anche nel modulo Pagamenti.");
+    expect(overlapSummary(t, item!)).toBe("Bea lavora anche nel modulo Pagamenti.");
   });
 
   it("compares with the colleagues' agents apart, and leaves out the person and expired records", () => {
@@ -84,7 +87,7 @@ describe("overlap levels (decision 3)", () => {
     });
     const [item] = compare(["src/cart/cart.ts"], [bea]);
     expect(item!.colleague.agent?.name).toBe("Pixel");
-    expect(overlapSummary(item!)).toBe("Pixel, agente di Bea tocca anche src/cart/cart.ts.");
+    expect(overlapSummary(t, item!)).toBe("Pixel, agente di Bea tocca anche src/cart/cart.ts.");
     expect(compare(["src/cart/cart.ts"], [{ ...bea, self: true }])).toEqual([]);
     expect(compare(["src/cart/cart.ts"], [{ ...bea, status: "expired" }])).toEqual([]);
   });
@@ -102,7 +105,7 @@ describe("overlap levels (decision 3)", () => {
       ],
     });
     expect(item!.pullRequest).toEqual({ number: 9, url: "https://github.com/o/r/pull/9" });
-    expect(coordinatorNotice(item!, "working").text).toContain("pull request #9");
+    expect(coordinatorNotice(t, item!, "working").text).toContain("pull request #9");
   });
 });
 
@@ -133,7 +136,7 @@ describe("message to the colleague (decision 10)", () => {
       checkedAt: now,
     };
     const [item] = compare(["src/payments/refund.ts"], [bea], [probe]);
-    const text = colleagueMessage(item!, { name: "Ada", branch: "feature/carrello" });
+    const text = colleagueMessage(t, item!, { name: "Ada", branch: "feature/carrello" });
     expect(text).toContain("Ciao Bea, sono Ada.");
     expect(text).toContain("src/payments/refund.ts");
     expect(text).toContain("Io sono su feature/carrello, tu sei su feature/bea (\"Rimborsi parziali\").");
@@ -151,7 +154,7 @@ describe("conflict lines", () => {
       { start: 5, end: 5 },
     ]);
     expect(conflictRanges("a\n<<<<<<< a\nx\n||||||| base\ny\n=======\nz\n>>>>>>> b\n")).toEqual([{ start: 2, end: 2 }]);
-    expect(linesLabel([{ start: 2, end: 3 }, { start: 9, end: 9 }])).toBe("righe 2-3 e 9");
-    expect(linesLabel([{ start: 4, end: 4 }])).toBe("riga 4");
+    expect(linesLabel(t, [{ start: 2, end: 3 }, { start: 9, end: 9 }])).toBe("righe 2-3 e 9");
+    expect(linesLabel(t, [{ start: 4, end: 4 }])).toBe("riga 4");
   });
 });

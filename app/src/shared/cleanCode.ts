@@ -4,6 +4,8 @@
  * reviewer checks the diff against it. The full text for people is docs/standard-clean-code.md, at the same version.
  */
 
+import type { Translate } from "./i18n";
+
 /** Bump together with docs/standard-clean-code.md when a rule changes. */
 export const CLEAN_CODE_VERSION = 1;
 
@@ -17,79 +19,67 @@ export type CleanCodeRuleId = "names" | "smallFunctions" | "fewArguments" | "noH
  */
 export type CleanCodeSeverity = "blocking" | "suggestion";
 
-export interface CleanCodeRule {
+/** A rule as Trama applies it: the developer's and the reviewer's English instruction and the weight of a breach. */
+export interface CleanCodeRuleSpec {
   id: CleanCodeRuleId;
-  /** Italian, for the settings page and the review card. */
-  label: string;
-  /** Italian, one line for the settings page. */
-  summary: string;
-  /** Italian: what an acronym label stands for, shown on hover wherever the label appears (issue #272). */
-  expansion?: string;
   /** English, as the developer and the reviewer read it. */
   instruction: string;
   severity: CleanCodeSeverity;
 }
 
-export const CLEAN_CODE_RULES: CleanCodeRule[] = [
+/** A rule with the words the person reads, in the interface language. */
+export interface CleanCodeRule extends CleanCodeRuleSpec {
+  /** For the settings page and the review card. */
+  label: string;
+  /** One line for the settings page. */
+  summary: string;
+  /** What an acronym label stands for, shown on hover wherever the label appears (issue #272). */
+  expansion?: string;
+}
+
+const ACRONYMS = ["kiss", "dry", "yagni", "solid"] as const;
+const isAcronym = (id: CleanCodeRuleId): id is (typeof ACRONYMS)[number] => (ACRONYMS as readonly string[]).includes(id);
+
+export const CLEAN_CODE_RULES: CleanCodeRuleSpec[] = [
   {
     id: "names",
-    label: "Nomi",
-    summary: "Nomi che spiegano lo scopo, pronunciabili e ricercabili, senza abbreviazioni criptiche e senza il tipo nel nome.",
     instruction:
       "Names reveal intent without a comment (`daysSinceLastAccess`, not `d`). They are pronounceable and searchable, with no cryptic abbreviations, and they leave the type out (`users`, not `userList`). A misleading name is a blocking finding.",
     severity: "blocking",
   },
   {
     id: "smallFunctions",
-    label: "Funzioni piccole",
-    summary: "Ogni funzione fa una sola cosa. Vale dentro un modulo: non autorizza a spezzettare le interfacce.",
     instruction:
       "Functions are small and do one thing (single responsibility). This holds inside a module: it never justifies splitting a deep module's small interface into many shallow ones.",
     severity: "suggestion",
   },
   {
     id: "fewArguments",
-    label: "Pochi argomenti",
-    summary: "Da 0 a 2 argomenti, al massimo 3. Oltre si raggruppano in un oggetto.",
     instruction: "Functions take few arguments, ideally 0 to 2. Past 3, group them in an object.",
     severity: "suggestion",
   },
   {
     id: "noHiddenSideEffects",
-    label: "Nessun effetto nascosto",
-    summary: "Una funzione non cambia di nascosto lo stato globale.",
     instruction: "Functions have no hidden side effects on global or shared state: what a function changes shows in its name and signature. A hidden side effect is a blocking finding.",
     severity: "blocking",
   },
   {
     id: "kiss",
-    label: "KISS",
-    expansion: "Keep It Simple: la soluzione più semplice che funziona.",
-    summary: "Niente complessità superflua.",
     instruction: "KISS: no complexity the task does not need.",
     severity: "suggestion",
   },
   {
     id: "dry",
-    label: "DRY",
-    expansion: "Don't Repeat Yourself: ogni logica si scrive una volta sola.",
-    summary: "La stessa logica non si scrive due volte.",
     instruction: "DRY: the same logic is written once. Duplicated logic is a blocking finding.",
     severity: "blocking",
   },
   {
     id: "yagni",
-    label: "YAGNI",
-    expansion: "You Aren't Gonna Need It: niente di quello che ancora non serve.",
-    summary: "Niente funzioni prima che servano.",
     instruction: "YAGNI: no function, option or abstraction before something needs it.",
     severity: "suggestion",
   },
   {
     id: "solid",
-    label: "SOLID",
-    expansion: "Cinque principi per il codice a oggetti: responsabilità singola, aperto alle estensioni, sostituibilità, interfacce piccole, dipendenze dalle astrazioni.",
-    summary: "Per il codice a oggetti.",
     instruction: "SOLID, for object-oriented code only: leave it aside where the project does not use classes.",
     severity: "suggestion",
   },
@@ -107,7 +97,20 @@ export const DEFAULT_CLEAN_CODE_SETTINGS: CleanCodeSettings = { disabledRules: [
 
 export const isCleanCodeRule = (value: string): value is CleanCodeRuleId => CLEAN_CODE_RULES.some((rule) => rule.id === value);
 
-export function activeRules(settings: CleanCodeSettings | undefined): CleanCodeRule[] {
+/** A rule of the standard with the words of the interface language. */
+export function cleanCodeRule(t: Translate, rule: CleanCodeRuleSpec): CleanCodeRule {
+  return {
+    ...rule,
+    label: t(`shared.rule.${rule.id}`),
+    summary: t(`shared.rule.${rule.id}.summary`),
+    ...(isAcronym(rule.id) ? { expansion: t(`shared.rule.${rule.id}.expansion`) } : {}),
+  };
+}
+
+/** Every rule of the standard, in its order, with the words of the interface language. */
+export const cleanCodeRules = (t: Translate): CleanCodeRule[] => CLEAN_CODE_RULES.map((rule) => cleanCodeRule(t, rule));
+
+export function activeRules(settings: CleanCodeSettings | undefined): CleanCodeRuleSpec[] {
   const disabled = new Set(settings?.disabledRules ?? []);
   return CLEAN_CODE_RULES.filter((rule) => !disabled.has(rule.id));
 }

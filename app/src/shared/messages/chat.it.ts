@@ -37,16 +37,8 @@ export const chatIt = {
   "chat.card.mandateDiff.unchanged": "La proposta non cambia niente del mandato in vigore.",
   "chat.card.mandateDiff.stopped": "Lavori che si fermerebbero",
   "chat.card.mandateDiff.noneStopped": "Nessuno: il lavoro in corso resta dentro il mandato.",
-  "chat.card.mandate.title": "Mandato",
-  "chat.card.mandate.titleProject": "Mandato di progetto",
   "chat.card.mandate.titleNewProposal": "Proposta di nuovo mandato",
   "chat.card.mandate.titleProjectProposal": "Proposta di mandato di progetto",
-  "chat.card.mandate.titleProposal": "Proposta di mandato",
-  "chat.card.mandate.granted": "Concesso, v{version}",
-  "chat.card.mandate.corrected": "Corretto, v{version}",
-  "chat.card.mandate.superseded": "Sostituita",
-  "chat.card.mandate.rejected": "Rifiutata",
-  "chat.card.mandate.notGranted": "Non concesso",
   "chat.card.mandate.supersededNote": "Sostituita da una richiesta più recente: non si può più concedere.",
   "chat.card.mandate.objectives": "Obiettivi",
   "chat.card.mandate.proposedObjectives": "Obiettivi proposti",
@@ -64,11 +56,7 @@ export const chatIt = {
   "chat.card.mandate.grant": "Concedi",
 
   // Decision
-  "chat.card.decision.title": "Decisione",
-  "chat.card.decision.question": "Domanda {number}",
   "chat.card.decision.blocksWork": "Blocca il lavoro",
-  "chat.card.decision.withdrawn": "Ritirata",
-  "chat.card.decision.destructive": "Caso distruttivo",
   "chat.card.decision.product": "Scelta di prodotto",
   "chat.card.decision.developerQuestion": "Domanda dello sviluppatore",
   "chat.card.decision.pausedUntilAnswer": "Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti.",
@@ -95,18 +83,12 @@ export const chatIt = {
 
   // Grilling round (M01)
   "chat.card.grilling.label": "Chiarimento, turno {round}",
-  "chat.card.grilling.title": "Chiarimento prima del piano, turno {round}",
   "chat.card.grilling.withdrawn": "{count} ritirate",
   "chat.card.grilling.withdrawn.one": "{count} ritirata",
-  "chat.card.grilling.complete": "Turno completo",
   "chat.card.grilling.answers": "{answered} di {total} risposte",
 
   // Team proposal
-  "chat.card.team.title": "Proposta del team",
   "chat.card.team.confirmedByCoordinator": "Team confermato dal Coordinatore",
-  "chat.card.team.confirmed": "Team confermato",
-  "chat.card.team.corrected": "Team corretto",
-  "chat.card.team.superseded": "Proposta sostituita",
   "chat.card.team.intro": "Qui scegli gli sviluppatori. Le altre figure del team ci sono sempre.",
   "chat.card.team.modules": "Moduli: {modules}",
   "chat.card.team.correction": "Correzione",
@@ -286,10 +268,8 @@ export const chatIt = {
   "chat.card.conflict.semantic": "Incompatibili",
   "chat.card.conflict.showAll": "Mostra tutti i {count} file",
   "chat.card.conflict.exerciseTitle": "Esercizio di conflitto",
-  "chat.card.conflict.inNotice": "Nell'avviso del progetto",
   "chat.card.conflict.divergence":
     "Questo confronto ripeteva la divergenza tra il branch del progetto e {branch}: non dipende dal candidato. Trama la segnala una volta sola, nell'avviso sopra la chat.",
-  "chat.card.conflict.superseded": "Sostituito",
   "chat.card.conflict.supersededOne": "Uno dei due candidati è stato sostituito da un lavoro più recente: questo conflitto non va risolto.",
   "chat.card.conflict.supersededCandidate": "Il candidato è stato sostituito da un lavoro più recente: questo conflitto non va risolto.",
   "chat.card.conflict.exercise": "Esercizio",
@@ -316,7 +296,6 @@ export const chatIt = {
   "chat.card.overlap.changed": "La presenza dei colleghi è cambiata dopo questo avviso.",
 
   // Ask Trama route (M07)
-  "chat.card.route.title": "Percorso di Ask Trama",
   "chat.card.route.proposed": "Proposto",
   "chat.card.route.started": "Avviato",
   "chat.card.route.declined": "Non avviato",
@@ -380,9 +359,6 @@ export const chatIt = {
   "chat.recap.noNeeds": "Niente: per ora vado avanti da solo.",
 
   // Candidate gate
-  "chat.gate.resultPass": "passa",
-  "chat.gate.resultFail": "fallisce",
-  "chat.gate.resultNotRun": "non eseguita",
   "chat.gate.note": "I rilievi sono il giudizio dei revisori, non un'evidenza. Le verifiche e il confronto della suite sono eseguiti da Trama.",
   "chat.gate.reviewFailed": "La revisione non è riuscita.",
   "chat.gate.blocking": "Bloccante",
@@ -525,7 +501,6 @@ export const chatIt = {
   "chat.composer.imageName": "immagine",
   "chat.composer.imageTypes": "Trama accetta immagini PNG, JPEG, GIF o WebP.",
   "chat.composer.tooManyImages": "Puoi allegare al massimo {count} immagini per messaggio.",
-  "chat.composer.recapCommand": "Riepilogo del Coordinatore: cosa ho fatto, cosa faccio, cosa mi serve da te",
   "chat.composer.skill": "Skill",
   "chat.composer.readPasted": "Leggi il testo incollato.",
   "chat.composer.mentions": "Menzioni",

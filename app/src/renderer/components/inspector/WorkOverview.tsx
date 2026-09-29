@@ -175,7 +175,7 @@ function GoalRow({ goal }: { goal: ProjectGoal }) {
         <span className={META}>
           {goal.examples.length ? t("work.goals.examples", { count: goal.examples.length }) : t("work.goals.noExamples")}
           <Sep />
-          {goalWorkSummary(document, goal.id)}
+          {goalWorkSummary(t, document, goal.id)}
         </span>
       </span>
       <GoalStateBadge goal={goal} />
@@ -215,7 +215,7 @@ function SliceItem({ row }: { row: SliceRow }) {
   const setInspector = useUi((s) => s.setInspector);
   const specialist = row.specialistId ? (project.document.team.specialists.find((s) => s.id === row.specialistId) ?? null) : null;
   const goal = row.goalId ? project.document.goals?.find((g) => g.id === row.goalId) : null;
-  const status = sliceStatus(row.state, row.ticket);
+  const status = sliceStatus(t, row.state, row.ticket);
   const who = specialist ? specialist.name : row.state === "blocked" && row.waitingFor.length ? t("work.slices.waitingFor", { slices: row.waitingFor.join(", ") }) : t("work.slices.unassigned");
   const open = row.candidateId
     ? () => setInspector({ kind: "candidate", id: row.candidateId! })
@@ -308,7 +308,7 @@ function ProjectBranch() {
         <div className="pb-1 pl-8 pr-2" data-testid="work-divergence">
           {filesOpen ? (
             <div className="mb-1.5" data-testid="work-divergence-files">
-              <p className="text-ui-xs text-muted-foreground">{divergenceSummary(divergence)}</p>
+              <p className="text-ui-xs text-muted-foreground">{divergenceSummary(t, divergence)}</p>
               <div className="mt-1.5 flex max-h-[30vh] flex-wrap gap-1 overflow-y-auto">
               {files.map((file) => (
                 <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
@@ -319,7 +319,7 @@ function ProjectBranch() {
             </div>
           ) : null}
           <div className="cta-row">
-            <Button size="xs" variant="outline" onClick={() => askCoordinator(divergenceQuestion(divergence))}>
+            <Button size="xs" variant="outline" onClick={() => askCoordinator(divergenceQuestion(t, divergence))}>
               {t("divergence.ask")}
             </Button>
           </div>

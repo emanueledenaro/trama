@@ -5,6 +5,8 @@
  * Pure: the providers and Trama's own push path call it before anything runs.
  */
 
+import { type Translate, translator } from "./i18n";
+
 export type FixedBan = "forcePush" | "pushMainBranch" | "deleteRemoteRef" | "tagOrRelease" | "secrets" | "repositorySettings";
 
 export interface FixedBanInfo {
@@ -15,23 +17,20 @@ export interface FixedBanInfo {
   reason: string;
 }
 
-export const FIXED_BANS: FixedBanInfo[] = [
-  { id: "forcePush", label: "Force push", reason: "Un force push riscrive la storia del remoto." },
-  { id: "pushMainBranch", label: "Push diretto sul branch principale", reason: "Sul branch principale il lavoro arriva solo da una pull request." },
-  { id: "deleteRemoteRef", label: "Cancellazione di branch o tag remoti", reason: "Cancellare un branch o un tag remoto toglie lavoro ad altri." },
-  { id: "tagOrRelease", label: "Creazione di tag e rilasci", reason: "Tag e rilasci pubblicano una versione: li decide la persona." },
-  { id: "secrets", label: "Letture o scritture di segreti e credenziali", reason: "Segreti e credenziali restano alla persona." },
-  { id: "repositorySettings", label: "Modifiche alle impostazioni del repository", reason: "Le impostazioni del repository le cambia la persona." },
-];
+export const FIXED_BAN_IDS: FixedBan[] = ["forcePush", "pushMainBranch", "deleteRemoteRef", "tagOrRelease", "secrets", "repositorySettings"];
 
-export const fixedBanInfo = (ban: FixedBan): FixedBanInfo => FIXED_BANS.find((b) => b.id === ban)!;
+export const fixedBanInfo = (t: Translate, ban: FixedBan): FixedBanInfo => ({ id: ban, label: t(`shared.ban.${ban}`), reason: t(`shared.ban.${ban}.reason`) });
+
+/** Every fixed ban, in the order the mandate card lists them. */
+export const fixedBans = (t: Translate): FixedBanInfo[] => FIXED_BAN_IDS.map((ban) => fixedBanInfo(t, ban));
 
 /** The branch names Trama treats as the main branch when it does not know the project's default one. */
 export const MAIN_BRANCHES = ["main", "master"];
 
 /** What the agent reads when Trama stops one of its actions: the rule, and that the person handles it. */
 export function fixedBanMessage(ban: FixedBan): string {
-  return `Trama blocks this action with a fixed ban (${fixedBanInfo(ban).label}): no mandate grants it. Do not retry it or look for another way; the person sees it in Aspetta te and handles it.`;
+  // i18n-exempt: written for the agent; the label is the one the person reads in Italian, as before issue #301.
+  return `Trama blocks this action with a fixed ban (${fixedBanInfo(translator("it"), ban).label}): no mandate grants it. Do not retry it or look for another way; the person sees it in Aspetta te and handles it.`;
 }
 
 // MARK: Paths
@@ -154,7 +153,7 @@ function unwrap(words: string[]): string[] {
       if (option === "--") break;
       if (valued.includes(option)) start++;
     }
-    // timeout takes its duration before the command.
+    // timeout takes its duration before the command. i18n-exempt: a program name, not text.
     if (program(word) === "timeout" && start < words.length) start++;
   }
   return words.slice(start);

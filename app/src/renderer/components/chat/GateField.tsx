@@ -1,6 +1,6 @@
 import { checkName } from "@shared/states";
 import type { CandidateGate, GateReview, ProjectDocument } from "@shared/domain";
-import { GATE_STATUS, gateRowFindings, isGateRunning, isRegression, reviewOutcome } from "@shared/gate";
+import { gateRowFindings, gateStatus, isGateRunning, isRegression, reviewOutcome } from "@shared/gate";
 import { roleProfile } from "@shared/roster";
 import { AgentName } from "@/components/AgentIdentity";
 import { Spinner } from "@/components/Spinner";
@@ -11,24 +11,24 @@ import { plainText } from "@shared/plainLanguage";
 import { useT } from "@/lib/i18n";
 import { ReferenceText } from "./ReferenceText";
 
-const RESULT: Record<"pass" | "fail" | "notRun", MessageKey> = { pass: "chat.gate.resultPass", fail: "chat.gate.resultFail", notRun: "chat.gate.resultNotRun" };
+const RESULT: Record<"pass" | "fail" | "notRun", MessageKey> = { pass: "shared.suite.pass", fail: "shared.suite.fail", notRun: "shared.suite.notRun" };
 
 function ReviewRow({ gate, review, document }: { gate: CandidateGate; review: GateReview; document: ProjectDocument }) {
   const t = useT();
   const figure = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed");
-  const outcome = reviewOutcome(review);
+  const outcome = reviewOutcome(t, review);
   const candidate = document.candidates.find((c) => c.id === gate.candidateId);
   const findings = [...gateRowFindings(gate, review, candidate)].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
   return (
     <li data-testid="gate-review" data-role={review.role} data-status={review.status} className="py-1">
       <div className="flex min-w-0 items-center gap-2 text-ui-sm">
-        {figure ? <AgentName agent={figure} size={20} className="min-w-0" /> : <span className="min-w-0 truncate">{roleProfile(review.role).name}</span>}
+        {figure ? <AgentName agent={figure} size={20} className="min-w-0" /> : <span className="min-w-0 truncate">{roleProfile(t, review.role).name}</span>}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {review.status === "running" ? <Spinner /> : null}
           <Badge tone={outcome.tone}>{outcome.label}</Badge>
         </span>
       </div>
-      {review.status === "skipped" && review.report ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{plainText(review.report)}</p> : null}
+      {review.status === "skipped" && review.report ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{plainText(t, review.report)}</p> : null}
       {review.status === "failed" ? <p className="mt-0.5 text-ui-sm text-destructive">{review.failure ?? t("chat.gate.reviewFailed")}</p> : null}
       {findings.length ? (
         <ul className="mt-0.5 space-y-0.5 text-ui-sm">
@@ -57,7 +57,7 @@ function ReviewRow({ gate, review, document }: { gate: CandidateGate; review: Ga
  */
 export function GateField({ gate, document }: { gate: CandidateGate; document: ProjectDocument }) {
   const t = useT();
-  const status = GATE_STATUS[gate.status];
+  const status = gateStatus(t, gate.status);
   const guardian = gate.reviews.find((r) => r.role === "regressionGuardian");
   const developer = document.team.specialists.find((s) => s.assignments.some((a) => a.id === gate.assignmentId));
   return (
@@ -71,7 +71,7 @@ export function GateField({ gate, document }: { gate: CandidateGate; document: P
       </div>
       {gate.checksFailed.length ? (
         <p className="mt-0.5 text-ui-sm text-muted-foreground">
-          {t("chat.gate.checksFailed", { checks: gate.checksFailed.map(checkName).join(", ") })}
+          {t("chat.gate.checksFailed", { checks: gate.checksFailed.map((check) => checkName(t, check)).join(", ") })}
         </p>
       ) : null}
       {gate.status === "failed" && gate.failure ? <p className="mt-0.5 text-ui-sm text-destructive">{gate.failure}</p> : null}
@@ -88,7 +88,7 @@ export function GateField({ gate, document }: { gate: CandidateGate; document: P
           <ul className="space-y-0.5 text-ui-sm">
             {gate.suite.map((c) => (
               <li key={c.check} data-testid="gate-suite-check" data-check={c.check} data-regression={isRegression(c) ? "yes" : "no"}>
-                <span title={c.check}>{checkName(c.check)}</span>
+                <span title={c.check}>{checkName(t, c.check)}</span>
                 <Sep />
                 {t("chat.gate.base", { result: t(RESULT[c.base]) })}
                 <Sep />

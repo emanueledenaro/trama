@@ -10,7 +10,7 @@ import {
   IconTool,
 } from "@tabler/icons-react";
 import { useState } from "react";
-import { READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
+import { isReadOutsideScopeTitle } from "@shared/codex";
 import { readableFailure } from "@shared/providerFailure";
 import { formatDuration } from "@shared/timeline";
 import { stepKind, type TechnicalStep, type WorkRow } from "@shared/technicalSteps";
@@ -36,7 +36,7 @@ export function DisclosureChevron({ open }: { open: boolean }) {
 
 function stepIcon(step: TechnicalStep) {
   const { title, tone } = step;
-  if (title === READ_OUTSIDE_SCOPE_TITLE) return <IconShieldLock className="text-destructive" />;
+  if (isReadOutsideScopeTitle(title)) return <IconShieldLock className="text-destructive" />;
   if (tone === "error") return <IconAlertTriangle className="text-destructive" />;
   const kind = stepKind(title);
   if (kind === "tool") return <IconTool />;
@@ -47,10 +47,11 @@ function stepIcon(step: TechnicalStep) {
 }
 
 function StepRow({ step }: { step: TechnicalStep }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const { title } = step;
   // A failed turn or assignment never shows a provider's JSON body, also in records written before P10.
-  const details = step.tone === "error" && /non (?:è )?riuscit|in attesa del provider/i.test(title) ? step.details.map((detail) => readableFailure(detail)) : step.details;
+  const details = step.tone === "error" && /non (?:è )?riuscit|in attesa del provider/i.test(title) ? step.details.map((detail) => readableFailure(t, detail)) : step.details;
   const isCommand = !title.includes(" ") || /^(git|ls|cat|rg|sed|grep|find|swift|npm|node|bun)\b/.test(title);
   return (
     <li className="group/tool-row" data-testid="technical-step" data-count={step.count}>
@@ -107,8 +108,8 @@ export function WorkLabel({ row, avatar = true }: { row: WorkRow; avatar?: boole
     ? specialist ? <>{withNodes(t("chat.workSteps.specialistRunning"), { who })}</> : t("chat.workSteps.coordinatorRunning")
     : row.durationMs !== null
       ? specialist
-        ? <>{withNodes(t("chat.workSteps.specialistWorked", { duration: formatDuration(row.durationMs) }), { who })}</>
-        : t("chat.workSteps.worked", { duration: formatDuration(row.durationMs) })
+        ? <>{withNodes(t("chat.workSteps.specialistWorked", { duration: formatDuration(t, row.durationMs) }), { who })}</>
+        : t("chat.workSteps.worked", { duration: formatDuration(t, row.durationMs) })
       : specialist
         ? <>{withNodes(t("chat.workSteps.specialistActivity"), { who })}</>
         : t("chat.workSteps.activity");

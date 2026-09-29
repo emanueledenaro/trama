@@ -58,7 +58,7 @@ function Ticket({
             <Badge tone="outline">#{ticket.issue.number}</Badge>
           </button>
         ) : null}
-        {state ? <Badge tone={sliceStatus(state, ticket).tone}>{sliceStatus(state, ticket).label}</Badge> : null}
+        {state ? <Badge tone={sliceStatus(t, state, ticket).tone}>{sliceStatus(t, state, ticket).label}</Badge> : null}
       </div>
       <div className="mt-0.5 text-ui-sm text-muted-foreground">
         {ticket.blockedBy.length ? t("chat.slices.blockedBy", { slices: ticket.blockedBy.map(number).join(", ") }) : t("chat.slices.canStart")}
@@ -115,7 +115,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       ) : null}
       {slicing.status === "failed" ? (
         <div className="mt-1">
-          <p className="text-ui-sm text-warning">{readableFailure(slicing.failure) ?? t("chat.slices.failed")}</p>
+          <p className="text-ui-sm text-warning">{readableFailure(t, slicing.failure) ?? t("chat.slices.failed")}</p>
           <div className="cta-row mt-2">
             <Button size="sm" onClick={() => void act("plan:slice", { planId: plan.id })}>
               {t("chat.slices.sliceAgain")}

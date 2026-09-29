@@ -37,16 +37,8 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.mandateDiff.unchanged": "The proposal changes nothing in the mandate in force.",
   "chat.card.mandateDiff.stopped": "Work that would stop",
   "chat.card.mandateDiff.noneStopped": "None: the work in progress stays inside the mandate.",
-  "chat.card.mandate.title": "Mandate",
-  "chat.card.mandate.titleProject": "Project mandate",
   "chat.card.mandate.titleNewProposal": "Proposal for a new mandate",
   "chat.card.mandate.titleProjectProposal": "Proposal for a project mandate",
-  "chat.card.mandate.titleProposal": "Mandate proposal",
-  "chat.card.mandate.granted": "Granted, v{version}",
-  "chat.card.mandate.corrected": "Corrected, v{version}",
-  "chat.card.mandate.superseded": "Replaced",
-  "chat.card.mandate.rejected": "Rejected",
-  "chat.card.mandate.notGranted": "Not granted",
   "chat.card.mandate.supersededNote": "Replaced by a newer request: it can no longer be granted.",
   "chat.card.mandate.objectives": "Objectives",
   "chat.card.mandate.proposedObjectives": "Proposed objectives",
@@ -64,11 +56,7 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.mandate.grant": "Grant",
 
   // Decision
-  "chat.card.decision.title": "Decision",
-  "chat.card.decision.question": "Question {number}",
   "chat.card.decision.blocksWork": "Blocks the work",
-  "chat.card.decision.withdrawn": "Withdrawn",
-  "chat.card.decision.destructive": "Destructive case",
   "chat.card.decision.product": "Product choice",
   "chat.card.decision.developerQuestion": "Developer's question",
   "chat.card.decision.pausedUntilAnswer": "The work stays paused until you answer. The rest of the team goes on.",
@@ -94,19 +82,13 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.decisionLink.version": ", version {version}",
 
   // Grilling round (M01)
-  "chat.card.grilling.label": "Clarification, round {round}",
-  "chat.card.grilling.title": "Clarification before the plan, round {round}",
+  "chat.card.grilling.label": "Clarification, turn {round}",
   "chat.card.grilling.withdrawn": "{count} withdrawn",
   "chat.card.grilling.withdrawn.one": "{count} withdrawn",
-  "chat.card.grilling.complete": "Round complete",
   "chat.card.grilling.answers": "{answered} of {total} answers",
 
   // Team proposal
-  "chat.card.team.title": "Team proposal",
   "chat.card.team.confirmedByCoordinator": "Team confirmed by the Coordinator",
-  "chat.card.team.confirmed": "Team confirmed",
-  "chat.card.team.corrected": "Team corrected",
-  "chat.card.team.superseded": "Proposal replaced",
   "chat.card.team.intro": "Here you choose the developers. The other team roles are always there.",
   "chat.card.team.modules": "Modules: {modules}",
   "chat.card.team.correction": "Correction",
@@ -286,10 +268,8 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.conflict.semantic": "Incompatible",
   "chat.card.conflict.showAll": "Show all {count} files",
   "chat.card.conflict.exerciseTitle": "Conflict exercise",
-  "chat.card.conflict.inNotice": "In the project notice",
   "chat.card.conflict.divergence":
     "This comparison repeated the divergence between the project's branch and {branch}: it does not depend on the candidate. Trama reports it only once, in the notice above the chat.",
-  "chat.card.conflict.superseded": "Replaced",
   "chat.card.conflict.supersededOne": "One of the two candidates was replaced by newer work: this conflict does not need resolving.",
   "chat.card.conflict.supersededCandidate": "The candidate was replaced by newer work: this conflict does not need resolving.",
   "chat.card.conflict.exercise": "Exercise",
@@ -316,7 +296,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.overlap.changed": "Your colleagues' presence changed after this notice.",
 
   // Ask Trama route (M07)
-  "chat.card.route.title": "Ask Trama route",
   "chat.card.route.proposed": "Proposed",
   "chat.card.route.started": "Started",
   "chat.card.route.declined": "Not started",
@@ -380,9 +359,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.recap.noNeeds": "Nothing: for now I carry on by myself.",
 
   // Candidate gate
-  "chat.gate.resultPass": "passes",
-  "chat.gate.resultFail": "fails",
-  "chat.gate.resultNotRun": "not run",
   "chat.gate.note": "Findings are the reviewers' judgment, not evidence. Trama runs the checks and the suite comparison.",
   "chat.gate.reviewFailed": "The review did not succeed.",
   "chat.gate.blocking": "Blocking",
@@ -525,7 +501,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.composer.imageName": "image",
   "chat.composer.imageTypes": "Trama accepts PNG, JPEG, GIF or WebP images.",
   "chat.composer.tooManyImages": "You can attach at most {count} images per message.",
-  "chat.composer.recapCommand": "The Coordinator's recap: what I did, what I am doing, what I need from you",
   "chat.composer.skill": "Skill",
   "chat.composer.readPasted": "Read the pasted text.",
   "chat.composer.mentions": "Mentions",

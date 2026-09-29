@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { classifyProviderFailure } from "@shared/providerFailure";
-import { setPersonLanguage } from "../personLanguage";
+import { setPersonLanguage, t } from "../personLanguage";
 import { clearUsageLimitsForTests, currentUsageLimit, PendingTurn, usageLimitError } from "./providerSupport";
 import { isInterruptedTurn } from "./types";
 
@@ -38,7 +38,7 @@ describe("texts in English (issue #301)", () => {
     expect(temporary?.message).toMatch(/^Pi hit a temporary rate limit\. 429: /);
     const blocked = usageLimitError("opencode", "OpenCode", "You've hit your usage limit.");
     expect(blocked?.message).toBe("OpenCode has reached its usage limit. You've hit your usage limit.");
-    expect(classifyProviderFailure(blocked!.message).kind).toBe("quotaExhausted");
+    expect(classifyProviderFailure(t, blocked!.message).kind).toBe("quotaExhausted");
   });
 
   it("marks an interrupted turn in any language", () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activityLog } from "@shared/activity";
+import { translator } from "@shared/i18n";
 import type { Candidate, CoordinatorRequest, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { settledCard } from "@shared/settledCards";
@@ -136,7 +137,7 @@ describe("the Coordinator supersedes an older candidate of the same work (issue 
 
   it("stops a superseded candidate from blocking the newest, and its item leaves Aspetta te", () => {
     const { document, third, eighth, thirteenth } = threeVersions();
-    expect(waitingForYou(document, { candidateReports: reports(document) }).map((i) => i.targetId)).toEqual(expect.arrayContaining([third.id, eighth.id]));
+    expect(waitingForYou(translator("it"), document, { candidateReports: reports(document) }).map((i) => i.targetId)).toEqual(expect.arrayContaining([third.id, eighth.id]));
 
     const waiting = { label: "Candidato da guardare", title: "Catalogo con i soli prodotti disponibili" };
     supersedeCandidate(document, { candidateId: third.id, byCandidateId: thirteenth.id, reason: "È una versione vecchia dello stesso lavoro.", actor: "Coordinatore", waiting }, at(10));
@@ -148,7 +149,7 @@ describe("the Coordinator supersedes an older candidate of the same work (issue 
     expect(inspectCandidate(document, thirteenth, "base")).toEqual([]);
     expect(candidateReport(document, thirteenth, "base").state).toBe("verified");
     // The superseded versions ask nothing of the person any more; the newest waits in their place.
-    expect(waitingForYou(document, { candidateReports: reports(document) }).map((i) => i.targetId)).toEqual([thirteenth.id]);
+    expect(waitingForYou(translator("it"), document, { candidateReports: reports(document) }).map((i) => i.targetId)).toEqual([thirteenth.id]);
     // Superseded is not deleted: the candidates stay in the history.
     expect(document.candidates.map((c) => c.id)).toEqual([third.id, eighth.id, thirteenth.id]);
   });
@@ -222,7 +223,7 @@ describe("the Coordinator supersedes an older candidate of the same work (issue 
     expect(changes).toBe(1);
 
     // Activity: one row of the Coordinator's step, with the reason and the item that left Aspetta te.
-    const entries = activityLog([], [], [], [], [], document.candidates);
+    const entries = activityLog(translator("it"), [], [], [], [], [], document.candidates);
     expect(entries.filter((e) => e.kind === "supersede")).toEqual([
       expect.objectContaining({
         id: `supersede:${third.id}`,
@@ -232,19 +233,19 @@ describe("the Coordinator supersedes an older candidate of the same work (issue 
         detail: `Candidato ${third.id}, superato da ${thirteenth.id}: La versione n. 13 contiene lo stesso lavoro, aggiornato. Tolto da Aspetta te: Candidato da guardare, Catalogo con i soli prodotti disponibili.`,
       }),
     ]);
-    const english = activityLog([], [], [], [], [], document.candidates, [], "en").find((e) => e.kind === "supersede")!;
+    const english = activityLog(translator("en"), [], [], [], [], [], document.candidates, []).find((e) => e.kind === "supersede")!;
     expect(english.label).toBe("Candidate superseded by the Coordinator");
     expect(english.detail).toContain("Removed from Waiting for you: Candidato da guardare");
 
     // The chat: the candidate's card settles as one "Superato" line with the reason; it opens the card.
     const row = { kind: "card", id: "row", cardKind: "candidate", event: { id: "E-1", sequence: 1, origin: "trama", requestId: "r3", createdAt: at(30).toISOString(), content: { type: "card", kind: "candidate", title: "Candidato", detail: null, referenceId: third.id } } } as unknown as TimelineRow;
     const states = { candidateStates: Object.fromEntries(Object.entries(reports(document)).map(([id, r]) => [id, r.state])), colleagues: [] };
-    expect(settledCard(document, row, states)).toMatchObject({
+    expect(settledCard(translator("it"), document, row, states)).toMatchObject({
       title: `Candidato ${third.id}`,
       subject: "Marco: 1 file, motivo: La versione n. 13 contiene lo stesso lavoro, aggiornato",
       outcome: { label: "Superato", tone: "secondary" },
     });
-    expect(settledCard(document, row, { ...states, language: "en" })).toMatchObject({
+    expect(settledCard(translator("en"), document, row, states)).toMatchObject({
       subject: "Marco: 1 file, reason: La versione n. 13 contiene lo stesso lavoro, aggiornato",
       outcome: { label: "Superseded" },
     });

@@ -77,6 +77,11 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | Proposta | Proposal |
 | Lavoro del progetto | Project work |
 | Progetto di esempio | Example project |
+| Capo squadra | Squad lead |
+| Missione | Mission |
+| Traguardo | Milestone |
+| Sospendere un lavoro | Suspend work |
+| Guardiano delle regressioni | Regression guardian |
 | Unire | Merge |
 | Standard di pubblicazione | Publishing standard |
 | Sforzo (del modello) | Effort |

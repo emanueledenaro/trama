@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { FixedBanRefusal, MandateAction, MandateRequest, ProjectDocument, ProjectMandate } from "@shared/domain";
 import { type FixedBan, fixedBanInfo } from "@shared/fixedBans";
 import { shortId } from "@shared/ids";
-import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@shared/labels";
+import { actionLabel, DELEGABLE_ACTIONS } from "@shared/labels";
+import { ITALIAN } from "@shared/i18n";
 import type { StoppedWork } from "@shared/mandate";
 import { createMandateRequest, DomainError } from "./pact";
 import { t } from "./personLanguage";
@@ -96,7 +97,7 @@ export function restrictionMessage(
   const parts = [
     removed?.removedModuleIds.length ? t("main.projectMandate.removedModules", { modules: removed.removedModuleIds.map(moduleName).join(", ") }) : null,
     removed?.removedActions.length
-      ? t("main.projectMandate.removedActions", { actions: removed.removedActions.map((a) => ACTION_LABELS[a].toLowerCase()).join(", ") })
+      ? t("main.projectMandate.removedActions", { actions: removed.removedActions.map((a) => actionLabel(t, a).toLowerCase()).join(", ") })
       : null,
   ].filter(Boolean);
   const outside = stopped.filter((w) => !w.dependsOn).map((w) => w.assignment.id);
@@ -118,7 +119,7 @@ export function recordFixedBanRefusal(
   const refusal: FixedBanRefusal = {
     id: shortId("V", randomUUID()),
     ban: input.ban,
-    action: input.action.trim().slice(0, 500) || fixedBanInfo(input.ban).label,
+    action: input.action.trim().slice(0, 500) || fixedBanInfo(ITALIAN, input.ban).label,
     by: input.by,
     refusedAt: now.toISOString(),
     acknowledgedAt: null,
@@ -137,7 +138,7 @@ export function acknowledgeFixedBanRefusal(document: ProjectDocument, id: string
 
 /** The activity line of a refusal: which ban, and what was tried. */
 export function fixedBanActivity(refusal: FixedBanRefusal) {
-  const info = fixedBanInfo(refusal.ban);
+  const info = fixedBanInfo(ITALIAN, refusal.ban);
   return {
     type: "activity" as const,
     title: t("main.projectMandate.refusalTitle", { ban: info.label.toLowerCase() }),

@@ -14,4 +14,7 @@ export function setPersonLanguage(language: Language): void {
 export const personLanguage = (): Language => current;
 
 /** The text of a catalog key in the person's language. */
-export const t: Translate = (key, params) => translator(current)(key, params);
+export const t: Translate = Object.defineProperty((key: Parameters<Translate>[0], params?: Parameters<Translate>[1]) => translator(current)(key, params), "language", {
+  get: () => current,
+  enumerable: true,
+}) as Translate;
