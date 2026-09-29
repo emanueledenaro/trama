@@ -2212,6 +2212,38 @@ const stopBox = await stopMove.boundingBox();
 const lineBox = await statusLine.boundingBox();
 if (!stopBox || !lineBox || lineBox.x + lineBox.width - (stopBox.x + stopBox.width) > 2) throw new Error("The stop of the automatic move is not on the right");
 await themeShots("15a-status-line-move");
+// Issue #301, the chat in English: the cards, the composer and the status line change at once, and the longer or
+// shorter texts keep the layout: nothing scrolls sideways, no button cuts its label, the actions stay on the right.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.getByRole("textbox", { name: "Message to the Coordinator" }).waitFor({ timeout: 20_000 });
+await statusLine.getByRole("button", { name: "Activity", exact: true }).waitFor();
+if ((await page.evaluate(() => document.documentElement.lang)) !== "en") throw new Error("The chat's page language did not follow the choice");
+const chatEnglishLayout = async (where) => {
+  await noHorizontalScroll(where);
+  const cut = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="status-line"] button, .chat-card button, .chat-composer-shell button, [data-testid="next-step"] button')]
+      .filter((button) => button.offsetParent !== null && button.textContent.trim() && button.scrollWidth > button.clientWidth + 1)
+      .map((button) => button.textContent.trim()),
+  );
+  if (cut.length) throw new Error(`English labels cut in the chat (${where}): ${cut.join(", ")}`);
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll('.chat-card .cta-row, [data-testid="next-step"]')]
+      .filter((row) => row.offsetParent !== null)
+      .flatMap((row) => {
+        const box = row.getBoundingClientRect();
+        return [...row.children].filter((child) => child.getBoundingClientRect().right > box.right + 1).map((child) => child.textContent.trim());
+      }),
+  );
+  if (outside.length) throw new Error(`English actions past their row in the chat (${where}): ${outside.join(", ")}`);
+};
+await chatEnglishLayout("wide");
+await themeShots("chat-en");
+await page.setViewportSize({ width: 720, height: 640 });
+await page.waitForTimeout(300);
+await chatEnglishLayout("narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.getByRole("textbox", { name: "Messaggio al Coordinatore" }).waitFor({ timeout: 20_000 });
 await stopMove.click();
 await stopMove.waitFor({ state: "detached", timeout: 20_000 });
 await page.waitForTimeout(500);
@@ -2633,6 +2665,118 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   // The module is an editor tab since issue #336: closing it shows the conversation.
   await closeDetails();
   await shot(`13-size-${width}x${height}-chat`);
+}
+
+// A12 (issue #252): discussions between agents. The Coordinator opens one in the first squad: each participant speaks on
+// the discussion model and the squad lead closes it with a decision. A second one reaches a product choice: it waits in
+// Aspetta te, the person writes in it through the Coordinator and the answer closes it. The Squads view lists both with
+// their state; the discussion shows reason, participants, chair, time box, the model of each turn and the outcome. Narrow
+// and wide, Codex and Claude, light and dark.
+{
+  const look = await lookOf();
+  const squadPanel = page.getByTestId("side-bar");
+  await composer().fill("[discussione]");
+  await page.keyboard.press("Enter");
+  await page.getByText("Ho aperto la discussione nella squadra.").first().waitFor({ timeout: 20_000 });
+  await composer().fill("[discussione-prodotto]");
+  await page.keyboard.press("Enter");
+  await page.getByText("Ho aperto la discussione nella squadra.").nth(1).waitFor({ timeout: 20_000 });
+  await openView("Squadre");
+  const decidedRow = squadPanel.locator('[data-testid="discussion-row"][data-state="decided"]').filter({ hasText: "Stimare e dividere" });
+  const waitingRow = squadPanel.locator('[data-testid="discussion-row"][data-state="waitingPerson"]').filter({ hasText: "carrello" });
+  await decidedRow.waitFor({ timeout: 20_000 });
+  await waitingRow.waitFor({ timeout: 20_000 });
+  if (!(await squadPanel.getByTestId("squad").first().getByTestId("squad-discussions").count())) throw new Error("The discussions are not in their squad");
+  if (await squadPanel.getByTestId("discussions-across").count()) throw new Error("A discussion inside one squad is listed between squads");
+  // Issue #336 (B07): the discussion opens in a tab of the editor next to the conversation; its rows stay in Squadre.
+  const thread = detailPane().getByTestId("agent-thread");
+  const discussionShots = async (name) => {
+    for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(300);
+      // The discussion's header on top of its tab, or the squads' summary on top of the side bar.
+      const top = (await thread.count()) ? thread : squadPanel.getByTestId("squads-summary");
+      await top.evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await noHorizontalScroll(`${name} ${size}`);
+      for (const provider of ["codex", "claudeAgent"]) {
+        for (const dark of [false, true]) {
+          await setLookTo(provider, dark);
+          await shot(`41${name}-${size}-${provider}-${dark ? "dark" : "light"}`);
+        }
+      }
+    }
+    await setLookTo(look.provider, look.dark);
+    await page.setViewportSize({ width: 1280, height: 820 });
+  };
+  await squadPanel.getByTestId("squad-discussions").first().scrollIntoViewIfNeeded();
+  await discussionShots("a-discussions-squads");
+
+  // The discussion that waits for the person: its lead chairs it, every agent's turn names its model, and the card is in
+  // Aspetta te with the way back to the discussion.
+  await waitingRow.click();
+  await thread.waitFor();
+  // The tab of a discussion is named by its motive, so two open discussions tell each other apart.
+  await page.locator('[data-testid="editor-tab"][data-selected="true"]').getByText("Un ordine annullato torna nel carrello?").waitFor();
+  const header = thread.getByTestId("discussion-header");
+  if ((await header.getAttribute("data-state")) !== "waitingPerson") throw new Error("The product discussion does not wait for the person");
+  await header.getByText("Conflitto").waitFor();
+  await header.getByText(/^Tempo massimo 20 min, fino alle/).waitFor();
+  if ((await thread.getByTestId("discussion-participants").locator("li").count()) !== 3) throw new Error("The discussion does not list its lead among the participants");
+  await thread.getByTestId("discussion-participants").getByText("chiude", { exact: true }).waitFor();
+  const agentMessages = thread.locator('[data-testid="agent-thread-message"][data-author="specialist"]');
+  if ((await agentMessages.count()) < 3) throw new Error(`The discussion has ${await agentMessages.count()} messages of agents, not one per participant and the chair's`);
+  for (const message of await agentMessages.all()) {
+    if (!/^con \S+/.test((await message.getByTestId("message-model").innerText()).trim())) throw new Error("A turn of the discussion does not say its model");
+  }
+  await thread.locator('[data-testid="agent-thread-message"][data-event="toPerson"]').getByText(/l'ho messa in Aspetta te/).waitFor();
+  // The person writes in the discussion: the Coordinator passes it on and the message is recorded as theirs.
+  const write = thread.getByTestId("discussion-composer");
+  await write.getByRole("textbox", { name: "Scrivi nella discussione" }).fill("Preferisco che il cliente non perda il carrello.");
+  const writeButtons = await write.locator(".cta-row button").allTextContents();
+  if (writeButtons.at(-1)?.trim() !== "Invia") throw new Error(`Invia is not the last call to action: ${writeButtons}`);
+  await write.getByRole("button", { name: "Invia" }).click();
+  await thread.locator('[data-testid="agent-thread-message"][data-event="forwarded"]').getByText("Tu, tramite il Coordinatore").waitFor({ timeout: 20_000 });
+  await expectNoRawIds(thread.getByTestId("discussion-header"), "The discussion's header");
+  await discussionShots("b-discussion-waiting");
+  await header.getByRole("button", { name: "Apri la domanda" }).click();
+  const question = squadPanel.locator('[data-testid="waiting-item"]').filter({ hasText: "Un ordine annullato torna nel carrello?" });
+  await question.waitFor({ timeout: 20_000 });
+  await question.getByTestId("decision-from-discussion").getByText(/^Dalla discussione tra agenti/).waitFor();
+  await question.getByText("Discussione tra agenti").first().waitFor();
+  await themeShots("41c-discussion-question");
+  await question.getByRole("button", { name: /Il carrello resta vuoto/ }).click();
+  await question.getByRole("button", { name: "Registra la decisione" }).click();
+  await openView("Squadre");
+  await squadPanel.locator('[data-testid="discussion-row"][data-state="decided"]').filter({ hasText: "carrello" }).click();
+  await thread.locator('[data-testid="discussion-outcome"][data-how="person"]').getByText("Il carrello resta vuoto").waitFor({ timeout: 20_000 });
+  await thread.getByTestId("discussion-closed").waitFor();
+  if (await thread.getByTestId("discussion-composer").count()) throw new Error("A closed discussion still takes messages");
+  await themeShots("41d-discussion-person-decided");
+
+  // The discussion the lead closed: the proposals of the participants and the lead's decision.
+  await openView("Squadre");
+  await decidedRow.click();
+  await page.locator('[data-testid="editor-tab"][data-selected="true"]').getByText("Stimare e dividere la documentazione dell'annullamento").waitFor();
+  await thread.locator('[data-testid="discussion-outcome"][data-how="agreed"]').getByText(/Decisa da Capo /).waitFor();
+  if ((await thread.getByTestId("discussion-proposal").count()) < 2) throw new Error("The participants' proposals are not in the discussion");
+  await header.getByText("Stima e divisione del lavoro").waitFor();
+  await discussionShots("e-discussion-decided");
+  // Q17: the discussions run on the provider's lightest model; the person picks the role's model in the settings.
+  await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
+  const discussionSettings = page.getByTestId("settings");
+  await discussionSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+  const discussionModel = discussionSettings.getByTestId("discussion-model");
+  await discussionModel.getByRole("radio", { name: "Il più leggero", checked: true }).waitFor();
+  await discussionModel.getByRole("radio", { name: "Del ruolo" }).click();
+  await discussionModel.getByRole("radio", { name: "Del ruolo", checked: true }).waitFor();
+  await discussionSettings.getByText("Il modello scelto per ogni ruolo: costa di più, per discussioni difficili.").waitFor();
+  await discussionModel.scrollIntoViewIfNeeded();
+  await themeShots("41f-discussion-model-setting");
+  await discussionModel.getByRole("radio", { name: "Il più leggero" }).click();
+  await discussionModel.getByRole("radio", { name: "Il più leggero", checked: true }).waitFor();
+  await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
+  await page.getByTestId("settings").waitFor({ state: "hidden" });
+  await openView("Squadre");
 }
 await app.close();
 

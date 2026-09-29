@@ -37,6 +37,8 @@ const COUNTERPART: Record<AgentThreadKind, TeamRole | null> = {
   // The reviewers join the conversation as they write: each figure of the gate with findings (W10).
   review: null,
   regression: "regressionGuardian",
+  // A discussion names its own participants when it opens (A12).
+  discussion: null,
 };
 
 function member(document: ProjectDocument, role: TeamRole): Specialist | null {

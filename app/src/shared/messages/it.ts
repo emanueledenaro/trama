@@ -1,5 +1,6 @@
 // The Italian catalog (issue #301). Italian is the source: every key exists here first, and `en.ts` must
 // translate each one. A key ending in `.one` is the singular that `translate` picks when `count` is 1.
+import { chatIt } from "./chat.it";
 import { mainIt } from "./main.it";
 import { sharedIt } from "./shared.it";
 
@@ -1411,11 +1412,65 @@ export const it = {
   "reviewLoop.label": "Lavoro fermato più volte",
   "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
   "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
-  // Buttons of the chat and composer (issue #338)
-  "chat.buttons.resumeTurn": "Riprendi",
-  "chat.buttons.askRoute": "Chiedi un percorso al Coordinatore",
-  "chat.buttons.openDiff": "Apri il diff",
-  "chat.buttons.examine": "Esame approfondito",
+
+  // Discussions between agents (A12, issue #252)
+  "thread.missing": "Questa conversazione tra agenti non esiste più.",
+  "thread.section": "Conversazione",
+  "thread.openDeveloper": "Apri lo sviluppatore",
+  "thread.readOnlyNote": "Le conversazioni tra agenti sono sempre visibili e restano nella cronologia del progetto. Per dire qualcosa a un agente scrivi al Coordinatore, che lo inoltra.",
+  "thread.messages": "Messaggi ({count})",
+  "thread.author.forwarded": "Tu, tramite il Coordinatore",
+  "discussion.section": "Discussione",
+  "discussion.reason.estimate": "Stima e divisione del lavoro",
+  "discussion.reason.blocker": "Blocco o dipendenza tra squadre",
+  "discussion.reason.review": "Revisione del candidato",
+  "discussion.reason.conflict": "Conflitto",
+  "discussion.state.open": "Aperta",
+  "discussion.state.overdue": "Tempo scaduto",
+  "discussion.state.waitingPerson": "Aspetta te",
+  "discussion.state.decided": "Decisa",
+  "discussion.participants": "Partecipanti",
+  "discussion.chair": "Chiude {name}",
+  "discussion.chair.coordinator": "il Coordinatore",
+  "discussion.chairTag": "chiude",
+  "discussion.timeBox": "Tempo massimo {minutes} min, fino alle {time}",
+  "discussion.left": "restano {count} min",
+  "discussion.left.one": "resta 1 min",
+  "discussion.overdue": "Il tempo è scaduto: {chair} la chiude al prossimo giro con l'ultima proposta.",
+  "discussion.waiting": "La scelta è di prodotto: la discussione aspetta la tua risposta in Aspetta te.",
+  "discussion.openQuestion": "Apri la domanda",
+  "discussion.outcome": "Decisione",
+  "discussion.outcome.agreed": "Decisa da {name}",
+  "discussion.outcome.timeBox": "Decisa da {name} allo scadere del tempo",
+  "discussion.outcome.person": "Decisa da te",
+  "discussion.outcome.withdrawn": "Hai ritirato la domanda",
+  "discussion.model": "con {model}",
+  "discussion.event.opened": "Ho aperto la discussione: {motive}",
+  "discussion.event.decided.agreed": "Decisione: {decision}",
+  "discussion.event.decided.timeBox": "Tempo scaduto. Decisione: {decision}",
+  "discussion.event.decided.person": "Decisione: {decision}",
+  "discussion.event.decided.withdrawn": "Domanda ritirata: {decision}",
+  "discussion.event.toPerson": "La scelta è di prodotto: l'ho messa in Aspetta te e la discussione aspetta la tua risposta.",
+  "discussion.proposal": "Proposta",
+  "discussion.write.label": "Scrivi nella discussione",
+  "discussion.write.note": "Il Coordinatore inoltra il tuo messaggio agli agenti e lo registra qui.",
+  "discussion.write.send": "Invia",
+  "discussion.closedNote": "La discussione è chiusa. Per riaprire la questione scrivi al Coordinatore.",
+  "teams.discussions.title": "Discussioni",
+  "teams.discussions.across": "Discussioni tra squadre",
+  "teams.discussions.acrossNote": "Le chiude il Coordinatore.",
+  "teams.discussions.left": "{count} min",
+  "settings.discussions.title": "Discussioni tra agenti",
+  "settings.discussions.note": "Discussioni, stand-up e stime usano il modello più leggero del provider; implementazione e decisioni difficili usano il modello del ruolo.",
+  "settings.discussions.inProject": "Modello delle discussioni in {name}",
+  "settings.discussions.inOpenProject": "Modello delle discussioni",
+  "settings.discussions.openProject": "Apri un progetto per scegliere il modello delle discussioni.",
+  "settings.discussions.light": "Il più leggero",
+  "settings.discussions.light.description": "Il modello più leggero del provider del Coordinatore: costa meno e risponde prima.",
+  "settings.discussions.role": "Del ruolo",
+  "settings.discussions.role.description": "Il modello scelto per ogni ruolo: costa di più, per discussioni difficili.",
+  "decision.fromDiscussion": "Dalla discussione tra agenti «{motive}»",
+  "decision.openDiscussion": "Apri la discussione",
 
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
   "fixedBan.card.handle": "Nessun mandato la concede. Se vuoi che la faccia, scrivilo al Coordinatore in chat: la fa perché gliel'hai chiesto, e prima di cancellare qualcosa ti chiede conferma.",
@@ -1496,6 +1551,8 @@ export const it = {
   "supersession.activity.label": "Candidato superato dal Coordinatore",
   "supersession.activity.detail": "Candidato {id}, superato da {by}: {reason}.",
   "supersession.activity.waiting": "Tolto da Aspetta te: {item}.",
+
+  ...chatIt,
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

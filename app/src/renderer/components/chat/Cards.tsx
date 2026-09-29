@@ -38,6 +38,7 @@ import {
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
+  type DecisionRequest,
 } from "@shared/domain";
 import { cleanCodeRules, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
@@ -58,6 +59,7 @@ import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, examineCandidate, useUi } from "@/lib/store";
 import { useT, withNodes } from "@/lib/i18n";
+import type { MessageKey, Translate } from "@shared/i18n";
 import { actionLabel } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RecordName, ReferenceText } from "./ReferenceText";
@@ -125,6 +127,7 @@ export function Field({ label, children }: { label: string; children: React.Reac
 }
 
 export function StudyCard({ title, text, streaming }: { title: string; text: string; streaming: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(true);
   return (
     <CardFrame
@@ -133,16 +136,16 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
       title={title}
       aside={
         streaming ? (
-          <span className="shimmer-text text-ui-sm">Il Coordinatore sta studiando il progetto</span>
+          <span className="shimmer-text text-ui-sm">{t("chat.card.study.studying")}</span>
         ) : (
-          <button type="button" onClick={() => setOpen(!open)} className="sidebar-icon-button size-5" aria-label={open ? "Comprimi" : "Espandi"}>
+          <button type="button" onClick={() => setOpen(!open)} className="sidebar-icon-button size-5" aria-label={open ? t("chat.card.study.collapse") : t("chat.card.study.expand")}>
             <IconChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
           </button>
         )
       }
     >
       {streaming && !text ? (
-        <p className="text-ui text-muted-foreground">Lettura di codice, istruzioni, Patto e mandato…</p>
+        <p className="text-ui text-muted-foreground">{t("chat.card.study.reading")}</p>
       ) : open ? (
         <ChatMarkdown text={text} />
       ) : (
@@ -151,7 +154,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
       {streaming ? (
         <div className="cta-row mt-2">
           <Button variant="outline" size="xs" onClick={() => void act("coordinator:interrupt", undefined)}>
-            Interrompi
+            {t("chat.card.study.interrupt")}
           </Button>
         </div>
       ) : null}
@@ -200,7 +203,7 @@ export function FixedBansField() {
   return (
     <div className="mt-2" data-testid="fixed-bans">
       <div className="flex items-center gap-1 text-ui-xs text-muted-foreground/70">
-        <IconLock className="size-3" stroke={1.8} /> Divieti fissi, sempre esclusi
+        <IconLock className="size-3" stroke={1.8} /> {t("chat.card.fixedBans.label")}
       </div>
       <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-ui text-foreground/90">
         {fixedBans(t).map((ban) => (
@@ -209,26 +212,27 @@ export function FixedBansField() {
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-ui-xs text-muted-foreground">Nessun mandato li concede. Se il lavoro ne richiede uno, Trama lo ferma prima che parta e lo mette in Aspetta te.</p>
+      <p className="mt-1 text-ui-xs text-muted-foreground">{t("chat.card.fixedBans.note")}</p>
     </div>
   );
 }
 
 /** One list of the mandate the proposal changes: what it adds and what it takes away. */
 function ChangeRow({ label, change, testId }: { label: string; change: ListChange<string>; testId: string }) {
+  const t = useT();
   if (!change.added.length && !change.removed.length) return null;
   return (
     <div className="mt-1.5" data-testid={testId}>
       <div className="text-ui-xs text-muted-foreground/70">{label}</div>
       {change.added.length ? (
         <div className="mt-0.5 text-ui-sm" data-testid="mandate-diff-added">
-          <span className="text-success">Aggiunge</span>
+          <span className="text-success">{t("chat.card.mandateDiff.adds")}</span>
           <ItemList items={change.added} />
         </div>
       ) : null}
       {change.removed.length ? (
         <div className="mt-0.5 text-ui-sm" data-testid="mandate-diff-removed">
-          <span className="text-destructive">Toglie</span>
+          <span className="text-destructive">{t("chat.card.mandateDiff.removes")}</span>
           <ItemList items={change.removed} />
         </div>
       ) : null}
@@ -241,21 +245,21 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
   const t = useT();
   const named = (c: ListChange<string>, name: (v: string) => string) => ({ added: c.added.map(name), removed: c.removed.map(name) });
   return (
-    <Field label={`Cosa cambia rispetto al mandato in vigore, versione ${diff.version}`}>
+    <Field label={t("chat.card.mandateDiff.label", { version: diff.version })}>
       <div data-testid="mandate-diff">
         {unchangedMandate(diff) ? (
-          <p className="text-ui-sm text-muted-foreground">La proposta non cambia niente del mandato in vigore.</p>
+          <p className="text-ui-sm text-muted-foreground">{t("chat.card.mandateDiff.unchanged")}</p>
         ) : (
           <>
-            <ChangeRow label="Perimetro" change={named(diff.modules, moduleName)} testId="mandate-diff-modules" />
-            <ChangeRow label="Azioni autorizzate" change={named(diff.actions, (a) => actionLabel(t, a as MandateAction))} testId="mandate-diff-actions" />
-            <ChangeRow label="Obiettivi" change={diff.objectives} testId="mandate-diff-objectives" />
-            <ChangeRow label="Priorità" change={diff.priorities} testId="mandate-diff-priorities" />
-            <ChangeRow label="Limiti" change={diff.limits} testId="mandate-diff-limits" />
+            <ChangeRow label={t("chat.card.mandate.scope")} change={named(diff.modules, moduleName)} testId="mandate-diff-modules" />
+            <ChangeRow label={t("chat.card.mandate.actions")} change={named(diff.actions, (a) => actionLabel(t, a as MandateAction))} testId="mandate-diff-actions" />
+            <ChangeRow label={t("chat.card.mandate.objectives")} change={diff.objectives} testId="mandate-diff-objectives" />
+            <ChangeRow label={t("chat.card.mandate.priorities")} change={diff.priorities} testId="mandate-diff-priorities" />
+            <ChangeRow label={t("chat.card.mandate.limits")} change={diff.limits} testId="mandate-diff-limits" />
           </>
         )}
         <div className="mt-1.5" data-testid="mandate-diff-stopped" data-count={diff.stoppedWork.length}>
-          <div className="text-ui-xs text-muted-foreground/70">Lavori che si fermerebbero</div>
+          <div className="text-ui-xs text-muted-foreground/70">{t("chat.card.mandateDiff.stopped")}</div>
           {diff.stoppedWork.length ? (
             <ul className="list-disc space-y-0.5 pl-4 text-ui-sm">
               {diff.stoppedWork.map(({ specialist, assignment, dependsOn }) => (
@@ -268,7 +272,7 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
               ))}
             </ul>
           ) : (
-            <p className="text-ui-sm text-muted-foreground">Nessuno: il lavoro in corso resta dentro il mandato.</p>
+            <p className="text-ui-sm text-muted-foreground">{t("chat.card.mandateDiff.noneStopped")}</p>
           )}
         </div>
       </div>
@@ -306,30 +310,30 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
         <TextArea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
-          aria-label="Motivo del rifiuto"
+          placeholder={t("chat.card.mandate.rejectPlaceholder")}
+          aria-label={t("chat.card.mandate.rejectLabel")}
           className="min-h-12"
           autoFocus
         />
         <p className="text-ui-xs text-muted-foreground">
-          {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
+          {hasMandate ? t("chat.card.mandate.rejectKeeps") : t("chat.card.mandate.rejectNone")}
         </p>
         <div className="cta-row">
           <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
-            Annulla
+            {t("chat.card.cancel")}
           </Button>
           <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
-            Rifiuta la proposta
+            {t("chat.card.mandate.reject")}
           </Button>
         </div>
       </div>
     ) : (
       <div className="cta-row mt-3">
         <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
-          Rifiuta la proposta
+          {t("chat.card.mandate.reject")}
         </Button>
         <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
-          Correggi
+          {t("chat.card.mandate.correct")}
         </Button>
         <Button
           size="sm"
@@ -344,7 +348,7 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
             })
           }
         >
-          Concedi
+          {t("chat.card.mandate.grant")}
         </Button>
       </div>
     )
@@ -356,37 +360,37 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
       title={
         resolution
           ? request.projectCycle
-            ? "Mandato di progetto"
-            : "Mandato"
+            ? t("shared.settled.projectMandate")
+            : t("shared.settled.mandate")
           : hasMandate
-            ? "Proposta di nuovo mandato"
+            ? t("chat.card.mandate.titleNewProposal")
             : request.projectCycle
-              ? "Proposta di mandato di progetto"
-              : "Proposta di mandato"
+              ? t("chat.card.mandate.titleProjectProposal")
+              : t("shared.waiting.mandateProposal")
       }
       className={cn(superseded && "opacity-60")}
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "granted" || resolution.kind === "corrected" ? "success" : "secondary"}>
             {resolution.kind === "granted"
-              ? `Concesso, v${resolution.version}`
+              ? t("shared.settled.mandateGranted", { version: String(resolution.version) })
               : resolution.kind === "corrected"
-                ? `Corretto, v${resolution.version}`
+                ? t("shared.settled.mandateCorrected", { version: String(resolution.version) })
                 : superseded
-                  ? "Sostituita"
+                  ? t("shared.settled.superseded")
                   : resolution.kind === "rejected"
-                    ? "Rifiutata"
-                    : "Non concesso"}
+                    ? t("shared.settled.rejected")
+                    : t("shared.settled.revoked")}
           </Badge>
         ) : (
-          <Badge tone="info">In attesa</Badge>
+          <Badge tone="info">{t("chat.card.pending")}</Badge>
         )
       }
     >
       <p className="text-ui text-foreground/90">{request.reason}</p>
       {superseded ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="superseded-mandate">
-          Sostituita da una richiesta più recente: non si può più concedere.
+          {t("chat.card.mandate.supersededNote")}
         </p>
       ) : null}
       {waitingFirst ? decision : null}
@@ -405,22 +409,22 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
       ) : null}
       {!waitingFirst || fullOpen ? (
         <div data-testid="mandate-full">
-          <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
+          <Field label={diff ? t("chat.card.mandate.proposedObjectives") : t("chat.card.mandate.objectives")}>
             <ItemList items={request.objectives} />
           </Field>
           {request.priorities.length ? (
-            <Field label="Priorità">
+            <Field label={t("chat.card.mandate.priorities")}>
               <ItemList items={request.priorities} />
             </Field>
           ) : null}
-          <Field label="Perimetro">
+          <Field label={t("chat.card.mandate.scope")}>
             <ItemList items={request.scopeModuleIds.map(moduleName)} />
           </Field>
-          <Field label="Azioni autorizzate">
+          <Field label={t("chat.card.mandate.actions")}>
             <ItemList items={request.authorizedActions.map((a) => actionLabel(t, a))} />
           </Field>
           {request.limits.length ? (
-            <Field label="Limiti">
+            <Field label={t("chat.card.mandate.limits")}>
               <ItemList items={request.limits} testId="mandate-limits" />
             </Field>
           ) : null}
@@ -428,7 +432,7 @@ export function MandateCard({ requestId, placement = "chat" }: { requestId: stri
         </div>
       ) : null}
       {resolution?.kind === "rejected" ? (
-        <p className="mt-2 text-ui-sm text-muted-foreground">Hai rifiutato la proposta. Il mandato in vigore non è cambiato.</p>
+        <p className="mt-2 text-ui-sm text-muted-foreground">{t("chat.card.mandate.rejectedNote")}</p>
       ) : null}
       {waitingFirst ? null : decision}
     </CardFrame>
@@ -450,29 +454,47 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
   return (
     <CardFrame
       icon={<IconLock stroke={1.8} />}
-      title="Azione fermata da un divieto fisso"
-      aside={refusal.acknowledgedAt ? <Badge tone="secondary">Vista</Badge> : <Badge tone="warning">Fermata</Badge>}
+      title={t("chat.card.fixedBan.title")}
+      aside={refusal.acknowledgedAt ? <Badge tone="secondary">{t("chat.card.fixedBan.seen")}</Badge> : <Badge tone="warning">{t("chat.card.fixedBan.stopped")}</Badge>}
     >
       <div data-testid="fixed-ban-card">
         <p className="text-ui text-foreground/90">
           {info.reason} {t("fixedBan.card.handle")}
         </p>
-        <Field label="Divieto">{info.label}</Field>
-        <Field label="Chi l'ha chiesta">
-          {specialist ? <AgentName agent={specialist} /> : by.kind === "coordinator" ? "Il Coordinatore" : "Trama"}
+        <Field label={t("chat.card.fixedBan.ban")}>{info.label}</Field>
+        <Field label={t("chat.card.fixedBan.askedBy")}>
+          {specialist ? <AgentName agent={specialist} /> : by.kind === "coordinator" ? t("chat.card.fixedBan.coordinator") : "Trama"}
         </Field>
-        <Field label="Azione">
+        <Field label={t("chat.card.fixedBan.action")}>
           <code className="block font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{refusal.action}</code>
         </Field>
         {!refusal.acknowledgedAt ? (
           <div className="cta-row mt-3">
             <Button size="sm" onClick={() => void act("fixedBan:acknowledge", { id: refusal.id })}>
-              Ho visto
+              {t("chat.card.fixedBan.acknowledge")}
             </Button>
           </div>
         ) : null}
       </div>
     </CardFrame>
+  );
+}
+
+/** A product choice a discussion between agents reached (A12): the card names the discussion and opens it. */
+function FromDiscussion({ request }: { request: DecisionRequest }) {
+  const t = useT();
+  const setInspector = useUi((s) => s.setInspector);
+  const threads = useUi((s) => s.app?.project?.document.agentThreads);
+  const threadId = request.fromDiscussion?.threadId;
+  const thread = threadId ? threads?.find((th) => th.id === threadId) : undefined;
+  if (!thread?.discussion) return null;
+  return (
+    <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-ui-sm text-muted-foreground" data-testid="decision-from-discussion">
+      <span className="min-w-0">{t("decision.fromDiscussion", { motive: thread.discussion.motive })}</span>
+      <button type="button" className="text-foreground underline-offset-2 hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
+        {t("decision.openDiscussion")}
+      </button>
+    </p>
   );
 }
 
@@ -499,13 +521,13 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   return (
     <CardFrame
       icon={<IconRosetteDiscountCheck stroke={1.8} />}
-      title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
+      title={grilling ? t("shared.settled.question", { number: grilling.number }) : t("shared.settled.decision")}
       className={grilling ? "my-2" : undefined}
       aside={
         <span className="flex items-center gap-1.5">
           {request.blocksWork && !closed ? (
             <span data-testid="blocks-work">
-              <Badge tone="warning">Blocca il lavoro</Badge>
+              <Badge tone="warning">{t("chat.card.decision.blocksWork")}</Badge>
             </span>
           ) : null}
           {outcome?.byDelegation ? (
@@ -514,16 +536,17 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             </span>
           ) : null}
           {withdrawal ? (
-            <Badge tone="secondary">Ritirata</Badge>
+            <Badge tone="secondary">{t("shared.settled.withdrawn")}</Badge>
           ) : (
-            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
+            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? t("shared.waiting.destructive") : t("chat.card.decision.product")}</Badge>
           )}
         </span>
       }
     >
       <p className={cn("text-ui font-medium text-foreground", withdrawal && "text-foreground/70")}>{request.question}</p>
+      <FromDiscussion request={request} />
       {blocked && blockedWork ? (
-        <Field label="Domanda dello sviluppatore">
+        <Field label={t("chat.card.decision.developerQuestion")}>
           <div data-testid="blocked-work">
             <AgentName agent={blocked} />
             <Sep />
@@ -531,15 +554,15 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             {blockedQuestion ? <div className="mt-0.5 text-ui-sm text-foreground/90">«{blockedQuestion.question}»</div> : null}
             <div className="mt-0.5 text-ui-sm text-muted-foreground">
               {!closed
-                ? "Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti."
+                ? t("chat.card.decision.pausedUntilAnswer")
                 : blockedQuestion?.resumedAt
-                  ? "Il lavoro è ripreso con la tua risposta."
-                  : "Il lavoro riprende con la tua risposta appena lo sviluppatore è libero."}
+                  ? t("chat.card.decision.resumed")
+                  : t("chat.card.decision.resumesWhenFree")}
             </div>
           </div>
         </Field>
       ) : null}
-      <Field label="Caso concreto">
+      <Field label={t("chat.card.decision.concreteCase")}>
         <ReferenceText text={request.concreteCase} />
       </Field>
       <div className="mt-3 space-y-1.5">
@@ -564,11 +587,11 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             >
               <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 text-ui text-foreground">{plainText(t, alternative.behavior)}</span>
-                {grilling?.recommendedIndex === index ? <Badge tone="success">Consigliata</Badge> : null}
+                {grilling?.recommendedIndex === index ? <Badge tone="success">{t("chat.card.decision.recommended")}</Badge> : null}
               </div>
               {/* Inside a button a reference cannot be a link: the text reads plain (issue #270). */}
-              <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {plainText(t, alternative.example)}</div>
-              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {plainText(t, alternative.consequence)}</div> : null}
+              <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.card.decision.example", { example: plainText(t, alternative.example) })}</div>
+              {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("chat.card.decision.consequence", { consequence: plainText(t, alternative.consequence) })}</div> : null}
             </button>
           );
         })}
@@ -576,33 +599,33 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       {outcome ? (
         <div className="mt-3 flex items-center gap-2 text-ui-sm text-muted-foreground">
           <span title={outcome.decisionId} data-decision-id={outcome.decisionId}>
-            Decisione presa<Sep />versione {outcome.version}
+            {t("chat.card.decision.taken")}<Sep />{t("chat.card.decision.version", { version: outcome.version })}
           </span>
           <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id: outcome.decisionId })}>
-            Apri nel Patto
+            {t("chat.card.decision.openInPact")}
           </button>
           {outcome.alternativeIndex === null ? <span className="truncate"><Sep />«{outcome.answer}»</span> : null}
         </div>
       ) : withdrawal ? (
         <p className="mt-3 text-ui-sm text-muted-foreground" data-testid="withdrawn-question">
-          Hai ritirato la domanda. Motivo: {withdrawal.reason}
+          {t("chat.card.decision.withdrawnReason", { reason: withdrawal.reason })}
           <Sep />
-          Non è diventata una decisione e il Coordinatore ha ricevuto il motivo.
+          {t("chat.card.decision.withdrawnNote")}
         </p>
       ) : withdrawing ? (
         <div className="mt-3 space-y-2">
           <TextArea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="Perché la ritiri? Il Coordinatore legge il motivo."
-            aria-label="Motivo del ritiro"
+            placeholder={t("chat.card.decision.withdrawPlaceholder")}
+            aria-label={t("chat.card.decision.withdrawLabel")}
             className="min-h-12"
             autoFocus
           />
-          <p className="text-ui-xs text-muted-foreground">La domanda resta nella cronologia, non diventa una decisione e non blocca più il piano.</p>
+          <p className="text-ui-xs text-muted-foreground">{t("chat.card.decision.withdrawNote")}</p>
           <div className="cta-row">
             <Button size="sm" variant="ghost" onClick={() => setWithdrawing(false)}>
-              Annulla
+              {t("chat.card.cancel")}
             </Button>
             <Button
               size="sm"
@@ -610,7 +633,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
               disabled={!reason.trim()}
               onClick={() => void act("decision:withdraw", { requestId, reason: reason.trim() })}
             >
-              Ritira la domanda
+              {t("chat.card.decision.withdrawConfirm")}
             </Button>
           </div>
         </div>
@@ -622,13 +645,13 @@ export function DecisionCard({ requestId }: { requestId: string }) {
               setFreeText(event.target.value);
               if (event.target.value) setChoice(null);
             }}
-            placeholder="Oppure rispondi con parole tue"
-            aria-label="La tua decisione"
+            placeholder={t("chat.card.decision.freeTextPlaceholder")}
+            aria-label={t("chat.card.decision.freeTextLabel")}
             className="min-h-12"
           />
           <div className="cta-row">
             <Button size="sm" variant="ghost" onClick={() => setWithdrawing(true)}>
-              Ritira
+              {t("chat.card.decision.withdraw")}
             </Button>
             <Button
               size="sm"
@@ -641,7 +664,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
                 })
               }
             >
-              Registra la decisione
+              {t("chat.card.decision.record")}
             </Button>
           </div>
         </div>
@@ -661,6 +684,7 @@ export function GrillingRoundCard({
   /** How each question shows; the chat puts a reference in place of a question that still waits (issue #240). */
   renderQuestion?: (id: string) => React.ReactNode;
 }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
   // A withdrawn question is closed without an answer: it no longer counts among the answers the round waits for.
@@ -669,13 +693,13 @@ export function GrillingRoundCard({
   const withdrawn = questions.length - asked.length;
   const complete = answered === asked.length;
   return (
-    <section aria-label={`Chiarimento, turno ${round}`} className="my-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-2.5 pt-2 pb-0.5">
+    <section aria-label={t("chat.card.grilling.label", { round })} className="my-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-2.5 pt-2 pb-0.5">
       <div className="flex items-center gap-2 px-1 text-ui-sm">
         <IconListCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground">Chiarimento prima del piano, turno {round}</span>
-        {withdrawn ? <Badge tone="secondary">{withdrawn === 1 ? "1 ritirata" : `${withdrawn} ritirate`}</Badge> : null}
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{t("shared.settled.grillingTitle", { round })}</span>
+        {withdrawn ? <Badge tone="secondary">{t("chat.card.grilling.withdrawn", { count: withdrawn })}</Badge> : null}
         <Badge tone={complete ? "success" : "info"}>
-          {complete ? "Turno completo" : `${answered} di ${asked.length} risposte`}
+          {complete ? t("shared.settled.roundComplete") : t("chat.card.grilling.answers", { answered, total: asked.length })}
         </Badge>
       </div>
       {questions.map((q) => renderQuestion(q.id))}
@@ -686,6 +710,7 @@ export function GrillingRoundCard({
 // The one vocabulary of states (issue #272): the other views import these from here or from @shared/states.
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const proposal = project.document.team.proposals.find((p) => p.id === proposalId);
   const [kept, setKept] = useState<string[] | null>(null);
@@ -700,25 +725,25 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   return (
     <CardFrame
       icon={<IconUsersGroup stroke={1.8} />}
-      title="Proposta del team"
+      title={t("shared.settled.teamProposal")}
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "superseded" ? "secondary" : "success"}>
             {resolution.kind === "confirmed"
               ? byCoordinator
-                ? "Team confermato dal Coordinatore"
-                : "Team confermato"
+                ? t("chat.card.team.confirmedByCoordinator")
+                : t("shared.settled.teamConfirmed")
               : resolution.kind === "corrected"
-                ? "Team corretto"
-                : "Proposta sostituita"}
+                ? t("shared.settled.teamCorrected")
+                : t("shared.settled.teamSuperseded")}
           </Badge>
         ) : (
-          <Badge tone="info">In attesa</Badge>
+          <Badge tone="info">{t("chat.card.pending")}</Badge>
         )
       }
     >
       {proposal.summary ? <p className="text-ui text-foreground/90">{proposal.summary}</p> : null}
-      <p className="mt-1 text-ui-sm text-muted-foreground">Qui scegli gli sviluppatori. Le altre figure del team ci sono sempre.</p>
+      <p className="mt-1 text-ui-sm text-muted-foreground">{t("chat.card.team.intro")}</p>
       <div className="mt-2 space-y-1.5">
         {proposal.members.map((member) => {
           const checked = selected.includes(member.name);
@@ -745,17 +770,17 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
                 </span>
                 <span className="block text-ui-sm text-muted-foreground">{member.reason}</span>
                 {member.moduleIds.length ? (
-                  <span className="block text-ui-xs text-muted-foreground/70">Moduli: {member.moduleIds.map(moduleName).join(", ")}</span>
+                  <span className="block text-ui-xs text-muted-foreground/70">{t("chat.card.team.modules", { modules: member.moduleIds.map(moduleName).join(", ") })}</span>
                 ) : null}
               </span>
             </label>
           );
         })}
       </div>
-      {resolution?.kind === "corrected" && resolution.note ? <Field label="Correzione">{resolution.note}</Field> : null}
+      {resolution?.kind === "corrected" && resolution.note ? <Field label={t("chat.card.team.correction")}>{resolution.note}</Field> : null}
       {!resolution ? (
         <div className="mt-3 space-y-2">
-          <TextArea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Correzione (facoltativa)" aria-label="Correzione" className="min-h-12" />
+          <TextArea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("chat.card.team.correctionPlaceholder")} aria-label={t("chat.card.team.correction")} className="min-h-12" />
           <Button className="ml-auto flex"
             size="sm"
             disabled={selected.length === 0}
@@ -767,7 +792,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
               })
             }
           >
-            {corrected ? "Conferma con le correzioni" : "Conferma il team"}
+            {corrected ? t("chat.card.team.confirmCorrected") : t("chat.card.team.confirm")}
           </Button>
         </div>
       ) : null}
@@ -796,7 +821,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   return (
     <CardFrame
       icon={<IconBriefcase stroke={1.8} />}
-      title={record ? asTitle(record.label) : "Incarico"}
+      title={record ? asTitle(record.label) : t("chat.card.assignment.title")}
       hint={assignment.id}
       aside={
         <span className="flex items-center gap-1.5">
@@ -805,52 +830,52 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </span>
       }
     >
-      <Field label="Specialista">
+      <Field label={t("chat.card.assignment.specialist")}>
         <AgentName agent={specialist} size={32} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
-      <Field label="Obiettivo">{assignment.objective}</Field>
+      <Field label={t("chat.card.assignment.objective")}>{assignment.objective}</Field>
       {assignment.selfPicked ? (
-        <Field label="Presa">
-          <span data-testid="assignment-self-picked">In autonomia: era la prossima fetta pronta nei moduli dello sviluppatore, dentro il mandato.</span>
+        <Field label={t("chat.card.assignment.picked")}>
+          <span data-testid="assignment-self-picked">{t("chat.card.assignment.selfPicked")}</span>
         </Field>
       ) : null}
       <DutyFields assignment={assignment} />
-      {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
-      <Field label="Perimetro">{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : "Tutto il progetto"}</Field>
+      {assignment.exercise ? <Field label={t("chat.card.assignment.exercise")}>{assignment.exercise}</Field> : null}
+      <Field label={t("chat.card.assignment.scope")}>{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : t("chat.card.assignment.wholeProject")}</Field>
       {assignment.seams ? (
         <ContractFields assignment={assignment} decisions={project.document.decisions} />
       ) : assignment.dependencies.length ? (
-        <Field label="Dipendenze">
+        <Field label={t("chat.card.assignment.dependencies")}>
           <ReferenceText text={assignment.dependencies.join(", ")} />
         </Field>
       ) : null}
       {goal ? (
-        <Field label="Obiettivo del progetto">
+        <Field label={t("chat.card.assignment.goal")}>
           <button type="button" className="text-left text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
             {goal.title}
           </button>
         </Field>
       ) : null}
-      <Field label="Provider e modello scelti all'assegnazione">
+      <Field label={t("chat.card.assignment.providerAndModel")}>
         {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
           {(assignment.duty || assignment.selfPicked) && assignment.modelReason
             ? assignment.modelReason
             : assignment.modelReason
-              ? `Motivazione del Coordinatore: ${assignment.modelReason}`
-              : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
+              ? t("chat.card.assignment.modelReason", { reason: assignment.modelReason })
+              : t("chat.card.assignment.noModelReason")}
         </div>
         {lastTurn && (lastTurn.provider ?? "codex") !== (assignment.provider ?? "codex") ? (
-          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)}<Sep />{lastTurn.model}</div>
+          <div className="mt-0.5 text-ui-sm text-warning">{t("chat.card.assignment.lastTurn", { model: providerLabel(lastTurn.provider) })}<Sep />{lastTurn.model}</div>
         ) : lastTurn && lastTurn.model !== assignment.model ? (
-          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
+          <div className="mt-0.5 text-ui-sm text-warning">{t("chat.card.assignment.lastTurn", { model: lastTurn.model })}</div>
         ) : null}
       </Field>
       <PlaceField assignment={assignment} />
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
         {/* Work in a cloud session has no copy on the Mac until its branch comes back (A19). */}
-        {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>}
-        {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.map((check) => checkName(t, check)).join(", ")}</span> : null}
+        {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? t("chat.card.assignment.ownWorkingCopy") : t("chat.card.assignment.readOnly")}</span>}
+        {assignment.requiredChecks.length ? <span>{t("chat.card.assignment.checks", { checks: assignment.requiredChecks.map((check) => checkName(t, check)).join(", ") })}</span> : null}
       </div>
       {assignment.workspace ? (
         <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
@@ -860,14 +885,14 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <p className="mt-2 text-ui-sm text-muted-foreground">
         <ReferenceText text={assignmentLine(t, project.document, assignment)} />
       </p>
-      {assignment.failure ? <Field label="Errore">{readableFailure(t, assignment.failure)}</Field> : null}
+      {assignment.failure ? <Field label={t("chat.card.error")}>{readableFailure(t, assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
       <ThreadLinks assignmentId={assignment.id} />
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
-            Risultato <IconChevronRight className={cn("size-3.5 transition-transform", showResult && "rotate-90")} />
+            {t("chat.card.assignment.result")} <IconChevronRight className={cn("size-3.5 transition-transform", showResult && "rotate-90")} />
           </button>
           {showResult ? (
             <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
@@ -881,11 +906,11 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <PlaceActions specialist={specialist} assignment={assignment} />
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
-              Ferma
+              {t("chat.card.assignment.stop")}
             </Button>
           ) : (
             <Button size="sm" variant="outline" onClick={() => void act("assignment:resume", { assignmentId })}>
-              Riprendi
+              {t("chat.card.assignment.resume")}
             </Button>
           )}
         </div>
@@ -899,6 +924,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
  * skill. The Coordinator writes nothing: the documentation and domain role writes them within the mandate.
  */
 export function DomainProposalCard({ proposalId }: { proposalId: string }) {
+  const t = useT();
   const document = useUi((s) => s.app?.project?.document);
   const setInspector = useUi((s) => s.setInspector);
   const proposal = document ? findDomainProposal(document, proposalId) : null;
@@ -907,22 +933,22 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
   const written = assignment?.status === "completed";
   const writing = assignment ? ["preparing", "running", "stopRequested"].includes(assignment.status) : false;
   const status = written
-    ? { label: "Scritta", tone: "success" as const }
+    ? { label: t("chat.card.domain.written"), tone: "success" as const }
     : writing
-      ? { label: "In scrittura", tone: "info" as const }
+      ? { label: t("chat.card.domain.writing"), tone: "info" as const }
       : assignment
-        ? { label: "Scrittura ferma", tone: "warning" as const }
-        : { label: "In attesa", tone: "secondary" as const };
+        ? { label: t("chat.card.domain.stopped"), tone: "warning" as const }
+        : { label: t("chat.card.pending"), tone: "secondary" as const };
   return (
     <CardFrame
       anchor="domain-proposal"
       icon={<IconBook2 stroke={1.8} />}
-      title="Glossario e ADR"
+      title={t("chat.card.domain.title")}
       hint={proposal.id}
       aside={<Badge tone={status.tone}>{status.label}</Badge>}
     >
       <div data-testid="domain-proposal">
-        <Field label="Dalle decisioni del Patto">
+        <Field label={t("chat.card.domain.fromDecisions")}>
           {proposal.decisionIds.map((id, index) => (
             <span key={id}>
               {index ? ", " : null}
@@ -933,7 +959,7 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
           ))}
         </Field>
         {proposal.terms.length ? (
-          <Field label={`Termini per ${proposal.contextPath}`}>
+          <Field label={t("chat.card.domain.terms", { path: proposal.contextPath })}>
             <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
               <ChatMarkdown text={proposal.terms.map(glossaryEntry).join("\n\n")} />
             </div>
@@ -948,45 +974,46 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
         ))}
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {!assignment
-            ? (proposal.waiting ?? "Il Coordinatore non scrive file: la proposta aspetta il mandato.")
+            ? (proposal.waiting ?? t("chat.card.domain.waitingMandate"))
             : written
-              ? <ReferenceText text={`Documentazione e dominio ha scritto la proposta nella copia di lavoro dell'incarico ${assignment.id}. La rivedi come candidato.`} />
+              ? <ReferenceText text={t("chat.card.domain.writtenNote", { id: assignment.id })} />
               : writing
-                ? <ReferenceText text={`Documentazione e dominio la scrive nella copia di lavoro dell'incarico ${assignment.id}, con la skill domain-modeling.`} />
-                : <ReferenceText text={`L'incarico ${assignment.id} si è fermato prima di finire: lo trovi nella sua scheda.`} />}
+                ? <ReferenceText text={t("chat.card.domain.writingNote", { id: assignment.id })} />
+                : <ReferenceText text={t("chat.card.domain.stoppedNote", { id: assignment.id })} />}
         </p>
       </div>
     </CardFrame>
   );
 }
 
-const QUALITY_LABEL: Record<QualityItem["code"], string> = {
-  VERIFIED: "Candidato verificato",
-  COMMIT_MESSAGE: "Messaggio di commit",
-  NO_SECRETS: "Niente segreti né file sensibili",
-  DIFF_CHECK: "git diff --check",
-  ISSUE_LINKED: "Issue collegata",
-  PACT_SETTLED: "Nessuna domanda aperta nel Patto",
-  MANDATE: "Mandato",
+const QUALITY_LABEL: Record<QualityItem["code"], MessageKey> = {
+  VERIFIED: "chat.card.quality.VERIFIED",
+  COMMIT_MESSAGE: "chat.card.quality.COMMIT_MESSAGE",
+  NO_SECRETS: "chat.card.quality.NO_SECRETS",
+  DIFF_CHECK: "chat.card.quality.DIFF_CHECK",
+  ISSUE_LINKED: "chat.card.quality.ISSUE_LINKED",
+  PACT_SETTLED: "chat.card.quality.PACT_SETTLED",
+  MANDATE: "chat.card.quality.MANDATE",
 };
 
 /** The quality standard before publishing (Q01): each condition, and for a missing one what to do. */
 function QualityField({ items }: { items: QualityItem[] }) {
+  const t = useT();
   const missing = items.filter((i) => !i.passed).length;
   return (
-    <Field label={missing ? `Standard di pubblicazione, manca ${missing === 1 ? "1 condizione" : `${missing} condizioni`}` : "Standard di pubblicazione, rispettato"}>
+    <Field label={missing ? t("chat.card.quality.missing", { count: missing }) : t("chat.card.quality.met")}>
       <ul className="space-y-1" data-testid="candidate-quality" data-ready={missing ? "no" : "yes"}>
         {items.map((item) => (
           <li key={item.code} data-testid="quality-item" data-code={item.code} data-passed={item.passed ? "yes" : "no"} className="text-ui-sm">
             <div className="flex items-start gap-1.5">
               {item.passed ? <IconCircleCheck className="mt-0.5 size-3.5 shrink-0 text-success" /> : <IconCircleX className="mt-0.5 size-3.5 shrink-0 text-destructive" />}
               <span className="min-w-0">
-                <span className="text-foreground">{QUALITY_LABEL[item.code]}</span>
+                <span className="text-foreground">{t(QUALITY_LABEL[item.code])}</span>
                 <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
                   <Sep />
                   {item.code === "COMMIT_MESSAGE" ? item.detail : <ReferenceText text={item.detail} />}
                 </span>
-                {item.fix ? <span className="block text-ui-xs text-muted-foreground">Come sistemarlo: {item.fix}</span> : null}
+                {item.fix ? <span className="block text-ui-xs text-muted-foreground">{t("chat.card.quality.fix", { fix: item.fix })}</span> : null}
               </span>
             </div>
           </li>
@@ -1024,7 +1051,7 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
             className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
             onClick={() => setOpen(!open)}
           >
-            Output originale <IconChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+            {t("chat.card.evidence.output")} <IconChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
           </button>
         ) : null}
       </div>
@@ -1032,7 +1059,7 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
         <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2" data-testid="evidence-output">
           <p className="font-mono text-[11px] text-muted-foreground">{evidence.command}</p>
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-foreground/85">
-            {evidence.output || "Il controllo non ha scritto niente."}
+            {evidence.output || t("chat.card.evidence.noOutput")}
           </pre>
         </div>
       ) : null}
@@ -1040,10 +1067,11 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
   );
 }
 
-const STATEMENT_NOTE = "È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.";
+const STATEMENT_NOTE: MessageKey = "chat.card.report.statementNote";
 
 /** Seams as the developer reported them (M06, W05), each with its tests or none, and marked when outside the agreed ones. */
 function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; itemTestId: string; outside: string }) {
+  const t = useT();
   return (
     <ul className="space-y-0.5 text-ui-sm">
       {seams.map((s) => (
@@ -1051,7 +1079,7 @@ function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; i
           {s.seam}
           <span className="text-muted-foreground">
             <Sep />
-            {s.tests ? `test: ${s.tests}` : "nessun test riportato"}
+            {s.tests ? t("chat.card.seams.tests", { tests: s.tests }) : t("chat.card.seams.noTests")}
             {s.agreed ? null : `, ${outside}`}
           </span>
         </li>
@@ -1062,17 +1090,18 @@ function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; i
 
 /** The seams the developer of a slice says it tested (M06): its statement, shown apart from Trama's evidence. */
 function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
+  const t = useT();
   return (
-    <Field label="Punti di prova testati, secondo lo sviluppatore">
+    <Field label={t("chat.card.seams.tested")}>
       <div data-testid="candidate-tested-seams">
         {seams === null ? (
-          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha riportato i punti di prova testati.</p>
+          <p className="text-ui-sm text-muted-foreground">{t("chat.card.seams.notReported")}</p>
         ) : seams.length === 0 ? (
-          <p className="text-ui-sm text-muted-foreground">Il piano non ha punti di prova confermati.</p>
+          <p className="text-ui-sm text-muted-foreground">{t("chat.card.seams.noneConfirmed")}</p>
         ) : (
-          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside="fuori dai punti di prova confermati" />
+          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside={t("chat.card.seams.outsideConfirmed")} />
         )}
-        <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
+        <p className="mt-1 text-ui-xs text-muted-foreground">{t(STATEMENT_NOTE)}</p>
       </div>
     </Field>
   );
@@ -1080,12 +1109,13 @@ function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
 
 /** The contract the assignment reached the developer with (W05): seams to test, Pact decisions and dependencies. */
 function ContractFields({ assignment, decisions }: { assignment: SpecialistAssignment; decisions: { id: string; version: number }[] }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const seams = assignment.seams ?? [];
   const relied = Object.entries(assignment.decisionVersions ?? {});
   return (
     <div data-testid="assignment-contract">
-      <Field label="Punti di prova da testare">
+      <Field label={t("chat.card.contract.seams")}>
         {seams.length ? (
           <ol className="space-y-0.5 text-ui-sm">
             {seams.map((s) => (
@@ -1096,26 +1126,26 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
             ))}
           </ol>
         ) : (
-          <span className="text-ui-sm text-muted-foreground">Nessuno: il lavoro non scrive test nuovi.</span>
+          <span className="text-ui-sm text-muted-foreground">{t("chat.card.contract.noSeams")}</span>
         )}
       </Field>
-      <Field label="Decisioni del Patto">
+      <Field label={t("chat.card.contract.decisions")}>
         {relied.length ? (
           relied.map(([id, version]) => {
             const current = decisions.find((d) => d.id === id);
             return (
               <span key={id}>
                 <DecisionLink id={id} version={version} />
-                {current && current.version !== version ? <span className="mr-2 text-ui-sm text-warning">(ora versione {current.version})</span> : null}
+                {current && current.version !== version ? <span className="mr-2 text-ui-sm text-warning">{t("chat.card.contract.nowVersion", { version: current.version })}</span> : null}
               </span>
             );
           })
         ) : (
-          <span className="text-ui-sm text-muted-foreground">Nessuna</span>
+          <span className="text-ui-sm text-muted-foreground">{t("chat.card.noneFeminine")}</span>
         )}
       </Field>
-      <Field label="Dipendenze">
-        {assignment.dependencies.length ? <ReferenceText text={assignment.dependencies.join(", ")} /> : <span className="text-ui-sm text-muted-foreground">Nessuna</span>}
+      <Field label={t("chat.card.assignment.dependencies")}>
+        {assignment.dependencies.length ? <ReferenceText text={assignment.dependencies.join(", ")} /> : <span className="text-ui-sm text-muted-foreground">{t("chat.card.noneFeminine")}</span>}
       </Field>
     </div>
   );
@@ -1126,8 +1156,8 @@ function ReportList({
   label,
   items,
   testId,
-  missing = "Non riportati",
-  none = "Nessuno",
+  missing,
+  none,
 }: {
   label: string;
   items: string[] | null;
@@ -1135,11 +1165,12 @@ function ReportList({
   missing?: string;
   none?: string;
 }) {
+  const t = useT();
   return (
     <div className="mt-1" data-testid={testId} data-reported={items === null ? "no" : "yes"}>
       <div className="text-ui-xs text-muted-foreground/70">{label}</div>
       {items === null ? (
-        <p className="text-ui-sm text-muted-foreground">{missing}</p>
+        <p className="text-ui-sm text-muted-foreground">{missing ?? t("chat.card.report.notReported")}</p>
       ) : items.length ? (
         <ul className="space-y-0.5 text-ui-sm">
           {items.map((item) => (
@@ -1149,23 +1180,24 @@ function ReportList({
           ))}
         </ul>
       ) : (
-        <p className="text-ui-sm text-muted-foreground">{none}</p>
+        <p className="text-ui-sm text-muted-foreground">{none ?? t("chat.card.none")}</p>
       )}
     </div>
   );
 }
 
 const QUESTION_STATE = {
-  asked: { label: "Aspetta il Coordinatore", tone: "warning" },
-  waitingForPerson: { label: "Blocca il lavoro", tone: "warning" },
-  answered: { label: "Risposta data", tone: "info" },
-  resumed: { label: "Lavoro ripreso", tone: "success" },
-} as const;
+  asked: { label: "chat.card.question.asked", tone: "warning" },
+  waitingForPerson: { label: "chat.card.decision.blocksWork", tone: "warning" },
+  answered: { label: "chat.card.question.answered", tone: "info" },
+  resumed: { label: "chat.card.question.resumed", tone: "success" },
+} as const satisfies Record<string, { label: MessageKey; tone: string }>;
 
 /** The developer's questions to the Coordinator (W06) with where each stands and its answer. */
 function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
+  const t = useT();
   return (
-    <Field label="Domande al Coordinatore">
+    <Field label={t("chat.card.question.label")}>
       <ul className="space-y-2" data-testid="assignment-questions">
         {questions.map((question) => {
           const key = question.resumedAt ? "resumed" : developerQuestionState(question);
@@ -1174,17 +1206,17 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
             <li key={question.id} data-testid="assignment-question" data-state={key}>
               <div className="flex items-start gap-2">
                 <span className="min-w-0 flex-1 break-words text-ui-sm text-foreground">{question.question}</span>
-                <Badge tone={QUESTION_STATE[key].tone}>{QUESTION_STATE[key].label}</Badge>
+                <Badge tone={QUESTION_STATE[key].tone}>{t(QUESTION_STATE[key].label)}</Badge>
               </div>
-              {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
+              {question.context ? <div className="text-ui-sm text-muted-foreground">{t("chat.card.question.context", { context: question.context })}</div> : null}
               {answer?.kind === "facts" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  Risposta del Coordinatore: <ReferenceText text={answer.text} />
-                  <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
+                  {withNodes(t("chat.card.question.coordinatorAnswer"), { text: <ReferenceText text={answer.text} /> })}
+                  <div className="text-ui-xs text-muted-foreground">{t("chat.card.question.sources", { sources: answer.sources.join(", ") })}</div>
                 </div>
               ) : answer?.kind === "person" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  <ReferenceText text={answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla ${answer.decisionRequestId}.`} />
+                  <ReferenceText text={answer.text ? t("chat.card.question.personAnswer", { text: answer.text }) : t("chat.card.question.waitingForYou", { id: answer.decisionRequestId })} />
                 </div>
               ) : null}
             </li>
@@ -1197,11 +1229,12 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
 
 /** Links to the conversations between agents about this work (W07), read-only in the inspector. */
 function ThreadLinks({ assignmentId }: { assignmentId: string }) {
-  const threads = useUi((s) => s.app?.project?.document.agentThreads)?.filter((t) => t.assignmentId === assignmentId) ?? [];
+  const t = useT();
+  const threads = useUi((s) => s.app?.project?.document.agentThreads)?.filter((thread) => thread.assignmentId === assignmentId) ?? [];
   const setInspector = useUi((s) => s.setInspector);
   if (!threads.length) return null;
   return (
-    <Field label="Chat tra agenti">
+    <Field label={t("chat.card.threads.label")}>
       <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
         {threads.map((thread) => (
           <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
@@ -1215,44 +1248,45 @@ function ThreadLinks({ assignmentId }: { assignmentId: string }) {
 
 /** The developer's structured report (W05), saved when the work ended: its statement, never evidence. */
 function ReportField({ report }: { report: DeveloperReport | null }) {
+  const t = useT();
   return (
-    <Field label="Rapporto dello sviluppatore">
+    <Field label={t("chat.card.report.label")}>
       <div data-testid="assignment-report">
         {report === null ? (
-          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha consegnato il rapporto.</p>
+          <p className="text-ui-sm text-muted-foreground">{t("chat.card.report.missing")}</p>
         ) : (
           <>
-            <ReportList label="File toccati" items={report.filesTouched} testId="report-files" />
-            <ReportList label="Test scritti" items={report.testsWritten} testId="report-tests" />
+            <ReportList label={t("chat.card.report.files")} items={report.filesTouched} testId="report-files" />
+            <ReportList label={t("chat.card.report.tests")} items={report.testsWritten} testId="report-tests" />
             <div className="mt-1" data-testid="report-seams" data-reported={report.seams === null ? "no" : "yes"}>
-              <div className="text-ui-xs text-muted-foreground/70">Punti di prova coperti</div>
+              <div className="text-ui-xs text-muted-foreground/70">{t("chat.card.report.seams")}</div>
               {report.seams === null ? (
-                <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+                <p className="text-ui-sm text-muted-foreground">{t("chat.card.report.notReported")}</p>
               ) : report.seams.length ? (
-                <TestedSeamList seams={report.seams} itemTestId="report-seam" outside="fuori dal contratto" />
+                <TestedSeamList seams={report.seams} itemTestId="report-seam" outside={t("chat.card.report.outsideContract")} />
               ) : (
-                <p className="text-ui-sm text-muted-foreground">Nessuno nel contratto</p>
+                <p className="text-ui-sm text-muted-foreground">{t("chat.card.report.noneInContract")}</p>
               )}
             </div>
-            <ReportList label="Dubbi" items={report.doubts} testId="report-doubts" />
+            <ReportList label={t("chat.card.report.doubts")} items={report.doubts} testId="report-doubts" />
             {report.exceptions !== undefined ? (
-              <ReportList label="Eccezioni allo standard" items={report.exceptions} testId="report-exceptions" missing="Non riportate" none="Nessuna" />
+              <ReportList label={t("chat.card.report.exceptions")} items={report.exceptions} testId="report-exceptions" missing={t("chat.card.report.notReportedFeminine")} none={t("chat.card.noneFeminine")} />
             ) : null}
           </>
         )}
-        <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
+        <p className="mt-1 text-ui-xs text-muted-foreground">{t(STATEMENT_NOTE)}</p>
       </div>
     </Field>
   );
 }
 
-const MEASURE_TEXT: Record<CodeMeasure["kind"], (m: CodeMeasure) => string> = {
-  arguments: (m) => `${m.subject} ha ${m.value} argomenti, il limite è ${m.limit}`,
-  functionLength: (m) => `${m.subject} è lunga ${m.value} righe, il limite è ${m.limit}`,
-  duplication: (m) => `${m.value} righe uguali a ${m.subject}`,
+const MEASURE_TEXT: Record<CodeMeasure["kind"], (m: CodeMeasure, t: Translate) => string> = {
+  arguments: (m, t) => t("chat.card.measure.arguments", { subject: m.subject, value: m.value, limit: m.limit }),
+  functionLength: (m, t) => t("chat.card.measure.functionLength", { subject: m.subject, value: m.value, limit: m.limit }),
+  duplication: (m, t) => t("chat.card.measure.duplication", { subject: m.subject, value: m.value }),
 };
 
-const REVIEW_NOTE = "I rilievi sono il giudizio del revisore, non un'evidenza. Contano le misure e le verifiche eseguite da Trama.";
+const REVIEW_NOTE: MessageKey = "chat.card.review.note";
 
 /** The technical review (V05) with the findings against the Clean Code standard and Trama's own measures (Q03). */
 function TechnicalReviewField({ review }: { review: TechnicalReview }) {
@@ -1261,19 +1295,19 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
   const standard = review.standard;
   const ruleLabel = (id: string | null) => {
     const rule = cleanCodeRules(t).find((r) => r.id === id);
-    return rule ? <RuleLabel rule={rule} /> : "Altro";
+    return rule ? <RuleLabel rule={rule} /> : t("chat.card.review.otherRule");
   };
   return (
-    <Field label={`Revisione tecnica, ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
+    <Field label={review.verdict === "approved" ? t("chat.card.review.approved") : t("chat.card.review.changesRequested")}>
       <div data-testid="technical-review" data-verdict={review.verdict}>
         {/* With the candidate gate (W10) the summary is the gate's, shown figure by figure above. */}
         {review.gateId ? null : <p>{review.summary}</p>}
         {standard ? (
           <div className="mt-1.5" data-testid="review-measures">
             <div className="text-ui-xs text-muted-foreground/70">
-              Misure di Trama, standard v{standard.version}: {standard.filesMeasured === 1 ? "1 file" : `${standard.filesMeasured} file`}
+              {t("chat.card.review.measures", { version: standard.version, files: t("chat.card.files", { count: standard.filesMeasured }) })}
               <Sep />
-              {standard.functionsMeasured === 1 ? "1 funzione" : `${standard.functionsMeasured} funzioni`}
+              {t("chat.card.review.functions", { count: standard.functionsMeasured })}
             </div>
             {standard.measures.length ? (
               <ul className="space-y-0.5 text-ui-sm">
@@ -1283,24 +1317,24 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
                       {m.file}:{m.line}
                     </span>
                     <Sep />
-                    {MEASURE_TEXT[m.kind](m)}
+                    {MEASURE_TEXT[m.kind](m, t)}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-ui-sm text-muted-foreground">Nessuna misura oltre il limite</p>
+              <p className="text-ui-sm text-muted-foreground">{t("chat.card.review.noMeasures")}</p>
             )}
           </div>
         ) : null}
         {review.findings !== undefined ? (
           <div className="mt-1.5" data-testid="review-findings">
-            <div className="text-ui-xs text-muted-foreground/70">Rilievi del revisore</div>
+            <div className="text-ui-xs text-muted-foreground/70">{t("chat.card.review.findings")}</div>
             {findings.length ? (
               <ul className="space-y-1 text-ui-sm">
                 {findings.map((f) => (
                   <li key={`${f.file}-${f.line}-${f.message}`} data-testid="review-finding" data-severity={f.severity} className="break-words">
                     <span className="mr-1.5 inline-flex items-center gap-1.5 align-middle">
-                      <Badge tone={f.severity === "blocking" ? "destructive" : "info"}>{f.severity === "blocking" ? "Bloccante" : "Suggerimento"}</Badge>
+                      <Badge tone={f.severity === "blocking" ? "destructive" : "info"}>{f.severity === "blocking" ? t("chat.card.review.blocking") : t("chat.card.review.suggestion")}</Badge>
                       <span className="font-mono text-[11.5px] text-foreground/90">
                         {f.file}
                         {f.line ? `:${f.line}` : ""}
@@ -1313,9 +1347,9 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
                 ))}
               </ul>
             ) : (
-              <p className="text-ui-sm text-muted-foreground">Nessun rilievo</p>
+              <p className="text-ui-sm text-muted-foreground">{t("chat.card.review.noFindings")}</p>
             )}
-            <p className="mt-1 text-ui-xs text-muted-foreground">{REVIEW_NOTE}</p>
+            <p className="mt-1 text-ui-xs text-muted-foreground">{t(REVIEW_NOTE)}</p>
           </div>
         ) : null}
       </div>
@@ -1328,26 +1362,27 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
  * the checks of its pull request, stopped, or who handles it.
  */
 function MergeLine({ candidate, route, routeReason, open, approved }: { candidate: Candidate; route: MergeRoute; routeReason: string | null; open: boolean; approved: boolean }) {
+  const t = useT();
   const merge = candidate.merge;
   const pull = candidate.pullRequest;
   let text: string | null = null;
   let tone = "text-muted-foreground";
   if (pull?.mergedAt) {
-    text = pull.mergedBy === "coordinator" ? "Unito da Trama con il via libera del Coordinatore." : pull.mergedBy === "person" ? "Unito da Trama con il tuo ok sulle schermate." : "Unito su GitHub.";
+    text = pull.mergedBy === "coordinator" ? t("chat.card.merge.byCoordinator") : pull.mergedBy === "person" ? t("chat.card.merge.byPerson") : t("chat.card.merge.onGitHub");
   } else if (merge && open && merge.status !== "merged") {
     // A destructive stop says it in its own field, with consequences and alternatives (issue #41).
-    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.stop ? null : merge.detail;
+    text = merge.status === "running" ? t("chat.card.merge.running") : merge.stop ? null : merge.detail;
     if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
   } else if (open && candidate.humanRejection) {
-    text = `Hai rifiutato il candidato: ${candidate.humanRejection.note}`;
+    text = t("chat.card.merge.rejected", { note: candidate.humanRejection.note });
   } else if (open && route === "coordinator") {
-    text = candidate.clearance ? "Trama lo unisce con il via libera del Coordinatore." : "Con il via libera del Coordinatore Trama lo unisce da solo.";
+    text = candidate.clearance ? t("chat.card.merge.cleared") : t("chat.card.merge.onClearance");
   } else if (open && route === "interface") {
     text = approved
       ? candidate.clearance
-        ? "Hai dato l'ok: Trama lo unisce."
-        : "Hai dato l'ok: Trama lo unisce con il via libera del Coordinatore."
-      : "Cambia l'interfaccia: guarda le schermate e decidi. Trama lo unisce solo con il tuo ok.";
+        ? t("chat.card.merge.approved")
+        : t("chat.card.merge.approvedAwaitingClearance")
+      : t("chat.card.merge.interface");
   } else if (open && routeReason) {
     text = routeReason;
   }
@@ -1416,6 +1451,7 @@ function MergeMandate({ version }: { version: number }) {
  * decision changed since then shows the words of the version the work used, not the current ones.
  */
 function DecisionLink({ id, version }: { id: string; version: number | undefined }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const record = useRecord(id);
   const used = useUi((s) => {
@@ -1427,7 +1463,7 @@ function DecisionLink({ id, version }: { id: string; version: number | undefined
   return (
     <button type="button" title={id} className="mr-2 text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
       {words}
-      {version !== undefined ? `, versione ${version}` : ""}
+      {version !== undefined ? t("chat.card.decisionLink.version", { version }) : ""}
     </button>
   );
 }
@@ -1468,7 +1504,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       <p className="text-ui-sm text-muted-foreground">
         {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />
         <RecordName id={candidate.assignmentId} />
-        <Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+        <Sep />{t("chat.card.files", { count: candidate.changedFiles.length })}
       </p>
     </>
   );
@@ -1479,7 +1515,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           {candidate.supersession ? (
             <ReferenceText text={t("supersession.card", { id: candidate.supersession.byCandidateId, reason: candidate.supersession.reason })} />
           ) : (
-            "Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno."
+            t("chat.card.candidate.superseded")
           )}
         </p>
       ) : null}
@@ -1487,7 +1523,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   );
   const decisionsField = (
     <>
-      <Field label="Decisioni pertinenti">
+      <Field label={t("chat.card.candidate.decisions")}>
         {candidate.requiredDecisionIds.map((id) => (
           <DecisionLink key={id} id={id} version={candidate.decisionVersions[id]} />
         ))}
@@ -1497,7 +1533,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const checksFields = (
     <>
       {candidate.testedSeams !== undefined ? <TestedSeamsField seams={candidate.testedSeams} /> : null}
-      <Field label="Evidenze delle verifiche">
+      <Field label={t("chat.card.candidate.evidence")}>
         <div className="space-y-0.5">
           {candidate.requiredChecks.map((check) => (
             <EvidenceRow key={check} check={check} evidence={candidate.evidence[check] ?? null} />
@@ -1514,7 +1550,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const blockersField = (
     <>
       {report.blockers.length && report.state !== "superseded" ? (
-        <Field label="Cosa manca">
+        <Field label={t("chat.card.candidate.missing")}>
           <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
@@ -1539,10 +1575,12 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           (a) => a.candidateId === candidate.id && a.classification !== "clean" && !explainedByDivergence(project.document, a) && !otherSideSuperseded(project.document, a),
         );
         return conflicts.length && report.state !== "superseded" ? (
-          <Field label="Confronti con altro lavoro">
+          <Field label={t("chat.card.candidate.comparisons")}>
             {conflicts.map((a) => (
               <div key={a.id} className="text-ui-sm">
-                {CONFLICT_LABEL[a.classification].label} con <ReferenceText text={a.references.map(plainConflictReference).join(", ")} />
+                {withNodes(t("chat.card.candidate.conflictWith", { label: t(CONFLICT_LABEL[a.classification].label) }), {
+                  references: <ReferenceText text={a.references.map(plainConflictReference).join(", ")} />,
+                })}
               </div>
             ))}
           </Field>
@@ -1551,7 +1589,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       {candidate.pullRequest?.mergedAt ? null : <CandidateOverlaps candidateId={candidate.id} />}
       {quality.length && !candidate.pullRequest ? <QualityField items={quality} /> : null}
       {route === "interface" && report.state !== "superseded" ? (
-        <Field label="Cambia l'interfaccia">
+        <Field label={t("chat.card.candidate.interface")}>
           <p className="break-words text-ui-sm text-muted-foreground">
             {(report.interfaceFiles ?? []).map((path, index) => (
               <span key={path}>
@@ -1563,7 +1601,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
         </Field>
       ) : null}
       {route === "interface" && open ? (
-        <Field label="Schermate prima e dopo">
+        <Field label={t("chat.card.candidate.shots")}>
           <InterfaceShotsField candidate={candidate} />
         </Field>
       ) : null}
@@ -1573,7 +1611,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
     <>
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
-          {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
+          {report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
@@ -1584,7 +1622,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           className="mt-2 inline-flex items-center gap-1 text-ui-sm text-[var(--color-text-accent)] hover:underline"
           onClick={() => void act("shell:openExternal", { url: candidate.pullRequest!.url })}
         >
-          <IconGitPullRequest className="size-3.5" /> Pull request #{candidate.pullRequest.number}
+          <IconGitPullRequest className="size-3.5" /> {t("chat.card.candidate.pullRequest", { number: String(candidate.pullRequest.number) })}
         </button>
       ) : null}
     </>
@@ -1594,13 +1632,13 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       <div className="cta-row mt-3">
         {/* Issue #338: opening the diff and the examination are secondary, icons with their names; the decisions stay text. */}
         {diffOnScreen ? null : (
-          <IconButton size="icon-sm" label={t("chat.buttons.openDiff")} icon={<IconFileDiff />} onClick={() => setInspector({ kind: "candidate", id: candidate.id, diff: true })} />
+          <IconButton size="icon-sm" label={t("chat.card.candidate.openDiff")} icon={<IconFileDiff />} onClick={() => setInspector({ kind: "candidate", id: candidate.id, diff: true })} />
         )}
         {/* The candidate's tab has the examination as its own section, with its own action (issue #336). */}
         {layout === "detail" ? null : (
           <IconButton
             size="icon-sm"
-            label={t("chat.buttons.examine")}
+            label={t("chat.card.candidate.deepReview")}
             icon={<IconFocus2 />}
             // The candidate's tab opens on its latest examination, or starts the first one (F01, issue #336).
             onClick={() => void examineCandidate(candidateId)}
@@ -1608,23 +1646,23 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
         )}
         {route === "person" && report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
-            Approva questo candidato
+            {t("chat.card.candidate.approve")}
           </Button>
         ) : null}
         {decidable && !rejecting ? (
           <>
             <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
-              Rifiuta
+              {t("chat.card.candidate.reject")}
             </Button>
             <Button size="sm" onClick={() => void act("candidate:approve", { candidateId })}>
-              <IconGitMerge /> Approva e unisci
+              <IconGitMerge /> {t("chat.card.candidate.approveAndMerge")}
             </Button>
           </>
         ) : null}
         {stop && open && !approved ? <MergeStopActions candidateId={candidateId} declined={Boolean(stop.acknowledgedAt)} /> : null}
         {route === "person" && approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
-            <IconGitPullRequest /> Prepara la pull request
+            <IconGitPullRequest /> {t("chat.card.candidate.preparePullRequest")}
           </Button>
         ) : null}
       </div>
@@ -1633,17 +1671,17 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           <TextArea
             value={rejection}
             onChange={(e) => setRejection(e.target.value)}
-            placeholder="Cosa non va nelle schermate? Il motivo torna allo sviluppatore come rilievo."
-            aria-label="Motivo del rifiuto del candidato"
+            placeholder={t("chat.card.candidate.rejectPlaceholder")}
+            aria-label={t("chat.card.candidate.rejectLabel")}
             className="min-h-12"
             autoFocus
           />
           <div className="cta-row">
             <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
-              Annulla
+              {t("chat.card.cancel")}
             </Button>
             <Button size="sm" disabled={!rejection.trim()} onClick={() => void act("candidate:reject", { candidateId, note: rejection.trim() }).then(() => setRejecting(false))}>
-              Rifiuta il candidato
+              {t("chat.card.candidate.rejectConfirm")}
             </Button>
           </div>
         </div>
@@ -1660,10 +1698,10 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
           <div className="cta-row">
             <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
-              Annulla
+              {t("chat.card.cancel")}
             </Button>
             <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
-              <IconGitPullRequest /> Pubblica
+              <IconGitPullRequest /> {t("chat.card.candidate.publish")}
             </Button>
           </div>
         </div>
@@ -1677,7 +1715,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       <div className="px-4 pt-4" data-testid="candidate-detail" data-candidate={candidate.id}>
         <div className="flex items-start gap-2">
           <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui-lg font-medium text-foreground" title={candidate.id} data-record-id={candidate.id}>
-            {record ? asTitle(record.short ?? record.label) : "Candidato"}
+            {record ? asTitle(record.short ?? record.label) : t("chat.card.candidate.title")}
           </h2>
           <Badge tone={state.tone}>{state.label}</Badge>
         </div>
@@ -1702,7 +1740,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
     );
   }
   return (
-    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
+    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : t("chat.card.candidate.title")} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       {whoLine}
       {supersededNote}
       {decisionsField}
@@ -1721,7 +1759,7 @@ export function PlanCard({ planId }: { planId: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const plan = project.document.plans.find((p) => p.id === planId);
   const record = useRecord(planId);
-  const planTitle = record ? asTitle(record.label) : "Piano";
+  const planTitle = record ? asTitle(record.label) : t("chat.card.plan.title");
   const [editing, setEditing] = useState<{ steps: string; behavior: string; example: string } | null>(null);
   if (!plan) return null;
   const proposal = plan.proposal;
@@ -1734,7 +1772,7 @@ export function PlanCard({ planId }: { planId: string }) {
       <CardFrame icon={<IconListCheck stroke={1.8} />} title={planTitle} hint={plan.id} aside={<Badge tone={status.tone}>{status.label}</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="plan-superseded">
           {plan.summary}<Sep />
-          {plan.supersededBy ? <ReferenceText text={`Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.`} /> : "Sostituito da un piano più recente dell'obiettivo."}
+          {plan.supersededBy ? <ReferenceText text={t("chat.card.plan.supersededBy", { id: plan.supersededBy })} /> : t("chat.card.plan.superseded")}
         </p>
       </CardFrame>
     );
@@ -1750,7 +1788,7 @@ export function PlanCard({ planId }: { planId: string }) {
             <Spinner /> {status.label}
             {plan.status === "planning" ? (
               <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
-                Annulla
+                {t("chat.card.cancel")}
               </button>
             ) : null}
           </span>
@@ -1760,26 +1798,26 @@ export function PlanCard({ planId }: { planId: string }) {
       }
     >
       <p className="text-ui-sm text-muted-foreground">
-        {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"}<Sep />{plan.summary}
+        {plan.orderedBy === "coordinator" ? t("chat.card.plan.byCoordinator") : t("chat.card.plan.byYou")}<Sep />{plan.summary}
       </p>
-      {plan.failure ? <Field label="Errore">{readableFailure(t, plan.failure)}</Field> : null}
+      {plan.failure ? <Field label={t("chat.card.error")}>{readableFailure(t, plan.failure)}</Field> : null}
       {plan.spec ? <PlanSpecBody plan={plan} /> : null}
       {proposal ? (
         <>
-          <Field label="Sintesi">{proposal.summary}</Field>
-          {plan.editedAt ? <p className="text-ui-xs text-muted-foreground">Corretto da te</p> : null}
+          <Field label={t("chat.card.plan.summary")}>{proposal.summary}</Field>
+          {plan.editedAt ? <p className="text-ui-xs text-muted-foreground">{t("chat.card.plan.editedByYou")}</p> : null}
           {editing ? (
             <div className="mt-2 space-y-2">
               <label className="block text-ui-xs text-muted-foreground">
-                Passi, uno per riga
+                {t("chat.card.plan.stepsEdit")}
                 <TextArea value={editing.steps} onChange={(e) => setEditing({ ...editing, steps: e.target.value })} className="mt-1 min-h-20" />
               </label>
               <label className="block text-ui-xs text-muted-foreground">
-                Comportamento proposto
+                {t("chat.card.plan.behavior")}
                 <TextArea value={editing.behavior} onChange={(e) => setEditing({ ...editing, behavior: e.target.value })} className="mt-1 min-h-12" />
               </label>
               <label className="block text-ui-xs text-muted-foreground">
-                Esempio accettato
+                {t("chat.card.plan.example")}
                 <TextArea value={editing.example} onChange={(e) => setEditing({ ...editing, example: e.target.value })} className="mt-1 min-h-12" />
               </label>
               <div className="cta-row">
@@ -1794,25 +1832,25 @@ export function PlanCard({ planId }: { planId: string }) {
                     }).then(() => setEditing(null))
                   }
                 >
-                  Salva il piano
+                  {t("chat.card.plan.save")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                  Annulla
+                  {t("chat.card.cancel")}
                 </Button>
               </div>
             </div>
           ) : null}
-          <Field label="Passi">
+          <Field label={t("chat.card.plan.steps")}>
             <ol className="list-decimal space-y-0.5 pl-4">
               {proposal.steps.map((step) => (
                 <li key={step}>{step}</li>
               ))}
             </ol>
           </Field>
-          <Field label="Comportamento proposto">{proposal.proposedBehavior}</Field>
-          <Field label="Esempio accettato">{proposal.acceptedExample}</Field>
-          {proposal.affectedModuleIDs.length ? <Field label="Moduli">{proposal.affectedModuleIDs.map(moduleName).join(", ")}</Field> : null}
-          {proposal.requiredDecisionIDs.length ? <Field label="Decisioni da rispettare">{proposal.requiredDecisionIDs.join(", ")}</Field> : null}
+          <Field label={t("chat.card.plan.behavior")}>{proposal.proposedBehavior}</Field>
+          <Field label={t("chat.card.plan.example")}>{proposal.acceptedExample}</Field>
+          {proposal.affectedModuleIDs.length ? <Field label={t("chat.card.plan.modules")}>{proposal.affectedModuleIDs.map(moduleName).join(", ")}</Field> : null}
+          {proposal.requiredDecisionIDs.length ? <Field label={t("chat.card.plan.decisions")}>{proposal.requiredDecisionIDs.join(", ")}</Field> : null}
           {proposal.references.length ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {proposal.references.slice(0, 10).map((path) => (
@@ -1827,7 +1865,7 @@ export function PlanCard({ planId }: { planId: string }) {
               ))}
             </div>
           ) : null}
-          {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{pendingQuestions === 1 ? "Una domanda aspetta" : `${pendingQuestions} domande aspettano`} la tua risposta.</p> : null}
+          {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{t("chat.card.plan.pendingQuestions", { count: pendingQuestions })}</p> : null}
           <div className="cta-row mt-3">
             {!editing && plan.status !== "planning" ? (
               <Button
@@ -1837,7 +1875,7 @@ export function PlanCard({ planId }: { planId: string }) {
                   setEditing({ steps: proposal.steps.join("\n"), behavior: proposal.proposedBehavior, example: proposal.acceptedExample })
                 }
               >
-                Correggi il piano
+                {t("chat.card.plan.edit")}
               </Button>
             ) : null}
             <Button
@@ -1846,7 +1884,7 @@ export function PlanCard({ planId }: { planId: string }) {
               disabled={pendingQuestions > 0 || plan.status === "stale"}
               onClick={() =>
                 void act("coordinator:send", {
-                  text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,
+                  text: t("chat.card.plan.approveMessage", { id: plan.id }),
                   moduleId: null,
                   model: null,
                   effort: null,
@@ -1855,7 +1893,7 @@ export function PlanCard({ planId }: { planId: string }) {
                 })
               }
             >
-              Approva il piano e chiedi di realizzarlo
+              {t("chat.card.plan.approve")}
             </Button>
           </div>
         </>
@@ -1865,13 +1903,13 @@ export function PlanCard({ planId }: { planId: string }) {
 }
 
 const CONFLICT_LABEL = {
-  conflict: { label: "Conflitto", tone: "destructive" as const },
-  overlap: { label: "Stessi file", tone: "warning" as const },
-  clean: { label: "Nessun conflitto", tone: "success" as const },
-  unknown: { label: "Non verificato", tone: "secondary" as const },
-  hypothesis: { label: "Ipotesi", tone: "info" as const },
-  semantic: { label: "Incompatibili", tone: "destructive" as const },
-};
+  conflict: { label: "chat.card.conflict.conflict", tone: "destructive" as const },
+  overlap: { label: "chat.card.conflict.overlap", tone: "warning" as const },
+  clean: { label: "chat.card.conflict.clean", tone: "success" as const },
+  unknown: { label: "chat.card.conflict.unknown", tone: "secondary" as const },
+  hypothesis: { label: "chat.card.conflict.hypothesis", tone: "info" as const },
+  semantic: { label: "chat.card.conflict.semantic", tone: "destructive" as const },
+} satisfies Record<string, { label: MessageKey; tone: string }>;
 
 /** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
 function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
@@ -1983,7 +2021,7 @@ function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<strin
       ))}
       {files.length > shown.length ? (
         <button type="button" className="px-1 text-ui-xs text-[var(--color-text-accent)] hover:underline" onClick={() => setAll(true)}>
-          Mostra tutti i {files.length} file
+          {t("chat.card.conflict.showAll", { count: files.length })}
         </button>
       ) : null}
     </div>
@@ -1999,14 +2037,13 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const label = CONFLICT_LABEL[assessment.classification];
   const exercise = isExerciseAssessment(assessment);
   const side = conflictSide(assessment, (project.presence?.others ?? []).map((o) => o.record));
-  const title = exercise ? "Esercizio di conflitto" : conflictSideTitle(t, side);
+  const title = exercise ? t("chat.card.conflict.exerciseTitle") : conflictSideTitle(t, side);
   // The divergence of the project's branch is one notice above the chat (U02): the card only points to it.
   if (!exercise && explainedByDivergence(project.document, assessment)) {
     return (
-      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Nell'avviso del progetto</Badge>}>
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">{t("shared.settled.inProjectNotice")}</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="conflict-in-divergence">
-          Questo confronto ripeteva la divergenza tra il branch del progetto e {project.document.branchDivergence!.defaultBranch}: non dipende dal
-          candidato. Trama la segnala una volta sola, nell'avviso sopra la chat.
+          {t("chat.card.conflict.divergence", { branch: project.document.branchDivergence!.defaultBranch })}
         </p>
       </CardFrame>
     );
@@ -2030,9 +2067,9 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   if (superseded) {
     return (
-      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Sostituito</Badge>}>
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">{t("shared.settled.conflictSuperseded")}</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="conflict-superseded">
-          {worktree ? "Uno dei due candidati" : "Il candidato"} è stato sostituito da un lavoro più recente: questo conflitto non va risolto.
+          {worktree ? t("chat.card.conflict.supersededOne") : t("chat.card.conflict.supersededCandidate")}
         </p>
       </CardFrame>
     );
@@ -2043,34 +2080,34 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
       title={title}
       aside={
         <>
-          {exercise ? <Badge tone="info">Esercizio</Badge> : null}
-          {obsolete ? <Badge tone="secondary">Obsoleto</Badge> : <Badge tone={label.tone}>{label.label}</Badge>}
+          {exercise ? <Badge tone="info">{t("chat.card.conflict.exercise")}</Badge> : null}
+          {obsolete ? <Badge tone="secondary">{t("chat.card.conflict.obsolete")}</Badge> : <Badge tone={label.tone}>{t(label.label)}</Badge>}
         </>
       }
     >
       {obsolete ? (
         <p className="mb-1 text-ui-xs text-muted-foreground">
           {worktree
-            ? "Uno dei due candidati è cambiato dopo questo confronto: Trama ne farà uno nuovo."
-            : "Il candidato o il lavoro su GitHub sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
+            ? t("chat.card.conflict.obsoleteWorktree")
+            : t("chat.card.conflict.obsoleteRemote")}
         </p>
       ) : null}
       <div data-testid="conflict-card" data-classification={assessment.classification}>
         {exercise ? (
-          <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
+          <p className="mb-1 text-ui-sm text-muted-foreground">{t("chat.card.conflict.exerciseNote")}</p>
         ) : null}
         <p className="text-ui text-foreground/90">
-          Candidato{" "}
-          <RecordName id={assessment.candidateId} short />
-          {" "}e <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />
-          {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
+          {withNodes(t("chat.card.conflict.pair", { sha: worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})` }), {
+            candidate: <RecordName id={assessment.candidateId} short />,
+            references: <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />,
+          })}
         </p>
         <p className="mt-1 text-ui-sm text-muted-foreground">
           <ReferenceText text={assessment.detail} />
         </p>
         {assessment.semantic ? <SemanticFields assessment={assessment} /> : null}
         {assessment.conflictingFiles.length ? (
-          <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
+          <Field label={assessment.classification === "conflict" ? t("chat.card.conflict.files") : t("chat.card.conflict.bothChanged")}>
             <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
           </Field>
         ) : null}
@@ -2085,34 +2122,34 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
  * and "Condividi" on the right. The second proposal comes once, after a conflict the presence would have shown.
  */
 export function PresenceConsentCard({ proposal, detail }: { proposal: string; detail: string | null }) {
+  const t = useT();
   const consent = useUi((s) => s.app?.project?.document.presence ?? null);
   const pending = consent?.pending === proposal;
   const answer = proposal === "initial" || proposal === "conflict" ? consent?.answers[proposal] : undefined;
   return (
     <CardFrame
       icon={<IconUsersGroup stroke={1.8} />}
-      title="Condividere la presenza?"
+      title={t("chat.card.presence.title")}
       anchor="presence-consent"
       className={cn(!pending && "opacity-80")}
-      aside={answer ? <Badge tone={answer === "shared" ? "success" : "secondary"}>{answer === "shared" ? "Condivisa" : "Non ora"}</Badge> : null}
+      aside={answer ? <Badge tone={answer === "shared" ? "success" : "secondary"}>{answer === "shared" ? t("chat.card.presence.shared") : t("chat.card.presence.notNow")}</Badge> : null}
     >
       <div data-testid="presence-consent" data-proposal={proposal} className="space-y-1.5 text-ui text-foreground/90">
-        {detail ? <p>{detail}</p> : <p>In questo progetto lavorano anche altre persone.</p>}
+        {detail ? <p>{detail}</p> : <p>{t("chat.card.presence.others")}</p>}
         <p>
-          Se condividi la presenza, chi collabora con te vede su quale branch lavori tu e i tuoi agenti, i percorsi dei file che toccate e la
-          richiesta in corso. Così vi accorgete prima di un lavoro doppio o di un conflitto e il progetto resta coerente.
+          {t("chat.card.presence.explain")}
         </p>
         <p className="text-ui-sm text-muted-foreground">
-          Trama non condivide mai il contenuto dei file. Puoi mettere in pausa o smettere quando vuoi, da Impostazioni o da Gruppo.
+          {t("chat.card.presence.privacy")}
         </p>
       </div>
       {pending ? (
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => void act("presence:consent", { share: false, proposal: proposal as "initial" | "conflict" })}>
-            Non ora
+            {t("chat.card.presence.notNow")}
           </Button>
           <Button size="sm" onClick={() => void act("presence:consent", { share: true, proposal: proposal as "initial" | "conflict" })}>
-            Condividi
+            {t("chat.card.presence.share")}
           </Button>
         </div>
       ) : null}
@@ -2120,11 +2157,11 @@ export function PresenceConsentCard({ proposal, detail }: { proposal: string; de
   );
 }
 
-const ROUTE_STATUS: Record<RouteStatus, { label: string; tone: "info" | "success" | "secondary" }> = {
-  proposed: { label: "Proposto", tone: "info" },
-  started: { label: "Avviato", tone: "success" },
-  declined: { label: "Non avviato", tone: "secondary" },
-  superseded: { label: "Sostituito", tone: "secondary" },
+const ROUTE_STATUS: Record<RouteStatus, { label: MessageKey; tone: "info" | "success" | "secondary" }> = {
+  proposed: { label: "chat.card.route.proposed", tone: "info" },
+  started: { label: "chat.card.route.started", tone: "success" },
+  declined: { label: "chat.card.route.declined", tone: "secondary" },
+  superseded: { label: "chat.card.route.superseded", tone: "secondary" },
 };
 
 /**
@@ -2143,13 +2180,13 @@ export function RouteCard({ routeId }: { routeId: string }) {
     <CardFrame
       anchor="route"
       icon={<IconRoute stroke={1.8} />}
-      title="Percorso di Ask Trama"
+      title={t("shared.waiting.route")}
       hint={route.id}
       className={cn(route.status === "superseded" && "opacity-80")}
-      aside={<Badge tone={status.tone}>{status.label}</Badge>}
+      aside={<Badge tone={status.tone}>{t(status.label)}</Badge>}
     >
       <div data-testid="route" data-route={route.id}>
-        <Field label="La tua situazione">{route.situation}</Field>
+        <Field label={t("chat.card.route.situation")}>{route.situation}</Field>
         <Field label={routePathLabel(t, route.path)}>
           <ol className="mt-1 space-y-1">
             {route.steps.map((step, index) => (
@@ -2165,21 +2202,21 @@ export function RouteCard({ routeId }: { routeId: string }) {
             ))}
           </ol>
         </Field>
-        <Field label={`Confine di fase: ${boundaryLabel(t, route.boundary).label}`}>
+        <Field label={t("chat.card.route.boundary", { boundary: boundaryLabel(t, route.boundary).label })}>
           <span className="text-ui-sm text-muted-foreground">{boundaryLabel(t, route.boundary).detail}</span>
         </Field>
-        <Field label="Perché questo percorso">{route.reason}</Field>
+        <Field label={t("chat.card.route.reason")}>{route.reason}</Field>
         {route.status === "proposed" && !runnable ? (
-          <p className="mt-2 text-ui-sm text-muted-foreground">Nessun passo di questo percorso è ancora disponibile in Trama.</p>
+          <p className="mt-2 text-ui-sm text-muted-foreground">{t("chat.card.route.noneAvailable")}</p>
         ) : null}
       </div>
       {route.status === "proposed" ? (
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("route:answer", { routeId: route.id, start: false })}>
-            Non avviare
+            {t("chat.card.route.decline")}
           </Button>
           <Button size="sm" disabled={busy || !runnable} onClick={() => void act("route:answer", { routeId: route.id, start: true })}>
-            Avvia il percorso
+            {t("chat.card.route.start")}
           </Button>
         </div>
       ) : null}
@@ -2192,6 +2229,7 @@ export function RouteCard({ routeId }: { routeId: string }) {
  * conflicts the merge probes found. A warning, never a lock: the buttons stay where they are.
  */
 function CandidateOverlaps({ candidateId }: { candidateId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const overlaps = project.overlaps;
   const candidate = project.document.candidates.find((c) => c.id === candidateId);
@@ -2206,7 +2244,7 @@ function CandidateOverlaps({ candidateId }: { candidateId: string }) {
   });
   if (!items.length) return null;
   return (
-    <Field label={candidate.pullRequest ? "Prima di unire, i colleghi" : "Prima di pubblicare, i colleghi"}>
+    <Field label={candidate.pullRequest ? t("chat.card.overlaps.beforeMerge") : t("chat.card.overlaps.beforePublish")}>
       <div data-testid="candidate-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
         {items.map((item) => (
           <OverlapRow key={item.id} item={item} />
@@ -2228,6 +2266,7 @@ function findOverlap(project: { overlaps?: { items: OverlapItem[]; tasks: Record
  * is the one said at the time; the files, the lines and the message follow the presence as it is now.
  */
 export function OverlapCard({ overlapId, title, detail }: { overlapId: string; title: string; detail: string | null }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const item = findOverlap(project, overlapId);
   return (
@@ -2235,11 +2274,11 @@ export function OverlapCard({ overlapId, title, detail }: { overlapId: string; t
       icon={<IconUsers stroke={1.8} />}
       title={title}
       anchor="presence-overlap"
-      aside={item ? null : <Badge tone="secondary">Non più attuale</Badge>}
+      aside={item ? null : <Badge tone="secondary">{t("chat.card.overlap.stale")}</Badge>}
     >
       <div data-testid="overlap-card" data-level={item?.level ?? "gone"}>
         {detail ? <p className="text-ui text-foreground/90">{detail}</p> : null}
-        {item ? <OverlapRow item={item} /> : <p className="mt-1 text-ui-xs text-muted-foreground">La presenza dei colleghi è cambiata dopo questo avviso.</p>}
+        {item ? <OverlapRow item={item} /> : <p className="mt-1 text-ui-xs text-muted-foreground">{t("chat.card.overlap.changed")}</p>}
       </div>
     </CardFrame>
   );

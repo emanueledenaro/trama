@@ -10,6 +10,7 @@ import { compactSteps, failedSteps } from "@shared/technicalSteps";
 import { type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,6 @@ import { RequestedActionLine } from "./RequestedAction";
 import { DelegationLine } from "./Delegation";
 import { ContextRolloverCard } from "./ContextRolloverCard";
 import { Sep } from "@/components/ui/sep";
-import { useT } from "@/lib/i18n";
 
 function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> }) {
   const t = useT();
@@ -52,7 +52,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
       <div className="group flex max-w-[80%] flex-col items-end gap-px">
         {row.moduleName || row.imageCount ? (
           <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">
-            {[row.moduleName ? `Modulo ${row.moduleName}` : null, row.imageCount ? (row.imageCount === 1 ? "1 immagine" : `${row.imageCount} immagini`) : null]
+            {[row.moduleName ? t("chat.timeline.module", { name: row.moduleName }) : null, row.imageCount ? t("chat.timeline.images", { count: row.imageCount }) : null]
               .filter(Boolean)
               .join(", ")}
           </div>
@@ -68,7 +68,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
                   onClick={() => setOpenPaste(openPaste === index ? null : index)}
                   className="rounded-md bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] px-2 py-1 text-left text-ui-xs text-muted-foreground hover:text-foreground"
                 >
-                  {pasteTitle(paste) || "Testo incollato"}<Sep />{pasteSizeLabel(t, paste)}
+                  {pasteTitle(paste) || t("chat.timeline.pastedText")}<Sep />{pasteSizeLabel(t, paste)}
                 </button>
               ))}
             </div>
@@ -85,7 +85,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
           </span>
           <button
             type="button"
-            aria-label="Copia il messaggio"
+            aria-label={t("chat.timeline.copyMessage")}
             className="pointer-events-none rounded p-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 hover:text-foreground"
             onClick={() => {
               void navigator.clipboard.writeText(row.text);
@@ -93,7 +93,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
               setTimeout(() => setCopied(false), 1200);
             }}
           >
-            {copied ? "Copiato" : <IconCopy className="size-3" />}
+            {copied ? t("chat.timeline.copied") : <IconCopy className="size-3" />}
           </button>
         </div>
       </div>
@@ -106,6 +106,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
  * Activity, where the line opens them; a turn with only empty notes has no line.
  */
 function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
+  const t = useT();
   const openActivity = useUi((s) => s.openActivity);
   const steps = compactSteps(row.activities);
   if (!steps.length && !row.running) return null;
@@ -116,12 +117,12 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
       <button
         type="button"
         onClick={() => openActivity(row.id)}
-        title="Apri i passi in Attività"
+        title={t("chat.timeline.openSteps")}
         className="-ml-0.5 inline-flex max-w-full items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >
         <WorkLabel row={row} />
-        {tools ? <span className="shrink-0 text-muted-foreground/60"><Sep />{tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
-        {failed ? <span className="shrink-0 text-destructive/80"><Sep />{failed === 1 ? "1 errore" : `${failed} errori`}</span> : null}
+        {tools ? <span className="shrink-0 text-muted-foreground/60"><Sep />{t("chat.timeline.tools", { count: tools })}</span> : null}
+        {failed ? <span className="shrink-0 text-destructive/80"><Sep />{t("chat.timeline.errors", { count: failed })}</span> : null}
         <IconChevronRight className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
       </button>
       <div className="h-px w-full bg-border" />
@@ -159,6 +160,7 @@ function NextStepRow({ step, requestId }: { step: NextStepView; requestId: strin
 }
 
 function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; latest: boolean }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const [copied, setCopied] = useState(false);
   const request = row.request;
@@ -166,7 +168,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
   if (row.streaming && !row.text) {
     return (
       <div className="py-1 text-chat">
-        <span className="shimmer-text">Il Coordinatore sta scrivendo…</span>
+        <span className="shimmer-text">{t("chat.timeline.coordinatorWriting")}</span>
       </div>
     );
   }
@@ -175,7 +177,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
       <ChatMarkdown text={row.text ?? ""} />
       {row.references.length ? (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-ui-xs text-muted-foreground/60">Fonti</span>
+          <span className="text-ui-xs text-muted-foreground/60">{t("chat.timeline.sources")}</span>
           {row.references.slice(0, 8).map((path) => (
             <button
               key={path}
@@ -192,19 +194,19 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
       {latest && !row.streaming && request?.state === "completed" && nextStep ? <NextStepRow step={nextStep} requestId={request.id} /> : null}
       {!row.streaming ? (
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
-          {row.model ? <span>Coordinatore<Sep />{row.model}</span> : null}
+          {row.model ? <span>{t("chat.timeline.coordinator")}<Sep />{row.model}</span> : null}
           {request?.completedAt ? <span>{formatTime(request.completedAt)}</span> : null}
           <button
             type="button"
             className="rounded p-0.5 hover:text-foreground"
-            aria-label="Copia la risposta"
+            aria-label={t("chat.timeline.copyReply")}
             onClick={() => {
               void navigator.clipboard.writeText(row.text ?? "");
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             }}
           >
-            {copied ? "Copiato" : <IconCopy className="size-3" />}
+            {copied ? t("chat.timeline.copied") : <IconCopy className="size-3" />}
           </button>
         </div>
       ) : null}
@@ -241,12 +243,12 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
       <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-3.5 py-3">
         <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
         <div className="min-w-0 flex-1">
-          <div className="text-ui font-medium text-foreground">Turno interrotto</div>
+          <div className="text-ui font-medium text-foreground">{t("chat.timeline.interrupted")}</div>
           {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
         </div>
         {/* Riprendi starts the turn again: icon and text (issue #338). */}
         <Button size="xs" variant="outline" className="shrink-0" onClick={retry}>
-          <IconPlayerPlay /> {t("chat.buttons.resumeTurn")}
+          <IconPlayerPlay /> {t("chat.timeline.resume")}
         </Button>
       </div>
     );
@@ -272,7 +274,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
       case "signIn":
         if (!row.provider || row.provider === "codex") return void act("codex:login", undefined);
         return void act("provider:login", { provider: row.provider }).then((result) =>
-          setHint(result?.command ? `Esegui ${result.command} nel terminale, poi premi Controlla di nuovo.` : null),
+          setHint(result?.command ? t("chat.timeline.signInHint", { command: result.command }) : null),
         );
       case "checkAgain":
         return void act("providers:refresh", row.provider ? { provider: row.provider } : {});
@@ -300,7 +302,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{failure.explanation}</p>
           {failure.providerMessage ? (
             <p className="mt-1 text-ui-sm break-words text-muted-foreground/80">
-              {descriptor ? `${descriptor.name} dice` : "Il provider dice"}: {failure.providerMessage}
+              {descriptor ? t("chat.timeline.providerSays", { name: descriptor.name }) : t("chat.timeline.unknownProviderSays")}: {failure.providerMessage}
             </p>
           ) : null}
           {waiting && seconds !== null ? (
@@ -316,7 +318,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
               onClick={() => setTechnical(!technical)}
               className="mt-1.5 inline-flex items-center gap-1 text-ui-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              Dettagli tecnici <DisclosureChevron open={technical} />
+              {t("chat.timeline.technicalDetails")} <DisclosureChevron open={technical} />
             </button>
           ) : null}
           {technical && failure.technical ? (
@@ -330,10 +332,10 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
         {waiting ? (
           <>
             <Button size="xs" variant="outline" onClick={() => void act("coordinator:stopRetry", undefined)}>
-              {waiting.reason === "quotaExhausted" ? "Smetti di aspettare" : "Ferma i tentativi"}
+              {waiting.reason === "quotaExhausted" ? t("chat.timeline.stopWaiting") : t("chat.timeline.stopRetrying")}
             </Button>
             <Button size="xs" onClick={retry}>
-              Riprova ora
+              {t("chat.timeline.retryNow")}
             </Button>
           </>
         ) : (

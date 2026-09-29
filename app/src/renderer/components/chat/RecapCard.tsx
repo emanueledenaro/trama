@@ -76,7 +76,7 @@ function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
             <IconHourglass className="mt-0.5 size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
             {text}
           </span>
-          <Badge tone="secondary">Non aspetta più</Badge>
+          <Badge tone="secondary">{t("chat.recap.notWaiting")}</Badge>
         </div>
       )}
     </li>
@@ -90,7 +90,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
   if (!recap) {
     return (
       <CardFrame icon={<IconListDetails stroke={1.8} />} title={title}>
-        <p className="text-ui text-muted-foreground">Questo riepilogo non è più conservato. Le mosse restano in Attività.</p>
+        <p className="text-ui text-muted-foreground">{t("chat.recap.gone")}</p>
       </CardFrame>
     );
   }
@@ -104,7 +104,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
     >
       <div data-testid="recap-card" data-reason={recap.reason}>
         {recap.milestones.length ? (
-          <Field label={recap.milestones.length === 1 ? "Traguardo" : "Traguardi"}>
+          <Field label={t("chat.recap.milestones", { count: recap.milestones.length })}>
             <ul className="list-disc space-y-0.5 pl-4" data-testid="recap-milestones">
               {recap.milestones.map((text) => (
                 <li key={text} className="break-words">
@@ -114,7 +114,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </ul>
           </Field>
         ) : null}
-        <Field label="Cosa ho fatto">
+        <Field label={t("chat.recap.done")}>
           {recap.done.length ? (
             <ul className="list-disc space-y-0.5 pl-4" data-testid="recap-done">
               {recap.done.map((fact, index) => (
@@ -123,7 +123,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </ul>
           ) : (
             <p className="text-muted-foreground" data-testid="recap-done">
-              Niente di nuovo dall'ultimo riepilogo.
+              {t("chat.recap.nothingNew")}
             </p>
           )}
         </Field>
@@ -132,12 +132,12 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             <DelegatedChoices choices={recap.delegated} />
           </Field>
         ) : null}
-        <Field label="Cosa faccio">
+        <Field label={t("chat.recap.doing")}>
           <p data-testid="recap-doing">
             <ReferenceText text={recap.doing} />
           </p>
         </Field>
-        <Field label="Cosa mi serve da te">
+        <Field label={t("chat.recap.needs")}>
           {recap.needs.length ? (
             <ul className="divide-y divide-[color:var(--app-surface-divider)]" data-testid="recap-needs">
               {recap.needs.map((need) => (
@@ -146,7 +146,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </ul>
           ) : (
             <p className="text-muted-foreground" data-testid="recap-needs">
-              Niente: per ora vado avanti da solo.
+              {t("chat.recap.noNeeds")}
             </p>
           )}
         </Field>
