@@ -354,6 +354,10 @@ import {
   usesCodeReview,
   GateSettlementError,
   settleGate,
+  applyOverruled,
+  decidedLines,
+  overruledFor,
+  rememberOverruled,
 } from "./core/gate";
 import { blockingFindings, gateStatus, latestGate } from "@shared/gate";
 import { fixedBanInfo } from "@shared/fixedBans";
@@ -2340,6 +2344,7 @@ export class TramaController {
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
           settleReview: (candidateId, input) => this.settleReview(current, candidateId, input),
+          findingOverruled: (candidateId, outcome) => this.findingOverruled(current, candidateId, outcome),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           waitingFor: (candidateId) => {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
@@ -6256,7 +6261,17 @@ export class TramaController {
         const spec = auditSpec(document, assignment, project.github.issues);
         beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
         this.changedIn(project);
-        const input = { projectName: project.name, gate, candidate, assignment, spec, language: this.state.language };
+        // The Pact in force is the person's rules, and the findings overruled on this work are already decided.
+        const input = {
+          projectName: project.name,
+          gate,
+          candidate,
+          assignment,
+          spec,
+          decisions: document.decisions,
+          decided: overruledFor(document, assignment.id),
+          language: this.state.language,
+        };
         const skill = await this.nativeSkill("code-review");
         const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
           this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
@@ -6271,7 +6286,11 @@ export class TramaController {
         );
         await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
       }
-      if (!blocked.length) closeGate(gate);
+      if (!blocked.length) {
+        // A finding the Coordinator already overruled on this work does not stop it again (ADR 0023).
+        applyOverruled(document, gate);
+        closeGate(gate);
+      }
     } catch (error) {
       failGate(gate, (error as Error).message);
     } finally {
@@ -6351,6 +6370,7 @@ export class TramaController {
         `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
         `Decisioni del Patto da rispettare:\n${decisions}`,
         reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
+        decidedLines(overruledFor(document, assignment.id).filter((d) => d.role === "cleanCode")),
         `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
         "Rispondi con verdict approved oppure changesRequested, un riassunto breve e i findings (un elenco vuoto se non ne hai).",
       ]
@@ -6491,7 +6511,7 @@ export class TramaController {
   private settleReview(
     project: ActiveProjectState,
     candidateId: string,
-    input: { side: "findings" | "developer"; reason: string; doubt: string | null },
+    input: { side: "findings" | "developer"; reason: string; doubt: string | null; decisionIds?: string[] },
   ): { waiting: string | null } {
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
@@ -6499,6 +6519,11 @@ export class TramaController {
     if (!candidate || !gate) throw new GateSettlementError("not_blocked", `The candidate ${candidateId} has no gate to settle.`);
     settleGate(gate, candidate, input);
     const settled = gate.settled!;
+    // With the developer the findings are remembered for the work: the next rounds do not block on them again.
+    if (input.side === "developer") {
+      const decisionIds = (input.decisionIds ?? []).filter((id) => document.decisions.some((d) => d.id === id));
+      rememberOverruled(document, gate, { reason: settled.reason, decisionIds });
+    }
     let waiting: string | null = null;
     if (input.side === "findings") {
       // The findings go back once more, now as the Coordinator's decision; the count of rounds starts again from here.
@@ -6530,6 +6555,21 @@ export class TramaController {
     }
     this.changedIn(project);
     return { waiting };
+  }
+
+  /** The Coordinator overruled a reviewer's finding with the Pact (overrule_finding): told in Activity and, with the delegation, in the recap. */
+  private findingOverruled(
+    project: ActiveProjectState,
+    candidateId: string,
+    outcome: { role: GateRole; title: string; reason: string; decisionIds: string[]; gatePassed: boolean },
+  ): void {
+    const document = project.document;
+    const reviewer = document.team.specialists.find((s) => s.role === outcome.role && s.status !== "removed")?.name ?? roleProfile(this.t, outcome.role).name;
+    const title = t("main.gate.overruledTitle", { reviewer, candidate: candidateId });
+    const choice = t("main.gate.overruledDetail", { finding: outcome.title, reason: outcome.reason, decisions: outcome.decisionIds.join(", ") });
+    appendEvent(document, "trama", { type: "activity", title, detail: choice, tone: "info" }, null);
+    if (activeDelegation(document)) recordChoice(document, { kind: "doubt", subject: title, choice, targetId: candidateId, doubt: null });
+    this.changedIn(project);
   }
 
   /**

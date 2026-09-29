@@ -1149,6 +1149,8 @@ export const mainIt = {
     "Le verifiche {checks} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.",
   "main.gate.overruled": "Il Coordinatore ha superato i rilievi dei revisori: {reason}",
   "main.gate.settledTitle": "Il Coordinatore ha deciso fra {developer} e i revisori sul candidato {candidate}",
+  "main.gate.overruledTitle": "Il Coordinatore ha superato un rilievo di {reviewer} sul candidato {candidate}",
+  "main.gate.overruledDetail": "Rilievo superato: {finding}. Motivo: {reason}. Decisioni del Patto: {decisions}.",
   "main.gate.settledFindings": "Hanno ragione i revisori: {reason}",
   "main.gate.settledDeveloper": "Ha ragione lo sviluppatore: {reason}",
   "main.gate.settledDoubt": "Dubbio: {doubt}",

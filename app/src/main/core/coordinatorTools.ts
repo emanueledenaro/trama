@@ -24,12 +24,13 @@ import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
 import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
-import type { GitHubState, MergeRoute } from "@shared/domain";
+import type { GateRole, GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { decideDiscussion, DiscussionError, escalateDiscussion, openDiscussion, requireDiscussion } from "./discussions";
 import { type Discussion, discussions } from "@shared/discussions";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { GateSettlementError } from "./gate";
+import { GateSettlementError, overruleFinding } from "./gate";
+import { GATE_ROLES } from "@shared/gate";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
@@ -619,9 +620,17 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "settle_review",
     description:
-      "Settle a disagreement between a developer and the candidate reviewers when the gate stopped the same work again (the work phase says so): you decide, never the person, and no identical round starts. Read with read_team the blocking findings and the developer's answer first, and weigh them against the Pact, the mandate, the project's rules and what the person wrote. side findings: the reviewers are right, the developer resumes in the same worktree with the findings as your decision. side developer: the findings are overruled, the gate passes and you take the candidate to the merge with clear_candidate. Trama's own evidence (a failed check, a regression the guardian measured, a secret in the diff) cannot be overruled. reason says why in the person's words; doubt what you are not sure about, or omit it. The choice is recorded in Activity and in the recap.",
-    properties: { candidate: text, side: { type: "string", enum: ["findings", "developer"] }, reason: text, doubt: text },
+      "Settle a disagreement between a developer and the candidate reviewers when the gate stopped the same work again (the work phase says so): you decide, never the person, and no identical round starts. Read with read_team the blocking findings and the developer's answer first, and weigh them against the Pact, the mandate, the project's rules and what the person wrote. side findings: the reviewers are right, the developer resumes in the same worktree with the findings as your decision. side developer: the findings are overruled and remembered for this work, so they do not block the next rounds; the gate passes and you take the candidate to the merge with clear_candidate. decisionIDs names the Pact decisions the findings go against, when they do. Trama's own evidence (a failed check, a regression the guardian measured, a secret in the diff) cannot be overruled. reason says why in the person's words; doubt what you are not sure about, or omit it. The choice is recorded in Activity and in the recap.",
+    properties: { candidate: text, side: { type: "string", enum: ["findings", "developer"] }, reason: text, doubt: text, decisionIDs: list(0) },
     required: ["candidate", "side", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "overrule_finding",
+    description:
+      "Overrule one blocking finding of a candidate's blocked gate that goes against the Pact, as a spec reviewer asking to remove the business data the person decided to keep: role is the figure (read_team lists the gate's findings), title the finding's title as the gate reports it, reason why it is wrong in the person's words, decisionIDs the Pact decisions it goes against (at least one). Trama makes the finding advisory and remembers it for this work: the same figure's finding on the same file, or with the same title, does not block the next rounds, and the reviewers read it as already decided. When no blocking finding is left the gate passes and you give the green light with clear_candidate. Trama's own evidence (a red check, a regression, a secret in the diff) cannot be overruled. Recorded in Activity.",
+    properties: { candidate: text, role: { type: "string", enum: GATE_ROLES }, title: text, reason: text, decisionIDs: list(1) },
+    required: ["candidate", "role", "title", "reason", "decisionIDs"],
     readOnly: false,
   },
   {
@@ -865,7 +874,9 @@ export interface ToolContext {
    * The Coordinator settles the disagreement on the candidate's blocked gate (ADR 0023). Returns why the developer has not
    * resumed yet with the findings, or null.
    */
-  settleReview?(candidateId: string, input: { side: "findings" | "developer"; reason: string; doubt: string | null }): { waiting: string | null };
+  settleReview?(candidateId: string, input: { side: "findings" | "developer"; reason: string; doubt: string | null; decisionIds?: string[] }): { waiting: string | null };
+  /** The Coordinator overruled one of a candidate's findings (overrule_finding): Trama tells it in Activity and, with the delegation, in the recap. */
+  findingOverruled?(candidateId: string, outcome: { role: GateRole; title: string; reason: string; decisionIds: string[]; gatePassed: boolean }): void;
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
   /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
@@ -2045,6 +2056,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             side,
             reason: typeof args.reason === "string" ? args.reason : "",
             doubt: typeof args.doubt === "string" ? args.doubt : null,
+            decisionIds: strings(args.decisionIDs),
           });
           context.changed();
           const next =
@@ -2054,6 +2066,31 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                 ? "The developer has not resumed yet: " + settled.waiting
                 : "The developer resumed with the findings as your decision.";
           return toolSuccess({ candidateID: found.candidate.id, side, next });
+        } catch (error) {
+          if (error instanceof GateSettlementError) return toolFailure(error.code, error.message);
+          throw error;
+        }
+      }
+      case "overrule_finding": {
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const role = GATE_ROLES.find((r) => r === args.role);
+        if (!role) return toolFailure("invalid_arguments", `role is one of: ${GATE_ROLES.join(", ")}.`);
+        const title = typeof args.title === "string" ? args.title : "";
+        const reason = typeof args.reason === "string" ? args.reason : "";
+        const decisionIds = strings(args.decisionIDs);
+        try {
+          const outcome = overruleFinding(document, found.candidate, { role, title, reason, decisionIds });
+          context.findingOverruled?.(found.candidate.id, { role, title, reason, decisionIds, gatePassed: outcome.gatePassed });
+          context.changed();
+          return toolSuccess({
+            candidateID: found.candidate.id,
+            remainingBlocking: outcome.remaining,
+            gatePassed: outcome.gatePassed,
+            next: outcome.gatePassed
+              ? "No blocking finding is left and the gate passed: give the green light with clear_candidate."
+              : "Other blocking findings remain: overrule the ones that go against the Pact, or settle the rest with settle_review.",
+          });
         } catch (error) {
           if (error instanceof GateSettlementError) return toolFailure(error.code, error.message);
           throw error;

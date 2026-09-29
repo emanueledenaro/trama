@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { Candidate, CoordinatorRequest, ProjectDocument, SpecialistAssignment } from "@shared/domain";
+import type { Candidate, CoordinatorRequest, GateFinding, GateRole, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { candidateSuperseded } from "@shared/conflictScope";
-import { GATE_ROLES } from "@shared/gate";
-import { declareCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
+import { GATE_ROLES, latestGate } from "@shared/gate";
+import { declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
 import { automaticMoveSection } from "./continuousWork";
 import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
-import { beginReviews, closeGate, finishReview, openGate } from "./gate";
+import {
+  applyOverruled,
+  beginReviews,
+  closeGate,
+  finishReview,
+  GateSettlementError,
+  openGate,
+  overruleFinding,
+  PACT_RULE,
+  rememberOverruled,
+  reviewerTurn,
+  settleGate,
+} from "./gate";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
 import { assign, confirmTeam, endTurn, findSpecialist, proposeTeam, recordWorkspace, requestStop } from "./team";
@@ -297,5 +309,119 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     };
     const merge = await runCoordinatorTool("commit_merge", { assignment: marco.id }, tools);
     expect(merge.content[0]!.text).toContain("not_in_mandate");
+  });
+});
+
+/** A gate on `candidate` whose figures answer with `findings`, not closed yet. */
+function gateWith(document: ProjectDocument, candidate: Candidate, findings: [GateRole, GateFinding][], minute: number) {
+  const gate = openGate(document, candidate, at(minute));
+  beginReviews(gate, { spec: true, model: "mini", cleanCodeModel: "gpt-5.5" }, at(minute));
+  for (const role of GATE_ROLES) finishReview(gate, role, { report: "", findings: findings.filter(([r]) => r === role).map(([, f]) => ({ ...f })) }, at(minute));
+  return gate;
+}
+
+/** A new candidate of the same work, as after the developer's next turn. */
+function nextCandidate(document: ProjectDocument, assignment: SpecialistAssignment, minute: number): Candidate {
+  const candidate = declareCandidate(
+    document,
+    { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+    { snapshotId: `snap-${minute}`, baseSHA: "f1197f9", diff: "+docs", changedFiles: ["src/app/page.tsx"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    at(minute),
+  );
+  recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: candidate.snapshotId }, at(minute));
+  return candidate;
+}
+
+const businessData: GateFinding = { severity: "blocking", title: "Dati aziendali in config.json", detail: "Via dal repository", file: "src/config/config.json" };
+
+describe("the reviewers read the Pact as rules and the findings the Coordinator overruled", () => {
+  it("gives every reviewer the Pact decisions in force as rules: a finding against one is not blocking", () => {
+    const document = shop();
+    const marco = realignment(document);
+    const candidate = blockedCandidate(document, marco, 2);
+    const gate = latestGate(document.gates, candidate.id)!;
+    const decision = document.decisions[0]!;
+    for (const role of ["specReviewer", "security", "ux"] as const) {
+      const turn = reviewerTurn({ projectName: "negozio", gate, candidate, assignment: marco, spec: null, decisions: document.decisions }, role, null, true);
+      expect(turn.prompt).toContain(`${decision.id} v${decision.version}: ${decision.value}`);
+      expect(turn.instructions).toContain(PACT_RULE);
+    }
+  });
+
+  it("remembers a finding overruled with a Pact decision, so the same work is not blocked by it again", () => {
+    const document = shop();
+    const marco = realignment(document);
+    const first = blockedCandidate(document, marco, 2);
+    const decision = document.decisions[0]!;
+    const gate = latestGate(document.gates, first.id)!;
+    const outcome = overruleFinding(document, first, { role: "specReviewer", title: "dati aziendali in config.json", reason: "Il Patto vuole i dati aziendali nel sito", decisionIds: [decision.id] }, at(3));
+    expect(outcome).toEqual({ remaining: 0, gatePassed: true });
+    expect(gate.status).toBe("passed");
+    expect(first.technicalReview).toMatchObject({ verdict: "approved" });
+    expect(inspectCandidate(document, first, "f1197f9").map((b) => b.code)).toEqual([]);
+    expect(document.overruledFindings).toEqual([
+      expect.objectContaining({ role: "specReviewer", title: "Dati aziendali in config.json", file: "src/config/config.json", decisionIds: [decision.id], assignmentIds: [marco.id] }),
+    ]);
+
+    // The next round the spec reviewer says it again, in other words and with a line: it does not block any more.
+    const second = nextCandidate(document, marco, 4);
+    const again = gateWith(document, second, [["specReviewer", { ...businessData, title: "Sensitive data still committed", file: "src/config/config.json:12" }]], 4);
+    applyOverruled(document, again);
+    closeGate(again, at(4));
+    expect(again.status).toBe("passed");
+    expect(again.reviews.find((r) => r.role === "specReviewer")!.findings[0]).toMatchObject({ severity: "advisory", overruled: { reason: "Il Patto vuole i dati aziendali nel sito" } });
+    // Reviewers read it as already decided.
+    const turn = reviewerTurn({ projectName: "negozio", gate: again, candidate: second, assignment: marco, spec: null, decided: document.overruledFindings }, "specReviewer", null, true);
+    expect(turn.prompt).toContain("Il Patto vuole i dati aziendali nel sito");
+
+    // Another figure, or another file, still blocks.
+    const third = nextCandidate(document, marco, 5);
+    const other = gateWith(document, third, [["ux", businessData], ["specReviewer", { ...businessData, file: "src/app/page.tsx" }]], 5);
+    applyOverruled(document, other);
+    closeGate(other, at(5));
+    expect(other.status).toBe("blocked");
+    expect(other.reviews.flatMap((r) => r.findings).filter((f) => f.severity === "blocking")).toHaveLength(2);
+  });
+
+  it("remembers the findings of a gate the Coordinator settled with the developer", () => {
+    const document = shop();
+    const marco = realignment(document);
+    const first = blockedCandidate(document, marco, 2);
+    const gate = latestGate(document.gates, first.id)!;
+    rememberOverruled(document, gate, { reason: "Il Patto vuole i dati aziendali nel sito", decisionIds: [] }, at(3));
+    settleGate(gate, first, { side: "developer", reason: "Il Patto vuole i dati aziendali nel sito" }, at(3));
+    const second = nextCandidate(document, marco, 4);
+    const again = gateWith(document, second, [["specReviewer", businessData]], 4);
+    applyOverruled(document, again);
+    closeGate(again, at(4));
+    expect(again.status).toBe("passed");
+  });
+
+  it("never overrules Trama's own evidence, a finding it does not know, or without a Pact decision", () => {
+    const document = shop();
+    const marco = realignment(document);
+    const candidate = blockedCandidate(document, marco, 2);
+    const decision = document.decisions[0]!.id;
+    const input = { reason: "No", decisionIds: [decision] };
+    expect(() => overruleFinding(document, candidate, { ...input, role: "regressionGuardian", title: "Regressione" }, at(3))).toThrow(GateSettlementError);
+    expect(() => overruleFinding(document, candidate, { ...input, role: "specReviewer", title: "Un altro rilievo" }, at(3))).toThrow(/no blocking finding/);
+    expect(() => overruleFinding(document, candidate, { ...input, role: "specReviewer", title: "Dati aziendali in config.json", decisionIds: [] }, at(3))).toThrow(/Pact decision/);
+    expect(() => overruleFinding(document, candidate, { ...input, role: "specReviewer", title: "Dati aziendali in config.json", decisionIds: ["D-NESSUNA"] }, at(3))).toThrow(/Pact decision/);
+    expect(document.overruledFindings ?? []).toEqual([]);
+    expect(latestGate(document.gates, candidate.id)!.status).toBe("blocked");
+  });
+
+  it("lets the Coordinator overrule one finding with overrule_finding and keeps the gate blocked by the others", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    endTurn(document, marco.id, null, { kind: "completed", text: "Fatto" }, at(2));
+    const candidate = nextCandidate(document, marco, 2);
+    const gate = gateWith(document, candidate, [["specReviewer", businessData], ["cleanCode", { severity: "blocking", title: "Funzione duplicata", detail: "Due helper", file: "src/app/url.ts:3" }]], 2);
+    closeGate(gate, at(2));
+    const { context: tools } = context(document);
+    const decision = document.decisions[0]!.id;
+    const result = parse(await runCoordinatorTool("overrule_finding", { candidate: candidate.id, role: "specReviewer", title: businessData.title, reason: "Il Patto vuole i dati nel sito", decisionIDs: [decision] }, tools));
+    expect(result).toMatchObject({ candidateID: candidate.id, remainingBlocking: 1, gatePassed: false });
+    expect(gate.status).toBe("blocked");
   });
 });
