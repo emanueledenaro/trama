@@ -35,18 +35,19 @@ const isStrictDescendant = (path: string, root: string) => path !== root && !rel
 /**
  * Creates an isolated worktree on a new branch without touching the source checkout. The branch follows Conventional
  * Branch or the project's own prefixes, `<prefix>/[issue-<n>-]<label>-trama-<id>` (Q01): Trama validates the name before
- * creating it and never takes the name of a local or remote branch.
+ * creating it and never takes the name of a local or remote branch. It starts from `baseSHA` when given, as the copy on
+ * the remote that a lagging checkout has not caught up with, from the checkout's head otherwise.
  */
 export async function prepareWorktree(
   repository: string,
   name: string,
   worktreesRoot: string,
-  naming: { prefix: string; issue?: number | null; conventions?: CommitConventions } = { prefix: "feature" },
+  naming: { prefix: string; issue?: number | null; conventions?: CommitConventions; baseSHA?: string | null } = { prefix: "feature" },
 ): Promise<WorktreeSession> {
   const label = slug(name);
   if (!label) throw new Error(t("main.workspace.invalidName"));
   const sourceRoot = (await git(["rev-parse", "--show-toplevel"], repository)).trim();
-  const baseSHA = (await git(["rev-parse", "HEAD"], sourceRoot)).trim();
+  const baseSHA = (await git(["rev-parse", "--verify", `${naming.baseSHA ?? "HEAD"}^{commit}`], sourceRoot)).trim();
   if (!/^[0-9a-f]{40,64}$/.test(baseSHA)) throw new Error(t("main.workspace.headNotCommit"));
   await mkdir(worktreesRoot, { recursive: true });
   const managedRoot = await realpath(worktreesRoot);

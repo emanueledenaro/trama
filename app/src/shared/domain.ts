@@ -90,8 +90,15 @@ export interface SemanticHypothesis {
 export interface BranchDivergence {
   /** The branch checked out in the project; null on a detached head. */
   branch: string | null;
+  /** The other side: the default branch on GitHub, or the branch's own copy on GitHub when the checkout went another way. */
   defaultBranch: string;
+  /** The head of the project's branch Trama compared: the checkout's, or the copy on GitHub when the checkout lags it. */
   headSHA: string;
+  /**
+   * The checkout's head when Trama compared the branch as it is on GitHub because the checkout lagged it; absent when it
+   * compared the checkout. The notice holds while the checkout stays at this head.
+   */
+  checkoutSHA?: string;
   remoteSHA: string;
   /** Commits only in the project's branch. */
   ahead: number;
@@ -1446,7 +1453,8 @@ export interface CandidateMerge {
   fingerprint: string;
   /**
    * "waiting": the pull request's checks are still running, and Trama tries again. "failed": GitHub refused it, and Trama
-   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person.
+   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person; or GitHub found
+   * conflicts with the base (`baseConflict`), and the Coordinator realigns the candidate's branch.
    */
   status: "running" | "waiting" | "merged" | "failed" | "stopped";
   /** Why it waits, failed or stopped, in the person's words; null otherwise. */
@@ -1458,6 +1466,11 @@ export interface CandidateMerge {
   mandateVersion?: number | null;
   /** A serious destructive change the Coordinator does not merge (issue #41): it waits for the person. */
   stop?: MergeStop | null;
+  /**
+   * True when the merge stopped because GitHub finds conflicts between the pull request, still at the head Trama pushed,
+   * and its base: the Coordinator realigns the candidate's branch and publishes it again, the person has nothing to merge.
+   */
+  baseConflict?: boolean;
 }
 
 /** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */

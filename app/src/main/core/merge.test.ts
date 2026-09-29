@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { CandidateGate } from "@shared/domain";
 import { approveCandidate, candidateReport, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
-import { declineDestructiveMerge, deletedFiles, destructiveChange, mergeActivity, mergeBan, MERGE_RETRY_MS, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./merge";
+import { declineDestructiveMerge, deletedFiles, destructiveChange, mergeActivity, mergeBan, MERGE_RETRY_MS, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestConflicted, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge, stopOnDrift } from "./merge";
 import { decide, grantMandate, revokeMandate } from "./pact";
 import { restrictMandate } from "./projectMandate";
 import { setPersonLanguage } from "./personLanguage";
@@ -268,5 +268,26 @@ describe("merge by mandate without faking the human review (issue #41)", () => {
     expect(pullRequestDrift("abc", status)).toBeNull();
     expect(pullRequestDrift("abc", { ...status, headSHA: "def" })).toMatch(/altro lavoro/);
     expect(pullRequestDrift("abc", { ...status, headSHA: "abc", mergeable: false })).toMatch(/conflitti/);
+  });
+
+  it("keeps a stop on conflicts with the base apart, so the next move is the Coordinator's realignment (negozio, pull request #25)", () => {
+    const s = setup(["NOTE.md"]);
+    s.candidate.pullRequest = { url: "https://github.com/emanueledenaro/negozio/pull/25", number: 25, branch: "chore/issue-24-trama-c4e84cfe", headSHA: "ddcdddb", at: "2026-09-29T16:17:50.531Z" };
+    const status = { number: 25, state: "OPEN" as const, mergedAt: null, checks: "success" as const, headSHA: "ddcdddb" };
+    expect(stopOnDrift(s.document, s.candidate, "person", "ddcdddb", { ...status, mergeable: true })).toBeNull();
+    expect(s.candidate.merge ?? null).toBeNull();
+    expect(stopOnDrift(s.document, s.candidate, "person", "ddcdddb", { ...status, mergeable: false })).toBe("GitHub trova conflitti tra la pull request #25 e la base.");
+    expect(s.candidate.merge).toMatchObject({ status: "stopped", baseConflict: true, detail: "GitHub trova conflitti tra la pull request #25 e la base." });
+    expect(pullRequestConflicted(s.candidate)).toBe(true);
+    // Another push on the pull request's branch is not a conflict with the base.
+    expect(stopOnDrift(s.document, s.candidate, "person", "ddcdddb", { ...status, headSHA: "eeeeeee", mergeable: false })).toMatch(/altro lavoro/);
+    expect(s.candidate.merge?.baseConflict).toBeUndefined();
+    expect(pullRequestConflicted(s.candidate)).toBe(false);
+    // A stop recorded before the cause was kept apart is read from its words, in either language.
+    s.candidate.merge = { ...s.candidate.merge!, detail: "GitHub finds conflicts between pull request #25 and the base." };
+    expect(pullRequestConflicted(s.candidate)).toBe(true);
+    // A merged pull request has nothing left to realign.
+    s.candidate.pullRequest.mergedAt = "2026-09-29T17:00:00Z";
+    expect(pullRequestConflicted(s.candidate)).toBe(false);
   });
 });

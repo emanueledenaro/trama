@@ -33,18 +33,7 @@ import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./chec
 import { GateSettlementError, overruleFinding } from "./gate";
 import { GATE_ROLES } from "@shared/gate";
 import { replacedBy, retiredWork } from "@shared/conflictScope";
-import {
-  candidateReport,
-  CandidateError,
-  clearCandidate,
-  declareCandidate,
-  findCandidate,
-  latestCandidate,
-  openCorrections,
-  rebindTramaCandidate,
-  supersedeCandidate,
-  unchangedCandidate,
-} from "./candidates";
+import { CandidateError, candidateReport, clearCandidate, declareCandidate, findCandidate, type IntegrationHeads, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate, unchangedCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
@@ -918,7 +907,8 @@ export interface ToolContext {
   candidateCleared?(candidateId: string): void;
   /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
   waitingFor?(candidateId: string): { label: string; title: string } | null;
-  headSHA(): Promise<string | null>;
+  /** The heads a candidate may be built on now: the checkout's head and the commits of the remote's copy it lags by. */
+  headSHA(): Promise<IntegrationHeads>;
   /**
    * Runs an action the person asked for (issue #422), recorded as ready to run, and returns it with its outcome; absent
    * where Trama runs none. The project's main branches and the branch checked out decide which ban a command meets.

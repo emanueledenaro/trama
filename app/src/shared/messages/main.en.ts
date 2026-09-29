@@ -744,6 +744,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "{work} has an external effect that Trama cannot check.",
   "main.workPhase.whyRemoteConflict":
     "{work} conflicts with the main branch on GitHub: they need to be realigned.",
+  "main.workPhase.whyPullRequestConflict":
+    "The pull request of {work} conflicts with its base on GitHub: it needs realigning and publishing again.",
   "main.workPhase.whyWorktreeConflict":
     "{work} touches the same files as other work in progress.",
   "main.workPhase.whySemanticConflict":
@@ -777,6 +779,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} has an external effect that Trama does not check: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Candidate {id} conflicts with the work on GitHub: {detail}",
+  "main.workPhase.blockerPullRequestConflict":
+    "GitHub finds conflicts between pull request #{number} of candidate {id} and its base: the merge is stopped and is not the person's to do. Realign the candidate's branch with the base in the same working copy: a correction to the same developer (replaces) that merges the updated base and resolves the conflicts. Then the new candidate goes through checks and reviewers and Trama publishes it again on the same pull request.",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
   "main.workPhase.blockerDisputed": "After the findings on candidate {candidate}, the developer of assignment {assignment} ended without changing the working copy: they disagree with the reviewers. Another round of the reviewers on the same content would give the same findings: decide now with settle_review, or overrule with overrule_finding the findings that go against the Pact. Do not declare the candidate again and do not assign the same work again.",

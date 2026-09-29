@@ -775,6 +775,8 @@ export const mainIt = {
     "Il {work} ha un effetto esterno che Trama non sa verificare.",
   "main.workPhase.whyRemoteConflict":
     "Il {work} è in conflitto con il branch principale su GitHub: vanno riallineati.",
+  "main.workPhase.whyPullRequestConflict":
+    "La pull request del {work} è in conflitto con la sua base su GitHub: va riallineata e pubblicata di nuovo.",
   "main.workPhase.whyWorktreeConflict":
     "Il {work} tocca gli stessi file di un altro lavoro in corso.",
   "main.workPhase.whySemanticConflict":
@@ -808,6 +810,8 @@ export const mainIt = {
     "Il candidato {id} ha un effetto esterno che Trama non verifica: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
+  "main.workPhase.blockerPullRequestConflict":
+    "GitHub trova conflitti tra la pull request #{number} del candidato {id} e la sua base: l'unione è ferma e non tocca alla persona. Riallinea il branch del candidato con la base nella stessa copia di lavoro: una correzione allo stesso sviluppatore (replaces) che unisce la base aggiornata e risolve i conflitti. Poi il candidato nuovo passa verifiche e revisori e Trama lo pubblica di nuovo sulla stessa pull request.",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
   "main.workPhase.blockerDisputed": "Dopo i rilievi sul candidato {candidate}, lo sviluppatore dell'incarico {assignment} ha finito senza cambiare la copia di lavoro: non è d'accordo con i revisori. Un altro giro dei revisori sullo stesso contenuto darebbe gli stessi rilievi: decidi tu ora con settle_review, oppure supera con overrule_finding i rilievi che vanno contro il Patto. Non dichiarare di nuovo il candidato e non assegnare un incarico nuovo uguale.",

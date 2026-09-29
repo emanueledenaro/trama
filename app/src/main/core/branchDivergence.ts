@@ -1,4 +1,5 @@
 import type { BranchDivergence } from "@shared/domain";
+import type { BranchBase } from "./branchBase";
 import { fetchRemoteRevision, mergeProbe, type RemoteSource } from "./conflicts";
 import { git } from "./process";
 
@@ -52,4 +53,55 @@ export async function assessBranchDivergence(
     conflictingFiles: merge.conflictingFiles,
     checkedAt: now.toISOString(),
   };
+}
+
+/**
+ * The divergence the project notice shows, read on the branch as it is on GitHub (negozio, 29 September): an old
+ * checkout never shows conflicts with the default branch that GitHub's copy of the branch already resolved. First the
+ * checkout against its own copy on the remote, when the checkout has commits of its own and the copy moved on: that is
+ * the divergence to realign. Otherwise the branch against the default branch, on the remote's copy when the checkout
+ * lags it, on the checkout when the checkout is current or only adds commits of its own.
+ */
+export async function assessProjectDivergence(
+  input: {
+    sourceRoot: string;
+    base: BranchBase;
+    defaultBranch: string;
+    defaultSHA: string;
+    source: RemoteSource;
+    cacheRoot: string;
+  },
+  now = new Date(),
+): Promise<BranchDivergence | null> {
+  const { base } = input;
+  if (base.state === "diverged" && base.remoteSHA && base.branch) {
+    // Both sides are in the checkout after the fetch: they are compared without reaching the remote again.
+    const own = await assessBranchDivergence(
+      {
+        sourceRoot: input.sourceRoot,
+        branch: base.branch,
+        defaultBranch: base.branch,
+        headSHA: base.headSHA,
+        remoteSHA: base.remoteSHA,
+        source: { kind: "local", path: input.sourceRoot },
+        cacheRoot: input.cacheRoot,
+      },
+      now,
+    );
+    if (own) return own;
+  }
+  const onRemote = (base.state === "behind" || base.state === "diverged") && base.remoteSHA ? base.remoteSHA : base.headSHA;
+  const divergence = await assessBranchDivergence(
+    {
+      sourceRoot: input.sourceRoot,
+      branch: base.branch,
+      defaultBranch: input.defaultBranch,
+      headSHA: onRemote,
+      remoteSHA: input.defaultSHA,
+      source: input.source,
+      cacheRoot: input.cacheRoot,
+    },
+    now,
+  );
+  return divergence && onRemote !== base.headSHA ? { ...divergence, checkoutSHA: base.headSHA } : divergence;
 }

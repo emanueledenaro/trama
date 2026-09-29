@@ -383,9 +383,10 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
-import { assessBranchDivergence } from "./core/branchDivergence";
-import { assessConflict, combineWorktrees } from "./core/conflicts";
+import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { assessProjectDivergence } from "./core/branchDivergence";
+import { type BranchBase, readBranchBase } from "./core/branchBase";
+import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
@@ -393,7 +394,7 @@ import { clampActiveSquads, clampDevelopersPerSquad } from "@shared/squads";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
-import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
+import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate, stopDestructiveMerge, stopOnDrift } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
@@ -945,7 +946,7 @@ export class TramaController {
       .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => {
-        const report = candidateReport(project.document, c, project.snapshot.headSHA);
+        const report = candidateReport(project.document, c, this.knownHeads(project));
         return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository), ...this.mergeView(project, c) }];
       }),
     );
@@ -1398,6 +1399,7 @@ export class TramaController {
         this.publishNow();
         if (overtaken()) return;
         if (!isDemo) void this.refreshGitHub();
+        this.readBranchBaseSoon(parked);
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
         void this.loadSkills();
@@ -1486,6 +1488,7 @@ export class TramaController {
       this.publishNow();
       if (overtaken()) return;
       if (!isDemo) void this.refreshGitHub();
+      this.readBranchBaseSoon(project);
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
       // Paused work whose question got its answer before a restart resumes now (W06).
@@ -1576,6 +1579,7 @@ export class TramaController {
     if (generation !== this.scanGeneration || this.state.project !== project) return;
     project.snapshot = snapshot;
     this.publish();
+    this.readBranchBaseSoon(project);
     const stale = this.dropStaleDivergence(project);
     // Aggiorna in the title bar is the one refresh of the project (issue #332): map, GitHub and the colleagues' presence.
     if (refreshGitHub && !project.isDemo) {
@@ -1761,6 +1765,11 @@ export class TramaController {
       document.conflicts ??= [];
       const heads = new Map<string, string[]>();
       if (defaultHead && !document.branchDivergence) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
+      // The project's branch as it is on GitHub, where the candidates' pull requests go: once it moved past a candidate's
+      // base, as with the person's realignment pushed from another clone, the candidate is compared with it too.
+      const branch = project.snapshot.branch;
+      const ownHead = branch && branch !== snapshot.defaultBranch ? snapshot.branches.find((b) => b.name === branch) : undefined;
+      if (ownHead) heads.set(ownHead.sha.toLowerCase(), [...(heads.get(ownHead.sha.toLowerCase()) ?? []), ownHead.name]);
       for (const pull of snapshot.pullRequests) {
         const sha = pull.headSHA.toLowerCase();
         heads.set(sha, [...(heads.get(sha) ?? []), `#${pull.number} ${pull.headRef}`]);
@@ -1812,25 +1821,24 @@ export class TramaController {
   private divergenceChecked: string | null = null;
 
   /**
-   * Compares the project's checkout with the default branch on GitHub (U02) and keeps the divergence on the document:
-   * the chat shows it as one project notice while it holds, and it disappears once the branches are realigned.
+   * Compares the project's branch, as it is on GitHub, with the default branch on GitHub (U02) and keeps the divergence
+   * on the document: the chat shows it as one project notice while it holds, and it disappears once the branches are
+   * realigned. The branch is fetched first: a checkout that only lags its copy on GitHub is not compared as it is, and a
+   * checkout with commits of its own while the copy moved on is a divergence from that copy (negozio, 29 September).
    */
   private async assessBranchDivergence(project: ActiveProjectState, repository: string, defaultBranch: string, remoteSHA: string): Promise<void> {
-    const headSHA = await this.headSHA(project.rootPath);
-    if (!headSHA || this.state.project !== project) return;
-    const branch = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"], project.rootPath).catch(() => "")).trim() || null;
-    if (this.state.project !== project) return;
+    const base = await this.readBranchBase(project, true);
+    if (!base || this.state.project !== project) return;
     // The names are in the key too: a renamed default branch or a switch to a branch on the same commit changes the notice.
-    const key = [project.id, branch ?? "", headSHA, defaultBranch, remoteSHA.toLowerCase()].join("\0");
+    const key = [project.id, base.branch ?? "", base.headSHA, base.remoteSHA ?? "", defaultBranch, remoteSHA.toLowerCase()].join("\0");
     if (this.divergenceChecked === key) return;
     let divergence: BranchDivergence | null;
     try {
-      divergence = await assessBranchDivergence({
+      divergence = await assessProjectDivergence({
         sourceRoot: project.rootPath,
-        branch,
+        base,
         defaultBranch,
-        headSHA,
-        remoteSHA,
+        defaultSHA: remoteSHA,
         source: { kind: "github", repository },
         cacheRoot: join(this.storage.root, "RemoteCache"),
       });
@@ -2382,13 +2390,13 @@ export class TramaController {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
             return item ? { label: item.label, title: item.title } : null;
           },
-          headSHA: () => this.headSHA(current.rootPath),
+          headSHA: () => this.integrationHeads(current),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           runRequestedAction: (id) => this.runRequestedAction(current, id),
           delegationChanged: (delegation) => this.delegationChanged(current, delegation, current.runningRequestId),
           questionDecided: (questionId, decisionId) => this.questionDecided(current, questionId, decisionId),
           approveWithDelegation: async (candidateId) => {
-            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.headSHA(current.rootPath));
+            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.integrationHeads(current));
             this.changedIn(current);
             // Publishing and merging on GitHub go on in the background and tell their outcome in Activity: never in the turn.
             void this.integrateCandidates(current).catch((error) => this.fail(error));
@@ -2892,7 +2900,7 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
-      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
+      sections.push(currentStateText(document, request.id, this.knownHeads(project)));
       if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document, request.id));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
@@ -5202,6 +5210,9 @@ export class TramaController {
       let cwd = project.rootPath;
       // A diagnosis reads a candidate's worktree without writing to it (W11).
       if (needsWorktree(assignment) || assignment.workspace) {
+        // The project's branch is read on the remote first: work starts from the branch as it is there, and a correction
+        // finds the remote's latest commits to realign with (a working copy shares the checkout's references).
+        const base = await this.readBranchBase(project, true);
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
@@ -5213,6 +5224,7 @@ export class TramaController {
             prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),
             issue: relatedIssue(document, assignment),
             conventions,
+            baseSHA: base?.baseSHA ?? null,
           });
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, t("main.controller.worktreeReadyTitle"), workspace.branch, "info");
@@ -6349,6 +6361,42 @@ export class TramaController {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
 
+  /** The last reading of each project's branch against its copy on the remote, by project id. */
+  private readonly branchBases = new Map<string, BranchBase>();
+
+  /**
+   * Reads the project's branch against its copy on the remote, after a fetch of that one branch when `fetch` is true:
+   * before work starts in a working copy, before a candidate is published and with every reading of GitHub.
+   */
+  private async readBranchBase(project: ActiveProjectState, fetch: boolean): Promise<BranchBase | null> {
+    if (project.isDemo) return null;
+    const base = await readBranchBase(project.rootPath, { fetch }).catch(() => null);
+    if (base) this.branchBases.set(project.id, base);
+    return base;
+  }
+
+  /**
+   * Reads the branch against the last known copy on the remote, without the network, and shows the candidates again:
+   * at the opening and after a rescan, the candidates built on the remote's copy are current before any fetch.
+   */
+  private readBranchBaseSoon(project: ActiveProjectState): void {
+    void this.readBranchBase(project, false).then((base) => {
+      if (base && this.state.project === project) this.publish();
+    });
+  }
+
+  /** The heads a candidate may be built on now: the checkout's head and the commits of the remote's copy it lags by. */
+  private async integrationHeads(project: ActiveProjectState): Promise<IntegrationHeads> {
+    const base = await this.readBranchBase(project, false);
+    return base ? base.currentHeads : await this.headSHA(project.rootPath);
+  }
+
+  /** The same heads from the last reading, while the checkout is still where it was; its head otherwise. */
+  private knownHeads(project: ActiveProjectState): IntegrationHeads {
+    const base = this.branchBases.get(project.id);
+    return base && base.headSHA === project.snapshot.headSHA ? base.currentHeads : project.snapshot.headSHA;
+  }
+
   /** Runs a read-only check in a candidate's worktree, in the sandbox, and captures the worktree as it is after the check. */
   private async runCandidateCheck(project: ActiveProjectState, workspace: WorktreeSession, check: ReadOnlyCheck) {
     await validateWorktree(workspace, this.worktreesRoot);
@@ -7269,7 +7317,7 @@ export class TramaController {
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new DomainError(t("main.controller.candidateNotFound"));
-    const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+    const report = candidateReport(document, candidate, await this.integrationHeads(project));
     if (report.state === "superseded") throw new DomainError(t("main.controller.candidateSuperseded"));
     if (report.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: report.blockers.map((b) => b.code).join(", ") }));
     if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError(t("main.controller.candidateNeedsApproval"));
@@ -7305,6 +7353,11 @@ export class TramaController {
     const baseBranch = project.snapshot.branch ?? "main";
     // Work from a cloud session already has its draft pull request (A19): Trama checks it again on the Mac and takes it out of draft.
     if (assignment.cloud?.status === "returned" && assignment.cloud.pullRequest) return this.publishCloudCandidate(project, candidate, assignment, repository, message);
+    // Right before the pull request the base branch is read on the remote (negozio, pull request #25): a candidate that
+    // no longer merges with it goes back to the Coordinator as a conflict instead of reaching GitHub in conflict.
+    await this.compareWithRemoteBase(project, candidate);
+    const current = candidateReport(document, candidate, await this.integrationHeads(project));
+    if (current.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: current.blockers.map((b) => b.code).join(", ") }));
     // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
@@ -7326,6 +7379,34 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: t("main.controller.pullRequestPublishedTitle", { number: `${published.number}` }), detail: published.url, tone: "tool" });
     this.changedIn(project);
     return candidate.pullRequest;
+  }
+
+  /**
+   * Compares a candidate with its base branch as it is on the remote, after a fetch of the branch. A conflict is recorded
+   * as with the other remote heads, with its card, and the Coordinator resolves it within the mandate.
+   */
+  private async compareWithRemoteBase(project: ActiveProjectState, candidate: Candidate): Promise<void> {
+    const document = project.document;
+    const session = findAssignment(document, candidate.assignmentId)?.workspace;
+    const base = session ? await this.readBranchBase(project, true) : null;
+    if (!session || !base) return;
+    const assessment = await assessWithRemoteBase({
+      base,
+      candidateId: candidate.id,
+      snapshotId: candidate.snapshotId,
+      session,
+      changedFiles: candidate.changedFiles,
+      cacheRoot: join(this.storage.root, "RemoteCache"),
+      probeRoot: join(this.storage.root, "ConflictProbe"),
+      compared: (id) => (document.conflicts ?? []).some((a) => a.id === id),
+    });
+    if (!assessment) return;
+    (document.conflicts ??= []).push(assessment);
+    if (assessment.classification === "conflict") {
+      appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictCardTitle"), detail: null, referenceId: assessment.id });
+      this.continueWork(project, null, "worktreeConflict");
+    }
+    this.changedIn(project);
   }
 
   // MARK: Merge
@@ -7363,7 +7444,7 @@ export class TramaController {
   private async integrateCandidates(project: ActiveProjectState): Promise<void> {
     if (this.quitting || !project.stateWritable || project.isDemo) return;
     const document = project.document;
-    const head = await this.headSHA(project.rootPath);
+    const head = await this.integrationHeads(project);
     for (const candidate of document.candidates) {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
@@ -7415,7 +7496,7 @@ export class TramaController {
     try {
       const pull = candidate.pullRequest ?? (await this.publishCandidateNow(project, candidate, report));
       if (!pull.headSHA) throw new DomainError(t("main.controller.mergeUnknownHead", { number: `${pull.number}` }));
-      const now = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+      const now = candidateReport(document, candidate, await this.integrationHeads(project));
       const covered = contentFingerprint(document, candidate) === fingerprint && !now.blockers.length && !now.clearanceInvalidated && (by === "coordinator" || !now.approvalInvalidated);
       if (!covered) throw new DomainError(t("main.controller.mergeCandidateChanged"));
       const checks = await readPullRequestStatus(repository, pull.number).catch(() => null);
@@ -7436,9 +7517,8 @@ export class TramaController {
       }
       if (checks?.checks === "failure") throw new DomainError(t("main.controller.mergeChecksRed", { number: `${pull.number}` }));
       // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
-      const drift = checks ? pullRequestDrift(pull.headSHA, checks) : null;
+      const drift = checks ? stopOnDrift(document, candidate, by, pull.headSHA, checks) : null;
       if (drift) {
-        recordMerge(document, candidate, by, "stopped", drift);
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason: drift }, by));
         this.changedIn(project);
         return;
@@ -7524,7 +7604,7 @@ export class TramaController {
   /** The person's ok on an interface candidate: the approval, then Trama merges it when the green light holds (issue #247). */
   async approveCandidateByPerson(candidateId: string): Promise<void> {
     const project = this.requireProject();
-    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.headSHA(project.rootPath));
+    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.integrationHeads(project));
     this.changed();
     await this.integrateCandidates(project);
   }
@@ -7662,7 +7742,7 @@ export class TramaController {
     if (outOfRange.length) {
       throw new TicketRefusal("invalid_arguments", `The issue has ${items.length} criteria; unknown indexes: ${outOfRange.map((c) => c.index).join(", ")}.`);
     }
-    const head = await this.headSHA(project.rootPath);
+    const head = await this.integrationHeads(project);
     const candidates = new Map(
       document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
     );

@@ -21,6 +21,7 @@ import { candidateSuperseded } from "@shared/conflictScope";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
 import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
+import { pullRequestConflicted } from "./merge";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, heldByPersonStop, isActive, isTeamConfirmed, needsWorktree } from "./team";
@@ -667,6 +668,19 @@ function assignedWork(
   if (unpublished) {
     moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
     return { phase: "candidate", blocker: null };
+  }
+  // GitHub finds conflicts between a pull request and its base: the Coordinator realigns the candidate's branch in its
+  // working copy and publishes it again. The person gets the merge only of a pull request that can be merged.
+  const conflicted = edits.find((i) => pullRequestConflicted(i.candidate!));
+  if (conflicted) {
+    const candidate = conflicted.candidate!;
+    moves.assignWork();
+    return {
+      phase: "blocked",
+      blocker: t("main.workPhase.blockerPullRequestConflict", { id: candidate.id, number: candidate.pullRequest!.number }),
+      why: sentence(t("main.workPhase.whyPullRequestConflict", { work: workOf(document, conflicted.assignment) })),
+      block: "worktreeConflict",
+    };
   }
   const unmerged = edits.find((i) => !i.candidate!.pullRequest!.mergedAt);
   if (unmerged) {

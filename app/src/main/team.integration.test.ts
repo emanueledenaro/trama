@@ -657,3 +657,77 @@ describe("describeFailure", () => {
     expect(describeFailure("modello non valido")).toBe("modello non valido");
   });
 });
+
+describe("a checkout that lags its branch on GitHub (negozio, chore/pre-apertura)", () => {
+  it("starts the work from the branch as it is on the remote and keeps its candidate current, without touching the checkout", async () => {
+    // The person's checkout on chore/pre-apertura, and the realignment with main pushed from another clone on 27 September.
+    const remote = await mkdtemp(join(tmpdir(), "trama-remote-"));
+    await git(["init", "--bare", "-b", "main"], remote, false);
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "chore/pre-apertura"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "chore(deps): riallinea package-lock.json"], repo, false);
+    await git(["remote", "add", "origin", remote], repo, false);
+    await git(["push", "-q", "-u", "origin", "chore/pre-apertura"], repo, false);
+    const local = (await git(["rev-parse", "HEAD"], repo)).trim();
+    const other = await mkdtemp(join(tmpdir(), "trama-other-"));
+    await git(["clone", "-q", "-b", "chore/pre-apertura", remote, other], tmpdir(), false);
+    await writeFile(join(other, "RIALLINEAMENTO.md"), "Integra main remoto mantenendo la pre-apertura\n");
+    await git(["add", "."], other, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "merge: integra main remoto mantenendo la pre-apertura"], other, false);
+    await git(["push", "-q", "origin", "HEAD:chore/pre-apertura"], other, false);
+    const onGitHub = (await git(["rev-parse", "HEAD"], other)).trim();
+
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const open = async () => {
+      controller = new TramaController(data, {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: "",
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await controller.updateSettings({ continuousWork: false });
+      await controller.openProject(repo);
+      await until(() => controller!.snapshot.project?.phase.kind === "ready");
+      return controller;
+    };
+    await open();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[proponi-team]", null, null, null);
+    await controller!.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    controller!.recordDecision({ id: null, value: "La pre-apertura resta attiva", acceptedExample: "Checkout spento", rationale: "Il negozio non è aperto" });
+    await controller!.grantMandate({ requestId: null, objectives: ["Pre-apertura"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+
+    await controller!.send("[assegna]", null, null, null);
+    const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => assignment.status === "completed");
+    // The work starts from chore/pre-apertura as it is on GitHub, with the realignment the checkout never pulled.
+    expect(assignment.workspace!.baseSHA).toBe(onGitHub);
+    expect(existsSync(join(assignment.workspace!.worktreeRoot, "RIALLINEAMENTO.md"))).toBe(true);
+    // The person's checkout, its branch and its files stay as they were (the method's own files aside).
+    expect((await git(["rev-parse", "HEAD"], repo)).trim()).toBe(local);
+    expect((await git(["rev-parse", "refs/heads/chore/pre-apertura"], repo)).trim()).toBe(local);
+    expect((await git(["status", "--porcelain", "--untracked-files=no"], repo)).trim()).toBe("");
+
+    // Its candidate is built on the current base: nothing asks to rebuild it on the checkout's older head.
+    await controller!.send(`[candidato:${assignment.id}:${document.decisions[0]!.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    expect(candidate.baseSHA).toBe(onGitHub);
+    await until(() => Boolean(controller!.snapshot.project!.candidateReports[candidate.id]));
+    expect(controller!.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => b.code)).not.toContain("BASE_CHANGED");
+
+    // Trama opens again on the same project: the candidate is still current, before any work or reading of GitHub.
+    await controller!.stop();
+    await open();
+    const reports = () => controller!.snapshot.project!.candidateReports[candidate.id];
+    await until(() => Boolean(reports()));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(reports()!.blockers.map((b) => b.code)).not.toContain("BASE_CHANGED");
+  }, 45_000);
+});

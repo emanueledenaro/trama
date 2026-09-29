@@ -2,7 +2,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assessConflict } from "./conflicts";
+import { readBranchBase } from "./branchBase";
+import { assessConflict, assessWithRemoteBase } from "./conflicts";
 import { git } from "./process";
 import { prepareWorktree, reviewWorktree } from "./workspace";
 
@@ -88,5 +89,42 @@ describe("remote conflicts", () => {
     const context = await setup();
     await writeFile(join(context.session.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
     expect((await assess(context, "0".repeat(40))).classification).toBe("unknown");
+  });
+});
+
+describe("the candidate against its base branch as it is on the remote (negozio, pull request #25)", () => {
+  it("finds the conflict before the pull request once the branch on the remote moved past the candidate's base", async () => {
+    const context = await setup();
+    await writeFile(join(context.session.worktreeRoot, "a.txt"), "uno\nDUE candidato\ntre\n");
+    const review = await reviewWorktree(context.session);
+    const compare = async (compared: (id: string) => boolean = () => false) =>
+      assessWithRemoteBase({
+        base: (await readBranchBase(context.repo, { fetch: true }))!,
+        candidateId: "C-863C639D",
+        snapshotId: review.snapshotId,
+        session: context.session,
+        changedFiles: review.changedFiles,
+        cacheRoot: await mkdtemp(join(tmpdir(), "trama-cache-")),
+        probeRoot: await mkdtemp(join(tmpdir(), "trama-probe-")),
+        compared,
+      });
+    // The branch did not move: there is nothing to compare.
+    expect(await compare()).toBeNull();
+    // The person pushed on the branch from another clone: the checkout lags, the candidate would conflict on GitHub.
+    await writeFile(join(context.colleague, "a.txt"), "uno\ndue riallineato\ntre\n");
+    await commit(context.colleague, "merge: integra main remoto");
+    await git(["push", "-q", "origin", "HEAD:main"], context.colleague, false);
+    const onRemote = (await git(["rev-parse", "HEAD"], context.colleague)).trim();
+    expect(await compare()).toMatchObject({
+      id: `${review.snapshotId}:${onRemote}`,
+      candidateId: "C-863C639D",
+      remoteSHA: onRemote,
+      references: ["main"],
+      classification: "conflict",
+      conflictingFiles: ["a.txt"],
+    });
+    // A comparison already made is not made again.
+    expect(await compare(() => true)).toBeNull();
+    expect((await git(["status", "--porcelain"], context.repo)).trim()).toBe("");
   });
 });
