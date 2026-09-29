@@ -367,6 +367,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The assignment is gone: a new assignment is needed.",
   "main.controller.findingsWaitProjectClosed":
     "The project is not open: the work resumes when you open it again.",
+  "main.controller.findingsWaitPaused": "The Coordinator is paused: the work resumes when you press Resume.",
   "main.controller.findingsWaitMandate":
     "The current mandate no longer covers this assignment: the work resumes when you grant it again.",
   // Focus mode and publication

@@ -375,6 +375,7 @@ export const mainIt = {
     "L'incarico non c'è più: serve un nuovo incarico.",
   "main.controller.findingsWaitProjectClosed":
     "Il progetto non è aperto: il lavoro riprende quando lo riapri.",
+  "main.controller.findingsWaitPaused": "Il Coordinatore è in pausa: il lavoro riprende quando premi Riprendi.",
   "main.controller.findingsWaitMandate":
     "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.",
   // Focus mode and publication

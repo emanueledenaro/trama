@@ -287,6 +287,33 @@ describe("the candidate gate (W10)", () => {
     expect(work.gateReturn).toMatchObject({ gateId: gate.id });
   }, 120_000);
 
+  it("holds the findings of a gate that ends during the Pause, and sends them back after Riprendi (A05, ADR 0023)", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    await controller!.send("[assegna] [bloccante]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    // The turn waits for the gate a short time only: the reviewers go on in the background.
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    process.env.FAKE_CODEX_GATE_HOLD = hold;
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const gate = document.gates![0]!;
+    expect(gate.status).toBe("reviewing");
+    // The person pauses while the reviewers work, with continuous work on; then the gate blocks.
+    await controller!.pauseContinuousWork(true);
+    await controller!.updateSettings({ continuousWork: true });
+    await writeFile(hold, "");
+    await until(() => gate.returned !== null);
+    expect(gate.status).toBe("blocked");
+    // In pause nothing starts: the findings wait with the work, which stays completed.
+    expect(gate.returned).toMatchObject({ waiting: expect.stringContaining("pausa") });
+    expect(work.turns).toHaveLength(1);
+    // Riprendi runs a round at once: the findings go back and Ada resumes in her worktree.
+    await controller!.pauseContinuousWork(false);
+    await until(() => gate.returned?.waiting === null);
+    await until(() => work.turns.length === 2 && work.status === "completed");
+  }, 120_000);
+
   it("keeps the findings of a project the person left, and sends them back when it opens again", async () => {
     const repo = await repository(false);
     const { document, decision } = await openTeam(repo);

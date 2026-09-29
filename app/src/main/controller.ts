@@ -6500,6 +6500,8 @@ export class TramaController {
     const assignment = findAssignment(document, gate.assignmentId);
     if (!assignment) return t("main.controller.findingsWaitAssignmentGone");
     if (project !== this.state.project) return t("main.controller.findingsWaitProjectClosed");
+    // In pause nothing starts, a gate that ended in the background included (A05): Riprendi's round sends them back.
+    if (isPaused(document)) return t("main.controller.findingsWaitPaused");
     if (!withinMandate(document, assignment)) return t("main.controller.findingsWaitMandate");
     try {
       reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: [...decision, ...returnFindings(document, gate)] });
