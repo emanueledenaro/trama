@@ -461,7 +461,7 @@ function SquadsSummary() {
   const setInspector = useUi((s) => s.setInspector);
   const summary = teamSummary(project.document, project.candidateReports, project.presence);
   const attention = summary.attention.flatMap(({ id }) => project.document.team.specialists.filter((s) => s.id === id));
-  const colleague =(project.presence?.others ?? []).find((entry) => !entry.self && entry.status !== "expired") ?? null;
+  const colleague = (project.presence?.others ?? []).find((entry) => !entry.self && entry.status !== "expired") ?? null;
   const shared = colleague ? (project.overlaps?.items ?? []).filter((item) => item.colleague.user === colleague.record.user).flatMap((item) => item.files) : [];
   const colleagueText = colleague
     ? t(colleague.record.activeBranch ? "teams.summary.colleagueOn" : "teams.summary.colleague", {
