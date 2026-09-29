@@ -106,6 +106,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.activity.trigger.worktreeConflict": "After a conflict between worktrees",
   "shared.activity.trigger.issueOpened": "After a new issue",
   "shared.activity.trigger.pullRequestCommented": "After a comment on a pull request",
+  "shared.activity.trigger.gateEnded": "After a candidate's gate ended",
   "shared.activity.trigger.round": "In the regular round",
   "shared.activity.round": "Coordinator round",
   "shared.activity.correction": "{summary} Correction: {note}",

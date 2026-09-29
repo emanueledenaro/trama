@@ -17,6 +17,7 @@ afterEach(async () => {
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
   delete process.env.FAKE_CODEX_GATE_HOLD;
+  delete process.env.TRAMA_GATE_TURN_WAIT_MS;
 });
 
 async function until(check: () => boolean, timeout = 20_000): Promise<void> {
@@ -206,6 +207,33 @@ describe("the candidate gate (W10)", () => {
     expect(document.gates).toHaveLength(1);
     expect(review).toMatchObject({ id: candidate.technicalReview!.id, gateId: document.gates![0]!.id, verdict: "approved" });
   });
+
+  it("lets a long gate go on in the background so the person can talk to the Coordinator meanwhile (ADR 0023)", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    // The reviewers answer only once the test lets them, and the turn waits for the gate a short time only.
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    process.env.FAKE_CODEX_GATE_HOLD = hold;
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const gate = document.gates![0]!;
+    const candidate = document.candidates[0]!;
+    // The turn ended while the reviewers are still at work: the chat is free.
+    expect(gate.status).toBe("reviewing");
+    expect(document.requests.at(-1)!.state).toBe("completed");
+    // The person writes now: the message runs at once, it does not wait in the queue for the gate.
+    await controller!.send("Aggiungi anche una nota sugli ordini annullati.", null, null, null);
+    expect(document.requests.at(-1)).toMatchObject({ text: "Aggiungi anche una nota sugli ordini annullati.", state: "completed" });
+    // The gate ends in the background and records its review on the same candidate.
+    await writeFile(hold, "");
+    await until(() => gate.status !== "reviewing");
+    await until(() => candidate.technicalReview?.gateId === gate.id);
+    expect(document.gates).toHaveLength(1);
+    expect(candidate.technicalReview).toMatchObject({ verdict: "approved", gateId: gate.id });
+  }, 120_000);
 
   it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");

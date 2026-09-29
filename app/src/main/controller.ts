@@ -514,6 +514,12 @@ const CLEARED_CONVERSATION = "La persona ha aperto una sessione nuova senza la c
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
+/**
+ * How long a Coordinator turn waits for a candidate's gate before the gate goes on in the background (ADR 0023): the
+ * turn ends, the chat is free for the person, and Trama starts the next move when the gate ends. TRAMA_GATE_TURN_WAIT_MS
+ * for checks.
+ */
+const gateTurnWaitMs = (): number => Number(process.env.TRAMA_GATE_TURN_WAIT_MS ?? 45_000);
 /** Automatic retries of a Coordinator turn after a temporary provider limit (P10). */
 const PROVIDER_RETRY_ATTEMPTS = 5;
 /** The first wait before a retry; it doubles at each attempt. TRAMA_PROVIDER_RETRY_MS shortens it for the UI check. */
@@ -2319,7 +2325,7 @@ export class TramaController {
           conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
-          reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
+          reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           waitingFor: (candidateId) => {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
@@ -6137,6 +6143,27 @@ export class TramaController {
     const review = this.runCandidateGate(candidateId, requestId).finally(() => this.reviewsInFlight.delete(candidateId));
     this.reviewsInFlight.set(candidateId, review);
     return review;
+  }
+
+  /**
+   * The gate a Coordinator turn asked for (ADR 0023): the turn waits for it at most gateTurnWaitMs(). A longer gate goes on
+   * in the background and returns null, so the turn ends and the person can talk to the Coordinator; when the gate ends,
+   * Trama weighs the next move as for any event of the work.
+   */
+  private async reviewCandidateInTurn(project: ActiveProjectState, candidateId: string, requestId: string | null): Promise<TechnicalReview | null> {
+    const review = this.reviewCandidate(candidateId, requestId);
+    let timer: NodeJS.Timeout | undefined;
+    const waited = await Promise.race([
+      review.then((result) => ({ result })),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), gateTurnWaitMs());
+        timer.unref?.();
+      }),
+    ]).finally(() => clearTimeout(timer));
+    if (waited) return waited.result;
+    // A failed gate is recorded on the gate itself: the Coordinator reads it in the next move either way.
+    void review.catch(() => undefined).then(() => this.continueWork(project, null, "gateEnded"));
+    return null;
   }
 
   /** The candidates whose gate runs now, with the review it will record. */

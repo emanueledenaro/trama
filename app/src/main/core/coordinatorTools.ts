@@ -607,7 +607,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "review_candidate",
     description:
-      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval. The gate takes minutes; if the call is cut off, call review_candidate again on the same candidate: it waits for the gate already at work instead of opening a new one.",
+      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval. The gate takes minutes, so Trama waits for it only briefly: when it is still at work the result says status running, the gate goes on in the background and Trama starts your next move by itself when it ends. Then end the turn, telling the person in one line that the reviewers are at work, and do not call review_candidate again on that candidate: the person can talk to you meanwhile. A second call on a candidate whose gate is at work waits for that gate instead of opening a new one.",
     properties: { candidate: text },
     required: ["candidate"],
     readOnly: true,
@@ -823,8 +823,11 @@ export interface ToolContext {
   conventions?(): Promise<CommitConventions>;
   /** Runs a required check on a candidate's worktree and records the evidence. */
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
-  /** Runs a technical review in a thread distinct from the author's. */
-  reviewCandidate(candidateId: string): Promise<TechnicalReview>;
+  /**
+   * Runs the candidate's gate. Null when the gate still runs after the wait the turn allows (ADR 0023): it goes on in the
+   * background and Trama starts the Coordinator's next move when it ends, so the turn frees the chat for the person.
+   */
+  reviewCandidate(candidateId: string): Promise<TechnicalReview | null>;
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
   /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
@@ -1878,6 +1881,14 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if ("failure" in found) return found.failure;
         const candidate = found.candidate;
         const review = await context.reviewCandidate(candidate.id);
+        if (!review) {
+          // The gate goes on in the background (ADR 0023): the turn ends and Trama starts the next move when it is over.
+          return toolSuccess({
+            candidateID: candidate.id,
+            status: "running",
+            next: "The gate is still at work in the background. End this turn now with one line for the person; Trama starts your next move when the gate ends. Do not call review_candidate again on this candidate.",
+          });
+        }
         const gate = review.gateId ? (document.gates ?? []).find((g) => g.id === review.gateId) : undefined;
         return toolSuccess({
           candidateID: candidate.id,

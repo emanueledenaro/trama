@@ -38,7 +38,8 @@ const DELEGATION_DECIDES: NextMove[] = ["answerQuestions", "reviewCandidate"];
 const delegatedHolds = (state: Pick<WorkState, "moves">): boolean => state.moves.some((m) => m.actor === "person" && DELEGATION_DECIDES.includes(m.move));
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
-export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "round"];
+/** A gate that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
+export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "round"];
 
 /** Events whose block the Coordinator resolves by itself (Q3): a red check, a conflict, and the round that unblocks. */
 const RESOLVES_BLOCKS: WorkEvent[] = ["checkFailed", "worktreeConflict", "round"];
