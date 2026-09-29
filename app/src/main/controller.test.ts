@@ -2062,13 +2062,25 @@ describe("TramaController", () => {
     controller!.personAway(Date.now() - 8 * 3_600_000);
     document = await restart();
     const recap = document.recap?.recaps.at(-1);
-    expect(recap).toMatchObject({ reason: "return", delegated: [{ kind: "decision", doubt: "Non so se vale per i buoni" }] });
+    expect(recap).toMatchObject({ reason: "return" });
+    expect(recap?.delegated?.find((c) => c.kind === "decision")).toMatchObject({ doubt: "Non so se vale per i buoni" });
     expect(document.events.findLast((e) => e.content.type === "card" && e.content.kind === "recap")?.content).toMatchObject({ title: "Mentre non c'eri" });
 
     // Told once: nothing new since, no second recap at the next opening.
     controller!.personAway(Date.now() - 8 * 3_600_000);
     document = await restart();
     expect(document.recap?.recaps.filter((r) => r.reason === "return")).toHaveLength(1);
+  });
+
+  it("keeps the computer awake while issues wait to be taken with 'fai tutti i ticket', also between two of them (issue #423)", async () => {
+    await setup();
+    await until(() => controller!.snapshot.project!.github.status !== "loading");
+    const issue = { number: 7, title: "Aggiungi il buono", state: "open" as const, body: "Criteri chiari", url: "https://github.com/o/r/issues/7", author: null, labels: ["ready-for-agent"], updatedAt: "2026-09-29T20:00:00Z" };
+    controller!.snapshot.project!.github.issues.push(issue);
+    await controller!.send("[delega-ticket:fai tutti i ticket] Stanotte fai tutti i ticket", null, null, null);
+    // No work is open yet, but the next issue waits for the round: the computer must not sleep before it.
+    expect(controller!.snapshot.project!.document.delegations?.[0]).toMatchObject({ tickets: true });
+    expect(keepAwake.at(-1)).toBe(true);
   });
 
   it("does not leave the person a mandate request that the full delegation's mandate already covers (issue #423)", async () => {

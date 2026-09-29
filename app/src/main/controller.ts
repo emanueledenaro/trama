@@ -1124,8 +1124,16 @@ export class TramaController {
   private keptAwake = false;
 
   /**
-   * Keeps the computer awake while the open project has the full delegation, open work and no Pause (issue #423);
-   * without open work the computer goes back to its usual sleep.
+   * Whether the project has work ahead for continuous work (A05): open work, or with "fai tutti i ticket" an open issue
+   * the round takes next (issue #423).
+   */
+  private workAhead(project: ActiveProjectState): boolean {
+    return hasOpenWork(project.document) || nextTicket(project.document, project.github.issues) !== null;
+  }
+
+  /**
+   * Keeps the computer awake while the open project has the full delegation, work ahead and no Pause (issue #423),
+   * between two issues too; without work ahead the computer goes back to its usual sleep.
    */
   private updateKeepAwake(): void {
     const project = this.state.project;
@@ -1133,7 +1141,7 @@ export class TramaController {
       !this.quitting &&
       !!project &&
       this.state.settings.continuousWork !== false &&
-      keepsAwake([{ delegated: activeDelegation(project.document) !== null, openWork: hasOpenWork(project.document), paused: isPaused(project.document) }]);
+      keepsAwake([{ delegated: activeDelegation(project.document) !== null, openWork: this.workAhead(project), paused: isPaused(project.document) }]);
     if (awake === this.keptAwake) return;
     this.keptAwake = awake;
     this.host.setKeepAwake?.(awake);
@@ -3548,8 +3556,7 @@ export class TramaController {
     await this.refreshCloudSessions(project).catch(() => undefined);
     if (this.state.project !== project || this.quitting) return;
     // With "fai tutti i ticket" (issue #423) a round without open work takes the next open issue.
-    const tickets = nextTicket(project.document, project.github.issues) !== null;
-    if (this.state.settings.continuousWork === false || isPaused(project.document) || (!hasOpenWork(project.document) && !tickets)) return;
+    if (this.state.settings.continuousWork === false || isPaused(project.document) || !this.workAhead(project)) return;
     // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
     if (this.coordinatorWait(project)) {
       if (!project.providerRetry) this.scheduleProviderWait(this.coordinatorProvider(project.document));
