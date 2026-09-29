@@ -28,16 +28,17 @@ export const HEADER_CHIP_ACTIVE = "bg-[var(--color-background-button-secondary)]
 export function ExercisesChip() {
   const exercise = useUi((s) => s.exercise);
   const setExercise = useUi((s) => s.setExercise);
+  const t = useT();
   return (
     <button
       type="button"
-      aria-label="Esercizi"
+      aria-label={t("chat.view.exercises")}
       aria-pressed={Boolean(exercise)}
       className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
       onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
     >
       <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
-      <span className="hidden @min-[640px]/chat:inline">Esercizi</span>
+      <span className="hidden @min-[640px]/chat:inline">{t("chat.view.exercises")}</span>
     </button>
   );
 }
@@ -89,17 +90,18 @@ function GoalTag({ goalId }: { goalId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const openDialog = useUi((s) => s.openDialog);
   const goal = findGoal(project.document, goalId);
+  const t = useT();
   return (
     <div className="flex justify-center pt-3 pb-1">
       <button
         type="button"
         data-testid="chat-goal-tag"
         onClick={() => openDialog(goalId)}
-        title="Mostra solo questo obiettivo"
+        title={t("chat.view.onlyThisGoal")}
         className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-ui-xs text-muted-foreground hover:bg-[var(--color-background-button-secondary)] hover:text-foreground"
       >
         <IconTarget className="size-3 shrink-0" stroke={1.8} />
-        <span className="truncate">Obiettivo: {goal?.title ?? goalId}</span>
+        <span className="truncate">{t("chat.view.goalTag", { title: goal?.title ?? goalId })}</span>
       </button>
     </div>
   );
@@ -108,27 +110,28 @@ function GoalTag({ goalId }: { goalId: string }) {
 function ProjectIntro() {
   const project = useUi((s) => s.app?.project)!;
   const phase = project.phase;
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-3 px-6 pt-[18vh] pb-8 text-center select-none">
       <TramaMark size={44} />
       <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95">
-        {project.isDemo ? "Progetto di esempio" : project.name}
+        {project.isDemo ? t("chat.view.demoProject") : project.name}
       </h2>
       <p className="max-w-md text-ui text-muted-foreground">
         {phase.kind === "unavailable"
           ? phase.message
           : phase.kind === "opening"
-            ? "Il Coordinatore si sta collegando al progetto."
-            : `${project.snapshot.totalFileCount} file in ${project.snapshot.modules.length} moduli. Scrivi al Coordinatore per iniziare.`}
+            ? t("chat.view.connecting")
+            : t("chat.view.intro", { files: project.snapshot.totalFileCount, count: project.snapshot.modules.length })}
       </p>
       {phase.kind === "unavailable" ? (
         <Button variant="outline" size="sm" onClick={() => void act("coordinator:retry", undefined)}>
-          Riprova
+          {t("chat.view.retry")}
         </Button>
       ) : null}
       {!hasConfirmedGoal(project.document.goals) ? (
         <Button variant="outline" size="sm" onClick={() => useUi.getState().setInspector({ kind: "goals", create: true })}>
-          <IconTarget /> Formula il primo obiettivo
+          <IconTarget /> {t("chat.view.firstGoal")}
         </Button>
       ) : null}
     </div>
@@ -138,6 +141,7 @@ function ProjectIntro() {
 /** Offered in the chat while the project has no goal the person confirmed (UX07). */
 function FirstGoalPrompt() {
   const setInspector = useUi((s) => s.setInspector);
+  const t = useT();
   // A place to fill (W17): the seam when no other use on the screen holds it, the dashed border otherwise.
   const seam = useSeam("firstGoal", { radius: "calc(var(--radius) * 1.4)" });
   return (
@@ -151,10 +155,10 @@ function FirstGoalPrompt() {
       {seam.stitch}
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
       <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
-        Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te in questa chat, filtrata sull'obiettivo. Non concede un mandato.
+        {t("chat.view.firstGoalHint")}
       </p>
       <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goals", create: true })}>
-        Formula il primo obiettivo
+        {t("chat.view.firstGoal")}
       </Button>
     </div>
   );
@@ -168,12 +172,13 @@ const hasConfirmedGoal = (goals: { status: string }[] | undefined) => (goals ?? 
  */
 function QueuedMessageRow({ message }: { message: QueuedMessage }) {
   const [confirming, setConfirming] = useState(false);
+  const t = useT();
   return (
     <div className="flex w-full justify-end py-2" data-testid="queued-message">
       <div className="flex max-w-[80%] flex-col items-end gap-1">
         <div className="pr-1 text-ui-xs text-muted-foreground/70">
-          In coda: parte quando il Coordinatore finisce
-          {message.imageCount ? `, ${message.imageCount === 1 ? "1 immagine" : `${message.imageCount} immagini`}` : ""}
+          {t("chat.view.queued")}
+          {message.imageCount ? t("chat.view.queuedImages", { count: message.imageCount }) : ""}
         </div>
         <div className="w-max max-w-full min-w-0 rounded-[var(--radius-user-message)] border border-dashed border-[color:var(--color-border)] px-3.5 py-2.5 content-text whitespace-pre-wrap text-foreground/75">
           <span className="line-clamp-6">{message.text}</span>
@@ -181,21 +186,21 @@ function QueuedMessageRow({ message }: { message: QueuedMessage }) {
         {message.removable ? (
           confirming ? (
             <div className="cta-row">
-              <span className="text-ui-xs text-muted-foreground">Il messaggio non arriverà al Coordinatore.</span>
+              <span className="text-ui-xs text-muted-foreground">{t("chat.view.queuedWontArrive")}</span>
               <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
-                Annulla
+                {t("chat.view.cancel")}
               </Button>
               <Button size="xs" variant="destructive" onClick={() => void act("coordinator:deleteQueued", { id: message.id })}>
-                Elimina il messaggio
+                {t("chat.view.deleteMessage")}
               </Button>
             </div>
           ) : (
-            <Button size="xs" variant="ghost" aria-label="Elimina il messaggio in coda" onClick={() => setConfirming(true)}>
-              <IconTrash /> Elimina
+            <Button size="xs" variant="ghost" aria-label={t("chat.view.deleteQueued")} onClick={() => setConfirming(true)}>
+              <IconTrash /> {t("chat.view.delete")}
             </Button>
           )
         ) : (
-          <span className="pr-1 text-ui-xs text-muted-foreground/70">Riferisce una scelta già registrata: parte comunque.</span>
+          <span className="pr-1 text-ui-xs text-muted-foreground/70">{t("chat.view.queuedFixed")}</span>
         )}
       </div>
     </div>
@@ -204,6 +209,7 @@ function QueuedMessageRow({ message }: { message: QueuedMessage }) {
 
 function Timeline() {
   const project = useUi((s) => s.app?.project)!;
+  const t = useT();
   // The goal filter of the one chat (U01); null shows everything.
   const goalId = useUi((s) => s.dialogGoalId);
   const { requests: allRequests, events: allEvents } = project.document;
@@ -284,7 +290,7 @@ function Timeline() {
                   origin: "coordinator",
                   requestId: null,
                   createdAt: new Date().toISOString(),
-                  content: { type: "card", kind: "study", title: "Studio del progetto", detail: project.streaming?.text ?? "", referenceId: null },
+                  content: { type: "card", kind: "study", title: t("chat.view.studyTitle"), detail: project.streaming?.text ?? "", referenceId: null },
                 },
               }}
               streaming

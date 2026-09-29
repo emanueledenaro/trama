@@ -6,8 +6,8 @@ import { useState } from "react";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
-import { act, useUi } from "@/lib/store";
 import { useT } from "@/lib/i18n";
+import { act, useUi } from "@/lib/store";
 
 /**
  * The slices of a spec, split with AI Hero's to-tickets (M05): the breakdown the person approves or corrects, as the
@@ -61,18 +61,18 @@ function Ticket({
         {state ? <Badge tone={sliceStatus(t, state, ticket).tone}>{sliceStatus(t, state, ticket).label}</Badge> : null}
       </div>
       <div className="mt-0.5 text-ui-sm text-muted-foreground">
-        {ticket.blockedBy.length ? `Bloccata da: ${ticket.blockedBy.map(number).join(", ")}` : "Può iniziare subito"}
+        {ticket.blockedBy.length ? t("chat.slices.blockedBy", { slices: ticket.blockedBy.map(number).join(", ") }) : t("chat.slices.canStart")}
       </div>
       {who ? (
         <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="plan-slice-worker">
           {who.name}
-          {who.selfPicked ? ", presa in autonomia" : ""}
+          {who.selfPicked ? t("chat.slices.selfPicked") : ""}
         </div>
       ) : null}
-      {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">Sospesa: {ticket.pause.reason}</div> : null}
+      {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">{t("chat.slices.paused", { reason: ticket.pause.reason })}</div> : null}
       {state === "ready" && ticket.waiting ? (
         <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="plan-slice-waiting">
-          In attesa: {ticket.waiting}
+          {t("chat.slices.waiting", { reason: ticket.waiting })}
         </div>
       ) : null}
       <div className="mt-0.5 text-ui-sm text-foreground/90">{ticket.whatToBuild}</div>
@@ -98,7 +98,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
   const connected = Boolean(project.github.repository) && project.github.status !== "unavailable";
   const unpublished = slicing.tickets.some((t) => !t.issue);
   // Confirmed by the Coordinator within the mandate (A06) or by the person.
-  const confirmedBy = slicing.approvedBy === "coordinator" ? "Confermate dal Coordinatore dentro il mandato" : "Confermate da te";
+  const confirmedBy = slicing.approvedBy === "coordinator" ? t("chat.slices.confirmedByCoordinator") : t("chat.slices.confirmedByYou");
   const document = project.document;
   const atWork = document.team.specialists.filter(
     (s) => s.role === "developer" && s.status !== "removed" && s.assignments.some((a) => ACTIVE.includes(a.status)),
@@ -107,25 +107,25 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
 
   return (
     <div className="mt-3" data-testid="plan-slices" data-status={slicing.status}>
-      <div className="text-ui-xs text-muted-foreground/70">Fette verticali</div>
+      <div className="text-ui-xs text-muted-foreground/70">{t("chat.slices.title")}</div>
       {slicing.status === "drafting" ? (
         <p className="mt-1 flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-          <Spinner /> {slicing.feedback ? "Trama rifà le fette con la tua correzione" : "Trama divide la spec in fette verticali"}
+          <Spinner /> {slicing.feedback ? t("chat.slices.redrafting") : t("chat.slices.drafting")}
         </p>
       ) : null}
       {slicing.status === "failed" ? (
         <div className="mt-1">
-          <p className="text-ui-sm text-warning">{readableFailure(t, slicing.failure) ?? "La divisione in fette non è riuscita."}</p>
+          <p className="text-ui-sm text-warning">{readableFailure(t, slicing.failure) ?? t("chat.slices.failed")}</p>
           <div className="cta-row mt-2">
             <Button size="sm" onClick={() => void act("plan:slice", { planId: plan.id })}>
-              Dividi di nuovo in fette
+              {t("chat.slices.sliceAgain")}
             </Button>
           </div>
         </div>
       ) : null}
       {slicing.status === "proposed" ? (
         <p className="mt-1 text-ui text-foreground/90">
-          Il lavoro diviso in fette, ognuna con quelle che la bloccano. La granularità va bene? I blocchi sono giusti? Qualche fetta va unita o divisa?
+          {t("chat.slices.proposed")}
         </p>
       ) : null}
 
@@ -147,7 +147,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
             })}
           </ol>
           <button type="button" className="mt-2 text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setShowCriteria(!showCriteria)}>
-            {showCriteria ? "Nascondi i criteri di accettazione" : "Mostra i criteri di accettazione"}
+            {showCriteria ? t("chat.slices.hideCriteria") : t("chat.slices.showCriteria")}
           </button>
         </>
       ) : null}
@@ -156,10 +156,10 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
         correction === null ? (
           <div className="cta-row mt-3">
             <Button size="sm" variant="ghost" onClick={() => setCorrection("")}>
-              Correggi le fette
+              {t("chat.slices.correct")}
             </Button>
             <Button size="sm" onClick={() => void act("plan:answerSlices", { planId: plan.id, confirmed: true, note: null })}>
-              Conferma le fette
+              {t("chat.slices.confirm")}
             </Button>
           </div>
         ) : (
@@ -167,20 +167,20 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
             <TextArea
               value={correction}
               onChange={(e) => setCorrection(e.target.value)}
-              placeholder="Cosa cambieresti? Per esempio una fetta da dividere o un blocco che non serve"
-              aria-label="Correzione delle fette"
+              placeholder={t("chat.slices.correctionPlaceholder")}
+              aria-label={t("chat.slices.correctionLabel")}
               className="min-h-12"
             />
             <div className="cta-row">
               <Button size="sm" variant="ghost" onClick={() => setCorrection(null)}>
-                Annulla
+                {t("chat.plan.cancel")}
               </Button>
               <Button
                 size="sm"
                 disabled={!correction.trim()}
                 onClick={() => void act("plan:answerSlices", { planId: plan.id, confirmed: false, note: correction.trim() }).then(() => setCorrection(null))}
               >
-                Invia la correzione
+                {t("chat.plan.sendCorrection")}
               </Button>
             </div>
           </div>
@@ -190,23 +190,23 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       {slicing.status === "approved" ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-sm text-muted-foreground" data-testid="plan-slices-publication">
           {!unpublished ? (
-            <span>{confirmedBy} e pubblicate su GitHub come issue.</span>
+            <span>{t("chat.slices.published", { confirmed: confirmedBy })}</span>
           ) : connected ? (
             <>
-              <span>{confirmedBy}, non ancora tutte pubblicate su GitHub.</span>
+              <span>{t("chat.slices.partlyPublished", { confirmed: confirmedBy })}</span>
               <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => void act("plan:publishSlices", { planId: plan.id })}>
-                Pubblica su GitHub
+                {t("chat.plan.publish")}
               </button>
             </>
           ) : (
-            <span>{confirmedBy}. Restano in Trama: il progetto non ha GitHub collegato.</span>
+            <span>{t("chat.slices.notConnected", { confirmed: confirmedBy })}</span>
           )}
           {slicing.publishFailure ? <span className="text-warning">{slicing.publishFailure}</span> : null}
         </div>
       ) : null}
       {slicing.status === "approved" && views.some((v) => v.state !== "done") ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="plan-slices-parallel">
-          Sviluppatori al lavoro: {atWork} di {limit}. Chi è libero prende in autonomia la prossima fetta pronta nei suoi moduli.
+          {t("chat.slices.parallel", { atWork, limit })}
         </p>
       ) : null}
     </div>

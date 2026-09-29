@@ -1,5 +1,6 @@
 // The Italian catalog (issue #301). Italian is the source: every key exists here first, and `en.ts` must
 // translate each one. A key ending in `.one` is the singular that `translate` picks when `count` is 1.
+import { chatIt } from "./chat.it";
 import { mainIt } from "./main.it";
 import { sharedIt } from "./shared.it";
 
@@ -1489,6 +1490,8 @@ export const it = {
   "supersession.activity.label": "Candidato superato dal Coordinatore",
   "supersession.activity.detail": "Candidato {id}, superato da {by}: {reason}.",
   "supersession.activity.waiting": "Tolto da Aspetta te: {item}.",
+
+  ...chatIt,
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

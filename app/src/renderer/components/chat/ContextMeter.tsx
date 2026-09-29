@@ -53,7 +53,7 @@ export function ContextMeter() {
             strokeLinecap="round"
           />
         </svg>
-        {known ? `${reading.percent}%` : null}
+        {known ? t("chat.context.percent", { percent: reading.percent ?? 0 }) : null}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
@@ -71,7 +71,7 @@ export function ContextMeter() {
               <PickerSelect
                 label={t("context.meter.thresholdPicker")}
                 value={String(threshold)}
-                options={Array.from({ length: 19 }, (_, i) => String(5 + i * 5)).map((value) => ({ value, title: `${value}%` }))}
+                options={Array.from({ length: 19 }, (_, i) => String(5 + i * 5)).map((value) => ({ value, title: t("chat.context.percent", { percent: Number(value) }) }))}
                 onChange={(value) => void act("coordinator:setContextThreshold", { percent: Number(value) })}
                 meta={t("context.meter.perProject")}
                 side="top"
