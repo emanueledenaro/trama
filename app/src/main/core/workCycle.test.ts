@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Candidate, CoordinatorRequest, GateFinding, GateRole, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { GATE_ROLES, latestGate } from "@shared/gate";
-import { declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
-import { automaticMoveSection } from "./continuousWork";
+import { candidateAfterTurn, declareCandidate, inspectCandidate, latestCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
+import { automaticMove, automaticMoveSection } from "./continuousWork";
+import { workState } from "./workPhase";
 import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import {
@@ -27,7 +28,7 @@ import {
 import { setPersonLanguage } from "./personLanguage";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
-import { assign, confirmTeam, endTurn, findSpecialist, mergedWorktrees, proposeTeam, recordWorkspace, requestStop } from "./team";
+import { assign, confirmTeam, endTurn, findSpecialist, mergedWorktrees, proposeTeam, recordWorkspace, reopenForFindings, requestStop } from "./team";
 import { MergeError } from "./workspace";
 
 /**
@@ -374,6 +375,45 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     };
     const merge = await runCoordinatorTool("commit_merge", { assignment: marco.id }, tools);
     expect(merge.content[0]!.text).toContain("not_in_mandate");
+  });
+});
+
+describe("one work, one working copy, one candidate", () => {
+  /** What Trama reads in Marco's copy when nothing changed since the candidate of minute 2. */
+  const sameCopy = { snapshotId: "snap-2", baseSHA: "f1197f9", diff: "+merge", changedFiles: ["src/app/page.tsx"], excludedSensitiveFiles: [], whitespaceErrors: [], unmergedFiles: [] };
+
+  it("returns the same candidate when the Coordinator declares a working copy that did not change (the shop's four copies of one content)", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    const candidate = blockedCandidate(document, marco, 2);
+    const { context: tools } = context(document);
+    tools.reviewWorkspace = async () => sameCopy;
+    const result = parse(await runCoordinatorTool("declare_candidate", { assignment: marco.id, decisionIDs: [document.decisions[0]!.id] }, tools));
+    expect(result).toMatchObject({ candidateID: candidate.id, unchanged: true });
+    expect(document.candidates).toHaveLength(1);
+    // A changed copy is a new candidate, as before.
+    tools.reviewWorkspace = async () => ({ ...sameCopy, snapshotId: "snap-3" });
+    const changed = parse(await runCoordinatorTool("declare_candidate", { assignment: marco.id, decisionIDs: [document.decisions[0]!.id] }, tools));
+    expect(changed.candidateID).not.toBe(candidate.id);
+    expect(document.candidates).toHaveLength(2);
+  });
+
+  it("lets the Coordinator settle at once when the developer ends the returned work without changing the copy, instead of a new round on the same content", () => {
+    const document = shop();
+    const marco = realignment(document);
+    const candidate = blockedCandidate(document, marco, 2);
+    const gate = latestGate(document.gates, candidate.id)!;
+    reopenForFindings(document, marco.id, { gateId: gate.id, candidateId: candidate.id, findings: ["Dati aziendali in config.json"] }, at(3));
+    gate.returned = { assignmentId: marco.id, at: at(3).toISOString(), waiting: null };
+    endTurn(document, marco.id, null, { kind: "completed", text: "Il rilievo è sbagliato: non cambio niente" }, at(4));
+    expect(candidateAfterTurn(document, marco.id, sameCopy, at(4))).toEqual({ kind: "current", candidate });
+
+    const state = workState(document, "r1");
+    expect(state).toMatchObject({ phase: "blocked", block: "reviewLoop" });
+    expect(state.blocker).toContain("settle_review");
+    expect(state.moves.filter((m) => m.actor === "coordinator").map((m) => [m.move, m.targetId])).toEqual([["settleReview", candidate.id]]);
+    expect(automaticMove(document, "r1", "assignmentEnded", { enabled: true, paused: false, busy: false, unavailable: null })?.move).toBe("settleReview");
+    expect(latestCandidate(document, marco.id)).toBe(candidate);
   });
 });
 

@@ -230,6 +230,21 @@ export function rebindTramaCandidate(
   return latest;
 }
 
+/**
+ * One work, one candidate while its working copy does not change: the latest candidate of the assignment, still open,
+ * that captured this same snapshot and binds the same Pact decisions at their current versions. Declaring the copy
+ * again returns it instead of a copy of it; null when the work needs a new candidate.
+ */
+export function unchangedCandidate(document: ProjectDocument, input: { assignmentId: string; decisionIds: string[] }, review: WorkspaceReview): Candidate | null {
+  const latest = latestCandidate(document, input.assignmentId);
+  if (!latest || latest.snapshotId !== review.snapshotId || latest.pullRequest || candidateSuperseded(document, latest)) return null;
+  const wanted = cleaned(input.decisionIds).sort();
+  const bound = [...latest.requiredDecisionIds].sort();
+  if (wanted.join("\n") !== bound.join("\n")) return null;
+  const current = bound.every((id) => document.decisions.find((d) => d.id === id)?.version === latest.decisionVersions[id]);
+  return current ? latest : null;
+}
+
 /** Records evidence Trama produced by running a required check; an agent's claim never becomes evidence. */
 export function recordEvidence(
   document: ProjectDocument,

@@ -775,6 +775,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} conflicts with the work on GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
+  "main.workPhase.blockerDisputed": "After the findings on candidate {candidate}, the developer of assignment {assignment} ended without changing the working copy: they disagree with the reviewers. Another round of the reviewers on the same content would give the same findings: decide now with settle_review, or overrule with overrule_finding the findings that go against the Pact. Do not declare the candidate again and do not assign the same work again.",
   "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and does not restart the reviewers: you decide with settle_review. With the reviewers, the developer resumes with the findings as your decision; with the developer, the findings are overruled and the work goes on to the merge. Write the reason and the doubt, do not ask the person and do not assign the same work again.",
   "main.workPhase.blockerSemanticConflict":
     "Candidate {id} does not work together with the work of another assignment: {detail}",

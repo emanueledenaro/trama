@@ -32,7 +32,18 @@ import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./chec
 import { GateSettlementError, overruleFinding } from "./gate";
 import { GATE_ROLES } from "@shared/gate";
 import { replacedBy, retiredWork } from "@shared/conflictScope";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
+import {
+  candidateReport,
+  CandidateError,
+  clearCandidate,
+  declareCandidate,
+  findCandidate,
+  latestCandidate,
+  openCorrections,
+  rebindTramaCandidate,
+  supersedeCandidate,
+  unchangedCandidate,
+} from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
@@ -1966,7 +1977,20 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           externalEffects: strings(args.externalEffects),
         };
         // Trama may have declared this same worktree after the developer's turn (issue #388): the declaration binds that one.
-        const candidate = rebindTramaCandidate(document, input, review) ?? declareCandidate(document, input, review);
+        const rebind = rebindTramaCandidate(document, input, review);
+        // One work, one candidate: a working copy that did not change is still the candidate declared from it.
+        const same = rebind ? null : unchangedCandidate(document, input, review);
+        if (same) {
+          return toolSuccess({
+            candidateID: same.id,
+            unchanged: true,
+            snapshot: same.snapshotId,
+            changedFiles: same.changedFiles,
+            requiredChecks: same.requiredChecks,
+            note: `The working copy did not change since candidate ${same.id}: it is still the candidate, with its evidence and its gate. A new gate on the same content gives the same findings: settle a disagreement with settle_review or overrule_finding instead.`,
+          });
+        }
+        const candidate = rebind ?? declareCandidate(document, input, review);
         const rebound = candidate.declaredBy === "trama";
         // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
         candidate.whitespaceErrors = review.whitespaceErrors;

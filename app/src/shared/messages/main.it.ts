@@ -806,6 +806,7 @@ export const mainIt = {
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
+  "main.workPhase.blockerDisputed": "Dopo i rilievi sul candidato {candidate}, lo sviluppatore dell'incarico {assignment} ha finito senza cambiare la copia di lavoro: non è d'accordo con i revisori. Un altro giro dei revisori sullo stesso contenuto darebbe gli stessi rilievi: decidi tu ora con settle_review, oppure supera con overrule_finding i rilievi che vanno contro il Patto. Non dichiarare di nuovo il candidato e non assegnare un incarico nuovo uguale.",
   "main.workPhase.blockerHeld": "La revisione ha fermato il lavoro dell'incarico {assignment} {rounds} volte di seguito, l'ultima sul candidato {candidate}. Trama non lo rimanda più allo sviluppatore e non rilancia i revisori: decidi tu con settle_review. Con i revisori, lo sviluppatore riprende con i rilievi come tua decisione; con lo sviluppatore, i rilievi sono superati e il lavoro va avanti fino all'unione. Scrivi il motivo e il dubbio, non chiedere alla persona e non assegnare un incarico nuovo uguale.",
   "main.workPhase.blockerSemanticConflict":
     "Il candidato {id} non funziona insieme al lavoro di un altro incarico: {detail}",
