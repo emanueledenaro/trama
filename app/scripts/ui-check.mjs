@@ -5097,7 +5097,9 @@ await cp(resolve("resources/DemoProject"), mandateProject, { recursive: true });
 execFileSync("git", ["-C", mandateProject, "init", "-q", "-b", "main"]);
 execFileSync("git", ["-C", mandateProject, "add", "."]);
 execFileSync("git", ["-C", mandateProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
-({ app, page } = await launch());
+// TRAMA_RETURN_AFTER_MS=0: coming back to the window counts as a return at once, for the recap of the night (issue #423).
+// The automatic moves run here (FAKE_CODEX_AUTOMATIC=run): the delegation makes the Coordinator decide by itself.
+({ app, page } = await launch({ TRAMA_RETURN_AFTER_MS: "0", FAKE_CODEX_AUTOMATIC: "run" }));
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), mandateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-mandato" }).waitFor({ timeout: 30_000 });
@@ -5206,6 +5208,50 @@ await declined.getByRole("button", { name: "Non farlo" }).click();
 await declined.waitFor({ state: "detached", timeout: 20_000 });
 await page.locator('[data-testid="requested-action"][data-status="declined"]').getByText(/^Non faccio la cancellazione di un branch o di un tag remoto: non l'hai confermato/).waitFor({ timeout: 20_000 });
 if (!remoteBranches().includes("feature/prova")) throw new Error("A declined deletion ran");
+
+// Issue #423: with "fai tutto tu" the Coordinator works on its own. The chat quotes the person, the mandate covers the
+// whole project, a product question is decided with the delegation, and when the person comes back the recap says
+// what it decided, with its doubt. The Mandate view shows the delegation and withdraws it.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await page.getByLabel("Messaggio al Coordinatore").fill("[delega:fai tutto tu in automatico] Vado a dormire, fai tutto tu in automatico");
+await page.keyboard.press("Enter");
+const grantLine = page.locator('[data-testid="delegation-line"][data-phase="granted"]').last();
+await grantLine.getByText("Da ora faccio tutto io, anche di notte, perché me l'hai chiesto: «fai tutto tu in automatico». Ti chiedo solo le conferme di cancellazione.").waitFor({ timeout: 20_000 });
+if (/[–—]/.test(await grantLine.innerText())) throw new Error("The delegation line has a dash");
+await lookShots("26g-full-delegation");
+await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] Gli ordini pagati annullati vanno in revisione");
+await page.keyboard.press("Enter");
+for (let tries = 0; ; tries++) {
+  const state = await page.evaluate(() => window.trama.getState());
+  if ((state.project?.document.delegatedChoices ?? []).some((c) => c.kind === "decision")) break;
+  if (tries > 240) throw new Error("The Coordinator did not decide the question with the delegation");
+  await page.waitForTimeout(250);
+}
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: true }));
+// The person comes back to the window: the recap of the night, with the choice and its doubt.
+await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit("blur"));
+await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit("focus"));
+const nightRecap = page.locator('[data-testid="recap-card"][data-reason="return"]').last();
+await nightRecap.waitFor({ timeout: 20_000 });
+await nightRecap.getByText("Cosa ho deciso con la tua delega").waitFor();
+await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Dubbio: Non so se vale anche per gli ordini pagati con un buono").waitFor();
+await primaryLast(nightRecap.getByTestId("recap-delegated-choice").first(), "Delegated choice");
+await nightRecap.scrollIntoViewIfNeeded();
+await lookShots("26h-morning-recap");
+await nightRecap.getByTestId("recap-delegated-choice").first().getByRole("button", { name: "Ho visto" }).click();
+await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Vista", { exact: true }).waitFor();
+await openView("Regole", "Mandato");
+const delegationSection = page.getByTestId("side-bar").getByTestId("delegation-section");
+await page.getByTestId("side-bar").locator('[data-testid="delegation-section"][data-active="true"]').waitFor({ timeout: 20_000 });
+await delegationSection.getByText("Dalla tua frase: «fai tutto tu in automatico»").waitFor();
+await primaryLast(delegationSection.locator(".cta-row"), "Full delegation");
+await lookShots("26i-delegation-view");
+await delegationSection.getByRole("button", { name: "Ritira la delega" }).click();
+await page.getByTestId("side-bar").locator('[data-testid="delegation-section"][data-active="false"]').waitFor({ timeout: 20_000 });
+await page.locator('[data-testid="delegation-line"][data-phase="revoked"]').getByText("Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te.").waitFor({ timeout: 20_000 });
+await lookShots("26j-delegation-revoked");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 

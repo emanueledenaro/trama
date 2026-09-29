@@ -100,6 +100,9 @@ export interface ActionMap {
   /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
   "requestedAction:confirm": [{ id: string }, void];
   "requestedAction:decline": [{ id: string }, void];
+  /** The person withdraws the full delegation from the Mandate view, or has seen a choice made with it (issue #423). */
+  "delegation:revoke": [void, void];
+  "delegation:seen": [{ id: string }, void];
   "mandate:reject": [{ requestId: string; reason: string }, void];
   /** The person corrects a step the Coordinator took by itself within the mandate, in their own words (A06). */
   "autonomousStep:correct": [{ stepId: string; note: string }, boolean];
