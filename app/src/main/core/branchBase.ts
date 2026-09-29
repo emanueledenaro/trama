@@ -57,9 +57,12 @@ async function upstreamOf(root: string, branch: string): Promise<{ remote: strin
  * Returns the error in the remote's words, or null.
  */
 async function fetchBranch(root: string, upstream: { remote: string; merge: string; ref: string }): Promise<string | null> {
-  const fetched = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "fetch", "--no-tags", "--quiet", upstream.remote, `+${upstream.merge}:${upstream.ref}`], {
+  const options = ["-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
+  const fetch = ["fetch", "--no-tags", "--no-recurse-submodules", "--quiet", upstream.remote, `+${upstream.merge}:${upstream.ref}`];
+  const fetched = await runProcess("git", [...options, ...fetch], {
     cwd: root,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    // The person's own git configuration keeps its credential helpers and SSH keys; nothing prompts.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes" },
     timeoutMs: FETCH_TIMEOUT_MS,
   });
   if (fetched.exitCode === 0) return null;
