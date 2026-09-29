@@ -13,6 +13,7 @@ import type {
   ProjectTeam,
   Specialist,
   SpecialistAssignment,
+  SpecialistModelChoice,
   SpecialistStatus,
   SpecialistTool,
   TeamProposal,
@@ -26,6 +27,7 @@ import { shortId } from "@shared/ids";
 import { DEFAULT_DEVELOPERS_PER_SQUAD, foreignSquad, squadLimitError, squadLimitProblem } from "@shared/squads";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { ITALIAN, LANGUAGES, translator } from "@shared/i18n";
+import { catalogOffers, PROVIDERS, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { cloudWorking } from "@shared/workPlace";
 import { readDeveloperReport } from "./implementation";
@@ -357,6 +359,47 @@ export function setSpecialistColor(document: ProjectDocument, id: string, color:
   return specialist;
 }
 
+/**
+ * The person chooses the provider, model and effort of an agent's next assignments, or gives the choice back to the
+ * Coordinator with null (issue #455). Work already running keeps its model. Returns the choice before the change.
+ */
+export function setSpecialistModel(
+  document: ProjectDocument,
+  id: string,
+  choice: { provider: ProviderId; model: string; effort: string | null } | null,
+  now = new Date(),
+): { specialist: Specialist; previous: SpecialistModelChoice | null } {
+  const specialist = document.team.specialists.find((s) => s.id === id);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${id} was removed from the team.`);
+  const previous = specialist.chosenModel ?? null;
+  if (choice) {
+    if (!PROVIDERS.some((p) => p.id === choice.provider)) throw new TeamError("unknown_provider", `Unknown provider: ${String(choice.provider)}.`);
+    const model = required(choice.model, "model");
+    specialist.chosenModel = { provider: choice.provider, model, effort: choice.effort?.trim() || null, chosenAt: now.toISOString() };
+  } else {
+    specialist.chosenModel = null;
+  }
+  specialist.updatedAt = now.toISOString();
+  return { specialist, previous };
+}
+
+/**
+ * The person's choice for an agent when a connected provider offers its model and can run the work; null when it
+ * cannot run now, and the work goes to the Coordinator's default model (issue #455).
+ */
+export function usableChoice(
+  choice: SpecialistModelChoice,
+  providers: { id: ProviderId; models: string[]; catalog?: CatalogEntry[] }[],
+  withEdits: boolean,
+): SpecialistModelChoice | null {
+  const provider = providers.find((p) => p.id === choice.provider);
+  if (!provider) return null;
+  if (!withEdits && !supportsReadOnly(choice.provider)) return null;
+  if (provider.models.length && !catalogOffers(choice.provider, provider.catalog ?? provider.models, choice.model)) return null;
+  return choice;
+}
+
 export function removeSpecialist(document: ProjectDocument, id: string, reason: string, actor: string, now = new Date()): Specialist {
   const specialist = document.team.specialists.find((s) => s.id === id);
   if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
@@ -386,6 +429,8 @@ export interface AssignmentOrder {
   dependencies: string[];
   model: string;
   provider?: ProviderId;
+  /** The effort the person chose for the agent's model (issue #455). */
+  effort?: string | null;
   /** The Coordinator's reason for the provider and model (UX05). */
   modelReason?: string | null;
   /** The goal the work serves (UX02). */
@@ -471,6 +516,7 @@ export function assign(
       dependencies,
       model,
       provider,
+      ...(order.effort ? { effort: order.effort } : {}),
       modelReason: order.modelReason?.trim() || null,
       ...(order.goalId ? { goalId: order.goalId } : {}),
       decisionVersions,
@@ -500,6 +546,7 @@ type AssignmentFields = Pick<
   | "dependencies"
   | "model"
   | "provider"
+  | "effort"
   | "modelReason"
   | "goalId"
   | "decisionVersions"
@@ -557,6 +604,8 @@ export interface DutyOrder {
   provider: ProviderId;
   /** Why Trama chose this model, in the person's words. */
   modelReason: string;
+  /** The person's model for the role when it can run now (issue #455): it wins over `provider` and `model`. */
+  chosen?: (specialist: Specialist) => SpecialistModelChoice | null;
   tools: SpecialistTool[];
   requiredChecks: string[];
   /** The worktree the work continues in, for the fix of a candidate; null to prepare one when it writes. */
@@ -578,6 +627,7 @@ export function assignDuty(document: ProjectDocument, order: DutyOrder, mandateV
     if (moduleIds.length === 0) throw new TeamError("invalid_arguments", "Work that writes needs its modules.");
     requireIndependent(document, moduleIds, specialist.id);
   }
+  const personal = order.chosen?.(specialist) ?? null;
   return recordAssignment(
     specialist,
     {
@@ -588,9 +638,10 @@ export function assignDuty(document: ProjectDocument, order: DutyOrder, mandateV
       exercise: null,
       moduleIds,
       dependencies: [],
-      model: required(order.model, "model"),
-      provider: order.provider,
-      modelReason: order.modelReason,
+      model: personal?.model ?? required(order.model, "model"),
+      provider: personal?.provider ?? order.provider,
+      ...(personal?.effort ? { effort: personal.effort } : {}),
+      modelReason: personal ? t("main.team.personModelReason") : order.modelReason,
       decisionVersions: {},
       tools: order.tools,
       requiredChecks: cleaned(order.requiredChecks),

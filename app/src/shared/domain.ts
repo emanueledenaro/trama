@@ -749,6 +749,8 @@ export interface SpecialistAssignment {
   decisionVersions?: Record<string, number>;
   /** The provider recorded at assignment; the person can change it (ADR 0009). Absent means Codex. */
   provider?: ProviderId;
+  /** The effort of the model, when the person chose one for the agent (issue #455); absent means the model's default. */
+  effort?: string | null;
   /** Why the Coordinator chose this provider and model, in its own words (UX05); absent in older documents. */
   modelReason?: string | null;
   /** The goal the work serves (UX02); absent when it was assigned outside a goal. */
@@ -1193,13 +1195,27 @@ export interface Specialist {
   tag: string;
   createdAt: string;
   status: SpecialistStatus;
+  /** The model of the agent's latest work, recorded at each assignment. */
   model: string | null;
   provider?: ProviderId | null;
+  /**
+   * The person's choice of provider, model and effort for the agent's next assignments (issue #455): it wins over the
+   * Coordinator's pick and over a new team proposal. Absent or null when the Coordinator chooses.
+   */
+  chosenModel?: SpecialistModelChoice | null;
   tools: SpecialistTool[];
   updatedAt: string;
   lastUpdate: string;
   assignments: SpecialistAssignment[];
   removal: { removedBy: string; reason: string; removedAt: string } | null;
+}
+
+/** Provider, model and effort the person chose for an agent (issue #455). */
+export interface SpecialistModelChoice {
+  provider: ProviderId;
+  model: string;
+  effort: string | null;
+  chosenAt: string;
 }
 
 export interface ProjectTeam {

@@ -18,11 +18,13 @@ import {
   requestStop,
   resumeAssignment,
   setSpecialistColor,
+  setSpecialistModel,
   teamMembers,
   stopOrphanedAssignments,
   teamMessage,
   teamReport,
   TeamError,
+  usableChoice,
 } from "./team";
 import { setPersonLanguage } from "./personLanguage";
 import { translator } from "@shared/i18n";
@@ -252,6 +254,51 @@ describe("agent identity (W13, W15)", () => {
     const qa = document.team.specialists.find((s) => s.role === "qa")!;
     expect(setSpecialistColor(document, qa.id, "copper").color).toBe("copper");
     expect(() => setSpecialistColor(document, qa.id, "green" as never)).toThrow(expect.objectContaining({ code: "invalid_color" }));
+  });
+
+  it("keeps the person's model for an agent through its assignments (issue #455)", () => {
+    const document = emptyDocument("p");
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members }).id, null, null);
+    const ada = findSpecialist(document, "Ada")!;
+    const now = new Date("2026-09-29T10:00:00.000Z");
+    const { previous } = setSpecialistModel(document, ada.id, { provider: "claudeAgent", model: " claude-opus ", effort: "high" }, now);
+    expect(previous).toBeNull();
+    expect(ada.chosenModel).toEqual({ provider: "claudeAgent", model: "claude-opus", effort: "high", chosenAt: now.toISOString() });
+    // The assignment records its own model; the person's choice stays for the next ones.
+    assign(document, order({ model: "gpt-5.5", provider: "codex", effort: "low" }), 1, null);
+    expect(ada.assignments[0]).toMatchObject({ model: "gpt-5.5", provider: "codex", effort: "low" });
+    expect(ada.chosenModel?.model).toBe("claude-opus");
+    // Null gives the choice back to the Coordinator.
+    expect(setSpecialistModel(document, ada.id, null, now).previous?.model).toBe("claude-opus");
+    expect(ada.chosenModel).toBeNull();
+  });
+
+  it("refuses a model for an unknown provider, an unknown agent or an agent removed from the team", () => {
+    const document = emptyDocument("p");
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members }).id, null, null);
+    const bruno = findSpecialist(document, "Bruno")!;
+    expect(() => setSpecialistModel(document, bruno.id, { provider: "nope" as never, model: "x", effort: null })).toThrow(
+      expect.objectContaining({ code: "unknown_provider" }),
+    );
+    expect(() => setSpecialistModel(document, bruno.id, { provider: "codex", model: " ", effort: null })).toThrow(
+      expect.objectContaining({ code: "invalid_arguments" }),
+    );
+    expect(() => setSpecialistModel(document, "S-NOPE", { provider: "codex", model: "gpt-5.5", effort: null })).toThrow(
+      expect.objectContaining({ code: "unknown_specialist" }),
+    );
+    removeSpecialist(document, bruno.id, "Non serve", "Persona");
+    expect(() => setSpecialistModel(document, bruno.id, { provider: "codex", model: "gpt-5.5", effort: null })).toThrow(
+      expect.objectContaining({ code: "specialist_removed" }),
+    );
+    expect(bruno.chosenModel ?? null).toBeNull();
+  });
+
+  it("uses the person's model only while a connected provider offers it", () => {
+    const choice = { provider: "codex" as const, model: "gpt-5.5", effort: "high", chosenAt: "2026-09-29T10:00:00.000Z" };
+    expect(usableChoice(choice, [{ id: "codex", models: ["gpt-5.5"] }], true)).toBe(choice);
+    expect(usableChoice(choice, [{ id: "codex", models: [] }], true)).toBe(choice);
+    expect(usableChoice(choice, [{ id: "codex", models: ["gpt-5.4"] }], true)).toBeNull();
+    expect(usableChoice(choice, [{ id: "claudeAgent", models: ["gpt-5.5"] }], true)).toBeNull();
   });
 });
 

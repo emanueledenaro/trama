@@ -234,6 +234,7 @@ export function assignFinding(document: ProjectDocument, audit: FocusAudit, find
         decisionIds: Object.keys(candidate?.decisionVersions ?? {}).filter((id) => document.decisions.some((d) => d.id === id)),
         model: chosen.model,
         provider: chosen.provider,
+        effort: chosen.effort ?? null,
         modelReason: t("main.findingWork.modelReason"),
         goalId: candidateWork?.goalId ?? null,
         tools: ["edits"],

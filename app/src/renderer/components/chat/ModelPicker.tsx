@@ -29,9 +29,18 @@ export const effortLabel = (t: Translate, effort: string): string => (EFFORT_LAB
 /** Provider catalogues separate facts with " · "; Trama shows them as a plain list. */
 const plainDescription = (text: string) => text.replaceAll(" · ", ", ");
 
+/** A provider, model and effort the person picked. */
+export interface ModelChoice {
+  provider: ProviderId;
+  model: string;
+  effort: string | null;
+}
+
 /**
  * Provider, model and effort of the Coordinator for the open dialog (ADR 0010). The row of marks only browses:
  * nothing changes until a model is chosen, so looking at another provider never switches the Coordinator.
+ * With `onChoose` the same picker chooses an agent's model (issue #455): the choice goes to the caller, and the
+ * Coordinator's own notes (recovery requests, fast tier, its provider's limits) stay out.
  */
 export function ModelPicker({
   className,
@@ -41,6 +50,10 @@ export function ModelPicker({
   modelMissing,
   busy,
   fastMode,
+  onChoose,
+  emptyLabel,
+  ariaLabel,
+  testId,
 }: {
   className: string;
   selectedProvider: ProviderId;
@@ -49,6 +62,12 @@ export function ModelPicker({
   modelMissing: boolean;
   busy: boolean;
   fastMode: boolean;
+  onChoose?: (choice: ModelChoice) => void;
+  /** The trigger's text while no model is chosen. */
+  emptyLabel?: string;
+  /** The trigger's name for screen readers, when it is not the Coordinator's picker. */
+  ariaLabel?: string;
+  testId?: string;
 }) {
   const t = useT();
   const providers = useUi((s) => s.app!.providers);
@@ -60,11 +79,11 @@ export function ModelPicker({
   const handledRequest = useRef(pickerRequest?.nonce ?? 0);
 
   useEffect(() => {
-    if (!pickerRequest || pickerRequest.nonce === handledRequest.current) return;
+    if (onChoose || !pickerRequest || pickerRequest.nonce === handledRequest.current) return;
     handledRequest.current = pickerRequest.nonce;
     requestedProvider.current = pickerRequest.provider;
     setOpen(true);
-  }, [pickerRequest]);
+  }, [pickerRequest, onChoose]);
 
   useEffect(() => {
     if (open) setBrowsing(requestedProvider.current ?? selectedProvider);
@@ -79,24 +98,27 @@ export function ModelPicker({
   const current = providers[selectedProvider]?.models.find((m) => m.model === selectedModel);
   const efforts = current?.supportedReasoningEfforts ?? [];
 
+  const pick = (choice: ModelChoice) => (onChoose ? onChoose(choice) : void act("coordinator:selectModel", choice));
   const choose = (model: string) => {
     const next = models.find((m) => m.model === model);
-    void act("coordinator:selectModel", { model, effort: next?.defaultReasoningEffort ?? null, provider: browsing });
+    pick({ model, effort: next?.defaultReasoningEffort ?? null, provider: browsing });
     setOpen(false);
   };
+  const unavailable = onChoose ? null : coordinatorUnavailableReason(t, browsing);
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         className={className}
-        aria-label={t("chat.model.label", { provider: PROVIDERS.find((p) => p.id === selectedProvider)?.name ?? selectedProvider })}
+        aria-label={ariaLabel ?? t("chat.model.label", { provider: PROVIDERS.find((p) => p.id === selectedProvider)?.name ?? selectedProvider })}
+        data-testid={testId}
       >
         <ProviderIcon provider={selectedProvider} />
         <span className={cn("min-w-0 truncate", modelMissing ? "text-warning line-through" : "text-[var(--color-text-foreground)]")}>
-          {current?.displayName ?? selectedModel ?? t("chat.model.choose")}
+          {current?.displayName ?? selectedModel ?? emptyLabel ?? t("chat.model.choose")}
         </span>
         {effort ? <span className="shrink-0 text-muted-foreground">{effortLabel(t, effort)}</span> : null}
-        {fastMode && current?.supportsFastMode ? (
+        {!onChoose && fastMode && current?.supportsFastMode ? (
           <IconBoltFilled aria-label={t("chat.model.fastOn")} className="size-3 shrink-0 text-[var(--color-text-accent)]" />
         ) : null}
         <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
@@ -176,7 +198,7 @@ export function ModelPicker({
           )}
         </PickerList>
 
-        {coordinatorUnavailableReason(t, browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(t, browsing)}</p> : null}
+        {unavailable ? <p className="px-4 pb-2 text-ui-xs text-warning">{unavailable}</p> : null}
 
         {modelMissing && browsing === selectedProvider ? (
           <p className="px-4 pb-2 text-ui-xs text-warning">{t("chat.model.missing", { model: selectedModel ?? "" })}</p>
@@ -189,8 +211,8 @@ export function ModelPicker({
             defaultValue={current.defaultReasoningEffort ?? null}
             modelName={current.displayName}
             accent={PROVIDER_GLOW[selectedProvider]}
-            fast={current.supportsFastMode ? { enabled: fastMode, onToggle: () => void act("coordinator:setFastMode", { enabled: !fastMode }) } : null}
-            onChange={(level) => void act("coordinator:selectModel", { model: current.model, effort: level, provider: selectedProvider })}
+            fast={!onChoose && current.supportsFastMode ? { enabled: fastMode, onToggle: () => void act("coordinator:setFastMode", { enabled: !fastMode }) } : null}
+            onChange={(level) => pick({ model: current.model, effort: level, provider: selectedProvider })}
           />
         ) : null}
       </PickerPopup>

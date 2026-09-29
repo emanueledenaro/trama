@@ -216,6 +216,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "backlog:move": ({ squadId, key, to }) => controller.moveBacklogItemByPerson(squadId, key, to),
   "backlog:release": ({ squadId, key }) => controller.releaseBacklogItemByPerson(squadId, key),
   "specialist:setColor": ({ specialistId, color }) => controller.setSpecialistColorByPerson(specialistId, color),
+  "specialist:setModel": ({ specialistId, choice }) => controller.setSpecialistModelByPerson(specialistId, choice),
   "automaticWork:start": (request) => controller.startAutomaticWork(request),
   "pactDemo:run": () => controller.runPactDemo(),
   "pactDemo:approve": () => controller.approvePactDemo(),
