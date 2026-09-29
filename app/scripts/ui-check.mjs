@@ -3233,6 +3233,15 @@ if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a s
     await themeShots(`22c1-squad-backlog-${width}x${height}`);
   }
   await page.setViewportSize(backlogSize);
+  // The same backlog in English: the title, the Coordinator's reasons and the person's place come from the catalog.
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 items").waitFor();
+  await placed.getByTestId("backlog-reason").getByText("Place chosen by you", { exact: true }).waitFor();
+  await backlog.getByTestId("backlog-item").nth(1).getByTestId("backlog-reason").getByText("Ready, in the order of the breakdown").waitFor();
+  await backlog.evaluate((node) => node.scrollIntoView({ block: "center" }));
+  await shot("22c1-squad-backlog-english");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
   await placed.getByTestId("backlog-release").click();
   await backlog.locator('[data-testid="backlog-item"][data-placed="person"]').waitFor({ state: "detached" });
   if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The item did not go back to the Coordinator's order: ${await backlogKeys()}`);
