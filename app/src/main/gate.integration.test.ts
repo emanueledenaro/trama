@@ -12,11 +12,14 @@ import { findSpecialist } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
+/** The wait the test configuration sets (vitest.config.ts): one test shortens it, every test gets it back. */
+const gateTurnWait = process.env.TRAMA_GATE_TURN_WAIT_MS;
 afterEach(async () => {
   await controller?.stop();
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
   delete process.env.FAKE_CODEX_GATE_HOLD;
+  process.env.TRAMA_GATE_TURN_WAIT_MS = gateTurnWait;
 });
 
 async function until(check: () => boolean, timeout = 20_000): Promise<void> {
@@ -55,6 +58,24 @@ async function repository(nodeSuite: boolean): Promise<string> {
   await git(["init", "-b", "main"], repo, false);
   await git(["add", "."], repo, false);
   await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+  return repo;
+}
+
+/** The example project with a Node suite that runs until the file `hold` exists, then passes; after 20 s it fails. */
+async function slowSuite(hold: string): Promise<string> {
+  const repo = await repository(true);
+  // The hold's path travels as data in hold.json, never inside the generated code.
+  const suite = [
+    `const { existsSync } = require("node:fs");`,
+    `const hold = require("./hold.json").path;`,
+    `const started = Date.now();`,
+    `const wait = () => (existsSync(hold) ? process.exit(0) : Date.now() - started > 20000 ? process.exit(3) : setTimeout(wait, 50));`,
+    `wait();`,
+  ];
+  await writeFile(join(repo, "hold.json"), `${JSON.stringify({ path: hold })}\n`);
+  await writeFile(join(repo, "check.js"), `${suite.join("\n")}\n`);
+  await git(["add", "hold.json"], repo, false);
+  await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-am", "slow suite"], repo, false);
   return repo;
 }
 
@@ -207,6 +228,131 @@ describe("the candidate gate (W10)", () => {
     expect(review).toMatchObject({ id: candidate.technicalReview!.id, gateId: document.gates![0]!.id, verdict: "approved" });
   });
 
+  it("lets a long gate go on in the background so the person can talk to the Coordinator meanwhile (ADR 0023)", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    // The reviewers answer only once the test lets them, and the turn waits for the gate a short time only.
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    process.env.FAKE_CODEX_GATE_HOLD = hold;
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const gate = document.gates![0]!;
+    const candidate = document.candidates[0]!;
+    // The turn ended while the gate is still at work, on its checks or with the reviewers: the chat is free.
+    expect(["checking", "reviewing"]).toContain(gate.status);
+    expect(document.requests.at(-1)!.state).toBe("completed");
+    // The person writes now: the message runs at once, it does not wait in the queue for the gate.
+    await controller!.send("Aggiungi anche una nota sugli ordini annullati.", null, null, null);
+    expect(document.requests.at(-1)).toMatchObject({ text: "Aggiungi anche una nota sugli ordini annullati.", state: "completed" });
+    // The gate ends in the background and records its review on the same candidate.
+    await writeFile(hold, "");
+    await until(() => gate.status !== "checking" && gate.status !== "reviewing");
+    await until(() => candidate.technicalReview?.gateId === gate.id);
+    expect(document.gates).toHaveLength(1);
+    expect(candidate.technicalReview).toMatchObject({ verdict: "approved", gateId: gate.id });
+  }, 120_000);
+
+  it("lets a long check of a candidate go on in the background so the person can talk to the Coordinator meanwhile", async () => {
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    const { document, decision } = await openTeam(await slowSuite(hold));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna] [test-node]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send(`[candidato:${work.id}:${decision.id}:node_test] [senza-revisione]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    // The turn ended while the suite still runs: the chat is free and the evidence is not there yet.
+    expect(document.requests.at(-1)!.state).toBe("completed");
+    expect(candidate.evidence.node_test).toBeUndefined();
+    await controller!.send("Aggiungi anche una nota sugli ordini annullati.", null, null, null);
+    expect(document.requests.at(-1)).toMatchObject({ text: "Aggiungi anche una nota sugli ordini annullati.", state: "completed" });
+    // The suite ends in the background and records its evidence on the same candidate.
+    await writeFile(hold, "");
+    await until(() => candidate.evidence.node_test !== undefined, 60_000);
+    expect(candidate.evidence.node_test).toMatchObject({ result: "pass", snapshotId: candidate.snapshotId });
+  }, 120_000);
+
+  it("never holds the Coordinator's turn for the merge it starts with the full delegation", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    await controller!.send("[delega:fai tutto tu in automatico] Stanotte fai tutto tu in automatico", null, null, null);
+    // Publishing and merging on GitHub takes long: here it never ends.
+    (controller as unknown as { integrateCandidates(): Promise<void> }).integrateCandidates = () => new Promise(() => undefined);
+    const tools = (controller as unknown as { runtime: { toolServer: { handler(name: string, args: object): Promise<{ content: { text: string }[] }> } } }).runtime.toolServer;
+    const answer = await Promise.race([
+      tools.handler("approve_with_delegation", { candidate: candidate.id, reason: "Le schermate sono coerenti" }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
+    ]);
+    expect(answer).not.toBeNull();
+    expect(JSON.parse(answer!.content[0]!.text)).toMatchObject({ candidateID: candidate.id, status: "approved" });
+    expect(candidate.humanApproval).toMatchObject({ actor: expect.any(String) });
+  }, 120_000);
+
+  it("lets a long check of the checkout go on in the background and tells the result to the person and the Coordinator", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    const { document } = await openTeam(await slowSuite(hold));
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send("[verifica:node_test]", null, null, null);
+    const asked = document.requests.at(-1)!;
+    expect(asked.state).toBe("completed");
+    await controller!.send("Come stanno andando gli sviluppatori?", null, null, null);
+    expect(document.requests.at(-1)).toMatchObject({ text: "Come stanno andando gli sviluppatori?", state: "completed" });
+    await writeFile(hold, "");
+    // The result is a line of its own at the bottom of the chat, not hidden in the turn that asked for it.
+    const passed = () => document.events.find((e) => e.content.type === "activity" && e.content.title.endsWith(": superata"));
+    await until(() => passed() !== undefined, 60_000);
+    expect(passed()!.requestId).toBeNull();
+    // The next turn tells the Coordinator the result it did not wait for, once.
+    const before = (await readLog(log)).length;
+    await controller!.send("Allora?", null, null, null);
+    await controller!.send("E adesso?", null, null, null);
+    const prompts = (await readLog(log))
+      .slice(before)
+      .filter((r) => r.method === "turn/start")
+      .map((r) => JSON.stringify(r.params.input));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Verifiche finite dopo il loro turno");
+    expect(prompts[1]).not.toContain("Verifiche finite dopo il loro turno");
+  }, 120_000);
+
+  it("tells the Coordinator the result of a check its turn waited for when that turn ended first, stopped or set aside (ADR 0023)", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    const { project, document } = await openTeam(await slowSuite(hold));
+    // The turn waits for the check, as within the wait of ADR 0023, and ends before it: nobody reads the tool's answer.
+    const asked = controller!.send("[verifica:node_test]", null, null, null);
+    const inFlight = (controller as unknown as { checksInFlight: Map<string, unknown> }).checksInFlight;
+    await until(() => inFlight.size > 0);
+    await controller!.interrupt();
+    await asked;
+    expect(document.requests.at(-1)!.state).toBe("interrupted");
+    expect(project.runningRequestId).toBeNull();
+    await writeFile(hold, "");
+    const passed = () => document.events.find((e) => e.content.type === "activity" && e.content.title.endsWith(": superata"));
+    await until(() => passed() !== undefined && inFlight.size === 0, 60_000);
+    // The next turn tells the Coordinator the result it did not get.
+    const before = (await readLog(log)).length;
+    await controller!.send("Allora?", null, null, null);
+    const prompts = (await readLog(log))
+      .slice(before)
+      .filter((r) => r.method === "turn/start")
+      .map((r) => JSON.stringify(r.params.input));
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Verifiche finite dopo il loro turno");
+  }, 120_000);
+
   it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;
@@ -255,6 +401,34 @@ describe("the candidate gate (W10)", () => {
     await until(() => gate.returned?.waiting === null);
     await until(() => work.turns.length === 2 && work.status === "completed");
     expect(work.gateReturn).toMatchObject({ gateId: gate.id });
+  }, 120_000);
+
+  it("holds the findings of a gate that ends during the Pause, and sends them back after Riprendi (A05, ADR 0023)", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    await controller!.send("[assegna] [bloccante]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    // The turn waits for the gate a short time only: the reviewers go on in the background.
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    process.env.FAKE_CODEX_GATE_HOLD = hold;
+    process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const gate = document.gates![0]!;
+    // The gate is still at work, on its checks or with the reviewers (long checks go on in the background too).
+    expect(["checking", "reviewing"]).toContain(gate.status);
+    // The person pauses while the reviewers work, with continuous work on; then the gate blocks.
+    await controller!.pauseContinuousWork(true);
+    await controller!.updateSettings({ continuousWork: true });
+    await writeFile(hold, "");
+    await until(() => gate.returned !== null);
+    expect(gate.status).toBe("blocked");
+    // In pause nothing starts: the findings wait with the work, which stays completed.
+    expect(gate.returned).toMatchObject({ waiting: expect.stringContaining("pausa") });
+    expect(work.turns).toHaveLength(1);
+    // Riprendi runs a round at once: the findings go back and Ada resumes in her worktree.
+    await controller!.pauseContinuousWork(false);
+    await until(() => gate.returned?.waiting === null);
+    await until(() => work.turns.length === 2 && work.status === "completed");
   }, 120_000);
 
   it("keeps the findings of a project the person left, and sends them back when it opens again", async () => {

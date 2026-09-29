@@ -40,7 +40,7 @@ import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
 import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
-import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
+import { PresenceControls, PresenceStatus } from "@/components/PresencePanel";
 
 /** The sections of the app (issue #336), apart from those of the open project. */
 const APP_SECTIONS: SettingsSection[] = ["general", "connections"];
@@ -887,12 +887,7 @@ function PresenceSection() {
         ) : (
           <Row
             label={t("settings.presence.share", { name: project.name })}
-            description={
-              <>
-                {presenceStatusLine(project.presence)}
-                {project.presence?.message ? <span className="mt-1 block text-foreground/80">{project.presence.message}</span> : null}
-              </>
-            }
+            description={<PresenceStatus view={project.presence} />}
             control={<PresenceControls view={project.presence} consentChoice={project.document.presence?.choice ?? null} />}
           />
         )}

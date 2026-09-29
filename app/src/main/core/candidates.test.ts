@@ -40,6 +40,14 @@ function setup() {
 }
 
 describe("candidates", () => {
+  it("keeps current a candidate built on the copy on GitHub that the checkout lags, and stops one built on another base", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    // The checkout is at f1197f9 and lags chore/pre-apertura on GitHub: work built on GitHub's commits is current.
+    expect(candidateReport(document, candidate, ["f1197f9", "base", "9176e37"]).state).toBe("verified");
+    expect(candidateReport(document, candidate, ["f1197f9"]).blockers.map((b) => b.code)).toEqual(["BASE_CHANGED"]);
+  });
+
   it("moves from building to verified to decided and invalidates on change", () => {
     const { document, decision, candidate } = setup();
     expect(candidateReport(document, candidate, "base").blockers.map((b) => b.code)).toEqual(["EVIDENCE_MISSING"]);
@@ -293,6 +301,14 @@ describe("candidates", () => {
         expect(() => approveCandidate(document, candidate.id, "Persona", "base")).toThrow(/WORKTREE_CHANGED/);
         expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/WORKTREE_CHANGED/);
       }
+    });
+
+    it("does not declare a merge left with files in conflict: it is not the work yet", () => {
+      const { document, candidate, assignment } = corrected();
+      const outcome = candidateAfterTurn(document, assignment.id, { ...worktree("snap-2", ["a", "b"]), unmergedFiles: ["b"] });
+      expect(outcome).toMatchObject({ kind: "refused", reason: "unmerged", previous: candidate });
+      expect(latestCandidate(document, assignment.id)).toBe(candidate);
+      expect(candidateReport(document, candidate, "base").blockers[0]).toMatchObject({ code: "WORKTREE_CHANGED" });
     });
 
     it("says in English that the candidate lags the working copy (issue #301)", () => {

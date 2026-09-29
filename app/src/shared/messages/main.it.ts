@@ -79,6 +79,8 @@ export const mainIt = {
   "main.controller.retryTemporaryLimitDetail":
     "Dopo il limite temporaneo di {provider}, Trama riprova il messaggio.",
   "main.controller.turnInterruptedTitle": "Turno interrotto",
+  "main.controller.moveSetAsideTitle": "Mossa messa da parte per il tuo messaggio",
+  "main.controller.moveSetAsideDetail": "Messa da parte per il tuo messaggio: Trama la riprende dopo.",
   "main.controller.turnFailedTitle": "Il turno non è riuscito",
   "main.controller.turnNotRepeatable": "Questo turno non si può più ripetere.",
   "main.controller.quotaWaitStoppedTitle": "Attesa della quota fermata",
@@ -326,6 +328,7 @@ export const mainIt = {
   "main.controller.worktreeInUse":
     "Un altro incarico sta lavorando in questo worktree: aspetta che finisca.",
   "main.controller.worktreeRemovedTitle": "Worktree rimosso",
+  "main.controller.mergeConcludedTitle": "Merge registrato nella copia di lavoro {branch}",
   "main.controller.worktreeRemovedBranchDeleted":
     "Anche il branch {branch} è stato eliminato: non aveva commit.",
   "main.controller.worktreeRemovedBranchKept": "Il branch {branch} resta.",
@@ -375,6 +378,7 @@ export const mainIt = {
     "L'incarico non c'è più: serve un nuovo incarico.",
   "main.controller.findingsWaitProjectClosed":
     "Il progetto non è aperto: il lavoro riprende quando lo riapri.",
+  "main.controller.findingsWaitPaused": "Il Coordinatore è in pausa: il lavoro riprende quando premi Riprendi.",
   "main.controller.findingsWaitMandate":
     "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.",
   // Focus mode and publication
@@ -743,14 +747,22 @@ export const mainIt = {
   "main.workPhase.answerQuestion": "Rispondi allo sviluppatore",
   "main.workPhase.answerQuestionMessage":
     "Rispondi alla domanda dello sviluppatore.",
+  "main.workPhase.clearCandidate": "Dai il via libera",
+  "main.workPhase.clearCandidateMessage":
+    "Il cancello del candidato è superato: dai il via libera con clear_candidate, così Trama lo porta all'unione.",
+  "main.workPhase.settleReview": "Decidi fra sviluppatore e revisori",
+  "main.workPhase.settleReviewMessage":
+    "La revisione ha fermato di nuovo lo stesso lavoro: leggi i rilievi dei revisori e la risposta dello sviluppatore e decidi tu con settle_review, poi porta avanti il lavoro.",
   // workPhase.ts: the moves that resolve a technical block.
   "main.workPhase.blockCheckFailed": "Risolvi la verifica rossa",
   "main.workPhase.blockWorktreeConflict": "Risolvi il conflitto",
   "main.workPhase.blockStalledAssignment": "Riprendi l'incarico fermo",
+  "main.workPhase.blockReviewLoop": "Decidi fra sviluppatore e revisori",
   "main.workPhase.blockCheckFailedPhrase": "Sto risolvendo la verifica rossa",
   "main.workPhase.blockWorktreeConflictPhrase": "Sto risolvendo il conflitto",
   "main.workPhase.blockStalledAssignmentPhrase":
     "Sto riprendendo l'incarico fermo",
+  "main.workPhase.blockReviewLoopPhrase": "Sto decidendo fra lo sviluppatore e i revisori",
   // workPhase.ts: whose work it is.
   "main.workPhase.workOfOnSlice": "lavoro di {name} su {slice}",
   "main.workPhase.workOf": "lavoro di {name}",
@@ -765,6 +777,8 @@ export const mainIt = {
     "Il {work} ha un effetto esterno che Trama non sa verificare.",
   "main.workPhase.whyRemoteConflict":
     "Il {work} è in conflitto con il branch principale su GitHub: vanno riallineati.",
+  "main.workPhase.whyPullRequestConflict":
+    "La pull request del {work} è in conflitto con la sua base su GitHub: va riallineata e pubblicata di nuovo.",
   "main.workPhase.whyWorktreeConflict":
     "Il {work} tocca gli stessi file di un altro lavoro in corso.",
   "main.workPhase.whySemanticConflict":
@@ -798,9 +812,12 @@ export const mainIt = {
     "Il candidato {id} ha un effetto esterno che Trama non verifica: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
+  "main.workPhase.blockerPullRequestConflict":
+    "GitHub trova conflitti tra la pull request #{number} del candidato {id} e la sua base: l'unione è ferma e non tocca alla persona. Riallinea il branch del candidato con la base nella stessa copia di lavoro: una correzione allo stesso sviluppatore (replaces) che unisce la base aggiornata e risolve i conflitti. Poi il candidato nuovo passa verifiche e revisori e Trama lo pubblica di nuovo sulla stessa pull request.",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
-  "main.workPhase.blockerHeld": "La revisione ha fermato il lavoro dell'incarico {assignment} {rounds} volte di seguito, l'ultima sul candidato {candidate}. Trama non lo rimanda più allo sviluppatore e la persona lo trova in Aspetta te: non assegnare altre correzioni e non rilanciare i revisori finché la persona non ti scrive come andare avanti.",
+  "main.workPhase.blockerDisputed": "Dopo i rilievi sul candidato {candidate}, lo sviluppatore dell'incarico {assignment} ha finito senza cambiare la copia di lavoro: non è d'accordo con i revisori. Un altro giro dei revisori sullo stesso contenuto darebbe gli stessi rilievi: decidi tu ora con settle_review, oppure supera con overrule_finding i rilievi che vanno contro il Patto. Non dichiarare di nuovo il candidato e non assegnare un incarico nuovo uguale.",
+  "main.workPhase.blockerHeld": "La revisione ha fermato il lavoro dell'incarico {assignment} {rounds} volte di seguito, l'ultima sul candidato {candidate}. Trama non lo rimanda più allo sviluppatore e non rilancia i revisori: decidi tu con settle_review. Con i revisori, lo sviluppatore riprende con i rilievi come tua decisione; con lo sviluppatore, i rilievi sono superati e il lavoro va avanti fino all'unione. Scrivi il motivo e il dubbio, non chiedere alla persona e non assegnare un incarico nuovo uguale.",
   "main.workPhase.blockerSemanticConflict":
     "Il candidato {id} non funziona insieme al lavoro di un altro incarico: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
@@ -1141,6 +1158,14 @@ export const mainIt = {
     "Non è partito: una verifica richiesta non è riuscita per la sandbox o la macchina.",
   "main.gate.environmentFailure":
     "Le verifiche {checks} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.",
+  "main.gate.overruled": "Il Coordinatore ha superato i rilievi dei revisori: {reason}",
+  "main.gate.settledTitle": "Il Coordinatore ha deciso fra {developer} e i revisori sul candidato {candidate}",
+  "main.gate.againstPact": "Va contro la decisione del Patto {decision} ({value}): è un suggerimento, non ferma il lavoro.",
+  "main.gate.overruledTitle": "Il Coordinatore ha superato un rilievo di {reviewer} sul candidato {candidate}",
+  "main.gate.overruledDetail": "Rilievo superato: {finding}. Motivo: {reason}. Decisioni del Patto: {decisions}.",
+  "main.gate.settledFindings": "Hanno ragione i revisori: {reason}",
+  "main.gate.settledDeveloper": "Ha ragione lo sviluppatore: {reason}",
+  "main.gate.settledDoubt": "Dubbio: {doubt}",
   "main.gate.secretNote":
     "Non è partito: il diff contiene un segreto, e Trama non lo manda ai modelli.",
   "main.gate.secretTitle": "Segreto nel diff: {secret}",
@@ -1189,6 +1214,10 @@ export const mainIt = {
     "La copia di lavoro dell'incarico non c'è più: serve un nuovo incarico.",
   "main.gate.waiting.specialistRemoved":
     "Lo sviluppatore non è più nel team: serve un nuovo incarico.",
+  "main.gate.waiting.stopped":
+    "Il lavoro è stato fermato su richiesta: il Coordinatore lo riprende nella sua copia di lavoro quando serve.",
+  "main.gate.waiting.decisionUnderReview":
+    "Una decisione del Patto su cui si basa il lavoro è in revisione: il lavoro riprende con la risposta.",
   "main.gate.unreadableAnswer":
     "Il revisore non ha restituito un rapporto leggibile.",
   "main.gate.malformedFinding":
@@ -1434,6 +1463,7 @@ export const mainIt = {
   "main.statusLine.running.answerQuestion":
     "Sto rispondendo a uno sviluppatore",
   "main.statusLine.running.answerMessage": "Sto rispondendo al tuo messaggio",
+  "main.statusLine.running.clearCandidate": "Sto dando il via libera al candidato",
   "main.statusLine.running.writingPlan": "Sto scrivendo il piano",
   "main.statusLine.running.slicingPlan": "Sto dividendo il piano in fette",
   "main.statusLine.next.preparePlan": "preparo il piano",
@@ -1441,11 +1471,15 @@ export const mainIt = {
   "main.statusLine.next.assignWork": "assegno il lavoro",
   "main.statusLine.next.verifyTarget": "verifico {target}",
   "main.statusLine.next.verifyWork": "verifico il lavoro",
+  "main.statusLine.next.settleReview": "decido fra lo sviluppatore e i revisori",
+  "main.statusLine.next.clearCandidate": "do il via libera al candidato",
   "main.statusLine.next.answerQuestion": "rispondo allo sviluppatore",
   "main.statusLine.next.waitForYou": "aspetto te",
   "main.statusLine.nowThen": "{now}, poi {next}.",
   "main.statusLine.waitingForYou": "Aspetto te per andare avanti.",
   "main.statusLine.nextIsMine": "Il prossimo passo è mio: {next}.",
+  "main.statusLine.continuousOff": "Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.",
+  "main.statusLine.continuousOffNext": "Acceso, il prossimo passo sarebbe mio: {next}.",
   "main.statusLine.workStopped": "Il lavoro è fermo.",
   "main.statusLine.manyAgents": "{count} agenti sono al lavoro",
   "main.statusLine.workingOn": "{names} lavorano su {slices}",
@@ -1500,12 +1534,14 @@ export const mainIt = {
   "main.recap.outcome.done": "fatta",
   "main.recap.outcome.stalled": "non riuscita",
   "main.recap.outcome.stopped": "fermata",
+  "main.recap.outcome.setAside": "messa da parte per un tuo messaggio",
   "main.recap.outcome.failed": "finita con un errore",
   "main.recap.outcome.corrected": "corretta da te",
   "main.recap.outcome.undone": "annullata",
   "main.recap.stepCorrected": "{label} (corretto da te): {detail}",
   "main.recap.moreMoves": "Altre {count} mosse sono in Attività",
   "main.recap.moreMoves.one": "Un'altra mossa è in Attività",
+  "main.recap.settled": "Ho deciso fra {developer} e i revisori sul candidato {candidate}.",
 
   // Continuous work
   "main.continuousWork.unblocked":
@@ -1524,9 +1560,12 @@ export const mainIt = {
   "main.continuousWork.blockResolved":
     "Blocco risolto dal Coordinatore: {kind}",
   "main.continuousWork.blockOpen": "Blocco ancora aperto: {kind}",
+  "main.continuousWork.stall.unsettled": "il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+  "main.continuousWork.stall.uncleared": "il turno non ha dato il via libera al candidato verificato: usa clear_candidate, o assegna la correzione.",
   "main.continuousWork.block.checkFailed": "verifica rossa",
   "main.continuousWork.block.worktreeConflict": "conflitto tra lavori",
   "main.continuousWork.block.stalledAssignment": "incarico fermo",
+  "main.continuousWork.block.reviewLoop": "disaccordo fra sviluppatore e revisori",
   "main.continuousWork.moveFailed":
     "La mossa automatica non è riuscita: {reason}",
   "main.continuousWork.stall.noPlan":
@@ -1573,6 +1612,10 @@ export const mainIt = {
   "main.askTrama.firstStep": "Primo passo: {skill}.",
   "main.askTrama.firstStepFlow": "Primo passo: {skill} ({flow}).",
   "main.askTrama.boundary": "Confine di fase: {boundary}.",
+  "main.askTrama.startLabel": "Avvia il percorso di Ask Trama",
+  "main.askTrama.startedByDelegation": "Percorso {id} di Ask Trama avviato da Trama con la tua delega",
+  "main.askTrama.startedByMandate": "Percorso {id} di Ask Trama avviato da Trama dentro il mandato",
+  "main.askTrama.startedChoice": "Avviato senza aspettare la tua risposta: {steps}.",
 
   // Agent chat
   "main.agentThreads.sliceSubject": "fetta {slice}",
@@ -1881,6 +1924,8 @@ export const mainIt = {
     "Il messaggio di commit non porta il marcatore del candidato ({marker}).",
   "main.publication.extraFiles":
     "L'indice contiene file fuori dal candidato: {files}.",
+  "main.publication.unmergedFiles":
+    "Il merge nella copia di lavoro ha ancora file in conflitto: {files}. Vanno risolti prima del commit.",
   "main.publication.pullRequestClosed":
     "La pull request #{number} di questo branch è già chiusa: il nuovo candidato richiede un nuovo incarico.",
   "main.publication.createFailed":
@@ -2429,9 +2474,11 @@ export const mainIt = {
   "main.delegation.approvedBy": "Coordinatore con la tua delega",
   "main.delegation.mandateTitle": "Mandato v{version} con la delega piena",
   "main.delegation.mandateDetail": "Tutti i moduli e tutte le azioni delegabili, perché la persona ha dato la delega piena.",
+  "main.delegation.newModulesDetail": "La delega piena copre anche i moduli nuovi del progetto: {modules}.",
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Presa con la delega piena ({label}).",
   "main.delegation.stalled": "il Coordinatore non ha deciso quello che aspettava la persona.",
+  "main.delegation.ticketStalled": "il turno non ha trasformato la issue #{number} in lavoro.",
   "main.delegation.candidateSubject": "Candidato {id}",
   "main.delegation.approvedAfterShots": "Approvato dopo le schermate",
   "main.delegation.mandateObjective": "Portare avanti tutto il lavoro del progetto con la delega piena",

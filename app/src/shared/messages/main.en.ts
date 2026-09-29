@@ -79,6 +79,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.retryTemporaryLimitDetail":
     "After the {provider} temporary limit, Trama tries the message again.",
   "main.controller.turnInterruptedTitle": "Turn interrupted",
+  "main.controller.moveSetAsideTitle": "Move set aside for your message",
+  "main.controller.moveSetAsideDetail": "Set aside for your message: Trama takes it up again later.",
   "main.controller.turnFailedTitle": "The turn failed",
   "main.controller.turnNotRepeatable": "This turn can no longer be repeated.",
   "main.controller.quotaWaitStoppedTitle": "Quota wait stopped",
@@ -318,6 +320,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.worktreeInUse":
     "Another assignment is working in this working copy: wait for it to finish.",
   "main.controller.worktreeRemovedTitle": "Working copy removed",
+  "main.controller.mergeConcludedTitle": "Merge recorded in the working copy {branch}",
   "main.controller.worktreeRemovedBranchDeleted":
     "Branch {branch} was deleted too: it had no commits.",
   "main.controller.worktreeRemovedBranchKept": "Branch {branch} stays.",
@@ -367,6 +370,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The assignment is gone: a new assignment is needed.",
   "main.controller.findingsWaitProjectClosed":
     "The project is not open: the work resumes when you open it again.",
+  "main.controller.findingsWaitPaused": "The Coordinator is paused: the work resumes when you press Resume.",
   "main.controller.findingsWaitMandate":
     "The current mandate no longer covers this assignment: the work resumes when you grant it again.",
   // Focus mode and publication
@@ -715,13 +719,21 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.workPhase.verifyCandidateMessage": "Run the checks of the work.",
   "main.workPhase.answerQuestion": "Answer the developer",
   "main.workPhase.answerQuestionMessage": "Answer the developer's question.",
+  "main.workPhase.clearCandidate": "Give the green light",
+  "main.workPhase.clearCandidateMessage":
+    "The candidate passed its gate: give the green light with clear_candidate, so Trama takes it to the merge.",
+  "main.workPhase.settleReview": "Decide between the developer and the reviewers",
+  "main.workPhase.settleReviewMessage":
+    "The review stopped the same work again: read the reviewers' findings and the developer's answer, decide with settle_review, then carry the work on.",
   "main.workPhase.blockCheckFailed": "Fix the red check",
   "main.workPhase.blockWorktreeConflict": "Resolve the conflict",
   "main.workPhase.blockStalledAssignment": "Resume the stalled assignment",
+  "main.workPhase.blockReviewLoop": "Decide between the developer and the reviewers",
   "main.workPhase.blockCheckFailedPhrase": "Fixing the red check",
   "main.workPhase.blockWorktreeConflictPhrase": "Resolving the conflict",
   "main.workPhase.blockStalledAssignmentPhrase":
     "Resuming the stalled assignment",
+  "main.workPhase.blockReviewLoopPhrase": "I am deciding between the developer and the reviewers",
   "main.workPhase.workOfOnSlice": "{name}'s work on {slice}",
   "main.workPhase.workOf": "{name}'s work",
   "main.workPhase.workOnSlice": "the work on {slice}",
@@ -734,6 +746,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "{work} has an external effect that Trama cannot check.",
   "main.workPhase.whyRemoteConflict":
     "{work} conflicts with the main branch on GitHub: they need to be realigned.",
+  "main.workPhase.whyPullRequestConflict":
+    "The pull request of {work} conflicts with its base on GitHub: it needs realigning and publishing again.",
   "main.workPhase.whyWorktreeConflict":
     "{work} touches the same files as other work in progress.",
   "main.workPhase.whySemanticConflict":
@@ -767,9 +781,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} has an external effect that Trama does not check: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Candidate {id} conflicts with the work on GitHub: {detail}",
+  "main.workPhase.blockerPullRequestConflict":
+    "GitHub finds conflicts between pull request #{number} of candidate {id} and its base: the merge is stopped and is not the person's to do. Realign the candidate's branch with the base in the same working copy: a correction to the same developer (replaces) that merges the updated base and resolves the conflicts. Then the new candidate goes through checks and reviewers and Trama publishes it again on the same pull request.",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
-  "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and the person finds it in Waiting for you: do not assign more fixes and do not restart the reviewers until the person tells you how to go on.",
+  "main.workPhase.blockerDisputed": "After the findings on candidate {candidate}, the developer of assignment {assignment} ended without changing the working copy: they disagree with the reviewers. Another round of the reviewers on the same content would give the same findings: decide now with settle_review, or overrule with overrule_finding the findings that go against the Pact. Do not declare the candidate again and do not assign the same work again.",
+  "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and does not restart the reviewers: you decide with settle_review. With the reviewers, the developer resumes with the findings as your decision; with the developer, the findings are overruled and the work goes on to the merge. Write the reason and the doubt, do not ask the person and do not assign the same work again.",
   "main.workPhase.blockerSemanticConflict":
     "Candidate {id} does not work together with the work of another assignment: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
@@ -1095,6 +1112,14 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Did not start: a required check could not run because of the sandbox or the machine.",
   "main.gate.environmentFailure":
     "The checks {checks} could not run because of the sandbox or the machine: start the review again when they run.",
+  "main.gate.overruled": "The Coordinator overruled the reviewers' findings: {reason}",
+  "main.gate.settledTitle": "The Coordinator decided between {developer} and the reviewers on candidate {candidate}",
+  "main.gate.againstPact": "It goes against the Pact decision {decision} ({value}): it is a suggestion and does not stop the work.",
+  "main.gate.overruledTitle": "The Coordinator overruled a finding of {reviewer} on candidate {candidate}",
+  "main.gate.overruledDetail": "Finding overruled: {finding}. Reason: {reason}. Pact decisions: {decisions}.",
+  "main.gate.settledFindings": "The reviewers are right: {reason}",
+  "main.gate.settledDeveloper": "The developer is right: {reason}",
+  "main.gate.settledDoubt": "Doubt: {doubt}",
   "main.gate.secretNote":
     "Did not start: the diff contains a secret, and Trama does not send it to the models.",
   "main.gate.secretTitle": "Secret in the diff: {secret}",
@@ -1141,6 +1166,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The assignment's working copy is gone: a new assignment is needed.",
   "main.gate.waiting.specialistRemoved":
     "The developer is no longer in the team: a new assignment is needed.",
+  "main.gate.waiting.stopped":
+    "The work was stopped on request: the Coordinator resumes it in its working copy when it is time.",
+  "main.gate.waiting.decisionUnderReview":
+    "A Pact decision the work relies on is under review: the work resumes with the answer.",
   "main.gate.unreadableAnswer":
     "The reviewer did not return a readable report.",
   "main.gate.malformedFinding":
@@ -1382,6 +1411,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.running.verifyWork": "Checking the work",
   "main.statusLine.running.answerQuestion": "Answering a developer",
   "main.statusLine.running.answerMessage": "Answering your message",
+  "main.statusLine.running.clearCandidate": "Giving the candidate the green light",
   "main.statusLine.running.writingPlan": "Writing the plan",
   "main.statusLine.running.slicingPlan": "Splitting the plan into slices",
   "main.statusLine.next.preparePlan": "prepare the plan",
@@ -1389,11 +1419,15 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.next.assignWork": "assign the work",
   "main.statusLine.next.verifyTarget": "check {target}",
   "main.statusLine.next.verifyWork": "check the work",
+  "main.statusLine.next.settleReview": "decide between the developer and the reviewers",
+  "main.statusLine.next.clearCandidate": "give the candidate the green light",
   "main.statusLine.next.answerQuestion": "answer the developer",
   "main.statusLine.next.waitForYou": "wait for you",
   "main.statusLine.nowThen": "{now}, then I {next}.",
   "main.statusLine.waitingForYou": "Waiting for you to go on.",
   "main.statusLine.nextIsMine": "The next step is mine: {next}.",
+  "main.statusLine.continuousOff": "Continuous work is off: the Coordinator waits for a message from you.",
+  "main.statusLine.continuousOffNext": "With it on, the next step would be mine: {next}.",
   "main.statusLine.workStopped": "The work is stopped.",
   "main.statusLine.manyAgents": "{count} agents are at work",
   "main.statusLine.workingOn": "{names} work on {slices}",
@@ -1448,12 +1482,14 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.recap.outcome.done": "done",
   "main.recap.outcome.stalled": "did not succeed",
   "main.recap.outcome.stopped": "stopped",
+  "main.recap.outcome.setAside": "set aside for a message of yours",
   "main.recap.outcome.failed": "ended with an error",
   "main.recap.outcome.corrected": "corrected by you",
   "main.recap.outcome.undone": "undone",
   "main.recap.stepCorrected": "{label} (corrected by you): {detail}",
   "main.recap.moreMoves": "{count} more moves are in Activity",
   "main.recap.moreMoves.one": "One more move is in Activity",
+  "main.recap.settled": "I decided between {developer} and the reviewers on candidate {candidate}.",
 
   // Continuous work
   "main.continuousWork.unblocked":
@@ -1472,10 +1508,13 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.continuousWork.blockResolved":
     "Block resolved by the Coordinator: {kind}",
   "main.continuousWork.blockOpen": "Block still open: {kind}",
+  "main.continuousWork.stall.unsettled": "the turn did not decide between the developer and the reviewers: use settle_review.",
+  "main.continuousWork.stall.uncleared": "the turn gave the verified candidate no green light: use clear_candidate, or assign the correction.",
   "main.continuousWork.block.checkFailed": "red check",
   "main.continuousWork.block.worktreeConflict":
     "conflict between pieces of work",
   "main.continuousWork.block.stalledAssignment": "stalled assignment",
+  "main.continuousWork.block.reviewLoop": "disagreement between developer and reviewers",
   "main.continuousWork.moveFailed":
     "The automatic move did not succeed: {reason}",
   "main.continuousWork.stall.noPlan": "the Coordinator did not start the plan.",
@@ -1518,6 +1557,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.askTrama.firstStep": "First step: {skill}.",
   "main.askTrama.firstStepFlow": "First step: {skill} ({flow}).",
   "main.askTrama.boundary": "Phase boundary: {boundary}.",
+  "main.askTrama.startLabel": "Start the Ask Trama route",
+  "main.askTrama.startedByDelegation": "Trama started Ask Trama route {id} with your delegation",
+  "main.askTrama.startedByMandate": "Trama started Ask Trama route {id} within the mandate",
+  "main.askTrama.startedChoice": "Started without waiting for your answer: {steps}.",
 
   // Agent chat
   "main.agentThreads.sliceSubject": "slice {slice}",
@@ -1821,6 +1864,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The commit message does not carry the candidate marker ({marker}).",
   "main.publication.extraFiles":
     "The index contains files outside the candidate: {files}.",
+  "main.publication.unmergedFiles":
+    "The merge in the working copy still has files in conflict: {files}. Resolve them before the commit.",
   "main.publication.pullRequestClosed":
     "Pull request #{number} of this branch is already closed: the new candidate needs a new assignment.",
   "main.publication.createFailed":
@@ -2353,9 +2398,11 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.delegation.approvedBy": "Coordinator with your delegation",
   "main.delegation.mandateTitle": "Mandate v{version} with the full delegation",
   "main.delegation.mandateDetail": "Every module and every delegable action, because the person gave the full delegation.",
+  "main.delegation.newModulesDetail": "The full delegation also covers the project's new modules: {modules}.",
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Taken with the full delegation ({label}).",
   "main.delegation.stalled": "the Coordinator did not decide what waited for the person.",
+  "main.delegation.ticketStalled": "the turn did not turn issue #{number} into work.",
   "main.delegation.candidateSubject": "Candidate {id}",
   "main.delegation.approvedAfterShots": "Approved after the screenshots",
   "main.delegation.mandateObjective": "Carry on all the project's work with the full delegation",

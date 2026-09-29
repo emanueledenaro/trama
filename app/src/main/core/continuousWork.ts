@@ -1,10 +1,13 @@
-import type { NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
+import type { Candidate, NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
 import { activeDelegation } from "@shared/delegation";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { touchesInterface } from "@shared/interfaceChange";
+import { PERSON_BLOCKERS } from "@shared/waitingForYou";
+import { contentFingerprint, inspectCandidate } from "./candidates";
+import { ticketWorked } from "./fullDelegation";
 import { focusView } from "./focus";
 import { isActive } from "./team";
-import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
+import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type MoveOption, type WorkState, workRequests, workState } from "./workPhase";
 import { type MessageKey, translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 
@@ -28,17 +31,54 @@ export type { WorkEvent } from "@shared/domain";
 const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"];
 
 /**
- * The person's moves the Coordinator takes with the full delegation (issue #423): a product decision, and a candidate
- * that waits for the person's ok (the interface, or a choice it leaves open). The mandate and the team are covered by
- * the full mandate the delegation brings.
+ * Whether the candidate waits for the person's ok, which the full delegation lets the Coordinator give (issue #423): an
+ * interface candidate without a valid ok or a refusal, or one stopped on a blocker only the person settles (issue #390).
+ * A verified candidate on the Coordinator's route waits for its green light, not for the person.
  */
-const DELEGATION_DECIDES: NextMove[] = ["answerQuestions", "reviewCandidate"];
+function awaitsPersonsOk(document: ProjectDocument, candidate: Candidate): boolean {
+  if (candidate.pullRequest?.mergedAt || candidateSuperseded(document, candidate)) return false;
+  if (inspectCandidate(document, candidate, null).some((b) => PERSON_BLOCKERS.includes(b.code))) return true;
+  const approved = candidate.humanApproval !== null && candidate.humanApproval.fingerprint === contentFingerprint(document, candidate);
+  return touchesInterface(candidate.changedFiles) && !approved && !candidate.humanRejection;
+}
 
-/** Whether the work waits for a choice of the person the full delegation lets the Coordinator make. */
-const delegatedHolds = (state: Pick<WorkState, "moves">): boolean => state.moves.some((m) => m.actor === "person" && DELEGATION_DECIDES.includes(m.move));
+/** Whether the person's move is a choice the "Decidi con la delega" move makes (issue #423): a product decision, or a candidate that waits for their ok. */
+function decidedWithDelegation(document: ProjectDocument, move: Pick<MoveOption, "actor" | "move" | "targetId">): boolean {
+  if (move.actor !== "person") return false;
+  if (move.move === "answerQuestions") return true;
+  const candidate = move.move === "reviewCandidate" ? document.candidates.find((c) => c.id === move.targetId) : undefined;
+  return candidate !== undefined && awaitsPersonsOk(document, candidate);
+}
+
+/**
+ * Whether the work waits for a choice of the person the full delegation lets the Coordinator make (issue #423): a
+ * product decision, or a candidate that waits for the person's ok. The mandate and the team are covered by the full
+ * mandate the delegation brings.
+ */
+export function delegatedHolds(document: ProjectDocument, state: Pick<WorkState, "moves">): boolean {
+  return state.moves.some((m) => decidedWithDelegation(document, m));
+}
+
+/**
+ * Whether the full delegation in force takes the person's move off the person (ADR 0022): the choices the Coordinator
+ * decides with it, and a mandate request, which the full mandate the delegation brings makes moot. Without the
+ * delegation every move of the person stays theirs.
+ */
+export function delegationTakes(document: ProjectDocument, move: Pick<MoveOption, "actor" | "move" | "targetId">): boolean {
+  if (move.actor !== "person" || !activeDelegation(document)) return false;
+  return move.move === "grantMandate" || decidedWithDelegation(document, move);
+}
+
+/**
+ * Whether the person's move holds the Coordinator's own moves: one of WAITS_FOR_PERSON, except a Pact card that blocks
+ * a developer's work, which holds only that work (W06). A candidate or a plan to look at waits beside the Coordinator.
+ */
+export const holdsWork = (state: Pick<WorkState, "questionsHoldOnlyTheirWork">, move: NextMove): boolean =>
+  WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
-export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "round"];
+/** A gate or a check that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
+export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "checkEnded", "round"];
 
 /** Events whose block the Coordinator resolves by itself (Q3): a red check, a conflict, and the round that unblocks. */
 const RESOLVES_BLOCKS: WorkEvent[] = ["checkFailed", "worktreeConflict", "round"];
@@ -48,6 +88,27 @@ export const ROUND_INTERVAL_MS = 5 * 60_000;
 
 /** The rounds with an outcome Trama keeps for Activity. */
 export const KEPT_ROUNDS = 50;
+
+/**
+ * The most automatic turns of the same move in a row the round starts in a dialog (A05): past them the move waits for a
+ * new event of the work or a message of the person, so a move that keeps failing does not loop every five minutes.
+ */
+export const ROUND_ATTEMPTS = 3;
+
+/**
+ * How many of the dialog's latest requests, from the newest, are Trama's automatic turns of `move`. A turn set aside
+ * for the person's message is no attempt (ADR 0023): it neither counts nor breaks the row.
+ */
+function attemptsInRow(dialog: ProjectDocument["requests"], move: CoordinatorMove): number {
+  let count = 0;
+  for (let index = dialog.length - 1; index >= 0; index--) {
+    const step = dialog[index]!.step;
+    if (step?.by === "trama" && step.setAside) continue;
+    if (step?.by !== "trama" || step.move !== move) break;
+    count++;
+  }
+  return count;
+}
 
 /** The state of Trama around the work, read by the controller when an event arrives. */
 export interface ContinuationGuards {
@@ -82,8 +143,11 @@ const mandateGranted = (document: ProjectDocument): boolean => document.mandate?
 /**
  * The one Coordinator move Trama starts after `event` on the work of `requestId` (the request whose turn,
  * plan or assignment ended), or null. Pure: at most one move per event, none after an error or an
- * interruption, none from the end of an automatic turn, none while the work waits for the person, none in pause
- * and none without a granted mandate.
+ * interruption (except the round after an automatic turn that failed, or any turn with the full delegation, and an
+ * automatic turn the person's message set aside), none from
+ * the end of an automatic turn, none
+ * while the work waits for the person, none in pause and none without a granted mandate. The round tries the same move
+ * ROUND_ATTEMPTS times in a row at most.
  */
 export function automaticMove(document: ProjectDocument, requestId: string, event: WorkEvent, guards: ContinuationGuards): AutomaticMove | null {
   if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
@@ -94,7 +158,13 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   const dialog = document.requests.filter((r) => (r.goalId ?? null) === goalId);
   const latest = dialog.at(-1)!;
   // After an error or an interruption, including a stop of the automatic turn itself, the person decides how to go on.
-  if (latest.state !== "completed") return null;
+  // The round takes up an automatic turn that failed: nobody wrote it, so nobody would come back to it (no dead end).
+  // With the full delegation (ADR 0022) it takes up a failed turn of the person's too: they left the work to the
+  // Coordinator and are not there to write again. A Stop stays the person's either way.
+  const takenUp = event === "round" && latest.state === "failed" && (latest.step?.by === "trama" || activeDelegation(document) !== null);
+  // An automatic turn the person's message set aside is no Stop of theirs (ADR 0023): the work goes on from it.
+  const setAside = latest.state === "interrupted" && latest.step?.by === "trama" && Boolean(latest.step.setAside);
+  if (latest.state !== "completed" && !takenUp && !setAside) return null;
   // An automatic turn never starts the next move: a move the Coordinator did not make is not retried in a loop.
   if (event === "turnEnded" && latest.step?.by === "trama") return null;
   // Only the current work of the dialog goes on: an older plan or assignment that ends starts nothing.
@@ -105,20 +175,22 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // whatever event brought it: a red check, a conflict between worktrees, an assignment that stopped.
   if (state.phase === "blocked" && !state.block && !RESOLVES_BLOCKS.includes(event)) return null;
   // With the full delegation (issue #423) the Coordinator decides what waits for the person, first: it unblocks the rest.
-  if (activeDelegation(document) && delegatedHolds(state)) {
-    // The round does not repeat a decision the latest automatic turn of the dialog already tried: a new event does.
-    if (event === "round" && latest.step?.by === "trama" && latest.step.move === "decideWithDelegation") return null;
+  if (activeDelegation(document) && delegatedHolds(document, state)) {
+    // The round tries a decision again a few times at most: then a new event of the work does.
+    if (event === "round" && attemptsInRow(dialog, "decideWithDelegation") >= ROUND_ATTEMPTS) return null;
     return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
   }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
-  const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
+  // With the delegation, which brings the full mandate (ADR 0022), a mandate request no longer holds the work.
+  const holds = (m: MoveOption) => holdsWork(state, m.move) && !delegationTakes(document, m);
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
   // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).
-  if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
+  if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m))) return null;
   const move = option.move as CoordinatorMove;
-  // The round does not repeat the move the latest automatic turn of the dialog already made or tried: a new event does.
-  if (event === "round" && latest.step?.by === "trama" && latest.step.move === move) return null;
+  // The round tries again a move the latest automatic turns of the dialog made or tried, a few times at most: a move
+  // that keeps failing does not loop every five minutes, and one that failed once is not left alone. A new event does.
+  if (event === "round" && attemptsInRow(dialog, move) >= ROUND_ATTEMPTS) return null;
   const block = state.phase === "blocked" && state.block && state.blocker ? { kind: state.block, blocker: state.blocker, why: state.why ?? state.blocker } : null;
   return {
     move,
@@ -188,7 +260,7 @@ export function ticketMove(
   return {
     move: "takeTicket",
     label: COORDINATOR_MOVES.takeTicket.label,
-    message: `Con la delega piena prendi la issue #${issue.number} «${issue.title}»: leggila con read_issues, trasformala in lavoro e portala fino all'unione, senza la persona.`,
+    message: `Con la delega piena prendi la issue #${issue.number} «${issue.title}»: leggila con read_issues, trasformala in lavoro (prepare_plan o assign_task con issueNumber ${issue.number}) e portala fino all'unione, senza la persona.`,
     goalId: null,
     model: latest?.model ?? null,
     effort: latest?.effort ?? null,
@@ -212,20 +284,47 @@ export function setPaused(document: ProjectDocument, paused: boolean, at: string
 
 
 /** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. @model-text */
-export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null, document: ProjectDocument | null = null): string {
+export function automaticMoveSection(
+  move: CoordinatorMove,
+  block: RequestStep["block"] = null,
+  document: ProjectDocument | null = null,
+  requestId: string | null = null,
+): string {
+  const retry = document && requestId ? previousAttempt(document, requestId, move) : null;
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
-    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se una strada è chiusa, prendi un'altra strada con i tuoi strumenti o con il team. Se resta ferma solo per qualcosa che spetta alla persona, scrivi in una riga cosa manca e cosa fai intanto. La persona può fermare il turno.",
+    ...(retry ? [retry] : []),
     ...(block ? [blockSection(block)] : []),
     ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
     ...(move === "takeTicket" ? [TAKE_TICKET] : []),
+    ...(move === "clearCandidate" ? [CLEAR_CANDIDATE] : []),
     ...(move === "verifyCandidate"
       ? [
           "Le verifiche girano su un candidato, non su un incarico: per un incarico concluso senza candidato chiama prima declare_candidate, poi verify_candidate con il candidateID che restituisce. La fase del lavoro qui sopra elenca gli incarichi e i candidati.",
         ]
       : []),
   ].join("\n");
+}
+
+/**
+ * When the dialog's turn before `requestId` was an automatic turn of the same move that did not get there (a stall or an
+ * error), what the new attempt reads: that it is one, and why the one before stopped. A turn set aside for the person's
+ * message did not fail: the new turn takes it up from what it already did (ADR 0023). Null otherwise. @model-text
+ */
+function previousAttempt(document: ProjectDocument, requestId: string, move: CoordinatorMove): string | null {
+  const index = document.requests.findIndex((r) => r.id === requestId);
+  if (index < 0) return null;
+  const goalId = document.requests[index]!.goalId ?? null;
+  const previous = document.requests.slice(0, index).findLast((r) => (r.goalId ?? null) === goalId);
+  if (previous?.step?.by !== "trama" || previous.step.move !== move) return null;
+  if (previous.state === "interrupted" && previous.step.setAside) {
+    return "Ripresa: Trama ha messo da parte il turno automatico precedente con questa mossa per far passare un messaggio della persona. Controlla prima cosa ha già fatto, poi porta a termine la mossa.";
+  }
+  const why = previous.state === "failed" ? previous.failure : previous.step.stalled;
+  if (previous.state === "completed" && !why) return null;
+  return `Tentativo di nuovo: il turno automatico precedente con questa mossa non l'ha portata a termine${why ? ` (${why.replace(/\s+/g, " ").slice(0, 300)})` : ""}. Cerca un'altra strada per sbloccare il lavoro dentro il mandato: non aspettare la persona.`;
 }
 
 /** What deciding with the full delegation means (issue #423): the Coordinator's own recommendation, recorded with its doubt. @model-text */
@@ -246,8 +345,13 @@ function waitingChoices(document: ProjectDocument): string[] {
       return `- ${q.id}: ${q.question} (alternative ${options}${recommended !== null ? `; consigliata ${recommended}` : ""})`;
     });
   const candidates = document.candidates
-    .filter((c) => touchesInterface(c.changedFiles) && !c.humanApproval && !c.humanRejection && !c.pullRequest?.mergedAt && !candidateSuperseded(document, c))
-    .map((c) => `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`);
+    .filter((c) => awaitsPersonsOk(document, c))
+    .map((c) => {
+      const blocker = inspectCandidate(document, c, null).find((b) => PERSON_BLOCKERS.includes(b.code));
+      return blocker
+        ? `- ${c.id}: fermo su ${blocker.code} (${blocker.detail}). Decidi tu con la delega e fai correggere il lavoro con assign_task, o dichiara un candidato nuovo.`
+        : `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`;
+    });
   return [
     ...(questions.length ? ["Domande di prodotto aperte:", ...questions] : []),
     ...(candidates.length ? ["Candidati che aspettano l'ok della persona:", ...candidates] : []),
@@ -258,14 +362,20 @@ function waitingChoices(document: ProjectDocument): string[] {
 const TAKE_TICKET =
   "Porta la issue fino all'unione come faresti con una richiesta della persona: comprensione, piano, fette, incarichi, verifiche e unione. Un dubbio non ti ferma: scegli la strada che consiglieresti e scrivila con note_doubt.";
 
+/** What the green light after a passed gate means (ADR 0023): the Coordinator's decision, and Trama merges after it. @model-text */
+const CLEAR_CANDIDATE =
+  "Il candidato indicato nella fase del lavoro ha le verifiche verdi e il cancello dei revisori superato, anche se il cancello è finito dopo il tuo turno. Se è il lavoro chiesto dal Patto e dal mandato, dagli il via libera con clear_candidate: Trama lo pubblica e lo unisce da sola, e un candidato che cambia l'interfaccia aspetta l'ok della persona con le schermate. Se non lo è, assegna la correzione con assign_task. Non chiedere l'unione alla persona.";
+
 /** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. @model-text */
 const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
   checkFailed:
-    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi assegna allo stesso sviluppatore, o a un altro libero, la correzione con assign_task: stessa fetta, stessi moduli, le verifiche che devono passare.",
+    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi fai correggere il lavoro nella stessa copia di lavoro con resume_assignment: allo stesso sviluppatore, o con specialist a un altro libero, con le verifiche che devono passare. Non aprire un incarico nuovo per lo stesso lavoro: ripartirebbe da una copia vuota.",
   worktreeConflict:
-    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi assegna con assign_task il riallineamento del lavoro più recente sul più vecchio, o sul branch principale, sugli stessi moduli.",
+    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi fai riallineare il lavoro più recente sul più vecchio, o sul branch principale, nella sua stessa copia di lavoro con resume_assignment. Un merge già risolto e non registrato lo chiudi tu con commit_merge.",
   stalledAssignment:
-    "Leggi con read_team perché l'incarico si è fermato, poi riassegnalo con assign_task, allo stesso sviluppatore o a un altro libero, con le istruzioni per superare il motivo.",
+    "Leggi con read_team perché l'incarico si è fermato, poi riprendilo nella stessa copia di lavoro con resume_assignment, allo stesso sviluppatore o con specialist a un altro libero, con le istruzioni per superare il motivo. Solo un incarico senza copia di lavoro si assegna di nuovo con assign_task.",
+  reviewLoop:
+    "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Un rilievo che va contro una decisione del Patto lo superi da solo con overrule_finding, citando la decisione in decisionIDs (anche in settle_review): così non torna al giro dopo. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
 };
 
 /** @model-text */
@@ -317,6 +427,7 @@ const BLOCK_KIND_NAMES: Record<TechnicalBlock, MessageKey> = {
   checkFailed: "main.continuousWork.block.checkFailed",
   worktreeConflict: "main.continuousWork.block.worktreeConflict",
   stalledAssignment: "main.continuousWork.block.stalledAssignment",
+  reviewLoop: "main.continuousWork.block.reviewLoop",
 };
 
 /** A Coordinator move Trama started that the turn did not make, and why, in the person's words (issue #204). */
@@ -336,7 +447,9 @@ export function stalledMove(document: ProjectDocument, requestId: string): Stall
   const move = request.step.move as CoordinatorMove;
   if (!(move in COORDINATOR_MOVES)) return null;
   const state = workState(document, request.id);
-  if (!state.moves.some((m) => m.actor === "coordinator" && m.move === move)) return null;
+  // The moves of the full delegation are Trama's own reading, never among the work's moves: their reason says it.
+  const delegation = move === "decideWithDelegation" || move === "takeTicket";
+  if (!delegation && !state.moves.some((m) => m.actor === "coordinator" && m.move === move)) return null;
   const reason = stallReason(document, request.id, request.createdAt, move, state);
   return reason ? { move, reason: t("main.continuousWork.moveFailed", { reason }).slice(0, 240) } : null;
 }
@@ -373,11 +486,26 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     case "answerQuestion":
       // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
       return null;
+    case "settleReview":
+      // The Coordinator settled a gate during the turn (ADR 0023): the move was made.
+      return (document.gates ?? []).some((g) => g.settled && g.settled.at >= since) ? null : t("main.continuousWork.stall.unsettled");
+    case "clearCandidate": {
+      // A green light given in the turn on a candidate of this work means the move was made, even if newer content needs another.
+      const work = workRequests(document, requestId);
+      const cleared = document.candidates.some((candidate) => {
+        const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+        return Boolean(assignment?.requestId && work?.has(assignment.requestId) && candidate.clearance && candidate.clearance.at >= since);
+      });
+      return cleared ? null : t("main.continuousWork.stall.uncleared");
+    }
     case "decideWithDelegation":
       // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
-      return delegatedHolds(state) ? t("main.delegation.stalled") : null;
-    case "takeTicket":
-      return null;
+      return delegatedHolds(document, state) ? t("main.delegation.stalled") : null;
+    case "takeTicket": {
+      // The ticket became work in the turn: a plan or an assignment that names it, or that the turn started.
+      const issue = document.requests.find((r) => r.id === requestId)?.step?.issue;
+      return issue === undefined || ticketWorked(document, issue) ? null : t("main.delegation.ticketStalled", { number: issue });
+    }
   }
 }
 

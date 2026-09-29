@@ -5,7 +5,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
-import { addWorkView } from "./work-view-fixture.mjs";
+import { addCoordinatorMove, addWorkView } from "./work-view-fixture.mjs";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
@@ -175,9 +175,10 @@ const menuLabelBecomes = async (id, label, timeout = 5_000) => {
   for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(100)) if ((await menuLabel(id)) === label) return;
   throw new Error(`The menu item ${id} is "${await menuLabel(id)}", not "${label}"`);
 };
-// The work in focus and the queue open from the status bar (issue #330).
+// The work in focus and the queue open from the bar above the composer while the conversation shows (UI wave of 29
+// September), from the status bar over Progetti and Impostazioni (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
-  if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("status-focus").click({ timeout });
+  if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("work-bar-focus").or(page.getByTestId("status-focus")).first().click({ timeout });
   await page.getByTestId("focus-bar").waitFor();
 };
 // Issue #336: a detail (a person of the team, a candidate, a decision, a module, an issue, a goal) opens in a tab of
@@ -418,6 +419,90 @@ const primaryLast = async (row, where) => {
 };
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
+};
+// UI wave of 29 September: only the conversation holds the work bar on the composer. Over a detail tab without the
+// composer, as an agent's or a candidate's, the bar is the tab's last row in a room of its own: the tab ends where the
+// bar starts, so it covers nothing, and it still shows while something waits. Progetti, Impostazioni and the Benvenuto
+// have no bar. `expected` is "composer", "tab" or "none".
+const workBarPlace = async (where, expected) => {
+  const layout = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="work-bar"]');
+    const row = bar?.closest('[data-testid="work-bar-row"]');
+    const tab = document.querySelector('[data-testid="editor-cover"] [data-testid="editor-detail"]');
+    return {
+      bar: Boolean(bar),
+      placement: bar?.dataset.placement ?? null,
+      inCover: Boolean(bar?.closest('[data-testid="editor-cover"]')),
+      inDock: Boolean(bar?.closest(".chat-composer-dock")),
+      tabBottom: tab ? Math.round(tab.getBoundingClientRect().bottom) : null,
+      barTop: row ? Math.round(row.getBoundingClientRect().top) : null,
+    };
+  });
+  if (expected === "none") {
+    if (layout.bar) throw new Error(`The work bar shows over ${where}`);
+    return;
+  }
+  if (!layout.bar) {
+    // Aspetta te open hides the waiting part; with nothing in focus the bar then has nothing to say.
+    if ((await page.getByTestId("activity-badge").count()) && !(await page.getByTestId("waiting-view").count())) throw new Error(`The work bar is missing over ${where} while something waits`);
+    return;
+  }
+  if (layout.placement !== expected) throw new Error(`The work bar sits on the ${layout.placement} over ${where}, not on the ${expected}`);
+  if (expected === "composer" && !layout.inDock) throw new Error(`The work bar is not on the composer in ${where}: ${JSON.stringify(layout)}`);
+  if (expected === "tab" && (!layout.inCover || layout.inDock || layout.tabBottom === null || layout.tabBottom > layout.barTop + 1)) {
+    throw new Error(`The work bar lies over ${where}: ${JSON.stringify(layout)}`);
+  }
+};
+// UI wave of 29 September: the header of a squad named after its area says the name once ("app", not "app app"), as
+// Trama names the squads it forms; a squad whose name differs from its areas still names them. Returns the headers.
+const squadHeadersNameOnce = async (where) => {
+  const headers = await page
+    .getByTestId("side-bar")
+    .getByTestId("squad")
+    .evaluateAll((squads) =>
+      squads.map((squad) => ({
+        name: squad.dataset.squad,
+        area: squad.querySelector('[data-testid="squad-area"]')?.textContent.trim() ?? null,
+        text: squad.querySelector('[data-testid="squad-header"]').textContent.replace(/\s+/g, " ").trim(),
+      })),
+    );
+  if (!headers.length) throw new Error(`No squad in ${where}`);
+  const key = (value) => value.trim().toLocaleLowerCase();
+  for (const { name, area, text } of headers) {
+    if (area !== null && key(area) === key(name)) throw new Error(`The header of ${name} repeats its name as its area in ${where}: ${text}`);
+    if (area === null && key(text).startsWith(`${key(name)} ${key(name)} `)) throw new Error(`The header of ${name} says its name twice in ${where}: ${text}`);
+  }
+  return headers;
+};
+// The wave on the interface's priorities (29 September 2026): a view of the side bar at its narrowest (240 px, the sash
+// moved from the keyboard) and at its widest, light and dark, then back to the normal width and the look it had.
+const sideBarWidthNow = () => page.getByRole("separator", { name: /Larghezza della barra laterale/ }).getAttribute("aria-valuenow");
+const sideBarEnds = async (name, check = async () => {}) => {
+  const look = await lookOf();
+  const sash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
+  for (const end of ["narrow", "wide"]) {
+    if (end === "narrow") {
+      await sash.focus();
+      await page.keyboard.press("Shift+ArrowLeft");
+      for (let tries = 0; (await sideBarWidthNow()) !== "240"; tries++) {
+        if (tries > 20) throw new Error(`The side bar does not reach its narrowest width for ${name}: ${await sideBarWidthNow()}`);
+        await page.waitForTimeout(100);
+      }
+    } else {
+      await sash.focus();
+      await page.keyboard.press("Home");
+      await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
+    }
+    await page.waitForTimeout(400);
+    await noHorizontalScroll(`${name}, side bar ${end}`);
+    await check(end);
+    for (const dark of [false, true]) {
+      await setLookTo(look.provider, dark);
+      await shot(`${name}-${end}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await page.getByTestId("side-bar").getByRole("button", { name: "Larghezza normale" }).click();
+  await setLookTo(look.provider, look.dark);
 };
 const sizes = [
   ["wide", 1280, 820],
@@ -875,9 +960,25 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
-// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
-const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
-if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
+// UI wave of 29 September: the line is part of one bar attached to the top of the composer, with the work in focus.
+// Issue #392: its blur stays behind it, so the timeline does not read through it; and the chat leaves room for the
+// whole dock, so the last message ends above the bar.
+const workBar = page.getByTestId("work-bar");
+const waitingGlass = await workBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The bar above the composer lets the chat through: ${JSON.stringify(waitingGlass)}`);
+{
+  const layout = await page.evaluate(async () => {
+    const bar = document.querySelector('[data-testid="work-bar"]').getBoundingClientRect();
+    const composer = document.querySelector(".chat-composer-surface").getBoundingClientRect();
+    const scroller = document.querySelector(".chat-timeline-scroll");
+    scroller.scrollTop = scroller.scrollHeight;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const last = scroller.firstElementChild.lastElementChild.getBoundingClientRect();
+    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, lastBottom: last.bottom, barTop: bar.top };
+  });
+  if (Math.abs(layout.gap) > 2 || layout.inset < 12) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
+  if (layout.lastBottom > layout.barTop + 1) throw new Error(`The bar above the composer covers the last message: ${JSON.stringify(layout)}`);
+}
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -941,6 +1042,25 @@ await setTheme("system");
     await waitingBar.waitFor();
   }
   await page.setViewportSize(viewport);
+  // UI wave of 29 September: one status line at the top, how the view works folded behind "Come funziona"; the open
+  // item's card is its one frame, with no second border and no second title. Then the side bar at its widest.
+  await waitingBar.getByRole("button", { name: "Decidi" }).click();
+  const view = page.getByTestId("waiting-view");
+  await view.waitFor();
+  const how = view.getByTestId("waiting-view-how");
+  if ((await how.getAttribute("aria-expanded")) !== "false") throw new Error("Aspetta te explains itself before the person asks");
+  const openItem = view.locator('[data-testid="waiting-item"][data-open="true"]');
+  await openItem.getByTestId("waiting-open-card").waitFor();
+  if (await openItem.locator(":scope > div.rounded-xl").count()) throw new Error("The open item of Aspetta te wraps its card in a second frame");
+  await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
+  await how.click();
+  await view.getByText("Mentre aspetti, il Coordinatore lavora sul resto.", { exact: false }).waitFor();
+  await themeShots("31e-waiting-view-side-bar-wide");
+  await how.click();
+  await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
+  await activityBar().getByRole("button", { name: "Aspetta te", exact: true }).click();
+  await page.getByTestId("side-bar").waitFor({ state: "detached" });
+  await waitingBar.waitFor();
 }
 // Issue #331: the questions have one home, Aspetta te. Patto keeps one line per question that opens it there, with no
 // button to answer; the open project in Progetti carries the same count as the icon of Aspetta te.
@@ -1119,9 +1239,27 @@ const teamPanel = page.getByTestId("side-bar");
 const firstSquad = teamPanel.getByTestId("squad").first();
 await firstSquad.waitFor({ timeout: 20_000 });
 await firstSquad.getByTestId("squad-status").getByText(/^Libera/).waitFor();
+// UI wave of 29 September: the squad takes the name of Ada's area, Orders, and its header said "Orders Orders". Now
+// the name shows once, with the side bar narrow and wide, light and dark.
+{
+  const headers = await squadHeadersNameOnce("Squadre after the study");
+  if (!headers.some((header) => header.area === null)) throw new Error(`No squad named after its area shows its name once: ${JSON.stringify(headers)}`);
+  await sideBarEnds("52f-squads-name-once", async (end) => {
+    await squadHeadersNameOnce(`Squadre with the side bar ${end}`);
+  });
+}
 await firstSquad.getByRole("button", { name: /^Ada/ }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').filter({ hasText: "[Capo]" }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
+// Critique of 29 September: the lead is one short row and the duty every squad's lead and QA share stays on hover.
+{
+  const lead = firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]');
+  if ((await lead.getAttribute("data-short")) !== "true") throw new Error("The squad's lead is not a short row");
+  if (await teamPanel.getByText("Divide il lavoro dell'area della sua squadra", { exact: false }).count()) throw new Error("The squad lead's duty is still written in the Squads view");
+  if (!/Divide il lavoro dell'area della sua squadra/.test((await lead.getAttribute("title")) ?? "")) throw new Error("The squad lead's duty is not on hover");
+  const leadLines = await lead.evaluate((row) => Math.round(row.getBoundingClientRect().height));
+  if (leadLines > 40) throw new Error(`The squad's lead takes more than one line: ${leadLines}px`);
+}
 // Issue #333: who works now is on top, in view at 1280x800 without scrolling. Each person is one row with the bot, the
 // name, the role's tag, what it does now and the sign; the ids stay on hover; the shared roles wait closed, with their
 // count. The view and the person of the squad, narrow and wide, Codex and Claude, light and dark.
@@ -1134,7 +1272,9 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
   const rows = teamPanel.locator('[data-testid="team-developer"], [data-testid="team-figure"]');
   for (const row of await rows.all()) {
     if (!(await row.getByTestId("agent-bot").count())) throw new Error("A person of the squad has no bot");
-    if (!(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
+    // Critique of 29 September: the squad's lead is one short row; it says what it does beside its name only when busy.
+    const short = (await row.getAttribute("data-short")) === "true";
+    if (!short && !(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
     const sign = await row.getByTestId("member-sign").getAttribute("data-sign");
     if (!["working", "waiting", "free", "stopped"].includes(sign)) throw new Error(`A person of the squad has no sign: ${sign}`);
   }
@@ -1162,6 +1302,11 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.waitFor();
     if ((await detailPane().getAttribute("aria-label")) !== "Persona della squadra") throw new Error("The detail is not titled Persona della squadra");
     await detail.getByTestId("specialist-now").waitFor();
+    // Critique of 29 September 2026: the page opens on its summary, and the settings come before the work.
+    await detail.getByTestId("specialist-brief").getByTestId("brief-next").waitFor();
+    if (!(await detail.evaluate((el) => el.querySelector('[data-testid="specialist-settings"]').compareDocumentPosition(el.querySelector('[data-testid="specialist-now"]')) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+      throw new Error("The person's settings do not come before the work");
+    }
     const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
     if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
     for (const fold of ["Perché è nella squadra", "Quando interviene"]) {
@@ -1172,6 +1317,8 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.getByTestId("specialist-look").getByRole("radiogroup", { name: "Colore dell'agente" }).waitFor();
     if (await detail.getByRole("button", { name: "Colore", exact: true }).count()) throw new Error("The color still waits in a closed section");
     if (await detail.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
+    // UI wave of 29 September: at 1280x800 the tab covers the conversation and the work bar is its last row.
+    await workBarPlace(`the person's tab at ${size}`, width === 1280 ? "tab" : "composer");
     await noHorizontalScroll(`person of the squad ${size}`);
     for (const provider of ["codex", "claudeAgent"]) {
       for (const dark of [false, true]) {
@@ -1568,6 +1715,53 @@ const noteActions = await memoryView.getByTestId("memory-entry").locator(".cta-r
 if (noteActions.join("|") !== "Togli|Annulla|Salva") throw new Error(`The note editor's buttons: ${noteActions.join(", ")}`);
 await memoryView.getByTestId("memory-entry").getByRole("button", { name: "Togli" }).click();
 await addedNote.waitFor({ state: "detached", timeout: 10_000 });
+// Critique of 29 September 2026: a nearly full section says what to do (Riordina, whose changes wait in Aspetta te), and
+// a note in another language than the person's says so and stays as it was written. The profile is filled to 94% of
+// its limit with the person's own notes, one of them in English, and emptied of them afterwards.
+{
+  const profileNow = async () => (await page.evaluate(() => window.trama.getState())).learning.user;
+  const profileNote = async (action, text) => {
+    const result = await page.evaluate(([what, note]) => window.trama.invoke("learning:memory", { target: "user", action: what, content: note, oldText: note }), [action, text]);
+    if (!result?.success) throw new Error(`A note of the profile was not ${action === "add" ? "added" : "removed"}: ${result?.error}`);
+  };
+  const englishNote = "Wants short answers and one step at a time, with the recommended option already marked on the card.";
+  await profileNote("add", englishNote);
+  const before = await profileNow();
+  const room = Math.floor(before.limit * 0.94) - before.chars - 3;
+  if (room < 40) throw new Error(`The profile has no room for the test of Riordina: ${before.chars} of ${before.limit}`);
+  const filler = "La persona legge le spiegazioni sul telefono tra un cliente e l'altro, quindi preferisce frasi brevi e un passaggio alla volta. ";
+  const italianNote = filler.repeat(Math.ceil(room / filler.length)).slice(0, room).trim();
+  await profileNote("add", italianNote);
+  const tidy = memoryView.locator('[data-testid="memory-tidy"][data-state="full"]');
+  const tidyButton = tidy.getByRole("button", { name: "Riordina il tuo profilo" });
+  await tidyButton.waitFor({ timeout: 10_000 });
+  if ((await tidyButton.innerText()).trim() !== "Riordina") throw new Error("The action of a nearly full profile does not read Riordina");
+  const english = memoryView.locator('[data-testid="memory-entry"][data-language="en"]').filter({ hasText: "Wants short answers" });
+  await english.getByTestId("memory-entry-language").getByText("In inglese").waitFor();
+  if (!(await english.innerText()).includes(englishNote)) throw new Error("A note in another language changed its words");
+  if (await memoryView.getByTestId("memory-entry").filter({ hasText: "La persona legge le spiegazioni" }).getByTestId("memory-entry-language").count()) {
+    throw new Error("A note in the person's language is marked as in another language");
+  }
+  await tidy.scrollIntoViewIfNeeded();
+  await sideBarEnds("54-memory-profile-full");
+  // Riordina starts a review of the profile the person asked for; what it changes becomes a proposal, never a rewrite.
+  const reviewsBefore = (await page.evaluate(() => window.trama.getState())).learning.reviews.length;
+  await tidyButton.click();
+  for (let tries = 0; ; tries++) {
+    const learning = (await page.evaluate(() => window.trama.getState())).learning;
+    if (learning.reviews.length > reviewsBefore && learning.reviews[0].trigger === "person" && learning.reviews[0].status !== "running") break;
+    if (tries > 120) throw new Error("Riordina did not run a review of the profile");
+    await page.waitForTimeout(250);
+  }
+  if (!(await memoryView.getByTestId("memory-entry").filter({ hasText: englishNote }).count())) throw new Error("Riordina rewrote a note without the person's yes");
+  // The proposals of this review and the notes of the test leave, so the rest of the run finds Memoria as before.
+  for (const id of (await page.evaluate(() => window.trama.getState())).learning.proposals.map((p) => p.id)) {
+    await page.evaluate((proposal) => window.trama.invoke("learning:proposal", { id: proposal, approve: false }), id);
+  }
+  await profileNote("remove", italianNote);
+  await profileNote("remove", englishNote);
+  await tidy.waitFor({ state: "detached", timeout: 10_000 });
+}
 // Skills: Apri, Fissa and Archivia are icons with a tooltip and a name; Elimina keeps its text.
 const learnedSkill = memoryView.getByTestId("learned-skill").filter({ hasText: "release-flow" });
 for (const name of ["Apri", "Fissa", "Archivia"]) await learnedSkill.getByRole("button", { name, exact: true }).waitFor();
@@ -1954,6 +2148,7 @@ await page.getByRole("button", { name: "Chiudi Benvenuto", exact: true }).waitFo
   const editorTabs = page.getByTestId("editor-tabs");
   await editorTabs.getByRole("tab", { name: "Benvenuto", selected: true }).waitFor();
   if (!(await editorTabs.getByRole("tab", { name: "Conversazione" }).count())) throw new Error("The Benvenuto tab is not next to the conversation");
+  await workBarPlace("the Benvenuto", "none");
 }
 await page.getByTestId("welcome").getByRole("button", { name: /^(Riprendi|Inizia|Rifai): Conosci il progetto$/ }).click();
 await page.getByTestId("welcome").waitFor({ state: "detached" });
@@ -1987,6 +2182,8 @@ await shot("09-mandate");
   const rulesBar = page.getByTestId("side-bar");
   for (const id of ["mandate-where", "mandate-can", "fixed-bans"]) await rulesBar.getByTestId(id).waitFor();
   if (!/Orders/.test(await rulesBar.getByTestId("mandate-where").innerText())) throw new Error("Dove does not name the modules of the mandate");
+  // Critique of 29 September 2026: Mai is a short list, one fixed ban per line, not a dense sentence.
+  if ((await rulesBar.getByTestId("fixed-bans").getByTestId("fixed-ban").count()) !== 6) throw new Error("Mai does not list the six fixed bans one per line");
   for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
     if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
   }
@@ -2019,6 +2216,14 @@ await shot("09-mandate");
     }
   }
   await page.setViewportSize({ width: 1280, height: 820 });
+  // The three tabs with the side bar at its narrowest and widest (29 September 2026).
+  await setLookTo(rulesLook.provider, rulesLook.dark);
+  await openView("Regole", "Mandato");
+  await sideBarEnds("53a-rules-mandate");
+  await openView("Regole", "Patto");
+  await sideBarEnds("53b-rules-pact");
+  await openView("Regole", "Standard");
+  await sideBarEnds("53c-rules-standard");
   // Cambia il mandato open: each button opens its form, nothing changes until the form is confirmed.
   await openView("Regole", "Mandato");
   await openSection("Cambia il mandato");
@@ -2796,9 +3001,12 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 
 // W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
 // lists the others. Pausing the task in focus passes the focus to the next one; "Metti in primo piano" takes it back.
-// Issue #330: the bar left the top of the chat; the status bar names the work in focus and opens the same panel.
+// Issue #330: the bar left the top of the chat. UI wave of 29 September: the bar above the composer names the work in
+// focus next to what waits for the person, and unfolds the panel inside it; the status bar no longer repeats it.
 await openFocusPanel();
 const focusBar = page.getByTestId("focus-bar");
+if (!(await page.getByTestId("work-bar").getByTestId("focus-bar").count())) throw new Error("The focus panel does not unfold inside the bar above the composer");
+if (await page.getByTestId("status-focus").count()) throw new Error("The status bar repeats the work in focus while the conversation shows");
 const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
 const firstFocus = await focusTitle();
 // Issue #241: the bar is titled with the goal, never with the first message of a dialog.
@@ -2874,6 +3082,9 @@ for (const dark of [false, true]) {
 await setLookTo(look.provider, look.dark);
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
+// The panel unfolds inside the bar above the composer (UI wave of 29 September); Escape folds it again.
+await page.keyboard.press("Escape");
+await focusBar.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
 
 // T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
@@ -3144,9 +3355,12 @@ await openView("Squadre");
 const boardPanel = page.getByTestId("side-bar");
 const githubOnly = boardPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
 await githubOnly.getByText("#12 Annullo degli ordini dal riepilogo").waitFor({ timeout: 20_000 });
-await githubOnly.getByText("feature/annullo-ordini").waitFor();
+if (!((await githubOnly.getByTestId("group-branches").getAttribute("title")) ?? "").includes("feature/annullo-ordini")) throw new Error("The colleague's branch is not on the hover of their row");
 await githubOnly.getByText(/^su GitHub/).waitFor();
-await boardPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
+// The branches nobody explains are one line with their number; their names stay on hover (critique of 29 September).
+const otherBranches = boardPanel.getByTestId("group-other-branches");
+await otherBranches.getByText(/branch su GitHub, senza pull request né presenza$/).waitFor();
+if (!((await otherBranches.getAttribute("title")) ?? "").includes("spike/vecchio-checkout")) throw new Error("The other branches are not on the hover of their line");
 await boardPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
 await shot("15b-group-follow");
 await openView("Lavoro");
@@ -3217,7 +3431,7 @@ await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scro
 await page.waitForTimeout(300);
 const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
 const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
-if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+if (await page.getByTestId("work-bar").count()) covers.push(await page.getByTestId("work-bar").boundingBox());
 for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
 await themeShots("29b-context-rollover-summary");
 await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
@@ -3272,7 +3486,8 @@ const assignmentCards = page.locator('.chat-card:not([data-testid="settled-card"
 const cardAssignment = (card) => recordId(card, "A");
 
 // V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
-await send("[assegna] [lento]");
+// "[con-decisioni]" gives the work the Pact decision just recorded, so the person's page lists it (29 September 2026).
+await send("[assegna] [lento] [con-decisioni]");
 const slowCard = assignmentCards.first();
 await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
 // Q01: the branch follows Conventional Branch and stays recognizable as Trama's work.
@@ -3289,12 +3504,64 @@ await stoppedTurn.scrollIntoViewIfNeeded();
 await shot("18a-specialist-stopped");
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await closePanels();
+// Critique of 29 September 2026: a stopped person is on top of Squadre, above the squads, and their page opens on a
+// summary (what it does, what holds it up, the next move), then the settings, then the work with its details folded
+// and its Pact decisions one per line.
+{
+  await openView("Squadre");
+  const attention = page.getByTestId("side-bar").getByTestId("squads-attention");
+  const stoppedAda = attention.locator('[data-testid="attention-person"][data-sign="stopped"]').filter({ hasText: "Ada" });
+  await stoppedAda.waitFor({ timeout: 20_000 });
+  // Above the squads and the lists of people, right under the summary's first lines.
+  const firstGroupTop = await page
+    .getByTestId("side-bar")
+    .locator('[data-testid="squad"], [data-testid="team-developer"], [data-testid="team-figure"]')
+    .first()
+    .evaluate((el) => el.getBoundingClientRect().top);
+  if ((await attention.evaluate((el) => el.getBoundingClientRect().bottom)) > firstGroupTop) throw new Error("Who is stopped is not above the squads");
+  await sideBarEnds("52a-squads-attention");
+  await stoppedAda.click();
+  const adaPage = detailPane().getByTestId("specialist");
+  const brief = adaPage.getByTestId("specialist-brief");
+  await brief.waitFor();
+  if ((await brief.getAttribute("data-sign")) !== "stopped") throw new Error("The summary of a stopped person does not say it is stopped");
+  await brief.getByTestId("brief-doing").getByText("Documenta l'annullamento").waitFor();
+  await brief.getByTestId("brief-blocker").getByText("Fermato dalla persona").waitFor();
+  await brief.getByTestId("brief-next").getByText("Riprendilo dalla scheda qui sotto, o chiedi al Coordinatore.").waitFor();
+  const tops = await adaPage.evaluate((el) => ["specialist-brief", "specialist-settings", "specialist-now"].map((id) => el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top));
+  if (!(tops[0] < tops[1] && tops[1] < tops[2])) throw new Error(`The person's page is not summary, settings and work in this order: ${tops}`);
+  const adaNow = adaPage.getByTestId("specialist-now");
+  const detailToggle = adaNow.getByTestId("assignment-detail-toggle");
+  if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
+  if (await adaNow.getByTestId("assignment-contract").count()) throw new Error("The assignment's contract shows before the person opens its details");
+  await adaNow.getByRole("button", { name: "Riprendi" }).waitFor();
+  await themeShots("52b-person-stopped");
+  await detailToggle.click();
+  const reliedOn = adaNow.getByTestId("contract-decisions");
+  await reliedOn.getByTestId("contract-decision").first().waitFor();
+  // One decision per line: each row starts at the list's left edge.
+  const decisionLefts = await reliedOn.getByTestId("contract-decision").evaluateAll((rows) => rows.map((row) => Math.round(row.getBoundingClientRect().left)));
+  if (new Set(decisionLefts).size !== 1) throw new Error(`The Pact decisions of the work are not one per line: ${decisionLefts}`);
+  await reliedOn.scrollIntoViewIfNeeded();
+  await themeShots("52c-person-stopped-detail");
+  await page.setViewportSize({ width: 720, height: 820 });
+  await page.waitForTimeout(300);
+  await noHorizontalScroll("person stopped at 720 px");
+  await adaPage.getByTestId("specialist-brief").scrollIntoViewIfNeeded();
+  await themeShots("52d-person-stopped-narrow");
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await closePanels();
+}
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
 // Issue #204: the work ends, Trama starts the checks by itself and the Coordinator verifies the assignment instead of a
 // candidate, as in the live run. The move comes back under the reply with Trama's reason and its button on the right.
+// Turned back on, continuous work runs a round at once: the work Ada resumed ended without a candidate, so Trama
+// starts its checks by itself. The fake Codex keeps an automatic move running until it is stopped (W04). The person
+// writes while it runs: the move gives way and the message leaves at once, without a stop (ADR 0023).
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await page.getByTestId("status-line").getByRole("button", { name: "Ferma: Esegui le verifiche" }).waitFor({ timeout: 20_000 });
 await send("[assegna] [luna]");
 const lunaCard = assignmentCards.nth(1);
 await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
@@ -3327,6 +3594,8 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 if (await page.getByText(/is an assignment, not a candidate/).count()) throw new Error("A tool error reached the chat");
 await page.getByText(/uno strumento di Trama ha rifiutato la richiesta/).last().waitFor();
 await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+// ADR 0023: the checks the person's message set aside have their row, set aside and not stopped.
+await page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="setAside"]').first().getByText("Messa da parte", { exact: true }).waitFor();
 // Issue #337: the row is one line; its detail, with the tools that failed, opens on click.
 const stalledEntry = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first();
 await stalledEntry.getByTestId("activity-row-toggle").click();
@@ -3943,6 +4212,13 @@ await closePanels();
       if ((await page.getByTestId("activity-badge").count()) && !(await page.getByTestId("waiting-summary").isVisible())) {
         throw new Error("The row above the composer is hidden by the person's tab");
       }
+      // UI wave of 29 September: the bar was a pill floating over the bottom of the person's tab and hid its
+      // assignments. Now it is the tab's last row: scrolled to the end, the last assignment ends above the bar.
+      await workBarPlace("the person's tab at 1280x800", "tab");
+      await detailPane().evaluate((el) => el.scrollTo(0, el.scrollHeight));
+      await workBarPlace("the person's tab scrolled to the end", "tab");
+      await sideBarEnds("41f-editor-person-work-bar", (end) => workBarPlace(`the person's tab with the side bar ${end}`, "tab"));
+      await detailPane().evaluate((el) => el.scrollTo(0, 0));
     } else {
       await page.locator('[data-testid="editor-area"][data-split="true"]').waitFor();
       const chatBox = await page.getByTestId("editor-main").boundingBox();
@@ -3950,6 +4226,8 @@ await closePanels();
       if (!chatBox || !sideBox || chatBox.width < 420 || sideBox.x < chatBox.x + chatBox.width - 1) throw new Error(`The person and the conversation are not side by side at ${size}`);
       if (!(await composer().isVisible())) throw new Error("The composer is hidden beside the person's tab");
       await page.getByTestId("editor-side").getByRole("separator").waitFor({ state: "attached" });
+      // Beside the conversation the tab has no bar of its own: the bar stays on the composer.
+      await workBarPlace(`the conversation beside the person's tab at ${size}`, "composer");
     }
     await noHorizontalScroll(`the person's tab at ${size}`);
     await editorShots(`41a-editor-person-${size}`);
@@ -3960,6 +4238,7 @@ await closePanels();
     // Opened on the examination, the tab brings it into view; the first shot shows the top of the tab.
     await detailPane().evaluate((el) => el.scrollTo(0, 0));
     if (!(await detailPane().getByTestId("candidate-to-merge").isVisible())) throw new Error(`What is missing to merge the candidate is not on top at ${size}`);
+    await workBarPlace(`the candidate's tab at ${size}`, width === 1280 ? "tab" : "composer");
     await editorShots(`41b-editor-candidate-${size}`);
     await detailPane().getByTestId("focus-audit").scrollIntoViewIfNeeded();
     await editorShots(`41c-editor-candidate-audit-${size}`);
@@ -3974,6 +4253,7 @@ await closePanels();
     if (Number(await row.getAttribute("data-waiting")) !== badge) throw new Error(`Progetti counts ${await row.getAttribute("data-waiting")} things for the person, Aspetta te ${badge}`);
     if (badge && Number(await row.getByTestId("overview-waiting-count").innerText()) !== badge) throw new Error("The project's row shows another count than Aspetta te");
     await closePanels();
+    await workBarPlace(`Progetti at ${size}`, "none");
     await editorShots(`41d-editor-projects-${size}`);
     // Impostazioni: the app's sections apart from the project's, Collegamenti with one row per provider.
     await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
@@ -3981,6 +4261,7 @@ await closePanels();
     await settingsTab.getByRole("group", { name: "App" }).getByRole("button", { name: /^Collegamenti/ }).click();
     await settingsTab.getByRole("group", { name: /^Progetto/ }).getByRole("button", { name: /^Presenza/ }).waitFor();
     await settingsTab.getByRole("button", { name: /^Capacità/ }).first().waitFor();
+    await workBarPlace(`Impostazioni at ${size}`, "none");
     await editorShots(`41e-editor-settings-${size}`);
     await page.locator('[data-testid="editor-tab"][data-tab="settings"]').getByRole("button", { name: /^Chiudi / }).click();
     await page.locator('[data-testid="editor-tab"][data-tab="projects"]').getByRole("button", { name: /^Chiudi / }).click();
@@ -4471,13 +4752,18 @@ await openView("Squadre");
 const presencePanel = page.getByTestId("group-board");
 const rows = presencePanel.locator('[data-testid="group-row"]');
 const adaRow = rows.filter({ hasText: "Ada (tu)" });
-await adaRow.getByText("feature/carrello").waitFor({ timeout: 10_000 });
+// Critique of 29 September: what a person works on comes first; the branches and the files are one line each, a single
+// branch by its name and several by their number, with every name on hover.
+const hoverOf = async (row, id) => (await row.getByTestId(id).getAttribute("title", { timeout: 10_000 })) ?? "";
+if (!(await hoverOf(adaRow, "group-branches")).includes("feature/carrello")) throw new Error("Ada's branch is not on her row");
 const beaRow = rows.filter({ hasText: "Bea" }).and(page.locator('[data-kind="person"]'));
-await beaRow.getByText("feature/rimborsi").waitFor({ timeout: 10_000 });
-await beaRow.getByText(/anche su/).waitFor();
-await beaRow.getByText("fix/iva-rimborsi").waitFor();
-await beaRow.getByText("Rimborsi parziali").waitFor();
-await beaRow.getByText("src/payments.js").waitFor();
+await beaRow.getByTestId("group-branches").getByText("2 branch", { exact: true }).waitFor({ timeout: 10_000 });
+const beaBranches = await hoverOf(beaRow, "group-branches");
+if (!beaBranches.startsWith("feature/rimborsi (attivo)") || !beaBranches.includes("fix/iva-rimborsi")) throw new Error(`Bea's branches on hover: ${beaBranches}`);
+await beaRow.getByTestId("group-task").getByText("Rimborsi parziali").waitFor();
+await beaRow.getByTestId("group-files").getByText("1 file toccato", { exact: true }).waitFor();
+if ((await hoverOf(beaRow, "group-files")) !== "src/payments.js") throw new Error("Bea's files are not on the hover of their line");
+if (await presencePanel.locator(".font-mono").evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().height > 24))) throw new Error("A branch name wraps over more than one line in Chi lavora su cosa");
 await beaRow.getByText("attivo ora").waitFor();
 const liaRow = rows.and(page.locator('[data-kind="agent"]')).filter({ hasText: "Lia" });
 await liaRow.getByTestId("agent-tag").getByText("[Interfaccia]").waitFor();
@@ -4525,6 +4811,12 @@ for (const provider of ["codex", "claudeAgent"]) {
   }
 }
 await setLookTo(groupLook.provider, groupLook.dark);
+// Critique of 29 September 2026: at the side bar's narrowest, every branch name stays on one line.
+await presencePanel.scrollIntoViewIfNeeded();
+await sideBarEnds("52e-squads-who-works", async (end) => {
+  const wrapped = await presencePanel.locator('[data-testid="group-branches"], [data-testid="group-files"], [data-testid="group-task"]').evaluateAll((lines) => lines.filter((line) => line.getBoundingClientRect().height > 20).length);
+  if (wrapped) throw new Error(`${wrapped} lines of Chi lavora su cosa wrap with the side bar ${end}`);
+});
 // A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
 await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
 await page.waitForTimeout(400);
@@ -4579,8 +4871,9 @@ if (!(await overlapCard.first().innerText()).includes("riga 1")) throw new Error
 await overlapCard.first().scrollIntoViewIfNeeded();
 await shot("16d-overlap-chat");
 const focusOverlap = page.locator('[data-testid="focus-overlap"][data-level="conflict"]');
-// Issue #330: the work in focus in the status bar carries the overlap's badge and opens the panel with the warning.
-await page.locator('[data-testid="status-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
+// Issue #330: the work in focus carries the overlap's badge and opens the panel with the warning; since the UI wave of
+// 29 September it is in the bar above the composer.
+await page.locator('[data-testid="work-bar-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
 await openFocusPanel();
 await focusOverlap.waitFor({ timeout: 10_000 });
 // Issue #338: the details of the overlaps are a chevron with their number.
@@ -5380,14 +5673,29 @@ for (const row of await workView.getByTestId("work-goal").all()) {
 await workView.getByTestId("work-goal").filter({ hasText: "Spedizioni e pagamenti" }).getByText("Attivo", { exact: true }).waitFor();
 await workView.getByTestId("work-goals-archived").getByRole("button", { name: "Archiviati (1)" }).waitFor();
 await workView.getByTestId("work-section-goals").getByRole("button", { name: "Nuovo obiettivo" }).waitFor();
-// Slices: one row per slice with who, state and goal; a developer is its animated avatar, never a letter in a circle.
+// UI wave of 29 September: the status at the top says how far the sprint is and the next move; what holds the work is
+// one click away (Aspetta te, the conflict with main).
+await workView.getByTestId("work-slice-progress").getByText("1 di 4 fette fatte").waitFor();
+await workView.getByTestId("work-next").waitFor();
+await workView.getByTestId("work-held").getByRole("button", { name: "18 file in conflitto" }).waitFor();
+// Slices, grouped by where they stand: in progress with their state, then the waiting ones with what they wait for,
+// and the done ones folded at the end. A developer is its animated avatar, never a letter in a circle.
 const workSlices = workView.getByTestId("work-slice");
-if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
-const elenaSlice = workSlices.filter({ hasText: "S2 Spese di spedizione per zona" });
+if ((await workSlices.count()) !== 3) throw new Error(`Lavoro: ${await workSlices.count()} slices open instead of 3, the done one folded`);
+const elenaSlice = workView.getByTestId("work-slices-active").getByTestId("work-slice").filter({ hasText: "S2 Spese di spedizione per zona" });
 await elenaSlice.getByTestId("agent-bot").waitFor();
 await elenaSlice.getByText("In verifica", { exact: true }).waitFor();
-await workSlices.filter({ hasText: "S1 Soglie di spedizione gratuita" }).getByText("Fatta", { exact: true }).waitFor();
-await workSlices.filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+await workView.getByTestId("work-slices-waiting").getByTestId("work-slice").filter({ hasText: "S4 Pagina di stato dell'ordine" }).getByText("aspetta S2").waitFor();
+const doneSlices = workView.getByTestId("work-slices-done");
+if ((await doneSlices.getAttribute("data-open")) !== "false") throw new Error("Lavoro: the done slices are open before the click");
+await doneSlices.getByRole("button", { name: "Fatte (1)" }).click();
+await doneSlices.locator('[data-testid="work-slice"][data-state="done"]').filter({ hasText: "S1 Soglie di spedizione gratuita" }).waitFor();
+if ((await workSlices.count()) !== 4) throw new Error(`Lavoro: ${await workSlices.count()} slices instead of 4`);
+await doneSlices.getByRole("button", { name: "Fatte (1)" }).click();
+// Candidates: the replaced ones fold at the end with their count, since they only tell the history.
+const replaced = workView.getByTestId("work-candidates-superseded");
+await replaced.getByRole("button", { name: "Sostituiti (2)" }).waitFor();
+if (await replaced.getByTestId("work-candidate").count()) throw new Error("Lavoro: the replaced candidates are open before the click");
 // Branch and pull requests: the divergence says the commits on each side and the conflicts; its files are one click away.
 const workBranch = workView.getByTestId("work-branch");
 await workBranch.getByText("13 commit avanti, 7 indietro rispetto a main").waitFor();
@@ -5430,10 +5738,55 @@ const workShots = async (name, scroll) => {
 await workShots("32-work-view", () => workView.getByTestId("work-summary").scrollIntoViewIfNeeded());
 await workShots("32a-work-view-branches", () => workView.getByTestId("work-section-branches").evaluate((node) => node.scrollIntoView({ block: "start" })));
 await workShots("32b-work-view-issues", () => workView.getByTestId("work-section-issues").evaluate((node) => node.scrollIntoView({ block: "start" })));
+// The side bar at its widest: the status at the top, the verified candidates, the slices by state and the folds.
+await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
+await workView.getByTestId("work-summary").scrollIntoViewIfNeeded();
+await themeShots("32c-work-view-side-bar-wide");
+await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
 // The status bar opens the same conflict with its files shown.
 await page.getByTestId("status-conflict").click();
 await page.getByTestId("branch-divergence").getByTestId("branch-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
 await page.keyboard.press("Escape");
+await app.close();
+
+// Continuous work off (found live on the negozio, 29 September): the setting was off in Impostazioni, so the
+// Coordinator never started anything by itself, while the status bar said "Il prossimo passo è mio: verifico il
+// lavoro." as if it were about to. With the mandate granted, the team confirmed and a ready slice, the Coordinator's own
+// next move is "assegno S5": the status bar says it waits for a message and offers to turn continuous work back on,
+// and Lavoro says the same at its top. The button turns it on and the line goes back to the Coordinator's move.
+{
+  let workPath = null;
+  for (const file of await readdir(join(dataDir, "Projects"))) {
+    if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-lavoro-")) workPath = join(dataDir, "Projects", file);
+  }
+  if (!workPath) throw new Error("Continuous work off: the project's state was not saved");
+  await writeFile(workPath, JSON.stringify(addCoordinatorMove(JSON.parse(await readFile(workPath, "utf8")))));
+}
+({ app, page } = await launch(workEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.setViewportSize({ width: 1280, height: 800 });
+{
+  const offLine = page.locator('[data-testid="status-line"][data-state="waiting"]');
+  await offLine.getByTestId("status-line-text").getByText("Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.").waitFor({ timeout: 20_000 });
+  await offLine.getByTestId("status-line-reason").getByText("Acceso, il prossimo passo sarebbe mio: assegno S5.").waitFor();
+  if (await page.getByTestId("status-line-text").getByText(/prossimo passo è mio/).count()) throw new Error("With continuous work off the status bar still says the next step is the Coordinator's");
+  const turnOn = offLine.getByTestId("status-continuous-on");
+  if ((await turnOn.innerText()).trim() !== "Riaccendi il lavoro continuo") throw new Error("The status bar does not offer to turn continuous work back on");
+  await openView("Lavoro");
+  const offWork = page.getByTestId("side-bar").getByTestId("work-overview");
+  await offWork.getByTestId("work-next").getByText("Lavoro continuo spento", { exact: false }).waitFor();
+  await offWork.getByTestId("work-held").getByTestId("work-continuous-on").waitFor();
+  await offWork.getByTestId("work-slices-ready").getByTestId("work-slice").filter({ hasText: "S5 Ricevuta dell'ordine via email" }).waitFor();
+  await themeShots("15d-status-line-continuous-off");
+  await turnOn.click();
+  await page.getByTestId("status-continuous-on").waitFor({ state: "detached", timeout: 20_000 });
+  if (await page.getByTestId("status-line-text").getByText(/^Lavoro continuo spento/).count()) throw new Error("The status bar still says continuous work is off after turning it on");
+  await offWork.getByTestId("work-continuous-on").waitFor({ state: "detached" });
+  // The next launches start with continuous work off, as the rest of the check expects.
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+}
 await app.close();
 
 // Issue #271: a noisy history stays compact. The technical steps of each turn (seven read_issues in a row, empty
@@ -5931,12 +6284,14 @@ await nightRecap.waitFor({ timeout: 20_000 }).catch(async (error) => {
   throw new Error(`The return recap is in the document but its card does not show: ${JSON.stringify(await delegationState())}`, { cause: error });
 });
 await nightRecap.getByText("Cosa ho deciso con la tua delega").waitFor();
-await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Dubbio: Non so se vale anche per gli ordini pagati con un buono").waitFor();
-await primaryLast(nightRecap.getByTestId("recap-delegated-choice").first(), "Delegated choice");
+// The goal the study proposed opened with the delegation too, as a choice of its own: the decision is found by its doubt.
+const decidedChoice = nightRecap.getByTestId("recap-delegated-choice").filter({ hasText: "Dubbio: Non so se vale anche per gli ordini pagati con un buono" }).first();
+await decidedChoice.waitFor();
+await primaryLast(decidedChoice, "Delegated choice");
 await nightRecap.scrollIntoViewIfNeeded();
 await lookShots("26h-morning-recap");
-await nightRecap.getByTestId("recap-delegated-choice").first().getByRole("button", { name: "Ho visto" }).click();
-await nightRecap.getByTestId("recap-delegated-choice").first().getByText("Vista", { exact: true }).waitFor();
+await decidedChoice.getByRole("button", { name: "Ho visto" }).click();
+await decidedChoice.getByText("Vista", { exact: true }).waitFor();
 await openView("Regole", "Mandato");
 const delegationSection = page.getByTestId("side-bar").getByTestId("delegation-section");
 await page.getByTestId("side-bar").locator('[data-testid="delegation-section"][data-active="true"]').waitFor({ timeout: 20_000 });
@@ -6827,7 +7182,11 @@ await send("[assegna] [interfaccia]");
 const styledWork = await workDone(plainWork);
 await send(`[candidato:${styledWork}:${vetrinaDecision}]`);
 const styledItem = await openWaiting("candidate", undefined, 60_000);
-if (!(await styledItem.innerText()).includes("Interfaccia da guardare")) throw new Error("The interface candidate does not say it changes the interface");
+// UI wave of 29 September: the open item of Aspetta te has no title of its own, its card is its one frame. The item keeps
+// its label as its name, and the card says the candidate changes the interface.
+if ((await styledItem.getAttribute("aria-label")) !== "Interfaccia da guardare" || !(await styledItem.innerText()).includes("Cambia l'interfaccia")) {
+  throw new Error("The interface candidate does not say it changes the interface");
+}
 await styledItem.locator('[data-testid="interface-shots"][data-status="ready"]').waitFor({ timeout: 60_000 });
 const styledShots = styledItem.locator('[data-testid="interface-shot"] img');
 await styledShots.nth(3).waitFor({ timeout: 20_000 });
@@ -7096,6 +7455,12 @@ const squadsSide = page.getByTestId("side-bar");
 const squadNamed = (name) => squadsSide.locator(`[data-testid="squad"][data-squad="${name}"]`);
 await squadNamed("Ordini").waitFor({ timeout: 20_000 });
 await squadNamed("Catalogo").waitFor();
+// Named apart from their areas, these squads still name them in their header (UI wave of 29 September).
+{
+  const headers = await squadHeadersNameOnce("the squads project");
+  const areaOf = (name) => headers.find((header) => header.name === name)?.area;
+  if (areaOf("Ordini") !== "Orders, Payments" || areaOf("Catalogo") !== "Catalog") throw new Error(`A squad's header lost its areas: ${JSON.stringify(headers)}`);
+}
 const squadMenu = async (name, item) => {
   const menu = await openMenu(squadNamed(name).getByTestId("squad-menu"));
   if (item) await menu.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();

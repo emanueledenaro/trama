@@ -5,12 +5,14 @@ import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candi
 import {
   availableButtons,
   currentStateText,
+  memorySection,
   missingButtonTitle,
   missingButtonDetail,
   missingButtonFeedback,
   missingButtons,
 } from "./coordinatorGrounding";
 import { appendEvent, emptyDocument } from "./document";
+import { grantDelegation } from "./fullDelegation";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { setPersonLanguage } from "./personLanguage";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -182,6 +184,25 @@ describe("missingButtonFeedback: the next turn reads the button that was not the
   });
 });
 
+describe("memory notes against the delegation and the mandate (issue #423)", () => {
+  it("tells the Coordinator every turn that a note asking to wait for the person does not hold the work", () => {
+    const document = shop();
+    // Within the mandate: a note that asks for the person's yes on a step the mandate covers does not stop it.
+    expect(currentStateText(document, "r3")).toContain("Il mandato vale più delle note di memoria");
+    // With the full delegation: the note gives way, and the Coordinator corrects it and writes it down for the person.
+    document.events.push({ id: "E-d", sequence: 99, origin: "person", requestId: null, createdAt: at(1).toISOString(), content: { type: "personMessage", text: "devi essere autonomo tu coordinatore", moduleId: null, moduleName: null, composer: true } });
+    grantDelegation(document, { quote: "devi essere autonomo tu coordinatore", tickets: false });
+    const text = currentStateText(document, "r3");
+    expect(text).toContain("La delega vale più delle note di memoria");
+    expect(text).toContain("correggi la nota con memory");
+  });
+
+  it("heads the memory with what counts more than a note", () => {
+    expect(memorySection([])).toBe("## Memoria (note tue, non decisioni della persona: il mandato, la delega piena e i messaggi della persona valgono di più)\nLa memoria è vuota.");
+    expect(memorySection(["§ Nota uno", "§ Nota due"])).toContain("§ Nota uno\n\n§ Nota due");
+  });
+});
+
 describe("currentStateText: the state the Coordinator reads every turn (issue #269)", () => {
   it("names the buttons, the mandate, the confirmed slices and each candidate as Trama records them", () => {
     const document = shop();
@@ -217,6 +238,36 @@ describe("currentStateText: the state the Coordinator reads every turn (issue #2
     expect(text).toContain(`- ${old.id} di Luca (incarico ${matrix.id}): non verificato, non è pronto per la persona (verifica node_typecheck mai eseguita; revisione tecnica non ancora fatta).`);
     // The newest candidate comes first.
     expect(text.indexOf(fixed.id)).toBeLessThan(text.indexOf(`- ${old.id}`));
+  });
+
+  it("tells the Coordinator that realigning a diverged branch is its move within the mandate, never the person's", () => {
+    const document = shop();
+    expect(currentStateText(document, "r3")).not.toContain("Branch del progetto:");
+    // The person's checkout has a commit GitHub lacks, while chore/pre-apertura on GitHub moved on with 9 commits.
+    const divergence = {
+      branch: "chore/pre-apertura",
+      defaultBranch: "chore/pre-apertura",
+      headSHA: "f1197f9104cf652c4b1d8b06137e7aab9173388d",
+      remoteSHA: "8b70a5f32bb2f6502443e4700e383f7e2173657b",
+      ahead: 1,
+      behind: 9,
+      conflictingFiles: ["package-lock.json"],
+      checkedAt: at(8).toISOString(),
+    };
+    document.branchDivergence = divergence;
+    const own = currentStateText(document, "r3");
+    expect(own).toContain(
+      "Branch del progetto: la copia della persona di chore/pre-apertura ha 1 commit che chore/pre-apertura su GitHub non ha, e GitHub ne ha 9 che la copia non ha; la loro unione lascia in conflitto package-lock.json.",
+    );
+    expect(own).toContain("Riallinearli tocca a te dentro il mandato");
+    expect(own).toContain("unisce origin/chore/pre-apertura");
+    // The branch as it is on GitHub against main: the same move, towards the project's branch.
+    document.branchDivergence = { ...divergence, defaultBranch: "main", ahead: 13, behind: 7, conflictingFiles: [".gitignore", "next.config.js"] };
+    const main = currentStateText(document, "r3");
+    expect(main).toContain(
+      "Branch del progetto: chore/pre-apertura e main su GitHub sono andati in direzioni diverse (13 commit solo in chore/pre-apertura, 7 solo in main); la loro unione lascia in conflitto .gitignore, next.config.js.",
+    );
+    expect(main).toContain("unisce origin/main");
   });
 
   it("says a candidate is ready for the person only when it is verified and approved", () => {

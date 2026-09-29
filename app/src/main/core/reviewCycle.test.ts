@@ -5,17 +5,17 @@ import { GATE_ROLES } from "@shared/gate";
 import { ITALIAN, translator } from "@shared/i18n";
 import { REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
 import { waitingForYou } from "@shared/waitingForYou";
-import { candidateReport, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
-import { automaticMove } from "./continuousWork";
+import { candidateReport, clearCandidate, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
+import { automaticMove, stalledMove } from "./continuousWork";
 import { emptyDocument } from "./document";
-import { beginReviews, closeGate, finishReview, openGate, pendingReturns } from "./gate";
-import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
-import { assign, confirmTeam, endTurn, proposeTeam, recordWorkspace, reopenForFindings } from "./team";
+import { beginReviews, closeGate, finishReview, openGate, pendingReturns, settleGate } from "./gate";
+import { answerDecisionRequest, createDecisionRequest, decide, grantMandate } from "./pact";
+import { assign, confirmTeam, endTurn, proposeTeam, recordWorkspace, reopenForFindings, requestStop, TeamError } from "./team";
 import { workState } from "./workPhase";
 
 /**
  * Issue #389: the cycle of candidates and reviews closes. A correction retires the version it corrects, an automatic
- * move starts only with work to do, and after too many blocks in a row the work waits for the person.
+ * move starts only with work to do, and after too many blocks in a row the Coordinator settles the work (ADR 0023).
  */
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 14, minute));
@@ -181,35 +181,158 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     expect(automaticMove(document, "r1", "round", guards)).toBeNull();
   });
 
-  it(`holds the work for the person after ${REVIEW_LOOP_LIMIT} blocks in a row instead of starting another round`, () => {
-    const document = project();
+  /** Blocks the same work REVIEW_LOOP_LIMIT times in a row, as when the developer disputes the findings and changes nothing. */
+  function heldWork(document: ProjectDocument) {
     const ada = work(document, "Ada", "r1", 1);
     let minute = 2;
     let last: Candidate | null = null;
+    let gate = null as ReturnType<typeof block> | null;
     for (let round = 1; round <= REVIEW_LOOP_LIMIT; round++) {
       last = deliver(document, ada, minute);
-      const gate = block(document, last, minute + 1);
+      gate = block(document, last, minute + 1);
       if (round < REVIEW_LOOP_LIMIT) sendBackAndFinish(document, ada, gate, minute + 2);
       minute += 4;
     }
+    return { ada, candidate: last!, gate: gate!, minute };
+  }
+
+  it(`lets the Coordinator settle the work after ${REVIEW_LOOP_LIMIT} blocks in a row, never the person (ADR 0023)`, () => {
+    const document = project();
+    const { candidate } = heldWork(document);
 
     const state = workState(document, "r1");
     expect(state.phase).toBe("blocked");
-    expect(state.block).toBeUndefined();
-    expect(state.blocker).toContain("Aspetta te");
-    expect(coordinatorMoves(document, "r1")).toEqual([]);
-    for (const event of ["round", "checkFailed", "assignmentEnded"] as const) expect(automaticMove(document, "r1", event, guards)).toBeNull();
+    expect(state.block).toBe("reviewLoop");
+    expect(state.blocker).toContain("settle_review");
+    expect(coordinatorMoves(document, "r1")).toEqual(["settleReview"]);
+    // Any event of the work starts the settlement: the gate that ended, the round, a red check.
+    for (const event of ["round", "checkFailed", "assignmentEnded"] as const) expect(automaticMove(document, "r1", event, guards)?.move).toBe("settleReview");
 
+    // Nothing waits for the person in Aspetta te.
     const reports = Object.fromEntries(document.candidates.map((c) => [c.id, candidateReport(document, c, null)]));
-    const waiting = waitingForYou(ITALIAN, document, { candidateReports: reports });
-    expect(waiting.map((item) => item.key)).toEqual([`candidate:${last!.id}`]);
-    expect(waiting[0]).toMatchObject({ label: "Lavoro fermato più volte", title: `Ordini in revisione: la revisione l'ha fermato ${REVIEW_LOOP_LIMIT} volte di seguito. Scrivi al Coordinatore come andare avanti.` });
-    expect(waitingForYou(translator("en"), document, { candidateReports: reports })[0]).toMatchObject({ label: "Work stopped several times" });
+    expect(waitingForYou(ITALIAN, document, { candidateReports: reports }).map((item) => item.key)).not.toContain(`candidate:${candidate.id}`);
+    expect(waitingForYou(translator("en"), document, { candidateReports: reports }).map((item) => item.key)).not.toContain(`candidate:${candidate.id}`);
+  });
 
-    // Once the person writes how to go on, the Coordinator takes the work again.
-    request(document, "r2", minute + 1);
-    expect(waitingForYou(ITALIAN, document, { candidateReports: reports })).toEqual([]);
-    expect(workState(document, "r2").block).toBe("checkFailed");
+  it("overrules the reviewers when the Coordinator sides with the developer, and the candidate goes on (ADR 0023)", () => {
+    const document = project();
+    const { candidate, gate } = heldWork(document);
+    settleGate(gate, candidate, { side: "developer", reason: "Il Patto chiede i dati aziendali nel sito", doubt: "Forse la PEC non serve" }, at(40));
+    expect(gate.status).toBe("passed");
+    expect(gate.settled).toMatchObject({ side: "developer", doubt: "Forse la PEC non serve" });
+    expect(inspectCandidate(document, candidate, null).map((b) => b.code)).not.toContain("GATE_BLOCKED");
+    expect(workState(document, "r1").block).not.toBe("reviewLoop");
+    expect(coordinatorMoves(document, "r1")).not.toContain("settleReview");
+  });
+
+  it("says the settlement stalled when the turn did not decide, and gives the green light once it sides with the developer", () => {
+    const document = project();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    const { candidate, gate } = heldWork(document);
+    request(document, "r2", 30, { move: "settleReview", by: "trama" });
+    expect(stalledMove(document, "r2")?.reason).toBe(
+      "La mossa automatica non è riuscita: il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+    );
+    settleGate(gate, candidate, { side: "developer", reason: "Il Patto chiede i dati aziendali nel sito" }, at(40));
+    expect(stalledMove(document, "r2")).toBeNull();
+    // The review approves the candidate: the next move is the Coordinator's green light, then Trama merges it.
+    expect(automaticMove(document, "r2", "round", guards)?.move).toBe("clearCandidate");
+  });
+
+  it("takes the candidate the Coordinator settled with the developer to the green light and the merge (ADR 0023)", () => {
+    const document = project();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    const { candidate, gate } = heldWork(document);
+    expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/not verified/);
+    settleGate(gate, candidate, { side: "developer", reason: "Il Patto chiede i dati aziendali nel sito" }, at(40));
+    const cleared = clearCandidate(document, candidate.id, "Coordinatore", "base", at(41));
+    expect(cleared.clearance).toMatchObject({ actor: "Coordinatore" });
+    expect(candidateReport(document, candidate, "base").state).toBe("decided");
+    // Nothing is left for anyone to settle or to assign: the merge goes on by itself.
+    expect(coordinatorMoves(document, "r1")).toEqual([]);
+    expect(pendingReturns(document)).toEqual([]);
+  });
+
+  it("starts the count again when the Coordinator sides with the reviewers (ADR 0023)", () => {
+    const document = project();
+    const { ada, candidate, gate } = heldWork(document);
+    settleGate(gate, candidate, { side: "findings", reason: "I dati personali non vanno nei documenti" }, at(40));
+    expect(gate.status).toBe("blocked");
+    expect(gate.settled).toMatchObject({ side: "findings", doubt: null });
+    // The settled gate no longer counts: the work is no longer held, and a new block starts a new count.
+    expect(workState(document, "r1").block).not.toBe("reviewLoop");
+    sendBackAndFinish(document, ada, gate, 41);
+    const next = deliver(document, ada, 42);
+    block(document, next, 43);
+    expect(workState(document, "r1").block).not.toBe("reviewLoop");
+  });
+
+  it("never overrules Trama's own evidence: a failed check stays (ADR 0023)", () => {
+    const document = project();
+    const { candidate, gate } = heldWork(document);
+    gate.checksFailed = ["git_status"];
+    expect(() => settleGate(gate, candidate, { side: "developer", reason: "Va bene così" })).toThrow(/cannot be overruled/);
+    expect(() => settleGate(gate, candidate, { side: "findings", reason: "  " })).toThrow(/reason/);
+    expect(gate.settled).toBeUndefined();
+  });
+
+  /**
+   * The shop on 29 September: Marco's realignment resumed with the findings, then a Pact decision changed and Trama
+   * stopped the work. The next gate blocked its candidate and the findings stayed waiting with "Assignment … is not
+   * completed", so the Coordinator opened new work in an empty working copy instead.
+   */
+  function stoppedByTrama(document: ProjectDocument) {
+    const ada = work(document, "Ada", "r1", 1);
+    const decision = document.decisions[0]!;
+    ada.decisionVersions = { [decision.id]: decision.version };
+    const first = deliver(document, ada, 2);
+    const gate = block(document, first, 3);
+    reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: first.id, findings: ["Rilievo"] }, at(4));
+    decide(document, { id: decision.id, value: "Anche il cliente vede la revisione", acceptedExample: "Ordine 42", rationale: "Chiesto dalla persona" }, at(5));
+    requestStop(document, ada.specialistId, "trama", `Decision ${decision.id} changed or is under review.`, false, at(5));
+    endTurn(document, ada.id, null, { kind: "interrupted" }, at(5));
+    const second = declareCandidate(
+      document,
+      { assignmentId: ada.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-stopped", baseSHA: "base", diff: "+y", changedFiles: ["Sources/Orders/Order.swift"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at(6),
+    );
+    recordEvidence(document, second.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: second.snapshotId }, at(6));
+    return { ada, second, gate: block(document, second, 7), decision };
+  }
+
+  it("sends the findings back to work Trama stopped, in its worktree, with the Pact as it is now", () => {
+    const document = project();
+    const { ada, second, gate, decision } = stoppedByTrama(document);
+    expect(ada.status).toBe("stopped");
+    // Trama retries the return at the next event of the work: the stopped work is not forgotten.
+    gate.returned = { assignmentId: ada.id, at: at(7).toISOString(), waiting: "Lo sviluppatore lavora a un altro incarico." };
+    expect(pendingReturns(document).map((g) => g.id)).toEqual([gate.id]);
+
+    reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8));
+    expect(ada.status).toBe("preparing");
+    expect(ada.gateReturn).toMatchObject({ gateId: gate.id, candidateId: second.id });
+    expect(ada.workspace?.worktreeRoot).toBe(`/tmp/${ada.id}`);
+    expect(ada.decisionVersions).toEqual({ [decision.id]: 2 });
+  });
+
+  it("never resumes by itself work the person stopped, nor work whose decision is under review", () => {
+    const document = project();
+    const { ada, second, gate, decision } = stoppedByTrama(document);
+    ada.stops.at(-1)!.by = "person";
+    gate.returned = { assignmentId: ada.id, at: at(7).toISOString(), waiting: "Fermo" };
+    expect(pendingReturns(document)).toEqual([]);
+    expect(() => reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8))).toThrow(TeamError);
+    expect(ada.status).toBe("stopped");
+
+    ada.stops.at(-1)!.by = "trama";
+    const alternatives = [
+      { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
+      { behavior: "Anche il cliente", example: "Il cliente vede lo stato review", consequence: null },
+    ];
+    createDecisionRequest(document, { requestId: null, category: "product", question: "Chi vede la revisione, ora?", concreteCase: "Ordine 42", alternatives, revisesDecisionId: decision.id });
+    expect(pendingReturns(document)).toEqual([]);
+    expect(() => reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8))).toThrow(/under review/);
   });
 
   it("keeps a return Trama held for the person out of the returns it retries", () => {

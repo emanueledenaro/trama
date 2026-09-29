@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -274,6 +274,50 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(document, "r3").moves).toEqual([
       { move: "mergePullRequest", actor: "person", label: "Unisci la pull request", targetId: ready.id, url: "https://github.com/o/r/pull/7", message: null },
     ]);
+  });
+
+  it("gives the realignment to the Coordinator, never the merge to the person, when GitHub finds conflicts between the pull request and its base", () => {
+    // The negozio case: the merge of pull request #25 stopped because GitHub finds conflicts with its base.
+    const { document, assignment } = withAssignment();
+    const published = candidate(document, assignment.id, "pass", "approved");
+    published.pullRequest = {
+      url: "https://github.com/emanueledenaro/negozio/pull/25",
+      number: 25,
+      branch: "chore/issue-24-consolidare-il-riallineamento-ripartire-trama-c4e84cfe",
+      headSHA: "ddcdddb00dfe3e8ae7723829d7c43edda05b1baa",
+      at: at(5).toISOString(),
+    };
+    const stopped = { by: "person" as const, fingerprint: "f", status: "stopped" as const, at: at(6).toISOString(), mergeSHA: null, mandateVersion: null };
+    for (const merge of [
+      // Recorded before Trama kept the cause apart: only the words say it.
+      { ...stopped, detail: "GitHub trova conflitti tra la pull request #25 e la base." },
+      { ...stopped, detail: "GitHub finds conflicts between pull request #25 and the base." },
+      { ...stopped, detail: "GitHub trova conflitti tra la pull request #25 e la base.", baseConflict: true },
+    ]) {
+      published.merge = merge;
+      const state = workState(document, "r3");
+      expect(state.moves.map((m) => m.move)).not.toContain("mergePullRequest");
+      expect(state).toMatchObject({ phase: "blocked", block: "worktreeConflict", moves: [{ move: "assignWork", actor: "coordinator" }] });
+      expect(state.blocker).toContain("#25");
+      expect(state.blocker).toContain(published.id);
+      expect(state.why).toBe("La pull request del lavoro di Ada è in conflitto con la sua base su GitHub: va riallineata e pubblicata di nuovo.");
+    }
+    // Any other stop keeps the pull request with the person, as before.
+    published.merge = { ...stopped, detail: "Sul branch della pull request #25 è arrivato altro lavoro dopo la pubblicazione: serve un nuovo candidato con nuove verifiche." };
+    expect(moves(document, "r3")).toEqual(["mergePullRequest"]);
+  });
+
+  it("leaves the green light of an approved candidate to the Coordinator within the mandate, also after a gate that ended in the background", () => {
+    const { document, assignment } = withAssignment();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    // The gate passed and nobody gave the green light yet: the move is the Coordinator's, never a wait for the person.
+    const state = workState(document, "r3");
+    expect(state.moves).toContainEqual(expect.objectContaining({ move: "clearCandidate", actor: "coordinator", targetId: ready.id }));
+    expect(workStateText(state)).toContain(`che aspetta il tuo via libera: ${ready.id}`);
+    // Once it has the green light, the work goes on towards the merge as before.
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    expect(workState(document, "r3")).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person", targetId: ready.id }] });
   });
 
   it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {

@@ -1,4 +1,3 @@
-import { ITALIAN } from "@shared/i18n";
 import { blockerText } from "@shared/plainLanguage";
 import type {
   Candidate,
@@ -21,10 +20,11 @@ import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
-import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
+import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
+import { pullRequestConflicted } from "./merge";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
-import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { activeDevelopers, authorize, heldByPersonStop, isActive, isTeamConfirmed, needsWorktree } from "./team";
 import { parallelDevelopers } from "@shared/parallel";
 import type { MessageKey } from "@shared/i18n";
 import { t } from "./personLanguage";
@@ -169,7 +169,15 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 });
 
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "decideWithDelegation" | "takeTicket";
+export type CoordinatorMove =
+  | "preparePlan"
+  | "assignWork"
+  | "verifyCandidate"
+  | "answerQuestion"
+  | "settleReview"
+  | "clearCandidate"
+  | "decideWithDelegation"
+  | "takeTicket";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -187,6 +195,10 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   assignWork: moveWords("main.workPhase.assignWork", "main.workPhase.assignWorkMessage"),
   verifyCandidate: moveWords("main.workPhase.verifyCandidate", "main.workPhase.verifyCandidateMessage"),
   answerQuestion: moveWords("main.workPhase.answerQuestion", "main.workPhase.answerQuestionMessage"),
+  // The review stopped the same work twice (ADR 0023): the Coordinator settles it, never the person.
+  settleReview: moveWords("main.workPhase.settleReview", "main.workPhase.settleReviewMessage"),
+  // The gate passed, also after the turn that asked for it ended (ADR 0023): the green light is the Coordinator's.
+  clearCandidate: moveWords("main.workPhase.clearCandidate", "main.workPhase.clearCandidateMessage"),
   // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
   decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
   takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
@@ -203,6 +215,9 @@ export const BLOCK_LABELS: Record<TechnicalBlock, string> = {
   get stalledAssignment() {
     return t("main.workPhase.blockStalledAssignment");
   },
+  get reviewLoop() {
+    return t("main.workPhase.blockReviewLoop");
+  },
 };
 
 /** The same move while it runs, in the first person, for the status line. */
@@ -215,6 +230,9 @@ export const BLOCK_PHRASES: Record<TechnicalBlock, string> = {
   },
   get stalledAssignment() {
     return t("main.workPhase.blockStalledAssignmentPhrase");
+  },
+  get reviewLoop() {
+    return t("main.workPhase.blockReviewLoopPhrase");
   },
 };
 
@@ -423,7 +441,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("blocked", t("main.workPhase.blockerPlanStale", { id: plan.id }), undefined, t("main.workPhase.whyPlanStale"));
       default:
         if (open.length) return finish("spec");
-        return readyPlan(plan, { assignWork, add, finish });
+        return readyPlan(plan, { assignWork, preparePlan, add, finish });
     }
   }
   if (grilled) {
@@ -443,6 +461,7 @@ function readyPlan(
   plan: WorkPlan,
   moves: {
     assignWork(): void;
+    preparePlan(): void;
     add(option: MoveOption): void;
     finish(phase: WorkPhase, blocker?: string | null, verification?: VerificationTargets, why?: string | null): WorkState;
   },
@@ -456,6 +475,8 @@ function readyPlan(
       moves.add(person("confirmSlices", PERSON_MOVE_LABELS.confirmSlices, plan.id));
       return moves.finish("slices");
     case "failed":
+      // Within the mandate the Coordinator prepares the plan again, and the slices with it: nobody waits for the button.
+      moves.preparePlan();
       moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       return moves.finish(
         "blocked",
@@ -524,7 +545,8 @@ function assignedWork(
       };
     }
     if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
-      moves.assignWork();
+      // Work the person stopped waits for their word: no automatic move takes it up again before they write.
+      if (!heldByPersonStop(document, assignment)) moves.assignWork();
       const failed = assignment.status === "failed";
       const blocker = !failed
         ? t("main.workPhase.blockerStopped", { id: assignment.id })
@@ -546,14 +568,28 @@ function assignedWork(
     // A candidate that lags its worktree (issue #388) is not the work: its blockers wait for the new candidate.
     if (worktreeChanged(document, candidate)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
-    // The review stopped this work too many times in a row (issue #389): it waits for the person in Aspetta te, with no
-    // move of the Coordinator, so neither Trama nor the Coordinator starts another round.
+    // The review stopped this work again (issue #389, ADR 0023): the Coordinator settles the disagreement between the
+    // developer and the reviewers, a technical block it resolves by itself; no identical round starts and nobody waits
+    // for the person.
     if (candidateHeld(document, candidate)) {
       const rounds = blockedReviews(document, assignment).length;
+      moves.add(coordinator("settleReview", candidate.id));
       return {
         phase: "blocked",
         blocker: t("main.workPhase.blockerHeld", { assignment: assignment.id, rounds, candidate: candidate.id }),
         why: candidateBlockerWhy(workOf(document, assignment), blocker ?? { code: "GATE_BLOCKED", detail: "" }),
+        block: "reviewLoop",
+      };
+    }
+    // The developer ended the returned work without changing the copy: a disagreement the Coordinator settles now,
+    // without another round of the reviewers on the same content (one work, one candidate).
+    if (blocker?.code === "GATE_BLOCKED" && disputedSince(assignment, candidate)) {
+      moves.add(coordinator("settleReview", candidate.id));
+      return {
+        phase: "blocked",
+        blocker: t("main.workPhase.blockerDisputed", { assignment: assignment.id, candidate: candidate.id }),
+        why: candidateBlockerWhy(workOf(document, assignment), blocker),
+        block: "reviewLoop",
       };
     }
     if (blocker) {
@@ -622,10 +658,29 @@ function assignedWork(
     }
     return { phase: "verification", blocker: null, verification };
   }
+  // The gate passed, also after the turn that asked for it ended (ADR 0023): the Coordinator's green light takes the work
+  // to the merge. Without this move a verified candidate the mandate lets Trama merge waited for nobody.
+  for (const { candidate } of edits) {
+    if (candidate!.pullRequest || candidate!.humanRejection || !greenLightMissing(document, candidate!)) continue;
+    if (authorize(document.mandate, "integrateCandidate", candidate!.touchedModules) === "authorized") moves.add(coordinator("clearCandidate", candidate!.id));
+  }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
     moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
     return { phase: "candidate", blocker: null };
+  }
+  // GitHub finds conflicts between a pull request and its base: the Coordinator realigns the candidate's branch in its
+  // working copy and publishes it again. The person gets the merge only of a pull request that can be merged.
+  const conflicted = edits.find((i) => pullRequestConflicted(i.candidate!));
+  if (conflicted) {
+    const candidate = conflicted.candidate!;
+    moves.assignWork();
+    return {
+      phase: "blocked",
+      blocker: t("main.workPhase.blockerPullRequestConflict", { id: candidate.id, number: candidate.pullRequest!.number }),
+      why: sentence(t("main.workPhase.whyPullRequestConflict", { work: workOf(document, conflicted.assignment) })),
+      block: "worktreeConflict",
+    };
   }
   const unmerged = edits.find((i) => !i.candidate!.pullRequest!.mergedAt);
   if (unmerged) {
@@ -637,10 +692,35 @@ function assignedWork(
 }
 
 /**
- * Whether the gate sent `candidate` back to the developer of `assignment` and the developer has finished since (W10):
- * the worktree moved on, so the candidate no longer describes the work.
+ * Whether the candidate lacks a green light that covers it: none yet, one given on other content, or one given under
+ * another mandate, which a merge by the Coordinator does not accept (issue #41).
  */
-const correctedSince = (assignment: SpecialistAssignment, candidate: Candidate) => assignment.gateReturn?.candidateId === candidate.id && !isActive(assignment);
+export function greenLightMissing(document: ProjectDocument, candidate: Candidate): boolean {
+  const clearance = candidate.clearance;
+  if (!clearance || clearance.fingerprint !== contentFingerprint(document, candidate)) return true;
+  return document.mandate?.status === "granted" && clearance.mandateVersion !== document.mandate.version;
+}
+
+/**
+ * Whether the gate sent `candidate` back to the developer of `assignment` and the developer has finished since (W10):
+ * the worktree moved on, so the candidate no longer describes the work. When Trama read the copy after that turn and
+ * found the candidate's content, the developer disputed the findings instead (see `disputedSince`).
+ */
+const correctedSince = (assignment: SpecialistAssignment, candidate: Candidate) =>
+  assignment.gateReturn?.candidateId === candidate.id && !isActive(assignment) && !disputedSince(assignment, candidate);
+
+/**
+ * Whether the developer ended the work the gate sent back without changing its working copy: Trama read the copy after
+ * the return and it is still the candidate's. The developer disputes the findings; a new gate on the same content would
+ * give the same findings, so the Coordinator settles it (ADR 0023).
+ */
+const disputedSince = (assignment: SpecialistAssignment, candidate: Candidate) => {
+  const returned = assignment.gateReturn;
+  const read = assignment.worktreeSnapshot;
+  return (
+    returned?.candidateId === candidate.id && !isActive(assignment) && !!read && read.snapshotId === candidate.snapshotId && read.at > returned.at
+  );
+};
 
 /** The one next step to show under the latest reply of each dialog: the declared move, while the work still allows it. */
 export function nextStepViews(document: ProjectDocument): Record<string, NextStepView> {
@@ -664,6 +744,8 @@ export function workStateText(state: WorkState): string {
   if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork, state.slices.limit));
   if (state.verification) lines.push(...verificationText(state.verification));
   if (state.questions) lines.push(questionsText(state.questions));
+  const clear = state.moves.find((m) => m.move === "clearCandidate");
+  if (clear?.targetId) lines.push(`Candidato verificato, con il cancello superato, che aspetta il tuo via libera: ${clear.targetId}.`);
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`

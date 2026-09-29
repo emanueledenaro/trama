@@ -8,6 +8,7 @@ import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderMo
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
+import { tidyFocus } from "@shared/memoryNotes";
 import { mentionContextBlock } from "@shared/mentions";
 import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -76,7 +77,7 @@ import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
-import { type AgentRuntime, extractJsonAnswer, isInterruptedTurn } from "./core/providers/types";
+import { type AgentRuntime, extractJsonAnswer, interruptedTurnError, isInterruptedTurn } from "./core/providers/types";
 import {
   COORDINATOR_TOOLS,
   learningTools,
@@ -167,7 +168,7 @@ import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { availableButtons, currentStateText, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
+import { availableButtons, currentStateText, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
 import {
   automaticMoveDetail,
   automaticMove,
@@ -252,9 +253,9 @@ import {
   withdrawalMessage,
   withdrawDecisionRequest,
 } from "./core/pact";
-import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
+import { availableChecks, CHECKS, type CheckResult, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
-import { asksForRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
+import { asksForRecap, decidedSinceLastRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
 import { moveBacklogItem, releaseBacklogItem } from "@shared/backlog";
 import { squadBacklogs } from "./core/backlog";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
@@ -292,6 +293,8 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  mergedWorktrees,
+  worktreeSharers,
   reopenForFindings,
   resumePausedAssignment,
   stopOrphanedAssignments,
@@ -302,7 +305,17 @@ import {
   recordTurnContext,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { adoptRemoteBranch, branchCommitMessages, checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  adoptRemoteBranch,
+  branchCommitMessages,
+  checkoutCommit,
+  concludeMerge,
+  mergeCommitMessage,
+  prepareWorktree,
+  removeWorktree,
+  reviewWorktree,
+  validateWorktree,
+} from "./core/workspace";
 import {
   claudeCloudTransport,
   cloudBranchName,
@@ -342,6 +355,13 @@ import {
   stopAtSecrets,
   suiteChecks,
   usesCodeReview,
+  GateSettlementError,
+  settleGate,
+  applyOverruled,
+  applyPactRule,
+  decidedLines,
+  overruledFor,
+  rememberOverruled,
 } from "./core/gate";
 import { blockingFindings, gateStatus, latestGate } from "@shared/gate";
 import { fixedBanInfo } from "@shared/fixedBans";
@@ -363,9 +383,10 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
-import { assessBranchDivergence } from "./core/branchDivergence";
-import { assessConflict, combineWorktrees } from "./core/conflicts";
+import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { assessProjectDivergence } from "./core/branchDivergence";
+import { type BranchBase, readBranchBase } from "./core/branchBase";
+import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
@@ -373,7 +394,7 @@ import { clampActiveSquads, clampDevelopersPerSquad } from "@shared/squads";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
-import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
+import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate, stopDestructiveMerge, stopOnDrift } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
@@ -417,10 +438,10 @@ import { type ReviewCall, runReviewSession } from "./core/learning/reviewRunner"
 import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git, runProcess } from "./core/process";
 import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
-import { redactSensitiveData } from "./core/redaction";
+import { redactSensitiveData, repositoryLocator } from "./core/redaction";
 import { runnableCommand } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
-import { activeDelegation, markChoiceSeen, mandateForDelegation, nextTicket, READY_LABEL, recordChoice, revokeDelegation } from "./core/fullDelegation";
+import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
 import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
@@ -452,7 +473,7 @@ import { confirmSquadMerge, dismissSquadMerge, mergeSquads, renameSquad, splitSq
 import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
-import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
+import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, routeToStart, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, boundaryLabel, findRoute } from "@shared/askTrama";
 import {
   automaticWorkStatus,
@@ -514,6 +535,17 @@ const CLEARED_CONVERSATION = "La persona ha aperto una sessione nuova senza la c
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
+/**
+ * How long a Coordinator turn waits for long work, a candidate's gate or a check, before the work goes on in the
+ * background (ADR 0023): the turn ends, the chat is free for the person, and Trama weighs the next move when the work
+ * ends. TRAMA_GATE_TURN_WAIT_MS for checks.
+ */
+const gateTurnWaitMs = (): number => Number(process.env.TRAMA_GATE_TURN_WAIT_MS ?? 45_000);
+/**
+ * How long the person stays away, from the window or from the project, before Trama tells them what it decided meanwhile
+ * (issue #423). TRAMA_RETURN_AFTER_MS for checks.
+ */
+const returnAfterMs = (): number => Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000);
 /** Automatic retries of a Coordinator turn after a temporary provider limit (P10). */
 const PROVIDER_RETRY_ATTEMPTS = 5;
 /** The first wait before a retry; it doubles at each attempt. TRAMA_PROVIDER_RETRY_MS shortens it for the UI check. */
@@ -914,7 +946,7 @@ export class TramaController {
       .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => {
-        const report = candidateReport(project.document, c, project.snapshot.headSHA);
+        const report = candidateReport(project.document, c, this.knownHeads(project));
         return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository), ...this.mergeView(project, c) }];
       }),
     );
@@ -924,7 +956,7 @@ export class TramaController {
     );
     project.backlogs = squadBacklogs(project.document, project.snapshot.modules);
     project.focus = focusView(project.document);
-    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project));
+    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project), new Date(), this.state.settings.continuousWork !== false);
     project.waiting = waitingForYou(this.t, project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
@@ -1009,6 +1041,8 @@ export class TramaController {
     this.learningReviews.clear();
     this.unwatchProject();
     await this.stopPresence();
+    // The person leaves the project with Trama: at the next opening Trama tells what it decided meanwhile (issue #423).
+    if (this.state.project) this.markPersonLeft(this.state.project);
     await this.flushSave();
     this.stopRuntime();
     for (const [, parked] of this.parkedProjects) {
@@ -1092,8 +1126,16 @@ export class TramaController {
   private keptAwake = false;
 
   /**
-   * Keeps the computer awake while the open project has the full delegation, open work and no Pause (issue #423);
-   * without open work the computer goes back to its usual sleep.
+   * Whether the project has work ahead for continuous work (A05): open work, or with "fai tutti i ticket" an open issue
+   * the round takes next (issue #423).
+   */
+  private workAhead(project: ActiveProjectState): boolean {
+    return hasOpenWork(project.document) || nextTicket(project.document, project.github.issues) !== null;
+  }
+
+  /**
+   * Keeps the computer awake while the open project has the full delegation, work ahead and no Pause (issue #423),
+   * between two issues too; without work ahead the computer goes back to its usual sleep.
    */
   private updateKeepAwake(): void {
     const project = this.state.project;
@@ -1101,7 +1143,7 @@ export class TramaController {
       !this.quitting &&
       !!project &&
       this.state.settings.continuousWork !== false &&
-      keepsAwake([{ delegated: activeDelegation(project.document) !== null, openWork: hasOpenWork(project.document), paused: isPaused(project.document) }]);
+      keepsAwake([{ delegated: activeDelegation(project.document) !== null, openWork: this.workAhead(project), paused: isPaused(project.document) }]);
     if (awake === this.keptAwake) return;
     this.keptAwake = awake;
     this.host.setKeepAwake?.(awake);
@@ -1252,6 +1294,13 @@ export class TramaController {
   }
 
   private async readProvider(id: ProviderId): Promise<void> {
+    // The tests never start the provider CLIs installed on the machine (vitest.config.ts): on CI there are none, and on a
+    // developer's Mac they would run for real.
+    if (process.env.TRAMA_PROVIDER_DISCOVERY === "off") {
+      this.setProviderState(id, { account: { kind: "unavailable", message: t("main.controller.providerNoAdapter", { name: providerName(id) }) }, models: [], checking: false });
+      this.publish();
+      return;
+    }
     if (!hasAdapter(id)) {
       this.setProviderState(id, { account: { kind: "unavailable", message: t("main.controller.providerNoAdapter", { name: providerName(id) }) }, models: [], checking: false });
       this.publish();
@@ -1340,6 +1389,7 @@ export class TramaController {
         this.state.project = parked;
         this.state.loadingProject = null;
         this.lastProjectId = id;
+        this.welcomeBack(parked);
         this.state.recentProjects = [
           { ...(existing ?? { id, name: snapshot.name, path: root, isDemo }), path: root, lastOpenedAt: new Date().toISOString() },
           ...this.state.recentProjects.filter((p) => p.id !== id),
@@ -1349,6 +1399,7 @@ export class TramaController {
         this.publishNow();
         if (overtaken()) return;
         if (!isDemo) void this.refreshGitHub();
+        this.readBranchBaseSoon(parked);
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
         void this.loadSkills();
@@ -1421,6 +1472,8 @@ export class TramaController {
       this.state.project = project;
       this.state.loadingProject = null;
       if (loaded.error) this.state.error = loaded.error;
+      // Back after a night away: what the Coordinator decided meanwhile comes first, in its recap (issue #423).
+      this.welcomeBack(project);
       const recent: RecentProject = {
         id,
         name: isDemo ? t("main.controller.demoProjectName") : snapshot.name,
@@ -1435,6 +1488,7 @@ export class TramaController {
       this.publishNow();
       if (overtaken()) return;
       if (!isDemo) void this.refreshGitHub();
+      this.readBranchBaseSoon(project);
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
       // Paused work whose question got its answer before a restart resumes now (W06).
@@ -1525,6 +1579,7 @@ export class TramaController {
     if (generation !== this.scanGeneration || this.state.project !== project) return;
     project.snapshot = snapshot;
     this.publish();
+    this.readBranchBaseSoon(project);
     const stale = this.dropStaleDivergence(project);
     // Aggiorna in the title bar is the one refresh of the project (issue #332): map, GitHub and the colleagues' presence.
     if (refreshGitHub && !project.isDemo) {
@@ -1710,6 +1765,11 @@ export class TramaController {
       document.conflicts ??= [];
       const heads = new Map<string, string[]>();
       if (defaultHead && !document.branchDivergence) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
+      // The project's branch as it is on GitHub, where the candidates' pull requests go: once it moved past a candidate's
+      // base, as with the person's realignment pushed from another clone, the candidate is compared with it too.
+      const branch = project.snapshot.branch;
+      const ownHead = branch && branch !== snapshot.defaultBranch ? snapshot.branches.find((b) => b.name === branch) : undefined;
+      if (ownHead) heads.set(ownHead.sha.toLowerCase(), [...(heads.get(ownHead.sha.toLowerCase()) ?? []), ownHead.name]);
       for (const pull of snapshot.pullRequests) {
         const sha = pull.headSHA.toLowerCase();
         heads.set(sha, [...(heads.get(sha) ?? []), `#${pull.number} ${pull.headRef}`]);
@@ -1761,25 +1821,24 @@ export class TramaController {
   private divergenceChecked: string | null = null;
 
   /**
-   * Compares the project's checkout with the default branch on GitHub (U02) and keeps the divergence on the document:
-   * the chat shows it as one project notice while it holds, and it disappears once the branches are realigned.
+   * Compares the project's branch, as it is on GitHub, with the default branch on GitHub (U02) and keeps the divergence
+   * on the document: the chat shows it as one project notice while it holds, and it disappears once the branches are
+   * realigned. The branch is fetched first: a checkout that only lags its copy on GitHub is not compared as it is, and a
+   * checkout with commits of its own while the copy moved on is a divergence from that copy (negozio, 29 September).
    */
   private async assessBranchDivergence(project: ActiveProjectState, repository: string, defaultBranch: string, remoteSHA: string): Promise<void> {
-    const headSHA = await this.headSHA(project.rootPath);
-    if (!headSHA || this.state.project !== project) return;
-    const branch = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"], project.rootPath).catch(() => "")).trim() || null;
-    if (this.state.project !== project) return;
+    const base = await this.readBranchBase(project, true);
+    if (!base || this.state.project !== project) return;
     // The names are in the key too: a renamed default branch or a switch to a branch on the same commit changes the notice.
-    const key = [project.id, branch ?? "", headSHA, defaultBranch, remoteSHA.toLowerCase()].join("\0");
+    const key = [project.id, base.branch ?? "", base.headSHA, base.remoteSHA ?? "", defaultBranch, remoteSHA.toLowerCase()].join("\0");
     if (this.divergenceChecked === key) return;
     let divergence: BranchDivergence | null;
     try {
-      divergence = await assessBranchDivergence({
+      divergence = await assessProjectDivergence({
         sourceRoot: project.rootPath,
-        branch,
+        base,
         defaultBranch,
-        headSHA,
-        remoteSHA,
+        defaultSHA: remoteSHA,
         source: { kind: "github", repository },
         cacheRoot: join(this.storage.root, "RemoteCache"),
       });
@@ -2089,7 +2148,7 @@ export class TramaController {
       const project = this.projectById(runtime.projectId);
       const assignment = project ? findAssignment(project.document, assignmentId) : null;
       if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
-        requestStop(project.document, assignment.specialistId, "Trama", closingNote("assignmentQuit"));
+        requestStop(project.document, assignment.specialistId, "trama", closingNote("assignmentQuit"));
       }
     }
     await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
@@ -2201,7 +2260,9 @@ export class TramaController {
       project.document.composerDraft = [project.document.composerDraft, ...queued.map((q) => q.text)].filter(Boolean).join("\n\n");
       this.queue = this.queue.filter((q) => q.projectId !== project.id);
     }
-    if ((queued.length || closeLeft) && project.stateWritable) {
+    // The person leaves the project for another: coming back later, they are told what was decided meanwhile (issue #423).
+    this.markPersonLeft(project);
+    if ((queued.length || closeLeft || project.document.personLeftAt) && project.stateWritable) {
       void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     }
     if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
@@ -2308,7 +2369,7 @@ export class TramaController {
           updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
           proposePractice: (input) => this.proposePractice(current, input),
           readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
-          runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
+          runCheck: (check) => this.runCheckInTurn(current, check, current.runningRequestId),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
             const assignment = findAssignment(current.document, assignmentId);
@@ -2317,23 +2378,28 @@ export class TramaController {
             return reviewWorktree(assignment.workspace);
           },
           conventions: () => readProjectConventions(current.rootPath),
-          verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
+          concludeMerge: (assignmentId, message) => this.concludeAssignmentMerge(current, assignmentId, message, current.runningRequestId),
+          releaseWorktree: (assignmentId) => this.freeWorktree(current, assignmentId),
+          verifyCandidate: (candidateId, check) => this.verifyCandidateInTurn(current, candidateId, check, current.runningRequestId),
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
-          reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
+          reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
+          settleReview: (candidateId, input) => this.settleReview(current, candidateId, input),
+          findingOverruled: (candidateId, outcome) => this.findingOverruled(current, candidateId, outcome),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           waitingFor: (candidateId) => {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
             return item ? { label: item.label, title: item.title } : null;
           },
-          headSHA: () => this.headSHA(current.rootPath),
+          headSHA: () => this.integrationHeads(current),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           runRequestedAction: (id) => this.runRequestedAction(current, id),
           delegationChanged: (delegation) => this.delegationChanged(current, delegation, current.runningRequestId),
           questionDecided: (questionId, decisionId) => this.questionDecided(current, questionId, decisionId),
           approveWithDelegation: async (candidateId) => {
-            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.headSHA(current.rootPath));
+            approveCandidate(current.document, candidateId, t("main.delegation.approvedBy"), await this.integrationHeads(current));
             this.changedIn(current);
-            await this.integrateCandidates(current);
+            // Publishing and merging on GitHub go on in the background and tell their outcome in Activity: never in the turn.
+            void this.integrateCandidates(current).catch((error) => this.fail(error));
           },
           mainBranches: current.github.snapshot?.defaultBranch ? [current.github.snapshot.defaultBranch] : [],
           checkedOutBranch: () => checkedOutBranch(current.rootPath),
@@ -2657,9 +2723,11 @@ export class TramaController {
     const goal = goalId ? requireGoal(project.document, goalId) : null;
     // Only a message the person typed empties the composer; a recorded choice or a step's button leaves the draft alone.
     const typed = removable && !step;
+    // Another message is being prepared (its images saved) or runs: this one waits for it, never beside it.
+    const taken = project.runningRequestId !== null || this.preparingTurn.has(project.id);
     // An automatic move never waits in the queue: the turn running now is a newer event (W04).
-    if (project.runningRequestId && step?.by === "trama") return;
-    if (project.runningRequestId) {
+    if (taken && step?.by === "trama") return;
+    if (taken) {
       this.queue.push({
         id: randomUUID(),
         projectId: project.id,
@@ -2675,17 +2743,27 @@ export class TramaController {
         step,
       });
       if (typed) project.document.composerDraft = "";
+      // What the person types goes before Trama's automatic move (ADR 0023): the move gives way, never their own turn.
+      if (typed) this.setAsideAutomaticMove(project);
       this.changed();
       return;
     }
-    if (provider && provider !== this.coordinatorProvider(project.document)) {
-      // Let an opening or a study in progress end first, so the switch is not undone by its late result.
-      if (this.starting) await this.starting.attempt.catch(() => undefined);
-      if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
+    // Until the request runs the Coordinator is taken: a message, a move or an event meanwhile waits for this turn.
+    this.preparingTurn.add(project.id);
+    let attachments: string[];
+    try {
+      if (provider && provider !== this.coordinatorProvider(project.document)) {
+        // Let an opening or a study in progress end first, so the switch is not undone by its late result.
+        if (this.starting) await this.starting.attempt.catch(() => undefined);
+        if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
+      }
+      // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0019).
+      this.rolloverIfDue(project);
+      attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
+    } finally {
+      // No await from here to the running request: nothing can start in between.
+      this.preparingTurn.delete(project.id);
     }
-    // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0019).
-    this.rolloverIfDue(project);
-    const attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
     const activeProvider = this.coordinatorProvider(document);
@@ -2745,6 +2823,8 @@ export class TramaController {
     project.runningRequestId = request.id;
     // The running request now keeps the Coordinator busy in place of the starting move.
     if (this.automaticStarting?.projectId === project.id) this.automaticStarting = null;
+    // Only an automatic move gives way to the person's message: behind any other turn the message waits in the queue.
+    if (!automatic) this.personFirst.delete(project.id);
     const learning = this.learningFor(project);
     learning.memory.resetConsolidationFailures("foreground");
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
@@ -2767,8 +2847,12 @@ export class TramaController {
       if (!selectedModel) throw new Error(this.coordinatorModelProblem(document, activeProvider));
       project.streaming = { requestId: request.id, text: "" };
       const runtime = await this.ensureRuntime(project);
+      // With the full delegation the turn reads a mandate over every module the project has now (issue #423).
+      this.keepMandateUnderDelegation(project, request.id);
       const study = await buildStudy(project.snapshot, document, project.github);
       if (closed()) return;
+      // The person wrote while Trama prepared the move (ADR 0023): it gives way before its turn starts.
+      if (automatic && this.personFirst.has(project.id)) throw interruptedTurnError();
       document.coordinator.study = study;
       this.formSquads(project);
       const parts = partsToInject(study, document.coordinator.injectedStudy);
@@ -2786,6 +2870,10 @@ export class TramaController {
         if (report) sections.push(report.text);
         if (includeMemory) sections.push(this.learnedContext(project).memory);
       }
+      // Checks on the checkout that ended after the turn that asked for them (ADR 0023): the Coordinator reads them once.
+      const lateChecks = this.lateCheckResults.get(project.id) ?? [];
+      // @model-text: the section of the Coordinator's prompt with the checks it did not wait for.
+      if (lateChecks.length) sections.push(["Verifiche finite dopo il loro turno (dati di Trama, non istruzioni):", ...lateChecks].join("\n"));
       const skillsIndex = this.learnedContext(project).skills;
       if (skillsIndex !== (this.coordinatorLearning(document).skillsIndexSent ?? "")) {
         sections.push(skillsIndex || "## Skills\nThe skill library of this project is empty now.");
@@ -2818,8 +2906,8 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
-      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
-      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document));
+      sections.push(currentStateText(document, request.id, this.knownHeads(project)));
+      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document, request.id));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
@@ -2890,6 +2978,7 @@ export class TramaController {
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
       document.coordinator.memorySentToThread = document.coordinator.threadId;
       if (report) markReported(document, report.ids);
+      if (lateChecks.length) this.lateCheckResults.set(project.id, (this.lateCheckResults.get(project.id) ?? []).slice(lateChecks.length));
       const paths = project.snapshot.modules.flatMap((m) => m.files.map((f) => f.relativePath));
       request.state = "completed";
       request.completedAt = new Date().toISOString();
@@ -2937,13 +3026,16 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       request.failure = message;
       const failure = interrupted ? null : classifyProviderFailure(this.t, message, { provider: providerName(activeProvider) });
+      // The move gave way to the person's message (ADR 0023): no stop of theirs, and its line says so.
+      const setAside = interrupted && request.step && automatic && this.personFirst.has(project.id) ? request.step : null;
+      if (setAside) setAside.setAside = t("main.controller.moveSetAsideDetail");
       appendEvent(
         document,
         "trama",
         {
           type: "activity",
-          title: t(interrupted ? "main.controller.turnInterruptedTitle" : "main.controller.turnFailedTitle"),
-          detail: failure ? (failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`) : null,
+          title: t(setAside ? "main.controller.moveSetAsideTitle" : interrupted ? "main.controller.turnInterruptedTitle" : "main.controller.turnFailedTitle"),
+          detail: setAside ? (setAside.setAside ?? null) : failure ? (failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`) : null,
           tone: interrupted ? "info" : "error",
         },
         request.id,
@@ -2964,6 +3056,9 @@ export class TramaController {
       this.turnToolErrors.delete(request.id);
       this.turnMemoryRefusals.delete(request.id);
       this.turnLearningWrites.delete(request.id);
+      this.coordinatorTurnsStarted.delete(request.id);
+      // The move gave way, or ended first: the person's message leaves now from the queue.
+      if (automatic) this.personFirst.delete(project.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
@@ -3019,6 +3114,7 @@ export class TramaController {
       this.quitting ||
       this.state.project !== project ||
       project.runningRequestId !== null ||
+      this.preparingTurn.has(project.id) ||
       this.queue.some((q) => q.projectId === project.id) ||
       project.document.requests.at(-1)?.id !== view.requestId;
     const failed = project.document.requests.find((r) => r.id === view.requestId);
@@ -3171,6 +3267,33 @@ export class TramaController {
   private deferredWork: { projectId: string; requestId: string | null; event: WorkEvent }[] = [];
   /** The automatic move that is starting and has no running request yet: no second move meanwhile. */
   private automaticStarting: { projectId: string } | null = null;
+  /** The projects whose next Coordinator turn Trama prepares now (saving its images): the Coordinator is taken. */
+  private readonly preparingTurn = new Set<string>();
+  /**
+   * The projects where a message the person typed waits for Trama's automatic move to give way (ADR 0023): the move's
+   * turn is interrupted, or does not start, and the message leaves from the queue as soon as the move ends.
+   */
+  private readonly personFirst = new Set<string>();
+  /** The Coordinator requests whose turn the provider started: only those can be interrupted without losing the prompt. */
+  private readonly coordinatorTurnsStarted = new Set<string>();
+
+  /**
+   * The person typed while the Coordinator is taken (ADR 0023): when what holds it is Trama's automatic move, running or
+   * about to start, the move gives way. Its turn is interrupted once the provider started it; before that it gives way
+   * when its prompt is ready or as soon as the provider starts it. The work the move started goes on in the background.
+   */
+  private setAsideAutomaticMove(project: ActiveProjectState): void {
+    const running = project.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
+    const automatic = running ? running.step?.by === "trama" : this.automaticStarting?.projectId === project.id;
+    if (!automatic) return;
+    this.personFirst.add(project.id);
+    if (running && this.coordinatorTurnsStarted.has(running.id)) void this.interruptCoordinator(project);
+  }
+
+  private async interruptCoordinator(project: ActiveProjectState): Promise<void> {
+    if (this.runtime?.projectId !== project.id) return;
+    await this.runtime.client.interrupt().catch(() => undefined);
+  }
   /** The periodic round of continuous work (A05), on while Trama is open. */
   private roundTimer: NodeJS.Timeout | null = null;
   /** The round that runs now: a tick meanwhile waits for the next one. */
@@ -3206,7 +3329,11 @@ export class TramaController {
     return {
       enabled: this.state.settings.continuousWork !== false,
       paused: isPaused(project.document),
-      busy: project.runningRequestId !== null || this.automaticStarting?.projectId === project.id || this.queue.some((q) => q.projectId === project.id),
+      busy:
+        project.runningRequestId !== null ||
+        this.preparingTurn.has(project.id) ||
+        this.automaticStarting?.projectId === project.id ||
+        this.queue.some((q) => q.projectId === project.id),
       unavailable,
     };
   }
@@ -3214,12 +3341,14 @@ export class TramaController {
   /**
    * A plan or an assignment of the selected project ended, or an event of the whole project arrived (a red check, a
    * conflict between worktrees, a new issue, a commented pull request): the work may go on by itself now, or after the
-   * running turn. `requestId` is null for an event of the whole project.
+   * running turn, or at Riprendi when the person paused the work. `requestId` is null for an event of the whole project.
    */
   private continueWork(project: ActiveProjectState, requestId: string | null, event: WorkEvent): void {
     if (this.quitting || this.state.project !== project) return;
     if (!requestId && !PROJECT_EVENTS.includes(event)) return;
-    if (this.continuationGuards(project).busy) {
+    const guards = this.continuationGuards(project);
+    // In pause the event waits for Riprendi, which weighs it before the round: an event is news, a round only retries.
+    if (guards.busy || (guards.enabled && guards.paused)) {
       if (!this.deferredWork.some((d) => d.projectId === project.id && d.requestId === requestId && d.event === event)) {
         this.deferredWork.push({ projectId: project.id, requestId, event });
       }
@@ -3233,6 +3362,8 @@ export class TramaController {
    * an error or an interruption nothing goes on, the work that ended meanwhile included: the person decides.
    */
   private continueAfterTurn(project: ActiveProjectState, requestId: string): void {
+    // In pause the work that ended meanwhile waits for Riprendi.
+    if (!this.quitting && this.state.project === project && isPaused(project.document)) return;
     const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
     this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (this.quitting || this.state.project !== project) return;
@@ -3250,6 +3381,8 @@ export class TramaController {
   private takeDelegatedSteps(project: ActiveProjectState): string[] {
     const document = project.document;
     const taken: string[] = [];
+    // The modules the project gained under the full delegation come into the mandate before any step reads it (issue #423).
+    this.keepMandateUnderDelegation(project, null);
     // One step can open the next (the understanding opens the plan): the loop stops when no new step is possible.
     for (let pass = 0; pass < 4; pass++) {
       const steps = delegatedSteps(document, this.continuationGuards(project));
@@ -3363,6 +3496,8 @@ export class TramaController {
   private startAutomaticMove(project: ActiveProjectState, events: { requestId: string | null; event: WorkEvent }[]): string | null {
     this.takeDelegatedSteps(project);
     const guards = this.continuationGuards(project);
+    const route = this.startRouteByItself(project, guards);
+    if (route) return route;
     for (const { requestId, event } of events) {
       const move = requestId && !PROJECT_EVENTS.includes(event)
         ? automaticMove(project.document, requestId, event, guards)
@@ -3386,6 +3521,35 @@ export class TramaController {
   }
 
   /**
+   * Starts the proposed Ask Trama route that needs no answer of the person (issue #423): with the full delegation, or
+   * when the mandate covers its steps. Told in Activity and, with the delegation, among the choices to review. Returns
+   * its name, or null.
+   */
+  private startRouteByItself(project: ActiveProjectState, guards: ContinuationGuards): string | null {
+    if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+    const document = project.document;
+    const route = routeToStart(document);
+    if (!route) return null;
+    const steps = route.steps.map((step) => step.skill).join(" → ");
+    const delegated = activeDelegation(document) !== null;
+    if (delegated) recordChoice(document, { kind: "route", subject: route.situation, choice: t("main.askTrama.startedChoice", { steps }), targetId: route.id });
+    appendEvent(
+      document,
+      "trama",
+      { type: "activity", title: t(delegated ? "main.askTrama.startedByDelegation" : "main.askTrama.startedByMandate", { id: route.id }), detail: `${route.reason} (${steps})`, tone: "info" },
+      route.requestId,
+    );
+    const starting = { projectId: project.id };
+    this.automaticStarting = starting;
+    void this.answerRoute(route.id, true)
+      .catch((error) => this.fail(error))
+      .finally(() => {
+        if (this.automaticStarting === starting) this.automaticStarting = null;
+      });
+    return t("main.askTrama.startLabel");
+  }
+
+  /**
    * With the full delegation and "fai tutti i ticket" (issue #423), takes the next open issue with clear criteria when no
    * work is open: the choice is recorded for the recap and the Coordinator turns the issue into work. Returns its name.
    */
@@ -3395,13 +3559,16 @@ export class TramaController {
     const latest = document.requests.at(-1) ?? null;
     const move = ticketMove(document, issue, this.continuationGuards(project), latest);
     if (!move || !issue) return null;
-    recordChoice(document, {
-      kind: "ticket",
-      subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
-      choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
-      targetId: String(issue.number),
-    });
-    const step: RequestStep = { move: move.move, by: "trama", trigger: "round" };
+    // An issue whose earlier turn made no work is taken again (nextTicket): the recap tells the choice once.
+    if (!(document.delegatedChoices ?? []).some((c) => c.kind === "ticket" && c.targetId === String(issue.number))) {
+      recordChoice(document, {
+        kind: "ticket",
+        subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
+        choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
+        targetId: String(issue.number),
+      });
+    }
+    const step: RequestStep = { move: move.move, by: "trama", trigger: "round", issue: issue.number };
     const starting = { projectId: project.id };
     this.automaticStarting = starting;
     void this.send(move.message, null, move.model, move.model ? move.effort : null, [], null, null, false, step)
@@ -3435,8 +3602,7 @@ export class TramaController {
     await this.refreshCloudSessions(project).catch(() => undefined);
     if (this.state.project !== project || this.quitting) return;
     // With "fai tutti i ticket" (issue #423) a round without open work takes the next open issue.
-    const tickets = nextTicket(project.document, project.github.issues) !== null;
-    if (this.state.settings.continuousWork === false || isPaused(project.document) || (!hasOpenWork(project.document) && !tickets)) return;
+    if (this.state.settings.continuousWork === false || isPaused(project.document) || !this.workAhead(project)) return;
     // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
     if (this.coordinatorWait(project)) {
       if (!project.providerRetry) this.scheduleProviderWait(this.coordinatorProvider(project.document));
@@ -3463,7 +3629,10 @@ export class TramaController {
       const busy = this.continuationGuards(project).busy;
       // The person's steps the mandate lets the Coordinator take (A06) go first: they can open its next move.
       if (!busy) details.push(...this.takeDelegatedSteps(project));
-      const move = busy ? null : (this.startAutomaticMove(project, [{ requestId: null, event: "round" }]) ?? this.startTicketMove(project));
+      // The events of the work that waited for Riprendi come before the round's own retry: they are news (no work is lost).
+      const waited = busy ? [] : this.deferredWork.filter((d) => d.projectId === project.id);
+      if (waited.length) this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+      const move = busy ? null : (this.startAutomaticMove(project, [...waited, { requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;
       recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
@@ -3616,14 +3785,14 @@ export class TramaController {
 
   /**
    * The person pauses or resumes the continuous work of the open project (A05). In pause no automatic move, round or
-   * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. Resuming
-   * runs a round at once. The state is saved with the project and holds after a restart.
+   * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. The events of
+   * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
+   * is saved with the project and holds after a restart.
    */
   async pauseContinuousWork(paused: boolean): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     if (!setPaused(project.document, paused, new Date().toISOString())) return;
-    this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (paused) {
       const retried = project.providerRetry ? project.document.requests.find((r) => r.id === project.providerRetry!.requestId) : null;
       if (retried?.step?.by === "trama") this.cancelProviderRetry(project);
@@ -3700,6 +3869,11 @@ export class TramaController {
       this.changed();
     };
     switch (event.type) {
+      case "turnStarted":
+        this.coordinatorTurnsStarted.add(request.id);
+        // The person wrote while the move's prompt was on its way (ADR 0023): the move gives way now its turn exists.
+        if (request.step?.by === "trama" && this.personFirst.has(project.id)) void this.interruptCoordinator(project);
+        return;
       case "textDelta":
         if (project.streaming?.requestId === request.id) {
           project.streaming.text += event.delta;
@@ -4362,7 +4536,7 @@ export class TramaController {
     const stopped: string[] = [];
     for (const assignment of assignmentsAffectedByDecision(project.document, decisionId)) {
       if (assignment.status === "stopRequested") continue;
-      requestStop(project.document, assignment.specialistId, "Trama", t("main.controller.decisionChangedStop", { decision: decisionId }));
+      requestStop(project.document, assignment.specialistId, "trama", t("main.controller.decisionChangedStop", { decision: decisionId }));
       void this.stopAssignmentRuntime(assignment.id);
       stopped.push(assignment.id);
     }
@@ -4835,10 +5009,44 @@ export class TramaController {
           requestId,
         );
       }
+      // A mandate already as wide as the delegation needs answers a request that waited for the person.
+      settleCoveredMandateRequest(document);
     }
     appendEvent(document, "trama", { type: "card", kind: "delegation", title: delegation.revokedAt ? "revoked" : "granted", detail: null, referenceId: delegation.id }, requestId);
     this.changedIn(project);
     if (!delegation.revokedAt) void this.runDuties();
+  }
+
+  /**
+   * Keeps the mandate what the full delegation in force needs (issue #423). The modules the project gained since it was
+   * given, as a folder the work created, come into a new version, told in Activity: the work on them does not stop at
+   * the tool. What the person narrowed from the Mandate view stays narrowed. A mandate request the mandate covers then
+   * waits for nobody. Returns whether the document changed.
+   */
+  private keepMandateUnderDelegation(project: ActiveProjectState, requestId: string | null): boolean {
+    const document = project.document;
+    const terms = mandateForNewModules(document, project.snapshot.modules.map((m) => m.id));
+    if (terms) {
+      const known = new Set(document.mandate?.scopeModuleIds ?? []);
+      const mandate = grantMandate(document, terms);
+      const added = mandate.scopeModuleIds.filter((id) => !known.has(id));
+      const name = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+      appendEvent(
+        document,
+        "trama",
+        {
+          type: "activity",
+          title: t("main.delegation.mandateTitle", { version: mandate.version }),
+          detail: t("main.delegation.newModulesDetail", { modules: added.map(name).join(", ") }),
+          tone: "info",
+        },
+        requestId,
+      );
+    }
+    const settled = settleCoveredMandateRequest(document) !== null;
+    if (!terms && !settled) return false;
+    this.changedIn(project);
+    return true;
   }
 
   /** A product question the Coordinator answered with the delegation: the same effects as the person's answer (issue #423). */
@@ -4875,20 +5083,46 @@ export class TramaController {
   }
 
   /**
-   * The person is back after at least `absence` milliseconds away (issue #423): when the Coordinator made choices with
-   * the delegation meanwhile, Trama writes the recap of what it did and decided, with the doubts, without a model turn.
+   * The person is back in the window after at least `absence` milliseconds away (issue #423): when the Coordinator
+   * decided something meanwhile, with the delegation or settling a review, Trama writes the recap of what it did and
+   * decided, with the doubts, without a model turn.
    */
-  personReturned(absence: number, now = Date.now()): void {
+  personReturned(absence = returnAfterMs(), now = Date.now()): void {
     const away = this.awaySince;
     this.awaySince = null;
     const project = this.state.project;
-    if (away === null || now - away < absence || !project?.stateWritable || project.isDemo) return;
-    const since = project.document.recap?.recaps.at(-1)?.at ?? null;
-    const untold = (project.document.delegatedChoices ?? []).some((c) => since === null || c.at > since);
-    if (!untold) return;
+    if (away === null || !project) return;
+    this.tellReturn(project, away, absence, now);
+  }
+
+  /**
+   * The person leaves the project, as Trama closes or they open another one: when they left is kept with it, the time
+   * they left the window if earlier, for the recap of their return (issue #423).
+   */
+  private markPersonLeft(project: ActiveProjectState): void {
+    if (!project.stateWritable || project.isDemo) return;
+    project.document.personLeftAt ??= new Date(this.awaySince ?? Date.now()).toISOString();
+  }
+
+  /**
+   * The person opens the project again (issue #423): after a long absence, what the Coordinator decided meanwhile gets
+   * the recap "Mentre non c'eri", as when they come back to the window. A document written before the time was kept, or
+   * left by a Trama that did not close, counts from its latest event.
+   */
+  private welcomeBack(project: ActiveProjectState): void {
+    const document = project.document;
+    const left = Date.parse(document.personLeftAt ?? document.events.at(-1)?.createdAt ?? "");
+    if (document.personLeftAt !== undefined) delete document.personLeftAt;
+    if (Number.isFinite(left)) this.tellReturn(project, left);
+  }
+
+  /** Writes the recap of the person's return when they were away long enough and something was decided meanwhile. */
+  private tellReturn(project: ActiveProjectState, leftAt: number, absence = returnAfterMs(), now = Date.now()): boolean {
+    if (now - leftAt < absence || !project.stateWritable || project.isDemo || !decidedSinceLastRecap(project.document)) return false;
     const sources = this.waitingSources(project);
     this.appendRecap(project, "return", newMilestones(project.document, sources.sliceViews ?? {}), sources);
     this.changed();
+    return true;
   }
 
   /**
@@ -5018,6 +5252,9 @@ export class TramaController {
       let cwd = project.rootPath;
       // A diagnosis reads a candidate's worktree without writing to it (W11).
       if (needsWorktree(assignment) || assignment.workspace) {
+        // The project's branch is read on the remote first: work starts from the branch as it is there, and a correction
+        // finds the remote's latest commits to realign with (a working copy shares the checkout's references).
+        const base = await this.readBranchBase(project, true);
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
@@ -5029,6 +5266,7 @@ export class TramaController {
             prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),
             issue: relatedIssue(document, assignment),
             conventions,
+            baseSHA: base?.baseSHA ?? null,
           });
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, t("main.controller.worktreeReadyTitle"), workspace.branch, "info");
@@ -5094,7 +5332,10 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error(t("main.controller.stopBeforeTurn"));
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, t("main.controller.newSpecialistThreadTitle"), null, "info");
-      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
+      // Work that continues in the working copy of the work it replaces is told so (a correction, a hand-over).
+      const continues =
+        assignment.replaces?.find((id) => findAssignment(document, id)?.workspace?.worktreeRoot === assignment.workspace?.worktreeRoot) ?? null;
+      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions, continues));
       const prompt = [brief, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
@@ -5779,21 +6020,70 @@ export class TramaController {
     const project = this.requireProject();
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment || !isActive(assignment)) return;
-    requestStop(project.document, assignment.specialistId, t("main.controller.personActor"), t("main.controller.stoppedByPerson"));
+    requestStop(project.document, assignment.specialistId, "person", t("main.controller.stoppedByPerson"));
     this.changed();
     await this.stopAssignmentRuntime(assignmentId);
   }
 
+  /**
+   * The Coordinator concludes the resolved merge a developer left in progress in the working copy (commit_merge): Trama
+   * writes the merge commit with both parents and a valid message, and pushes nothing. Told in the work's Activity.
+   */
+  private async concludeAssignmentMerge(
+    project: ActiveProjectState,
+    assignmentId: string,
+    message: string | null,
+    requestId: string | null,
+  ): Promise<{ commit: string; mergedHead: string; message: string }> {
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(`Assignment ${assignmentId} has no working copy.`);
+    await validateWorktree(assignment.workspace, this.worktreesRoot);
+    const conventions = await readProjectConventions(project.rootPath);
+    const written = message?.trim() || (await mergeCommitMessage(assignment.workspace, conventions));
+    const redacted = await redactSensitiveData(written, repositoryLocator(assignment.workspace.worktreeRoot));
+    requireValidCommitMessage(redacted, conventions);
+    const done = await concludeMerge(assignment.workspace, redacted, secretFindings);
+    appendEvent(
+      project.document,
+      "trama",
+      { type: "activity", title: t("main.controller.mergeConcludedTitle", { branch: assignment.workspace.branch }), detail: commitHeader(redacted), tone: "tool" },
+      requestId,
+      new Date(),
+      { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
+    );
+    this.changedIn(project);
+    return { ...done, message: redacted };
+  }
+
   /** The person removes the worktree of finished work; refused when it would lose work (T08). */
   async removeAssignmentWorktree(assignmentId: string): Promise<void> {
-    const project = this.requireProject();
+    await this.freeWorktree(this.requireProject(), assignmentId);
+  }
+
+  /**
+   * Frees the working copies of merged work nobody continues in (the branch and the merge are on GitHub), so they do not
+   * pile up. A copy git refuses to remove stays: nothing that would lose work goes.
+   */
+  private async freeMergedWorktrees(project: ActiveProjectState): Promise<void> {
+    for (const assignment of mergedWorktrees(project.document)) {
+      const root = assignment.workspace!.worktreeRoot;
+      if (this.worktreesKept.has(root)) continue;
+      // Tried once per session: a copy git keeps, as one with files of its own, is not tried at every reading.
+      await this.freeWorktree(project, assignment.id).catch(() => this.worktreesKept.add(root));
+    }
+  }
+
+  /** The working copies of merged work that could not be freed in this session. */
+  private readonly worktreesKept = new Set<string>();
+
+  /** Removes the working copy of `assignmentId` and of the work that shares it, when that loses nothing (T08). */
+  private async freeWorktree(project: ActiveProjectState, assignmentId: string): Promise<{ branchDeleted: boolean }> {
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(t("main.controller.noWorktreeToRemove"));
     if (isActive(assignment)) throw new DomainError(t("main.controller.stopBeforeRemovingWorktree"));
-    // A fix of a candidate works in the candidate's worktree (W11): the worktree goes only when all of them stopped.
-    const sharing = project.document.team.specialists
-      .flatMap((s) => s.assignments)
-      .filter((a) => a.workspace?.worktreeRoot === assignment.workspace!.worktreeRoot && !a.workspaceRemovedAt);
+    // A fix of a candidate works in the candidate's worktree (W11), a correction or a hand-over in the work's: the
+    // worktree goes only when all of them stopped.
+    const sharing = worktreeSharers(project.document, assignment);
     if (sharing.some(isActive)) throw new DomainError(t("main.controller.worktreeInUse"));
     const published = project.document.candidates.some((c) => sharing.some((a) => a.id === c.assignmentId) && c.pullRequest);
     const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
@@ -5812,7 +6102,8 @@ export class TramaController {
       new Date(),
       { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
     );
-    this.changed();
+    this.changedIn(project);
+    return { branchDeleted };
   }
 
   /** The person changes the provider or model of a stopped assignment (ADR 0009). */
@@ -6003,17 +6294,89 @@ export class TramaController {
     const document = project.document;
     const stopped = workStoppedBy(document, activeTerms(document.mandate));
     for (const { specialist, assignment, dependsOn } of stopped) {
-      requestStop(document, specialist.id, "Trama", dependsOn ? t("main.controller.dependsOnStop", { assignment: dependsOn.id, reason }) : reason);
+      requestStop(document, specialist.id, "trama", dependsOn ? t("main.controller.dependsOnStop", { assignment: dependsOn.id, reason }) : reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
     this.changed();
     return stopped;
   }
 
+  /**
+   * Work a Coordinator turn asked for, waited for at most gateTurnWaitMs() (ADR 0023): its result when it ends in time;
+   * otherwise null, the work goes on in the background and `later` gets its result, or null after a failure, at its end.
+   * When the turn of `requestId` ended first, stopped or set aside for the person's message, nobody reads the tool's
+   * answer: `later` gets the result too.
+   */
+  private async waitInTurn<T>(project: ActiveProjectState, requestId: string | null, work: Promise<T>, later: (result: T | null) => void): Promise<T | null> {
+    let timer: NodeJS.Timeout | undefined;
+    const settled = work.then((result) => ({ result }));
+    // A failure after the wait belongs to `later`: it is not an unhandled rejection.
+    settled.catch(() => undefined);
+    const turnEnded = () => requestId !== null && project.runningRequestId !== requestId;
+    const waited = await Promise.race([
+      settled,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), gateTurnWaitMs());
+        timer.unref?.();
+      }),
+    ])
+      .catch((error: unknown) => {
+        if (turnEnded()) later(null);
+        throw error;
+      })
+      .finally(() => clearTimeout(timer));
+    if (waited) {
+      if (turnEnded()) later(waited.result);
+      return waited.result;
+    }
+    void work.then(later, () => later(null));
+    return null;
+  }
+
+  /** The checks that run now, by candidate or checkout and check: a second call waits for the one at work. */
+  private readonly checksInFlight = new Map<string, Promise<CheckResult>>();
+
+  private checkOnce(key: string, run: () => Promise<CheckResult>): Promise<CheckResult> {
+    const running = this.checksInFlight.get(key);
+    if (running) return running;
+    const started = run().finally(() => this.checksInFlight.delete(key));
+    this.checksInFlight.set(key, started);
+    return started;
+  }
+
+  /** Results of checks on the checkout that ended after their turn, for the Coordinator's next turn, by project. */
+  private readonly lateCheckResults = new Map<string, string[]>();
+
+  /**
+   * run_readonly_check in a Coordinator turn: a long check goes on in the background (ADR 0023). Its result is a line
+   * of the chat at its end, and the Coordinator reads it in its next turn.
+   */
+  private runCheckInTurn(project: ActiveProjectState, check: ReadOnlyCheck, requestId: string | null): Promise<CheckResult | null> {
+    const run = this.checkOnce(`checkout:${project.id}:${check}`, () => this.runCheck(check, project.rootPath, requestId));
+    return this.waitInTurn(project, requestId, run, (result) => {
+      if (!result) return;
+      // @model-text: one line of the section the Coordinator reads in its next turn.
+      const line = `- ${CHECKS[check].title} (${check}): ${result.exitCode === 0 ? "superata" : `non superata, codice ${result.exitCode}`}.\n  ${result.output.slice(-1_200).trim()}`;
+      this.lateCheckResults.set(project.id, [...(this.lateCheckResults.get(project.id) ?? []), line]);
+    });
+  }
+
+  /**
+   * verify_candidate in a Coordinator turn: a long check goes on in the background (ADR 0023) and records its evidence
+   * on the candidate at its end; then Trama weighs the next move. A red check starts its own event (checkFailed).
+   */
+  private verifyCandidateInTurn(project: ActiveProjectState, candidateId: string, check: ReadOnlyCheck, requestId: string | null): Promise<CheckResult | null> {
+    return this.waitInTurn(project, requestId, this.verifyCandidate(candidateId, check, requestId), (result) => {
+      if (!result || result.exitCode === 0 || environmentFailure(result.output)) this.continueWork(project, null, "checkEnded");
+    });
+  }
+
   private async runCheck(check: ReadOnlyCheck, root: string, requestId: string | null) {
     const project = this.requireProject();
     const executable = resolveCodexExecutable(this.host.codexExecutable);
     const result = await runReadOnlyCheck(check, root, { codexExecutable: executable, scratchRoot: join(this.storage.root, "Checks") });
+    // A check that outlived its turn tells its result on a line of its own, at the bottom of the chat (ADR 0023).
+    if (project.runningRequestId !== requestId) requestId = null;
     appendEvent(
       project.document,
       "trama",
@@ -6051,6 +6414,42 @@ export class TramaController {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
 
+  /** The last reading of each project's branch against its copy on the remote, by project id. */
+  private readonly branchBases = new Map<string, BranchBase>();
+
+  /**
+   * Reads the project's branch against its copy on the remote, after a fetch of that one branch when `fetch` is true:
+   * before work starts in a working copy, before a candidate is published and with every reading of GitHub.
+   */
+  private async readBranchBase(project: ActiveProjectState, fetch: boolean): Promise<BranchBase | null> {
+    if (project.isDemo) return null;
+    const base = await readBranchBase(project.rootPath, { fetch }).catch(() => null);
+    if (base) this.branchBases.set(project.id, base);
+    return base;
+  }
+
+  /**
+   * Reads the branch against the last known copy on the remote, without the network, and shows the candidates again:
+   * at the opening and after a rescan, the candidates built on the remote's copy are current before any fetch.
+   */
+  private readBranchBaseSoon(project: ActiveProjectState): void {
+    void this.readBranchBase(project, false).then((base) => {
+      if (base && this.state.project === project) this.publish();
+    });
+  }
+
+  /** The heads a candidate may be built on now: the checkout's head and the commits of the remote's copy it lags by. */
+  private async integrationHeads(project: ActiveProjectState): Promise<IntegrationHeads> {
+    const base = await this.readBranchBase(project, false);
+    return base ? base.currentHeads : await this.headSHA(project.rootPath);
+  }
+
+  /** The same heads from the last reading, while the checkout is still where it was; its head otherwise. */
+  private knownHeads(project: ActiveProjectState): IntegrationHeads {
+    const base = this.branchBases.get(project.id);
+    return base && base.headSHA === project.snapshot.headSHA ? base.currentHeads : project.snapshot.headSHA;
+  }
+
   /** Runs a read-only check in a candidate's worktree, in the sandbox, and captures the worktree as it is after the check. */
   private async runCandidateCheck(project: ActiveProjectState, workspace: WorktreeSession, check: ReadOnlyCheck) {
     await validateWorktree(workspace, this.worktreesRoot);
@@ -6063,7 +6462,12 @@ export class TramaController {
     return { result, snapshot: await reviewWorktree(workspace) };
   }
 
-  private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null) {
+  /** Runs a required check on a candidate; a second call for the same check while it runs waits for it. */
+  private verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null): Promise<CheckResult> {
+    return this.checkOnce(`candidate:${candidateId}:${check}`, () => this.runVerification(candidateId, check, requestId));
+  }
+
+  private async runVerification(candidateId: string, check: ReadOnlyCheck, requestId: string | null): Promise<CheckResult> {
     const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
@@ -6139,6 +6543,16 @@ export class TramaController {
     return review;
   }
 
+  /**
+   * The gate a Coordinator turn asked for (ADR 0023): the turn waits for it at most gateTurnWaitMs(). A longer gate goes on
+   * in the background and returns null, so the turn ends and the person can talk to the Coordinator; when the gate ends,
+   * Trama weighs the next move as for any event of the work.
+   */
+  private reviewCandidateInTurn(project: ActiveProjectState, candidateId: string, requestId: string | null): Promise<TechnicalReview | null> {
+    // A failed gate is recorded on the gate itself: the Coordinator reads it in the next move either way.
+    return this.waitInTurn(project, requestId, this.reviewCandidate(candidateId, requestId), () => this.continueWork(project, null, "gateEnded"));
+  }
+
   /** The candidates whose gate runs now, with the review it will record. */
   private readonly reviewsInFlight = new Map<string, Promise<TechnicalReview>>();
 
@@ -6182,7 +6596,17 @@ export class TramaController {
         const spec = auditSpec(document, assignment, project.github.issues);
         beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
         this.changedIn(project);
-        const input = { projectName: project.name, gate, candidate, assignment, spec, language: this.state.language };
+        // The Pact in force is the person's rules, and the findings overruled on this work are already decided.
+        const input = {
+          projectName: project.name,
+          gate,
+          candidate,
+          assignment,
+          spec,
+          decisions: document.decisions,
+          decided: overruledFor(document, assignment.id),
+          language: this.state.language,
+        };
         const skill = await this.nativeSkill("code-review");
         const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
           this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
@@ -6197,7 +6621,13 @@ export class TramaController {
         );
         await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
       }
-      if (!blocked.length) closeGate(gate);
+      if (!blocked.length) {
+        // A finding against a Pact decision in force, or one the Coordinator already overruled on this work, does not
+        // stop it (ADR 0023).
+        applyPactRule(document, gate);
+        applyOverruled(document, gate);
+        closeGate(gate);
+      }
     } catch (error) {
       failGate(gate, (error as Error).message);
     } finally {
@@ -6277,6 +6707,7 @@ export class TramaController {
         `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
         `Decisioni del Patto da rispettare:\n${decisions}`,
         reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
+        decidedLines(overruledFor(document, assignment.id).filter((d) => d.role === "cleanCode")),
         `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
         "Rispondi con verdict approved oppure changesRequested, un riassunto breve e i findings (un elenco vuoto se non ne hai).",
       ]
@@ -6405,20 +6836,93 @@ export class TramaController {
         ? { assignmentId: assignment.id, at: new Date().toISOString(), waiting: translate(this.state.language, "reviewLoop.held", { count: rounds }), held: true }
         : { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
     this.changedIn(project);
+    // Held work is the Coordinator's to settle (ADR 0023): Trama starts the move now, or after the running turn.
+    if (gate.returned.held) this.continueWork(project, null, "gateEnded");
+  }
+
+  /**
+   * The Coordinator settles the disagreement on a candidate's blocked gate (ADR 0023): with the reviewers the developer
+   * resumes with the findings as its decision, with the developer the findings are overruled. Told in Activity and, with
+   * the full delegation, among the choices of the recap.
+   */
+  private settleReview(
+    project: ActiveProjectState,
+    candidateId: string,
+    input: { side: "findings" | "developer"; reason: string; doubt: string | null; decisionIds?: string[] },
+  ): { waiting: string | null } {
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId);
+    const gate = candidate ? latestGate(document.gates, candidate.id) : null;
+    if (!candidate || !gate) throw new GateSettlementError("not_blocked", `The candidate ${candidateId} has no gate to settle.`);
+    settleGate(gate, candidate, input);
+    const settled = gate.settled!;
+    // With the developer the findings are remembered for the work: the next rounds do not block on them again.
+    if (input.side === "developer") {
+      const decisionIds = (input.decisionIds ?? []).filter((id) => document.decisions.some((d) => d.id === id));
+      rememberOverruled(document, gate, { reason: settled.reason, decisionIds });
+    }
+    let waiting: string | null = null;
+    if (input.side === "findings") {
+      // The findings go back once more, now as the Coordinator's decision; the count of rounds starts again from here.
+      waiting = this.resumeWithFindings(project, gate, [t("main.gate.settledFindings", { reason: settled.reason })]);
+      gate.returned = { assignmentId: gate.assignmentId, at: settled.at, waiting };
+    }
+    const assignment = findAssignment(document, gate.assignmentId);
+    const developer = assignment ? document.team.specialists.find((s) => s.id === assignment.specialistId)?.name : null;
+    const verdict = input.side === "findings" ? t("main.gate.settledFindings", { reason: settled.reason }) : t("main.gate.settledDeveloper", { reason: settled.reason });
+    appendEvent(
+      document,
+      "trama",
+      {
+        type: "activity",
+        title: t("main.gate.settledTitle", { developer: developer ?? gate.assignmentId, candidate: candidate.id }),
+        detail: settled.doubt ? `${verdict}\n${t("main.gate.settledDoubt", { doubt: settled.doubt })}` : verdict,
+        tone: "info",
+      },
+      null,
+    );
+    if (activeDelegation(document)) {
+      recordChoice(document, {
+        kind: "doubt",
+        subject: t("main.gate.settledTitle", { developer: developer ?? gate.assignmentId, candidate: candidate.id }),
+        choice: verdict,
+        targetId: candidate.id,
+        doubt: settled.doubt,
+      });
+    }
+    this.changedIn(project);
+    return { waiting };
+  }
+
+  /** The Coordinator overruled a reviewer's finding with the Pact (overrule_finding): told in Activity and, with the delegation, in the recap. */
+  private findingOverruled(
+    project: ActiveProjectState,
+    candidateId: string,
+    outcome: { role: GateRole; title: string; reason: string; decisionIds: string[]; gatePassed: boolean },
+  ): void {
+    const document = project.document;
+    const reviewer = document.team.specialists.find((s) => s.role === outcome.role && s.status !== "removed")?.name ?? roleProfile(this.t, outcome.role).name;
+    const title = t("main.gate.overruledTitle", { reviewer, candidate: candidateId });
+    const choice = t("main.gate.overruledDetail", { finding: outcome.title, reason: outcome.reason, decisions: outcome.decisionIds.join(", ") });
+    appendEvent(document, "trama", { type: "activity", title, detail: choice, tone: "info" }, null);
+    if (activeDelegation(document)) recordChoice(document, { kind: "doubt", subject: title, choice, targetId: candidateId, doubt: null });
+    this.changedIn(project);
   }
 
   /**
    * Resumes the developer with the gate's blocking findings, in its session and worktree, and says why it cannot when
    * it cannot. Only in the project open now: a project the person left keeps the work for when it opens again.
    */
-  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
+  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate, decision: string[] = []): string | null {
     const document = project.document;
     const assignment = findAssignment(document, gate.assignmentId);
     if (!assignment) return t("main.controller.findingsWaitAssignmentGone");
     if (project !== this.state.project) return t("main.controller.findingsWaitProjectClosed");
+    // In pause nothing starts, a gate that ended in the background included (A05): Riprendi's round sends them back.
+    if (isPaused(document)) return t("main.controller.findingsWaitPaused");
     if (!withinMandate(document, assignment)) return t("main.controller.findingsWaitMandate");
     try {
-      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
+      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: [...decision, ...returnFindings(document, gate)] });
     } catch (error) {
       return error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
     }
@@ -6866,7 +7370,7 @@ export class TramaController {
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new DomainError(t("main.controller.candidateNotFound"));
-    const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+    const report = candidateReport(document, candidate, await this.integrationHeads(project));
     if (report.state === "superseded") throw new DomainError(t("main.controller.candidateSuperseded"));
     if (report.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: report.blockers.map((b) => b.code).join(", ") }));
     if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError(t("main.controller.candidateNeedsApproval"));
@@ -6902,6 +7406,11 @@ export class TramaController {
     const baseBranch = project.snapshot.branch ?? "main";
     // Work from a cloud session already has its draft pull request (A19): Trama checks it again on the Mac and takes it out of draft.
     if (assignment.cloud?.status === "returned" && assignment.cloud.pullRequest) return this.publishCloudCandidate(project, candidate, assignment, repository, message);
+    // Right before the pull request the base branch is read on the remote (negozio, pull request #25): a candidate that
+    // no longer merges with it goes back to the Coordinator as a conflict instead of reaching GitHub in conflict.
+    await this.compareWithRemoteBase(project, candidate);
+    const current = candidateReport(document, candidate, await this.integrationHeads(project));
+    if (current.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: current.blockers.map((b) => b.code).join(", ") }));
     // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
@@ -6923,6 +7432,34 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: t("main.controller.pullRequestPublishedTitle", { number: `${published.number}` }), detail: published.url, tone: "tool" });
     this.changedIn(project);
     return candidate.pullRequest;
+  }
+
+  /**
+   * Compares a candidate with its base branch as it is on the remote, after a fetch of the branch. A conflict is recorded
+   * as with the other remote heads, with its card, and the Coordinator resolves it within the mandate.
+   */
+  private async compareWithRemoteBase(project: ActiveProjectState, candidate: Candidate): Promise<void> {
+    const document = project.document;
+    const session = findAssignment(document, candidate.assignmentId)?.workspace;
+    const base = session ? await this.readBranchBase(project, true) : null;
+    if (!session || !base) return;
+    const assessment = await assessWithRemoteBase({
+      base,
+      candidateId: candidate.id,
+      snapshotId: candidate.snapshotId,
+      session,
+      changedFiles: candidate.changedFiles,
+      cacheRoot: join(this.storage.root, "RemoteCache"),
+      probeRoot: join(this.storage.root, "ConflictProbe"),
+      compared: (id) => (document.conflicts ?? []).some((a) => a.id === id),
+    });
+    if (!assessment) return;
+    (document.conflicts ??= []).push(assessment);
+    if (assessment.classification === "conflict") {
+      appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictCardTitle"), detail: null, referenceId: assessment.id });
+      this.continueWork(project, null, "worktreeConflict");
+    }
+    this.changedIn(project);
   }
 
   // MARK: Merge
@@ -6960,7 +7497,7 @@ export class TramaController {
   private async integrateCandidates(project: ActiveProjectState): Promise<void> {
     if (this.quitting || !project.stateWritable || project.isDemo) return;
     const document = project.document;
-    const head = await this.headSHA(project.rootPath);
+    const head = await this.integrationHeads(project);
     for (const candidate of document.candidates) {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
@@ -6995,6 +7532,8 @@ export class TramaController {
         this.integrating.delete(candidate.id);
       }
     }
+    // Merged work leaves its working copy: it would only pile up.
+    await this.freeMergedWorktrees(project);
   }
 
   /**
@@ -7010,7 +7549,7 @@ export class TramaController {
     try {
       const pull = candidate.pullRequest ?? (await this.publishCandidateNow(project, candidate, report));
       if (!pull.headSHA) throw new DomainError(t("main.controller.mergeUnknownHead", { number: `${pull.number}` }));
-      const now = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+      const now = candidateReport(document, candidate, await this.integrationHeads(project));
       const covered = contentFingerprint(document, candidate) === fingerprint && !now.blockers.length && !now.clearanceInvalidated && (by === "coordinator" || !now.approvalInvalidated);
       if (!covered) throw new DomainError(t("main.controller.mergeCandidateChanged"));
       const checks = await readPullRequestStatus(repository, pull.number).catch(() => null);
@@ -7031,9 +7570,8 @@ export class TramaController {
       }
       if (checks?.checks === "failure") throw new DomainError(t("main.controller.mergeChecksRed", { number: `${pull.number}` }));
       // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
-      const drift = checks ? pullRequestDrift(pull.headSHA, checks) : null;
+      const drift = checks ? stopOnDrift(document, candidate, by, pull.headSHA, checks) : null;
       if (drift) {
-        recordMerge(document, candidate, by, "stopped", drift);
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason: drift }, by));
         this.changedIn(project);
         return;
@@ -7119,7 +7657,7 @@ export class TramaController {
   /** The person's ok on an interface candidate: the approval, then Trama merges it when the green light holds (issue #247). */
   async approveCandidateByPerson(candidateId: string): Promise<void> {
     const project = this.requireProject();
-    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.headSHA(project.rootPath));
+    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.integrationHeads(project));
     this.changed();
     await this.integrateCandidates(project);
   }
@@ -7257,7 +7795,7 @@ export class TramaController {
     if (outOfRange.length) {
       throw new TicketRefusal("invalid_arguments", `The issue has ${items.length} criteria; unknown indexes: ${outOfRange.map((c) => c.index).join(", ")}.`);
     }
-    const head = await this.headSHA(project.rootPath);
+    const head = await this.integrationHeads(project);
     const candidates = new Map(
       document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
     );
@@ -8085,11 +8623,8 @@ export class TramaController {
   /** Memory as a frozen block and the skills index, in the form the Coordinator receives them. @model-text */
   private learnedContext(project: ActiveProjectState): { memory: string; skills: string } {
     const context = this.learningFor(project).promptContext();
-    const blocks = [context.memory, context.user].filter(Boolean);
-    return {
-      memory: `## Memoria (note tue, non decisioni della persona)\n${blocks.length ? blocks.join("\n\n") : "La memoria è vuota."}`,
-      skills: context.skills,
-    };
+    const blocks = [context.memory, context.user].filter((block): block is string => Boolean(block));
+    return { memory: memorySection(blocks), skills: context.skills };
   }
 
   private learningChanged(): void {
@@ -8121,7 +8656,7 @@ export class TramaController {
    * transcript and may only write memory and skills. One pass at a time per project; the conversation
    * never waits for it. `focus` comes from the person, and makes the pass attended.
    */
-  async runLearningReview(project: ActiveProjectState, scope: ReviewScope, focus: string | null = null): Promise<void> {
+  async runLearningReview(project: ActiveProjectState, scope: ReviewScope, focus: string | null = null, options: { attended?: boolean } = {}): Promise<void> {
     if (this.learningReviews.has(project.id) || this.quitting) return;
     const learning = this.learningFor(project);
     const document = project.document;
@@ -8158,7 +8693,7 @@ export class TramaController {
         prompt: `${transcript}\n\n${reviewPrompt(scope, learning.memoryAvailable, focus)}`,
         maxToolCalls: REVIEW_MAX_TOOL_CALLS,
         timeoutMs: 600_000,
-        attended: focus !== null,
+        attended: options.attended ?? focus !== null,
         signal: controller.signal,
         calls,
       });
@@ -8396,6 +8931,20 @@ export class TramaController {
     await this.runLearningReview(project, { memory: learning.memoryAvailable, skills: true }, focus.trim());
   }
 
+  /**
+   * Riordina on a nearly full section of Memoria (critique of 29 September 2026): a review of that section only, with
+   * its entries and the person's language in the focus. It runs unattended, so its replacements and removals wait in
+   * Aspetta te as one proposal and the notes stay as the person wrote them until the person applies it.
+   */
+  async tidyLearnedMemory(target: "memory" | "user"): Promise<void> {
+    if (target !== "memory" && target !== "user") throw new DomainError(`Unknown memory section: ${String(target)}.`);
+    const project = this.requireProject();
+    const learning = this.learningFor(project);
+    if (!learning.memoryAvailable) return;
+    const store = learning.view(this.coordinatorLearning(project.document))[target];
+    await this.runLearningReview(project, { memory: true, skills: false }, tidyFocus(target, store, personLanguage()), { attended: false });
+  }
+
   async curatorAction(action: "run" | "dryRun" | "pause" | "resume" | "rollback", backupId: string | null = null): Promise<void> {
     const learning = this.learningFor(this.requireProject());
     if (action === "pause" || action === "resume") learning.curatorState.save({ ...learning.curatorState.load(), paused: action === "pause" });
@@ -8429,6 +8978,7 @@ export class TramaController {
       update = rest;
     }
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
+    const continuousTurnedOn = this.state.settings.continuousWork === false && update.continuousWork === true;
     this.state.settings = { ...this.state.settings, ...update, learning };
     // The new language holds at once: the window re-renders with the state, and the agents' next turn gets the updated rules.
     if ("language" in update) this.state.language = this.resolveLanguage();
@@ -8443,6 +8993,9 @@ export class TramaController {
     await this.saveSettings();
     // A higher shared limit lets the work in line start now.
     if (update.sharedDevelopers !== undefined) this.startNextInLine();
+    // Continuous work turned back on, from Impostazioni or the status bar: a round runs at once, as after Riprendi,
+    // so the Coordinator's next move does not wait for the next timed round.
+    if (continuousTurnedOn) void this.runRound().catch((error) => this.fail(error));
   }
 
   dismissError(): void {

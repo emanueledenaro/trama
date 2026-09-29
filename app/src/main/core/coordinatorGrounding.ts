@@ -4,7 +4,7 @@ import { fixedBans } from "@shared/fixedBans";
 import { activeDelegation } from "@shared/delegation";
 import { ITALIAN, LANGUAGES, translate } from "@shared/i18n";
 import { autonomyLine } from "./autonomousCycle";
-import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
+import { inspectCandidate, type IntegrationHeads, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
 import { t } from "./personLanguage";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
 
@@ -148,7 +148,7 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
  * The state the Coordinator reads at the start of every turn (issue #269): the buttons the person sees, the mandate,
  * the plan of the work with its slices and the open candidates, computed now from the document. Pure. @model-text
  */
-export function currentStateText(document: ProjectDocument, requestId: string, headSHA: string | null = null): string {
+export function currentStateText(document: ProjectDocument, requestId: string, headSHA: IntegrationHeads = null): string {
   const buttons = availableButtons(document, requestId);
   const persons = buttons.filter((b) => b.actor === "person").map((b) => b.label);
   const lines = [
@@ -160,10 +160,33 @@ export function currentStateText(document: ProjectDocument, requestId: string, h
     fixedBansLine(),
     delegationRuleLine(document),
     autonomyLine(document),
+    ...branchLines(document),
     ...planLines(document, requestId),
     ...candidateLines(document, headSHA),
   ];
   return lines.join("\n");
+}
+
+/**
+ * The divergence of the project's branch, read on the branch as it is on GitHub (U02, negozio 29 September), and whose
+ * move the realignment is: the Coordinator's within the mandate, in a working copy, never the person's checkout.
+ * @model-text
+ */
+function branchLines(document: ProjectDocument): string[] {
+  const divergence = document.branchDivergence;
+  if (!divergence) return [];
+  const own = divergence.branch ?? "il branch del progetto";
+  const other = divergence.defaultBranch;
+  const conflicts = files(divergence.conflictingFiles);
+  const move = "Riallinearli tocca a te dentro il mandato, senza chiedere alla persona di risolvere i file:";
+  if (divergence.branch === other) {
+    return [
+      `Branch del progetto: la copia della persona di ${own} ha ${divergence.ahead} commit che ${own} su GitHub non ha, e GitHub ne ha ${divergence.behind} che la copia non ha; la loro unione lascia in conflitto ${conflicts}. ${move} una copia di lavoro dal branch della persona che unisce origin/${own} e risolve i conflitti, poi il candidato verificato e la pull request verso ${own}. La copia della persona non si tocca.`,
+    ];
+  }
+  return [
+    `Branch del progetto: ${own} e ${other} su GitHub sono andati in direzioni diverse (${divergence.ahead} commit solo in ${own}, ${divergence.behind} solo in ${other}); la loro unione lascia in conflitto ${conflicts}. ${move} una copia di lavoro di ${own} che unisce origin/${other} e risolve i conflitti, poi il candidato verificato e la pull request verso ${own}.`,
+  ];
 }
 
 /** @model-text */
@@ -201,7 +224,17 @@ function delegationRuleLine(document: ProjectDocument): string {
     "Decidi tu anche quello che aspetta la persona: le domande di prodotto con decide_with_delegation, i candidati che aspettano il suo ok con approve_with_delegation dopo le schermate, il lavoro nuovo per l'obiettivo, i candidati superati da uno più recente con supersede_candidate.",
     "Non chiudere mai un turno fermo se esiste un'altra mossa: sblocca, passa ad altro lavoro, ritenta. Un dubbio non ti ferma: scegli la strada che consiglieresti e scrivila con note_doubt.",
     "Restano alla persona solo le conferme di cancellazione. Se la persona scrive di ritirare la delega, usa revoke_full_delegation.",
+    "La delega vale più delle note di memoria: una nota che chiede di proporre i passi prima o di aspettare il sì della persona non vale più. Vai avanti, correggi la nota con memory e scrivilo con note_doubt, così la persona lo rivede.",
   ].join(" ");
+}
+
+/**
+ * The Coordinator's memory as its prompt shows it (ADR 0014): its notes and the person's profile, headed by what counts
+ * more than a note, so a note that asks to wait for the person never holds work the mandate or the delegation covers.
+ * @model-text
+ */
+export function memorySection(blocks: string[]): string {
+  return `## Memoria (note tue, non decisioni della persona: il mandato, la delega piena e i messaggi della persona valgono di più)\n${blocks.length ? blocks.join("\n\n") : "La memoria è vuota."}`;
 }
 
 /** @model-text */
@@ -225,7 +258,7 @@ function planLines(document: ProjectDocument, requestId: string): string[] {
 }
 
 /** @model-text */
-function candidateLines(document: ProjectDocument, headSHA: string | null): string[] {
+function candidateLines(document: ProjectDocument, headSHA: IntegrationHeads): string[] {
   const assignments = document.team.specialists.flatMap((s) => s.assignments.map((a) => ({ assignment: a, specialist: s })));
   const open = assignments
     .map(({ assignment, specialist }) => ({ candidate: latestCandidate(document, assignment.id), specialist }))
@@ -249,7 +282,7 @@ const files = (list: string[]) => (list.length > FILES_SHOWN ? `${list.slice(0, 
  * `headSHA` is the checkout's current head, as the candidate reports use it: a candidate built on an older base is blocked.
  * @model-text
  */
-function candidateState(document: ProjectDocument, candidate: Candidate, headSHA: string | null): string {
+function candidateState(document: ProjectDocument, candidate: Candidate, headSHA: IntegrationHeads): string {
   const problems: string[] = [];
   for (const blocker of inspectCandidate(document, candidate, headSHA)) {
     switch (blocker.code) {

@@ -73,6 +73,17 @@ describe("activityLog: the Coordinator's automatic moves (issue #241)", () => {
     ]);
   });
 
+  it("tells a move the person's message set aside apart from one the person stopped (ADR 0023)", () => {
+    const requests = [
+      request("stopped", "interrupted", { move: "assignWork", by: "trama" }, 0),
+      request("aside", "interrupted", { move: "assignWork", by: "trama", setAside: "Messa da parte per il tuo messaggio: Trama la riprende dopo." }, 2),
+    ];
+    expect(activityLog(t, requests, []).map((e) => [e.requestId, e.outcome, e.detail])).toEqual([
+      ["aside", "setAside", "Messa da parte per il tuo messaggio: Trama la riprende dopo."],
+      ["stopped", "stopped", null],
+    ]);
+  });
+
   it("is empty without automatic moves", () => {
     expect(activityLog(t, [request("person", "completed", null, 0)], [])).toEqual([]);
   });

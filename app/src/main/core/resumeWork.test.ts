@@ -67,7 +67,7 @@ function working(document: ProjectDocument) {
 /** Esci stops Luca's turn: the stop is asked, then the interrupted turn confirms it. */
 function quit(document: ProjectDocument, assignmentId: string) {
   const specialist = document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId))!;
-  requestStop(document, specialist.id, "Trama", ASSIGNMENT_QUIT_NOTE, false, at(4));
+  requestStop(document, specialist.id, "trama", ASSIGNMENT_QUIT_NOTE, false, at(4));
   endTurn(document, assignmentId, null, { kind: "interrupted" }, at(4));
 }
 
@@ -118,7 +118,7 @@ describe("reopeningResume: what the always active Coordinator takes up after a r
 
     const stopped = granted();
     const third = working(stopped);
-    requestStop(stopped, third.specialistId, "Coordinatore", "Il lavoro non serve più.", false, at(4));
+    requestStop(stopped, third.specialistId, "coordinator", "Il lavoro non serve più.", false, at(4));
     endTurn(stopped, third.id, null, { kind: "interrupted" }, at(4));
     expect(reopeningResume(stopped, true).assignments).toEqual([]);
   });
@@ -223,7 +223,7 @@ describe("closing notes in the person's language (issue #301)", () => {
     expect(reopeningResume(document, true).turn).toEqual({ requestId: "r2", kind: "resume" });
     const assignment = working(document);
     const specialist = document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignment.id))!;
-    requestStop(document, specialist.id, "Trama", closingNote("assignmentQuit"), false, at(4));
+    requestStop(document, specialist.id, "trama", closingNote("assignmentQuit"), false, at(4));
     endTurn(document, assignment.id, null, { kind: "interrupted" }, at(4));
     expect(stoppedByClosing(assignment)).toBe(true);
   });

@@ -3,7 +3,7 @@ import type { Candidate, CoordinatorRequest, ProjectDocument, RequestStep, Slice
 import { asksForRecap, recapTitle } from "@shared/recap";
 import { emptyDocument } from "./document";
 import { createMandateRequest } from "./pact";
-import { markTold, MAX_DONE, milestones, newMilestones, writeRecap } from "./recap";
+import { decidedSinceLastRecap, doneSince, markTold, MAX_DONE, milestones, newMilestones, writeRecap } from "./recap";
 import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON } from "./statusLine";
 import { translator } from "@shared/i18n";
@@ -89,7 +89,7 @@ function recap(document: ProjectDocument, minute: number, reason: "milestone" | 
 }
 
 describe("asking for a recap", () => {
-  it.each(["/riepilogo", "Riepilogo", "Fammi un riepilogo", "fammi il riepilogo, per favore", "Mi fai un riepilogo?", "A che punto siamo?", "Coordinatore, a che punto siamo?", "Come procede il lavoro?"])(
+  it.each(["/riepilogo", "Riepilogo", "Fammi un riepilogo", "fammi il riepilogo, per favore", "Mi fai un riepilogo?", "A che punto siamo?", "Coordinatore, a che punto siamo?", "Come procede il lavoro?", "Come va il lavoro?"])(
     "recognizes %s",
     (text) => expect(asksForRecap(text)).toBe(true),
   );
@@ -99,6 +99,8 @@ describe("asking for a recap", () => {
     "Aggiungi un riepilogo dell'ordine nella pagina di conferma",
     "/ask-trama riepilogo",
     "Come va?",
+    "Come va il lavoro? E poi aggiungi i test",
+    "A che punto siamo? Intanto apri una issue per il checkout",
   ])("leaves %s to the Coordinator", (text) => expect(asksForRecap(text)).toBe(false));
 
   it("titles the card by what made it", () => {
@@ -241,6 +243,33 @@ describe("the recap of the full delegation (issue #423)", () => {
     expect(quiet).not.toHaveProperty("delegated");
     expect(recapTitle(translator("it"), { reason: "return", milestones: [] })).toBe("Mentre non c'eri");
     expect(recapTitle(translator("en"), { reason: "return", milestones: [] })).toBe("While you were away");
+  });
+
+  it("leaves out of what it did a move the person's message set aside, since Trama takes it up again (ADR 0023)", () => {
+    const document = emptyDocument("p");
+    move(document, "r1", 1, "Assegna il lavoro", "interrupted");
+    document.requests[0]!.step!.setAside = "Messa da parte per il tuo messaggio: Trama la riprende dopo.";
+    move(document, "r2", 3, "Assegna il lavoro", "interrupted");
+    expect(doneSince(document, null)).toHaveLength(1);
+  });
+
+  it("tells a disagreement the Coordinator settled since the last recap, which makes the person's return worth a recap (ADR 0023)", () => {
+    const document = emptyDocument("p");
+    expect(decidedSinceLastRecap(document)).toBe(false);
+    const settled = { side: "findings" as const, reason: "Il Patto vieta i dati aziendali nel sito", doubt: "Forse vale solo per il piè di pagina", at: "2026-09-29T03:00:00.000Z" };
+    document.gates = [
+      { id: "G-1", candidateId: "C-1", assignmentId: "A-1", snapshotId: "s", baseSHA: "b", status: "blocked", checksFailed: [], suite: [], reviews: [], returned: null, settled, failure: null, startedAt: settled.at, updatedAt: settled.at, finishedAt: settled.at },
+    ];
+    expect(decidedSinceLastRecap(document)).toBe(true);
+    const told = "Ho deciso fra A-1 e i revisori sul candidato C-1. Hanno ragione i revisori: Il Patto vieta i dati aziendali nel sito. Dubbio: Forse vale solo per il piè di pagina.";
+    expect(doneSince(document, null).map((f) => f.text)).toEqual([told]);
+    writeRecap(document, { id: "R1", at: "2026-09-29T07:00:00.000Z", reason: "return", milestones: [], runningRequestId: null, sources: {} });
+    expect(decidedSinceLastRecap(document)).toBe(false);
+    // With the full delegation in force the decision is among the delegation's choices: the moves do not repeat it.
+    document.delegations = [{ id: "FD-1", grantedAt: "2026-09-29T01:00:00.000Z", request: { eventId: "E-1", quote: "fai tutto tu" }, tickets: false, revokedAt: null, revokedBy: null }];
+    expect(doneSince(document, null)).toEqual([]);
+    document.delegatedChoices = [{ id: "DC-1", delegationId: "FD-1", kind: "doubt", subject: "s", choice: "c", doubt: null, targetId: "C-1", at: "2026-09-29T08:00:00.000Z", seenAt: null }];
+    expect(decidedSinceLastRecap(document)).toBe(true);
   });
 });
 

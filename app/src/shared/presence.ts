@@ -309,3 +309,25 @@ export function presenceMode(input: { hasRemote: boolean; consent: PresenceConse
   if (input.consent?.choice === "shared" && !input.consent.paused && input.canShare !== false) return "shared";
   return "readOnly";
 }
+
+/** What the person does with the presence now, in one sentence: Squadre and Impostazioni, Presenza say it the same way. */
+function presenceStatus(t: Translate, view: PresenceView | null | undefined): string {
+  if (!view) return t("shared.presence.line.reading");
+  if (view.mode === "local") return t("shared.presence.line.local");
+  const consent = view.consent;
+  if (consent?.choice === "shared" && consent.paused) return t("shared.presence.line.paused");
+  if (consent?.choice === "shared" && view.canShare === false) return t("shared.presence.line.readOnly");
+  if (consent?.choice === "shared") return t("shared.presence.line.sharing");
+  return t("shared.presence.line.notSharing");
+}
+
+/**
+ * The lines about the presence under "Chi lavora su cosa" and in Impostazioni, Presenza: what the person does with it
+ * and, when the main process has one, why sharing does not work. Without push rights or without a remote the main
+ * process's message says what the status says in its own words, so only the message stays: one sentence, not two.
+ */
+export function presenceLines(t: Translate, view: PresenceView | null | undefined): string[] {
+  const message = view?.message?.trim() || null;
+  if (message && (view?.canShare === false || view?.mode === "local")) return [message];
+  return [presenceStatus(t, view), ...(message ? [message] : [])];
+}

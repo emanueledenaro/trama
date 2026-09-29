@@ -115,6 +115,7 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.assignment.readOnly": "Read only",
   "chat.card.assignment.checks": "Checks: {checks}",
   "chat.card.assignment.result": "Result",
+  "chat.card.assignment.detail": "Assignment details",
   "chat.card.assignment.stop": "Stop",
   "chat.card.assignment.resume": "Resume",
 

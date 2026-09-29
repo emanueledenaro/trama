@@ -182,6 +182,27 @@ describe("the Coordinator supersedes an older candidate of the same work (issue 
     expect(candidateReport(document, thirteenth, "base").state).toBe("building");
   });
 
+  it("keeps superseded work closed when a new candidate of it appears, without superseding it again", () => {
+    const { document, third, eighth, thirteenth } = threeVersions();
+    supersedeCandidate(document, { candidateId: third.id, byCandidateId: thirteenth.id, reason: "Versione vecchia", actor: "Coordinatore", waiting: null }, at(10));
+    supersedeCandidate(document, { candidateId: eighth.id, byCandidateId: thirteenth.id, reason: "Versione vecchia", actor: "Coordinatore", waiting: null }, at(11));
+    expect(inspectCandidate(document, thirteenth, "base")).toEqual([]);
+    // Marco's old working copy of n. 3 changes after a turn and Trama declares its new candidate: the old work is still retired.
+    const revived = declareCandidate(
+      document,
+      { assignmentId: third.assignmentId, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-revived", baseSHA: "base", diff: "+y", changedFiles: ["src/app/prodotti/page.tsx"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at(12),
+    );
+    expect(candidateSuperseded(document, revived)).toBe(true);
+    expect(candidateReport(document, revived, "base").state).toBe("superseded");
+    collide(document, thirteenth, revived, 13);
+    expect(inspectCandidate(document, thirteenth, "base")).toEqual([]);
+    expect(waitingForYou(translator("it"), document, { candidateReports: reports(document) }).map((i) => i.targetId)).toEqual([thirteenth.id]);
+    // The newest work itself is never retired by its own older candidates.
+    expect(candidateSuperseded(document, thirteenth)).toBe(false);
+  });
+
   it("takes the same slice as the same work and a different slice as other work, whatever the modules", () => {
     const document = shop();
     const slice = { planId: "P-1", sliceId: "S1" };

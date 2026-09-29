@@ -614,6 +614,16 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const { appendFileSync } = await import("node:fs");
           appendFileSync(tracked, "// Nota dello specialista   \n");
         }
+        // "[correggi-spazi]" is the correction, in the same working copy: the trailing whitespace goes.
+        if (text.includes("[correggi-spazi]")) {
+          const { readFileSync: read, writeFileSync: write } = await import("node:fs");
+          // Read and write at once, with no check before: a file that is gone has nothing to correct.
+          try {
+            write(tracked, read(tracked, "utf8").replace(/[ \t]+$/gm, ""));
+          } catch {
+            // Nothing to correct.
+          }
+        }
         if (fullThreads.has(threadId)) {
           send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: 230_000 }, last: { totalTokens: 230_000 }, modelContextWindow: 258_000 } } });
         }
@@ -945,10 +955,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
         // "[segreto]" and "[bloccante]" are work outside the plan: they never take the ready slice.
         const slice = named ? { slice: named } : text.includes("[segreto]") || text.includes("[bloccante]") ? {} : readySlice(text);
+        // "[con-decisioni]" names every decision in force, so the card lists the Pact decisions the work relies on.
+        const relied = text.includes("[con-decisioni]") ? JSON.parse((await callTool(threadId, "read_pact", {})).content[0].text).decisions.map((d) => d.id) : null;
         callTool(threadId, "assign_task", {
           ...slice,
           // "[senza-contratto]" leaves out the seams and the Pact decisions: Trama refuses the assignment (W05).
           ...(text.includes("[senza-contratto]") ? { dependencies: [] } : contract(slice)),
+          ...(relied ? { decisionIDs: relied } : {}),
           specialist: "Ada",
           kind: "agreedTicket",
           // "[luna]" and "[luna-segue]" mark the work whose automatic verification replays the live run of issue #204.
@@ -964,7 +977,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}${text.includes("[cancella]") ? "[cancella] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[correggi-spazi]") ? "[correggi-spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}${text.includes("[cancella]") ? "[cancella] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");

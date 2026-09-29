@@ -27,7 +27,7 @@ import { discussionState, minutesLeft, squadDiscussions } from "@shared/discussi
 import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, teamMoments } from "@shared/roster";
 import { developersOutsideSquads, sharedRoleMembers, squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
 import { assignmentStatus, candidateStatus } from "@shared/states";
-import { type MemberSign, memberSign, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
+import { agentBrief, type MemberSign, memberSign, openWork, squadArea, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
 import { AgentAvatar, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
 import { type ModelChoice, ModelPicker } from "@/components/chat/ModelPicker";
@@ -170,8 +170,12 @@ const ROW = "flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left trans
 /**
  * A person of the team in one row (issue #333): the bot, the name with the role's tag, what it does now in one line
  * and the sign. The id and the model stay on hover.
+ *
+ * `dutyOnHover`: a squad's lead and QA say the same duty in every squad, so a free one reads "Libero" and keeps its
+ * duty on the hover (critique of 29 September 2026). `short`: the squad's lead in one line, with what it does now
+ * beside the name only while it has something to say.
  */
-function PersonRow({ specialist }: { specialist: Specialist }) {
+function PersonRow({ specialist, dutyOnHover = false, short = false, testId }: { specialist: Specialist; dutyOnHover?: boolean; short?: boolean; testId?: string }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -179,38 +183,53 @@ function PersonRow({ specialist }: { specialist: Specialist }) {
   const document = project.document;
   const sign = memberSign(document, project.candidateReports, specialist);
   const goal = findGoal(document, specialist.assignments.at(-1)?.goalId ?? null);
+  const duty = specialist.role === "developer" ? null : (roleDuties(t, specialist.role)[0]?.task ?? null);
   // A free role that never worked says what it does; anyone else says what the latest work left.
   const now =
-    sign !== "free" || specialist.assignments.length
-      ? sign === "free"
+    sign !== "free"
+      ? specialistLine(t, document, specialist)
+      : specialist.assignments.length || !duty || dutyOnHover
         ? t("teams.sign.free")
-        : specialistLine(t, document, specialist)
-      : specialist.role === "developer"
-        ? t("teams.sign.free")
-        : (roleDuties(t, specialist.role)[0]?.task ?? t("teams.sign.free"));
+        : duty;
+  const hover = [workHover(t, specialist, goal?.title ?? null), dutyOnHover ? duty : null].filter(Boolean).join("\n");
+  const name = (
+    <>
+      <span className="min-w-0 truncate">{specialist.name}</span>
+      <AgentTag agent={specialist} className="shrink-0 text-ui-xs" />
+    </>
+  );
   return (
     <button
       type="button"
-      data-testid={specialist.role === "developer" ? "team-developer" : "team-figure"}
+      data-testid={testId ?? (specialist.role === "developer" ? "team-developer" : "team-figure")}
       data-role={specialist.role}
       data-sign={sign}
+      data-short={short || undefined}
       aria-current={selected || undefined}
-      title={workHover(t, specialist, goal?.title ?? null)}
+      title={hover}
       onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
       className={cn(ROW, selected && "bg-[var(--sidebar-selected)]")}
     >
       <span className="flex w-8 shrink-0 justify-center">
         <AgentAvatar agent={specialist} size={32} />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-1.5 text-ui text-foreground">
-          <span className="min-w-0 truncate">{specialist.name}</span>
-          <AgentTag agent={specialist} className="shrink-0 text-ui-xs" />
+      {short ? (
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui text-foreground">
+          {name}
+          {sign !== "free" ? (
+            <span className="min-w-0 flex-1 truncate text-ui-sm text-muted-foreground" data-testid="member-now">
+              <ReferenceText text={now} links={false} />
+            </span>
+          ) : null}
         </span>
-        <span className="block truncate text-ui-sm text-muted-foreground" data-testid="member-now">
-          <ReferenceText text={now} links={false} />
+      ) : (
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5 text-ui text-foreground">{name}</span>
+          <span className="block truncate text-ui-sm text-muted-foreground" data-testid="member-now">
+            <ReferenceText text={now} links={false} />
+          </span>
         </span>
-      </span>
+      )}
       <SignMark sign={sign} />
     </button>
   );
@@ -218,14 +237,15 @@ function PersonRow({ specialist }: { specialist: Specialist }) {
 
 const byIds = (specialists: Specialist[], ids: string[]) => ids.flatMap((id) => specialists.filter((s) => s.id === id && s.status !== "removed"));
 
-/** One squad (A10): its area and the slices done on the first line, its status line, then the lead, the developers and the QA. */
+/** One squad (A10): its name, its area unless the name says it, and the slices done on the first line; its status line; then the lead, the developers and the QA. */
 function SquadGroup({ squad }: { squad: Squad }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const document = project.document;
   const specialists = document.team.specialists;
   const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id);
-  const area = modules.length ? modules.join(", ") : t("teams.squad.wholeProject");
+  // A squad named after its area says the name once: "app", not "app app" (UI wave of 29 September).
+  const area = squadArea(squad, modules, t("teams.squad.wholeProject"));
   const slices = squadSlices(document, project.sliceViews, squad);
   const backlog = project.backlogs?.find((b) => b.squadId === squad.id);
   const [edit, setEdit] = useState<SquadEdit | null>(null);
@@ -236,10 +256,16 @@ function SquadGroup({ squad }: { squad: Squad }) {
     <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="squad" data-squad={squad.name} data-squad-id={squad.id}>
       <div className="flex min-w-0 items-center gap-1">
         <p className="min-w-0 flex-1 truncate px-2 text-ui-sm text-muted-foreground" title={hover} data-testid="squad-header">
-          <span className="font-medium text-foreground">{squad.name}</span>
+          <span className="font-medium text-foreground" data-testid="squad-name">
+            {squad.name}
+          </span>
           <Sep />
-          {area}
-          <Sep />
+          {area ? (
+            <>
+              <span data-testid="squad-area">{area}</span>
+              <Sep />
+            </>
+          ) : null}
           {slices.total ? t("teams.squad.slices", { done: slices.done, count: slices.total }) : t("teams.squad.noSlices")}
         </p>
         <SquadMenu squad={squad} onEdit={setEdit} />
@@ -252,7 +278,7 @@ function SquadGroup({ squad }: { squad: Squad }) {
       </p>
       <div className="mt-1 flex flex-col">
         {byIds(specialists, [squad.leadId, ...squad.developerIds, squad.qaId]).map((s) => (
-          <PersonRow key={s.id} specialist={s} />
+          <PersonRow key={s.id} specialist={s} short={s.id === squad.leadId} dutyOnHover={s.id === squad.leadId || s.id === squad.qaId} />
         ))}
       </div>
       <DiscussionRows squadId={squad.id} />
@@ -441,6 +467,7 @@ function SquadsSummary() {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const summary = teamSummary(project.document, project.candidateReports, project.presence);
+  const attention = summary.attention.flatMap(({ id }) => project.document.team.specialists.filter((s) => s.id === id));
   const colleague = (project.presence?.others ?? []).find((entry) => !entry.self && entry.status !== "expired") ?? null;
   const shared = colleague ? (project.overlaps?.items ?? []).filter((item) => item.colleague.user === colleague.record.user).flatMap((item) => item.files) : [];
   const colleagueText = colleague
@@ -467,6 +494,15 @@ function SquadsSummary() {
           {t("teams.summary.sameFiles", { names: pair.names.join(", "), count: pair.files.length })}
         </p>
       ))}
+      {/* Who waits for the person and who is stopped, at a glance on top (critique of 29 September 2026): the same rows
+          as in their squad, so a click opens the person. */}
+      {attention.length ? (
+        <div className="-mx-2 mt-2 flex flex-col" data-testid="squads-attention">
+          {attention.map((specialist) => (
+            <PersonRow key={specialist.id} specialist={specialist} dutyOnHover testId="attention-person" />
+          ))}
+        </div>
+      ) : null}
       {colleagueText ? (
         <button
           type="button"
@@ -614,14 +650,42 @@ function squadLine(t: Translate, document: Parameters<typeof squadPart>[0], spec
   }
 }
 
-/** The assignment still open, as the Ora section shows it: running, waiting for an answer, or stopped with its way back. */
-const OPEN_WORK: SpecialistAssignment["status"][] = ["preparing", "running", "stopRequested", "paused", "stopped", "failed"];
+/**
+ * The summary under the person's name (critique of 29 September 2026): what it does, what holds it up and the next
+ * move, one short row each. The next move is the one line that stands out.
+ */
+function AgentBriefRows({ specialist }: { specialist: Specialist }) {
+  const t = useT();
+  const project = useUi((s) => s.app?.project)!;
+  const brief = agentBrief(t, project.document, project.candidateReports, specialist);
+  return (
+    <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-ui-sm" data-testid="specialist-brief" data-sign={brief.sign}>
+      <dt className="text-muted-foreground">{t("teams.brief.doing")}</dt>
+      <dd className="line-clamp-2 min-w-0 break-words text-foreground/90" data-testid="brief-doing" title={brief.doing ?? undefined}>
+        {brief.doing ? <ReferenceText text={brief.doing} links={false} /> : t("teams.person.nothingNow")}
+      </dd>
+      {brief.blocker ? (
+        <>
+          <dt className="text-muted-foreground">{t("teams.brief.blocker")}</dt>
+          <dd className="line-clamp-3 min-w-0 break-words text-foreground/90" data-testid="brief-blocker" title={brief.blocker}>
+            <ReferenceText text={brief.blocker} links={false} />
+          </dd>
+        </>
+      ) : null}
+      <dt className="text-muted-foreground">{t("teams.brief.next")}</dt>
+      <dd className="min-w-0 break-words font-medium text-foreground" data-testid="brief-next">
+        {brief.next}
+      </dd>
+    </dl>
+  );
+}
 
 /**
  * A person of the squad (issue #333, the specialist of W13), in its editor tab: the header with the bot, the name, the
- * role, the squad and the sign, Ask and the menu with Rename and Remove; then the work now, the settings in view (model
- * and look, issue #455), the last result, the assignments and the conversations between agents as compact rows; and
- * closed at the bottom why it is in the squad, when it steps in and its working copy.
+ * role, the squad and the sign, then the summary of its work (what it does, what holds it up, the next move), Ask and
+ * the menu with Rename and Remove; then the settings (model and look, issue #455), the work now with its details
+ * folded, the last result, the assignments and the conversations between agents as compact rows; and closed at the
+ * bottom why it is in the squad, when it steps in and its working copy.
  */
 export function SpecialistView({ id }: { id: string }) {
   const t = useT();
@@ -640,7 +704,7 @@ export function SpecialistView({ id }: { id: string }) {
   const busy = current && ["preparing", "running", "stopRequested"].includes(current.status);
   const fixed = isFixedRole(specialist.role);
   const sign = memberSign(document, project.candidateReports, specialist);
-  const now = current && OPEN_WORK.includes(current.status) ? current : null;
+  const now = openWork(specialist);
   const lastResult = [...specialist.assignments].reverse().find((a) => a.status === "completed" && a.id !== now?.id) ?? null;
   const others = [...specialist.assignments].reverse().filter((a) => a.id !== now?.id && a.id !== lastResult?.id);
   const workspace = current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? current.workspace : null;
@@ -677,6 +741,7 @@ export function SpecialistView({ id }: { id: string }) {
             </span>
           </div>
         </div>
+        <AgentBriefRows specialist={specialist} />
         <div className="cta-row mt-2">
           {menu ? (
             <Menu>
@@ -738,9 +803,10 @@ export function SpecialistView({ id }: { id: string }) {
           </div>
         ) : null}
       </div>
+      {/* The settings come before the work (critique of 29 September 2026): they are the person's to change. */}
+      {specialist.status !== "removed" ? <SpecialistSettings specialist={specialist} /> : null}
       <NowSection assignment={now} />
       {now && ["stopped", "failed"].includes(now.status) ? <AssignmentProvider assignment={now} /> : null}
-      {specialist.status !== "removed" ? <SpecialistSettings specialist={specialist} /> : null}
       {lastResult ? (
         <InspectorSection title={t("teams.person.lastResult")}>
           <div className="-mx-2" data-testid="specialist-last-result">
@@ -853,7 +919,7 @@ function NowSection({ assignment }: { assignment: SpecialistAssignment | null })
         ) : null
       }
     >
-      <div data-testid="specialist-now">{assignment ? <AssignmentCard assignmentId={assignment.id} /> : <EmptyNote>{t("teams.person.nothingNow")}</EmptyNote>}</div>
+      <div data-testid="specialist-now">{assignment ? <AssignmentCard assignmentId={assignment.id} fold /> : <EmptyNote>{t("teams.person.nothingNow")}</EmptyNote>}</div>
     </InspectorSection>
   );
 }
@@ -997,13 +1063,11 @@ function SpecialistSettings({ specialist }: { specialist: Specialist }) {
   const choose = (choice: ModelChoice | null) => void act("specialist:setModel", { specialistId: specialist.id, choice });
   return (
     <InspectorSection title={t("teams.settings.title")}>
-      <div className="flex flex-col gap-4" data-testid="specialist-settings">
+      {/* On top of the page now (critique of 29 September 2026), so each part is its name, its control and a short note. */}
+      <div className="flex flex-col gap-3" data-testid="specialist-settings">
         <div data-testid="specialist-model">
           <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.settings.model")}</h5>
-          <p className="mt-0.5 text-ui-sm text-muted-foreground">
-            {chosen ? t("teams.settings.modelNote", { name: specialist.name }) : t("teams.settings.coordinatorNote")}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <ModelPicker
               className={SETTING_PILL}
               selectedProvider={provider}
@@ -1023,6 +1087,9 @@ function SpecialistSettings({ specialist }: { specialist: Specialist }) {
               </Button>
             ) : null}
           </div>
+          <p className="mt-1 text-ui-xs text-muted-foreground">
+            {chosen ? t("teams.settings.modelNote", { name: specialist.name }) : t("teams.settings.coordinatorNote")}
+          </p>
           {problem ? (
             <p className="mt-2 text-ui-sm text-warning" data-testid="specialist-model-problem">
               {problem}
@@ -1043,8 +1110,7 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
   const t = useT();
   return (
     <>
-      <p className="mt-0.5 text-ui-sm text-muted-foreground">{t("teams.color.note")}</p>
-      <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("teams.color.label")}>
+      <div className="mt-1.5 flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("teams.color.label")}>
         {AGENT_PALETTE.map((entry) => {
           const selected = entry.color === specialist.color;
           return (
@@ -1068,6 +1134,7 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
           );
         })}
       </div>
+      <p className="mt-1 text-ui-xs text-muted-foreground">{t("teams.color.note")}</p>
     </>
   );
 }

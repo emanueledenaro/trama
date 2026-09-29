@@ -5,6 +5,8 @@ import { isActive } from "./team";
 import { translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 import { type ProviderWait, providerWaitLine } from "./resumeWork";
+import { delegatedHolds, delegationTakes, holdsWork } from "./continuousWork";
+import { activeDelegation } from "@shared/delegation";
 
 /**
  * The Coordinator's status line (Q6): one sentence that says what the Coordinator does now and what it does next, as in
@@ -72,6 +74,10 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
       return target ? t("main.statusLine.running.verifyTarget", { target }) : t("main.statusLine.running.verifyWork");
     case "answerQuestion":
       return t("main.statusLine.running.answerQuestion");
+    case "settleReview":
+      return t("main.workPhase.blockReviewLoopPhrase");
+    case "clearCandidate":
+      return t("main.statusLine.running.clearCandidate");
     case "decideWithDelegation":
       return t("delegation.move.decide.running");
     case "takeTicket":
@@ -90,6 +96,10 @@ function nextPhrase(move: CoordinatorMove, target: string | null): string {
       return target ? t("main.statusLine.next.verifyTarget", { target }) : t("main.statusLine.next.verifyWork");
     case "answerQuestion":
       return t("main.statusLine.next.answerQuestion");
+    case "settleReview":
+      return t("main.statusLine.next.settleReview");
+    case "clearCandidate":
+      return t("main.statusLine.next.clearCandidate");
     case "decideWithDelegation":
       return t("delegation.move.decide.next");
     case "takeTicket":
@@ -152,9 +162,16 @@ function slicesHeld(state: WorkState): string | null {
 /**
  * The status line of the project. Pure: `runningRequestId` is the Coordinator turn that runs now, if any, and `wait` the
  * provider limit the Coordinator waits for (issue #249). The next move and the person's button come from the task in
- * focus; what runs now comes from the whole project.
+ * focus; what runs now comes from the whole project. `continuousWork` is the setting of Impostazioni: off, the
+ * Coordinator starts nothing by itself, so its own next move waits for the person's message and the line says so.
  */
-export function statusLine(document: ProjectDocument, runningRequestId: string | null, wait: ProviderWait | null = null, at = new Date()): StatusLineView {
+export function statusLine(
+  document: ProjectDocument,
+  runningRequestId: string | null,
+  wait: ProviderWait | null = null,
+  at = new Date(),
+  continuousWork = true,
+): StatusLineView {
   const running = runningRequestId ? (document.requests.find((r) => r.id === runningRequestId && r.state === "running") ?? null) : null;
   const focus = focusView(document).focus;
   const latest = focus ? latestOf(document, focus.goalId) : null;
@@ -165,14 +182,23 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const now = turn?.phrase ?? plan;
   const workers = workersPhrase(document);
 
-  // The next move of the task in focus: the person's first, since the work waits for it; else the Coordinator's own.
-  const personMove = state?.moves.find((m) => m.actor === "person") ?? null;
+  // The next move of the task in focus: the person's first, since the work waits for it; else the Coordinator's own. A
+  // person's move that holds none of the Coordinator's (a candidate or a plan to look at) waits beside its next move.
+  // With the full delegation (ADR 0022) the Coordinator first decides what waits for the person, and a mandate request
+  // no longer holds the work: the line says what it does, not that it waits.
+  const firstPersonMove = state?.moves.find((m) => m.actor === "person") ?? null;
+  const personMoves = state?.moves.filter((m) => m.actor === "person" && !delegationTakes(document, m)) ?? [];
+  const decides = state !== null && turn?.move !== "decideWithDelegation" && activeDelegation(document) !== null && delegatedHolds(document, state);
   const coordinatorMove = state?.moves.find((m) => m.actor === "coordinator" && m.move !== turn?.move) ?? null;
+  const personHolds = (!coordinatorMove && !decides) || personMoves.some((m) => holdsWork(state!, m.move));
+  const personMove = personHolds ? (personMoves[0] ?? null) : null;
   const next = personMove
     ? t("main.statusLine.next.waitForYou")
-    : coordinatorMove && isCoordinatorMove(coordinatorMove.move)
-      ? nextPhrase(coordinatorMove.move, moveTarget(document, coordinatorMove.move, state!))
-      : null;
+    : decides
+      ? nextPhrase("decideWithDelegation", null)
+      : coordinatorMove && isCoordinatorMove(coordinatorMove.move)
+        ? nextPhrase(coordinatorMove.move, moveTarget(document, coordinatorMove.move, state!))
+        : null;
 
   // The button: the step the Coordinator declared (or Trama's stalled move) while nothing runs in the dialog, else the person's move.
   const busyHere = running !== null && latest !== null && (running.goalId ?? null) === (latest.goalId ?? null);
@@ -180,8 +206,8 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const goalId = focus?.goalId ?? null;
   const action: StatusLineAction | null = declared
     ? { ...declared, requestId: latest!.id, goalId }
-    : personMove
-      ? { ...personMove, reason: "", message: null, requestId: null, goalId }
+    : firstPersonMove
+      ? { ...firstPersonMove, reason: "", message: null, requestId: null, goalId }
       : null;
 
   const stalled = !busyHere && latest?.step?.by === "trama" && latest.step.stalled ? latest.step.stalled : null;
@@ -213,21 +239,25 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
     };
   }
 
+  // With continuous work off in Impostazioni the Coordinator's own next move never starts by itself: saying "the next
+  // step is mine" made the person think Trama was stuck. The line says it waits for a message, and names the move.
+  const off = !continuousWork && !now && next !== null && !personMove;
   const sentences: string[] = [];
   if (now) sentences.push(next ? t("main.statusLine.nowThen", { now, next }) : `${now}.`);
   if (workers) sentences.push(`${workers}.`);
-  if (!now && next) sentences.push(personMove ? t("main.statusLine.waitingForYou") : t("main.statusLine.nextIsMine", { next }));
+  if (!now && next) sentences.push(personMove ? t("main.statusLine.waitingForYou") : off ? t("main.statusLine.continuousOff") : t("main.statusLine.nextIsMine", { next }));
   if (!sentences.length && blocked) sentences.push(t("main.statusLine.workStopped"));
 
   const lineState: StatusLineView["state"] =
-    now || workers ? "working" : blocked || held ? "blocked" : personMove || stalled ? "waiting" : next ? "next" : action ? "waiting" : "idle";
+    now || workers ? "working" : blocked || held ? "blocked" : personMove || stalled || off ? "waiting" : next ? "next" : action ? "waiting" : "idle";
   return {
     state: lineState,
     text: sentences.length ? sentences.join(" ") : nothingGoingOn(),
-    reason,
+    reason: off ? (reason ?? t("main.statusLine.continuousOffNext", { next: next! })) : reason,
     action,
     runningMove,
     paused: false,
     providerWait: null,
+    ...(off ? { continuousWorkOff: true } : {}),
   };
 }

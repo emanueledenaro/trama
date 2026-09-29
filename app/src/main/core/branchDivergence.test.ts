@@ -2,7 +2,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assessBranchDivergence } from "./branchDivergence";
+import { type BranchBase, readBranchBase } from "./branchBase";
+import { assessBranchDivergence, assessProjectDivergence } from "./branchDivergence";
 import { git } from "./process";
 
 const commit = (cwd: string, message: string) => git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qam", message], cwd, false);
@@ -68,5 +69,85 @@ describe("branch divergence (U02)", () => {
     const initial = (await git(["rev-parse", "main"], context.repo)).trim();
     expect(await context.assess(initial)).toBeNull();
     expect(await context.assess(await context.pushMain("b.txt", "B\n"))).toBeNull();
+  });
+});
+
+describe("the project notice on the branch as it is on GitHub", () => {
+  /**
+   * The negozio case: chore/pre-apertura and main changed package.json in different ways; the person realigned the
+   * branch with main from another clone and pushed it on 27 September. The checkout never pulled.
+   */
+  async function realignedOnGitHub() {
+    const context = await setup();
+    await writeFile(join(context.repo, "package.json"), "{\n  \"name\": \"negozio-pre\"\n}\n");
+    await commit(context.repo, "chore: pre-apertura");
+    await git(["push", "-q", "-u", "origin", "chore/pre-apertura"], context.repo, false);
+    const checkout = await head(context.repo);
+    const mainSHA = await context.pushMain("package.json", "{\n  \"name\": \"negozio-main\"\n}\n");
+    const remote = (await git(["remote", "get-url", "origin"], context.repo)).trim();
+    const other = await mkdtemp(join(tmpdir(), "trama-div-realign-"));
+    await git(["clone", "-q", "-b", "chore/pre-apertura", remote, other], tmpdir(), false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "merge", "-q", "origin/main", "-m", "merge"], other, false).catch(() => undefined);
+    await writeFile(join(other, "package.json"), "{\n  \"name\": \"negozio-pre\",\n  \"private\": true\n}\n");
+    await git(["add", "package.json"], other, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-q", "--no-edit"], other, false);
+    await git(["push", "-q", "origin", "HEAD:chore/pre-apertura"], other, false);
+    const onGitHub = await head(other);
+    const assess = async (base: BranchBase, defaultSHA = mainSHA) =>
+      assessProjectDivergence({
+        sourceRoot: context.repo,
+        base,
+        defaultBranch: "main",
+        defaultSHA,
+        source: { kind: "local", path: remote },
+        cacheRoot: await mkdtemp(join(tmpdir(), "trama-div-cache-")),
+      });
+    return { ...context, checkout, mainSHA, onGitHub, assess };
+  }
+
+  it("shows nothing when GitHub's copy of the branch already contains main, whatever the old checkout says", async () => {
+    const context = await realignedOnGitHub();
+    // The checkout alone would still say 1 and 1 with package.json in conflict: the old notice.
+    expect(await context.assess((await readBranchBase(context.repo, { fetch: false }))!)).toMatchObject({
+      headSHA: context.checkout,
+      conflictingFiles: ["package.json"],
+    });
+    const base = (await readBranchBase(context.repo, { fetch: true }))!;
+    expect(base).toMatchObject({ state: "behind", remoteSHA: context.onGitHub });
+    expect(await context.assess(base)).toBeNull();
+  });
+
+  it("compares GitHub's copy with main while the checkout lags it, and holds the notice on the checkout's head", async () => {
+    const context = await realignedOnGitHub();
+    const base = (await readBranchBase(context.repo, { fetch: true }))!;
+    const later = await context.pushMain("package.json", "{\n  \"name\": \"negozio-main-2\"\n}\n");
+    expect(await context.assess(base, later)).toMatchObject({
+      branch: "chore/pre-apertura",
+      defaultBranch: "main",
+      headSHA: context.onGitHub,
+      checkoutSHA: context.checkout,
+      remoteSHA: later,
+      conflictingFiles: ["package.json"],
+    });
+  });
+
+  it("calls a checkout with commits of its own, while GitHub's copy moved on, a divergence from that copy", async () => {
+    const context = await realignedOnGitHub();
+    await writeFile(join(context.repo, "package.json"), "{\n  \"name\": \"negozio-locale\"\n}\n");
+    await commit(context.repo, "chore(deps): riallinea package-lock.json");
+    const local = await head(context.repo);
+    const base = (await readBranchBase(context.repo, { fetch: true }))!;
+    expect(base.state).toBe("diverged");
+    const divergence = await context.assess(base);
+    expect(divergence).toMatchObject({
+      branch: "chore/pre-apertura",
+      defaultBranch: "chore/pre-apertura",
+      headSHA: local,
+      remoteSHA: context.onGitHub,
+      ahead: 1,
+      behind: 2,
+      conflictingFiles: ["package.json"],
+    });
+    expect(divergence!.checkoutSHA).toBeUndefined();
   });
 });

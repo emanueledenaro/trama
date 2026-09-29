@@ -156,6 +156,7 @@ const FACT_OUTCOMES: Record<ActivityOutcome, MessageKey> = {
   done: "main.recap.outcome.done",
   stalled: "main.recap.outcome.stalled",
   stopped: "main.recap.outcome.stopped",
+  setAside: "main.recap.outcome.setAside",
   failed: "main.recap.outcome.failed",
   corrected: "main.recap.outcome.corrected",
   undone: "main.recap.outcome.undone",
@@ -186,13 +187,46 @@ function requestedLine(entry: { label: string; outcome: ActivityOutcome; detail:
   return `${entry.label} (${activityOutcomeLabel(t, entry.outcome).toLowerCase()}): ${summary}`.trim();
 }
 
+/** A sentence closed by its full stop, once. */
+const closed = (sentence: string) => (/[.!?]$/.test(sentence) ? sentence : `${sentence}.`);
+
 /**
- * "Cosa ho fatto": the moves and rounds in Activity since the last recap, oldest first, and the issues the Coordinator
- * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
+ * The disagreements between developer and reviewers the Coordinator settled after `since` (ADR 0023), with the reason
+ * and the doubt. One settled while the full delegation was in force is among the delegation's choices instead.
+ */
+function settledReviews(document: ProjectDocument, since: string | null): (RecapFact & { at: string })[] {
+  const delegatedAt = (at: string) => (document.delegations ?? []).some((d) => d.grantedAt <= at && (!d.revokedAt || d.revokedAt > at));
+  return (document.gates ?? []).flatMap((gate) => {
+    const settled = gate.settled;
+    if (!settled || (since !== null && settled.at <= since) || delegatedAt(settled.at)) return [];
+    const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === gate.assignmentId);
+    const developer = document.team.specialists.find((s) => s.id === assignment?.specialistId)?.name ?? gate.assignmentId;
+    const verdict = t(settled.side === "findings" ? "main.gate.settledFindings" : "main.gate.settledDeveloper", { reason: settled.reason });
+    const doubt = settled.doubt ? closed(t("main.gate.settledDoubt", { doubt: settled.doubt })) : null;
+    const text = [t("main.recap.settled", { developer, candidate: gate.candidateId }), closed(verdict), doubt].filter((part) => part !== null).join(" ");
+    return [{ text, number: null, url: null, at: settled.at }];
+  });
+}
+
+/**
+ * Whether the Coordinator decided something the person has not been told in a recap yet (issue #423): a choice made
+ * with the full delegation, or a disagreement between developer and reviewers it settled (ADR 0023). The person's
+ * return after a long absence then gets the recap "Mentre non c'eri". Pure.
+ */
+export function decidedSinceLastRecap(document: ProjectDocument): boolean {
+  const since = lastRecapAt(document);
+  const after = (at: string) => since === null || at > since;
+  return (document.delegatedChoices ?? []).some((c) => after(c.at)) || (document.gates ?? []).some((g) => g.settled && after(g.settled.at));
+}
+
+/**
+ * "Cosa ho fatto": the moves and rounds in Activity since the last recap, oldest first, the disagreements the
+ * Coordinator settled and the issues it opened, with their number. Moves still running belong to "Cosa faccio"; a move
+ * set aside for the person's message is taken up again, so it is not told (ADR 0023). Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
   const entries = activityLog(t, document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates, [], document.requestedActions ?? [])
-    .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
+    .filter((entry) => entry.outcome !== "running" && entry.outcome !== "setAside" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({
     at: entry.startedAt,
@@ -200,7 +234,7 @@ export function doneSince(document: ProjectDocument, since: string | null): Reca
     number: null,
     url: null,
   }));
-  const facts = [...moves, ...openedIssues(document, since)].sort((a, b) => a.at.localeCompare(b.at));
+  const facts = [...moves, ...settledReviews(document, since), ...openedIssues(document, since)].sort((a, b) => a.at.localeCompare(b.at));
   if (facts.length <= MAX_DONE) return facts.map(({ at: _at, ...fact }) => fact);
   // The issues stay, since the recap cites them all (Q10); the oldest moves give way.
   const issues = facts.filter((f) => f.number !== null);

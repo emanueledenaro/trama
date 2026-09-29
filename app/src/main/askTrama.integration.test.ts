@@ -117,6 +117,29 @@ describe("Ask Trama in the conversation (M07)", () => {
     expect(document.decisionRequests).toEqual([]);
   }, 30_000);
 
+  it("starts by itself a route the mandate covers, once the turn that proposed it ends, and tells it in Activity (issue #423)", async () => {
+    const { project } = await setup();
+    const document = project.document;
+    await controller!.grantMandate({
+      requestId: null,
+      objectives: ["Revisione degli ordini"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["plan", "executeInWorktree"],
+      limits: [],
+    });
+    await controller!.updateSettings({ continuousWork: true });
+    await controller!.send("/ask-trama Gli ordini pagati annullati devono andare in revisione.", null, null, null);
+    const route = document.routes!.at(-1)!;
+    // Nobody presses "Avvia il percorso": Trama starts it and the grilling of its first step opens.
+    await until(() => route.status === "started");
+    await until(() => document.decisionRequests.length === 2);
+    expect(document.requests.some((r) => r.text.startsWith(`Avvia il percorso ${route.id} di Ask Trama`))).toBe(true);
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Percorso ${route.id} di Ask Trama avviato da Trama dentro il mandato`)).toBe(true);
+    // Without the delegation there is no choice to review.
+    expect(document.delegatedChoices ?? []).toEqual([]);
+  }, 30_000);
+
   it("opens a new Coordinator session at the boundary the route names", async () => {
     const { project, requests, turnText } = await setup();
     const document = project.document;

@@ -90,8 +90,15 @@ export interface SemanticHypothesis {
 export interface BranchDivergence {
   /** The branch checked out in the project; null on a detached head. */
   branch: string | null;
+  /** The other side: the default branch on GitHub, or the branch's own copy on GitHub when the checkout went another way. */
   defaultBranch: string;
+  /** The head of the project's branch Trama compared: the checkout's, or the copy on GitHub when the checkout lags it. */
   headSHA: string;
+  /**
+   * The checkout's head when Trama compared the branch as it is on GitHub because the checkout lagged it; absent when it
+   * compared the checkout. The notice holds while the checkout stays at this head.
+   */
+  checkoutSHA?: string;
   remoteSHA: string;
   /** Commits only in the project's branch. */
   ahead: number;
@@ -164,8 +171,15 @@ export interface RequestStep {
   by: "person" | "trama";
   /** Set when Trama's automatic turn ended without making the move: why, in the person's words (issue #204). */
   stalled?: string | null;
+  /**
+   * Set when a message the person typed set Trama's automatic turn aside (ADR 0023): the line Activity shows, in the
+   * person's words. The move is no stop of theirs: the work goes on from it.
+   */
+  setAside?: string | null;
   /** What started Trama's automatic move (A05): the event of the work, or the periodic round; absent on older records. */
   trigger?: WorkEvent;
+  /** The issue a takeTicket move takes (issue #423); absent on other moves and on older records. */
+  issue?: number;
   /**
    * The technical block the automatic move resolves (A06): its kind, the reason for the Coordinator and for the person,
    * and the outcome Trama read when the turn ended; absent on a move that resolves no block.
@@ -180,7 +194,8 @@ export interface RequestStep {
 
 /**
  * What makes Trama weigh the Coordinator's next move (A05): a Coordinator turn, a plan or an assignment that ended, a red
- * check, a conflict between worktrees, a new issue, a commented pull request, or the periodic round.
+ * check, a conflict between worktrees, a new issue, a commented pull request, a candidate gate or a candidate's check
+ * that ended in the background, or the periodic round.
  */
 export type WorkEvent =
   | "turnEnded"
@@ -190,6 +205,8 @@ export type WorkEvent =
   | "worktreeConflict"
   | "issueOpened"
   | "pullRequestCommented"
+  | "gateEnded"
+  | "checkEnded"
   | "round";
 
 /** A round of the Coordinator that did something (A05): what it started or unblocked, for Activity. */
@@ -343,6 +360,11 @@ export interface StatusLineView {
    * work resumes by itself. `until` is the end the provider gave, ISO, or null when it did not say. Null when none.
    */
   providerWait: { provider: string; until: string | null } | null;
+  /**
+   * Continuous work is off in Impostazioni and the next move is the Coordinator's own: it starts nothing by itself, so
+   * the work waits for the person's message. The status bar offers to turn continuous work back on. Absent otherwise.
+   */
+  continuousWorkOff?: boolean;
 }
 
 /** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */
@@ -360,6 +382,10 @@ export type NextMove =
   | "assignWork"
   | "verifyCandidate"
   | "answerQuestion"
+  /** The review stopped the same work again (ADR 0023): the Coordinator settles the developer and the reviewers. */
+  | "settleReview"
+  /** A verified candidate the mandate lets Trama merge waits for the Coordinator's green light (ADR 0023). */
+  | "clearCandidate"
   /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
   | "decideWithDelegation"
   /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
@@ -511,8 +537,8 @@ export interface FullDelegation {
 export interface DelegatedChoice {
   id: string;
   delegationId: string;
-  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, or another doubt. */
-  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "doubt";
+  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, an Ask Trama route started, or another doubt. */
+  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "route" | "doubt";
   /** What was to decide, in the person's words. */
   subject: string;
   /** What the Coordinator chose. */
@@ -724,8 +750,14 @@ export interface AssignmentTurn {
   contextPercent?: number | null;
 }
 
+/** Who asked to stop a piece of work: the person's stop is their choice, the others are taken up again by the work. */
+export type StopActor = "person" | "coordinator" | "trama";
+
 export interface AssignmentStop {
+  /** The name shown for who asked, in the language of the moment: text for the person, never read back to decide. */
   requestedBy: string;
+  /** Who asked, as data; absent in stops recorded before, which `requestedBy` tells. */
+  by?: StopActor;
   reason: string;
   requestedAt: string;
   thenRemove: boolean;
@@ -796,6 +828,8 @@ export interface SpecialistAssignment {
   worktreeSnapshot?: { snapshotId: string; at: string } | null;
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /** The Coordinator resumed the work in its working copy with these instructions (resume_assignment); the latest, absent before any. */
+  coordinatorNote?: { text: string; reason: string; at: string } | null;
   /**
    * The earlier assignments this work corrects (issue #389): later work in the same dialog on their modules while
    * their candidate was still blocked. Their candidates are superseded by this work's; absent when it corrects nothing.
@@ -1424,7 +1458,8 @@ export interface CandidateMerge {
   fingerprint: string;
   /**
    * "waiting": the pull request's checks are still running, and Trama tries again. "failed": GitHub refused it, and Trama
-   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person.
+   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person; or GitHub found
+   * conflicts with the base (`baseConflict`), and the Coordinator realigns the candidate's branch.
    */
   status: "running" | "waiting" | "merged" | "failed" | "stopped";
   /** Why it waits, failed or stopped, in the person's words; null otherwise. */
@@ -1436,6 +1471,11 @@ export interface CandidateMerge {
   mandateVersion?: number | null;
   /** A serious destructive change the Coordinator does not merge (issue #41): it waits for the person. */
   stop?: MergeStop | null;
+  /**
+   * True when the merge stopped because GitHub finds conflicts between the pull request, still at the head Trama pushed,
+   * and its base: the Coordinator realigns the candidate's branch and publishes it again, the person has nothing to merge.
+   */
+  baseConflict?: boolean;
 }
 
 /** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */
@@ -1728,6 +1768,12 @@ export interface ProjectDocument {
   delegations?: FullDelegation[];
   /** The choices the Coordinator made with the full delegation (issue #423); absent in documents written before. */
   delegatedChoices?: DelegatedChoice[];
+  /**
+   * When the person left this project: Trama closed, or they switched to another project, or earlier when they had
+   * already left the window (issue #423). Read and cleared when the project opens again, for the recap of their return.
+   * Absent while they are in it, and in documents written before.
+   */
+  personLeftAt?: string | null;
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
@@ -1776,6 +1822,8 @@ export interface ProjectDocument {
   audits?: FocusAudit[];
   /** The candidate gates (W10); absent until the first candidate is reviewed. */
   gates?: CandidateGate[];
+  /** The reviewers' findings the Coordinator overruled (ADR 0023); absent until the first. */
+  overruledFindings?: OverruledFinding[];
   /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
   continuousWork?: ContinuousWorkRecord;
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
@@ -1966,7 +2014,8 @@ export interface AutonomousStep {
 }
 
 /** A technical block the Coordinator resolves by itself within the mandate (A06, Q3). */
-export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment";
+/** A technical block the Coordinator resolves by itself; "reviewLoop" is a review that stopped the same work twice (ADR 0023). */
+export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment" | "reviewLoop";
 
 export interface ProjectSettings {
   /** Developers at work at the same time before squads (W08); read as the squads' limit of developers when that is absent. */
@@ -2111,6 +2160,32 @@ export interface GateFinding {
   detail: string;
   /** The file it is about, with the line when known; null when it is about the whole diff. */
   file: string | null;
+  /**
+   * The Coordinator already overruled this finding with its reason and the Pact decisions it cites: it was blocking and
+   * is advisory now. Absent on a finding nobody overruled.
+   */
+  overruled?: { findingId: string; reason: string; decisionIds: string[] } | null;
+  /** The Pact decision the figure says the finding asks the work to go against; such a finding is advisory. */
+  against?: string;
+}
+
+/**
+ * A reviewer's finding the Coordinator overruled, with the reason and the Pact decisions it cites: the same figure's
+ * finding on the same file (or, without a file, with the same title) no longer blocks the same work, and the reviewers
+ * read it as already decided. Trama's own evidence (a red check, a regression, a secret) is never overruled.
+ */
+export interface OverruledFinding {
+  id: string;
+  role: GateRole;
+  title: string;
+  /** The file without the line; null when the finding named none. */
+  file: string | null;
+  reason: string;
+  decisionIds: string[];
+  /** The work it belongs to: the assignments of its lineage when it was overruled. */
+  assignmentIds: string[];
+  candidateId: string;
+  at: string;
 }
 
 /** One figure of the gate, reviewing the diff in a session of its own. */
@@ -2156,9 +2231,14 @@ export interface CandidateGate {
   /**
    * The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. `held`
    * is set when the work was blocked too many times in a row (issue #389): Trama does not resume it by itself, the
-   * person decides how to go on.
+   * Coordinator settles the disagreement (ADR 0023).
    */
   returned: { assignmentId: string; at: string; waiting: string | null; held?: boolean } | null;
+  /**
+   * The Coordinator settled the disagreement on this blocked gate (ADR 0023): with the reviewers, the developer resumes
+   * with the findings as its decision; with the developer, the reviewers' findings are overruled and the gate passes.
+   */
+  settled?: { side: "findings" | "developer"; reason: string; doubt: string | null; at: string } | null;
   failure: string | null;
   startedAt: string;
   updatedAt: string;

@@ -7,6 +7,7 @@ import { activityLog } from "@shared/activity";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
+import { workState } from "./core/workPhase";
 import { translator } from "@shared/i18n";
 
 const t = translator("it");
@@ -113,6 +114,9 @@ describe("merge with the green light, interface candidates held for the person (
     const first = document.candidates[0]!;
     expect(first.changedFiles).toEqual(["NOTE.md"]);
     await until(() => Boolean(first.pullRequest?.mergedAt));
+    // Merged work leaves its working copy, so copies do not pile up: the branch is on the remote.
+    await until(() => Boolean(plain.workspaceRemovedAt));
+    expect(existsSync(plain.workspace!.worktreeRoot)).toBe(false);
     expect(first.humanApproval).toBeNull();
     expect(first.pullRequest).toMatchObject({ number: 21, mergedBy: "coordinator", branch: plain.workspace!.branch });
     const pushed = (await git(["rev-parse", `refs/heads/${plain.workspace!.branch}`], remote)).trim();
@@ -250,7 +254,7 @@ async function openShop(env: Record<string, string> = {}) {
   const ghCalls = () => readFileSync(ghLog!, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
   const merges = () => ghCalls().filter((c) => c.includes("PUT") && c.some((a) => a.endsWith("/merge")));
   const titles = () => document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
-  return { document, candidateOf, merges, titles, waitingKeys: () => (controller!.snapshot.project!.waiting ?? []).map((w) => w.key) };
+  return { repo, document, candidateOf, merges, titles, waitingKeys: () => (controller!.snapshot.project!.waiting ?? []).map((w) => w.key) };
 }
 
 describe("merge by mandate without faking the human review (issue #41)", () => {
@@ -279,6 +283,37 @@ describe("merge by mandate without faking the human review (issue #41)", () => {
     expect(candidate.merge!.detail).toMatch(/altro lavoro/);
     expect(candidate.pullRequest?.mergedAt ?? null).toBeNull();
     expect(shop.merges()).toHaveLength(0);
+  }, 60_000);
+
+  it("does not open a pull request that would conflict with its base branch as it moved on the remote (negozio, pull request #25)", async () => {
+    const shop = await openShop();
+    // The project's branch follows its copy on a remote Trama can fetch; the person pushes there from another clone.
+    const upstream = await mkdtemp(join(tmpdir(), "trama-upstream-"));
+    await git(["init", "--bare", "-b", "main"], upstream, false);
+    await git(["remote", "add", "upstream", upstream], shop.repo, false);
+    await git(["push", "-q", "-u", "upstream", "main"], shop.repo, false);
+    const ada = findSpecialist(shop.document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    await until(() => ada.assignments.length > 0 && ada.assignments.at(-1)!.status === "completed");
+    const assignment = ada.assignments.at(-1)!;
+    const other = await mkdtemp(join(tmpdir(), "trama-other-"));
+    await git(["clone", "-q", upstream, other], tmpdir(), false);
+    await writeFile(join(other, "NOTE.md"), "La nota scritta dalla persona su GitHub\n");
+    await git(["add", "NOTE.md"], other, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "docs: nota della persona"], other, false);
+    await git(["push", "-q", "origin", "HEAD:main"], other, false);
+
+    await controller!.send(`[candidato:${assignment.id}:${shop.document.decisions[0]!.id}]`, null, null, null);
+    const candidate = shop.document.candidates.at(-1)!;
+    await until(() => (shop.document.conflicts ?? []).some((c) => c.candidateId === candidate.id && c.classification === "conflict"));
+    const conflict = shop.document.conflicts!.find((c) => c.candidateId === candidate.id && c.classification === "conflict")!;
+    expect(conflict).toMatchObject({ references: ["main"], conflictingFiles: ["NOTE.md"] });
+    await until(() => candidate.merge?.status === "failed");
+    // Nothing reached GitHub: no pull request, no merge. The conflict goes to the Coordinator, not to the person.
+    expect(candidate.pullRequest ?? null).toBeNull();
+    expect(shop.merges()).toHaveLength(0);
+    expect(controller!.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => b.code)).toContain("REMOTE_CONFLICT");
+    expect(workState(shop.document, assignment.requestId!)).toMatchObject({ phase: "blocked", block: "worktreeConflict" });
   }, 60_000);
 
   it("stops a candidate that deletes a file for the person, and merges it on their ok as their act", async () => {

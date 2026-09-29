@@ -59,7 +59,7 @@ describe("AppStorage", () => {
     recordWorkspace(document, first.id, { worktreeRoot: "/w/1", branch: "trama/ada-1", baseSHA: "base" } as never);
     recordThread(document, first.id, "thread-1");
     beginTurn(document, first.id, "t1", "gpt-5.5");
-    requestStop(document, "Ada", "Persona", "Cambio di piano");
+    requestStop(document, "Ada", "person", "Cambio di piano");
     endTurn(document, first.id, "t1", { kind: "interrupted" });
     const review = { snapshotId: "snap", baseSHA: "base", diff: "+nota   ", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] };
     const candidate = declareCandidate(document, { assignmentId: first.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] }, review);

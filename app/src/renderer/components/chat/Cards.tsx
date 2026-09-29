@@ -800,13 +800,19 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   );
 }
 
-export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
+/**
+ * An assignment's card. In the chat it shows everything; on the person's page (`fold`, critique of 29 September 2026)
+ * the page's summary already says what the work is and what holds it up, so the card keeps its title, its state, the
+ * questions and its actions, and the rest waits under "Dettaglio dell'incarico".
+ */
+export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: string; fold?: boolean }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const record = useRecord(assignmentId);
   const specialist = project.document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId));
   const assignment = specialist?.assignments.find((a) => a.id === assignmentId);
   const [showResult, setShowResult] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
   const setInspector = useUi((s) => s.setInspector);
   if (!specialist || !assignment) return null;
   const goal = findGoal(project.document, assignment.goalId);
@@ -818,22 +824,14 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const pendingAsk = assignment.questions?.find((q) => !q.resumedAt);
   const answeredPause = assignment.status === "paused" && pendingAsk !== undefined && developerQuestionState(pendingAsk) === "answered";
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
-  return (
-    <CardFrame
-      icon={<IconBriefcase stroke={1.8} />}
-      title={record ? asTitle(record.label) : t("chat.card.assignment.title")}
-      hint={assignment.id}
-      aside={
-        <span className="flex items-center gap-1.5">
-          {active ? <Spinner /> : null}
-          <Badge tone={status.tone}>{status.label}</Badge>
-        </span>
-      }
-    >
-      <Field label={t("chat.card.assignment.specialist")}>
-        <AgentName agent={specialist} size={32} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
-      </Field>
-      <Field label={t("chat.card.assignment.objective")}>{assignment.objective}</Field>
+  const who = (
+    <Field label={t("chat.card.assignment.specialist")}>
+      <AgentName agent={specialist} size={32} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
+    </Field>
+  );
+  const objective = <Field label={t("chat.card.assignment.objective")}>{assignment.objective}</Field>;
+  const contract = (
+    <>
       {assignment.selfPicked ? (
         <Field label={t("chat.card.assignment.picked")}>
           <span data-testid="assignment-self-picked">{t("chat.card.assignment.selfPicked")}</span>
@@ -856,6 +854,10 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           </button>
         </Field>
       ) : null}
+    </>
+  );
+  const where = (
+    <>
       <Field label={t("chat.card.assignment.providerAndModel")}>
         {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
@@ -882,39 +884,95 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">
-        <ReferenceText text={assignmentLine(t, project.document, assignment)} />
-      </p>
-      {assignment.failure ? <Field label={t("chat.card.error")}>{readableFailure(t, assignment.failure)}</Field> : null}
-      {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
-      {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
-      <ThreadLinks assignmentId={assignment.id} />
-      {assignment.result ? (
-        <div className="mt-2">
-          <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
-            {t("chat.card.assignment.result")} <IconChevronRight className={cn("size-3.5 transition-transform", showResult && "rotate-90")} />
+    </>
+  );
+  const line = (
+    <p className="mt-2 text-ui-sm text-muted-foreground">
+      <ReferenceText text={assignmentLine(t, project.document, assignment)} />
+    </p>
+  );
+  const failure = assignment.failure ? <Field label={t("chat.card.error")}>{readableFailure(t, assignment.failure)}</Field> : null;
+  const report = assignment.report !== undefined ? <ReportField report={assignment.report} /> : null;
+  const questions = assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null;
+  const result = assignment.result ? (
+    <div className="mt-2">
+      <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
+        {t("chat.card.assignment.result")} <IconChevronRight className={cn("size-3.5 transition-transform", showResult && "rotate-90")} />
+      </button>
+      {showResult ? (
+        <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
+          <ChatMarkdown text={assignment.result} plain />
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+  const actions =
+    isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
+      <div className="cta-row mt-3">
+        <PlaceActions specialist={specialist} assignment={assignment} />
+        {active ? (
+          <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
+            {t("chat.card.assignment.stop")}
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => void act("assignment:resume", { assignmentId })}>
+            {t("chat.card.assignment.resume")}
+          </Button>
+        )}
+      </div>
+    ) : null;
+  return (
+    <CardFrame
+      icon={<IconBriefcase stroke={1.8} />}
+      title={record ? asTitle(record.label) : t("chat.card.assignment.title")}
+      hint={assignment.id}
+      aside={
+        <span className="flex items-center gap-1.5">
+          {active ? <Spinner /> : null}
+          <Badge tone={status.tone}>{status.label}</Badge>
+        </span>
+      }
+    >
+      {fold ? (
+        <>
+          {questions}
+          <button
+            type="button"
+            aria-expanded={showDetail}
+            data-testid="assignment-detail-toggle"
+            className="mt-2 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+            onClick={() => setShowDetail(!showDetail)}
+          >
+            {t("chat.card.assignment.detail")} <IconChevronRight className={cn("size-3.5 transition-transform", showDetail && "rotate-90")} />
           </button>
-          {showResult ? (
-            <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
-              <ChatMarkdown text={assignment.result} plain />
+          {showDetail ? (
+            <div data-testid="assignment-detail">
+              {objective}
+              {contract}
+              {where}
+              {line}
+              {failure}
+              {report}
+              <ThreadLinks assignmentId={assignment.id} />
+              {result}
             </div>
           ) : null}
-        </div>
-      ) : null}
-      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
-        <div className="cta-row mt-3">
-          <PlaceActions specialist={specialist} assignment={assignment} />
-          {active ? (
-            <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
-              {t("chat.card.assignment.stop")}
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => void act("assignment:resume", { assignmentId })}>
-              {t("chat.card.assignment.resume")}
-            </Button>
-          )}
-        </div>
-      ) : null}
+        </>
+      ) : (
+        <>
+          {who}
+          {objective}
+          {contract}
+          {where}
+          {line}
+          {failure}
+          {report}
+          {questions}
+          <ThreadLinks assignmentId={assignment.id} />
+          {result}
+        </>
+      )}
+      {actions}
     </CardFrame>
   );
 }
@@ -1131,15 +1189,21 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
       </Field>
       <Field label={t("chat.card.contract.decisions")}>
         {relied.length ? (
-          relied.map(([id, version]) => {
-            const current = decisions.find((d) => d.id === id);
-            return (
-              <span key={id}>
-                <DecisionLink id={id} version={version} />
-                {current && current.version !== version ? <span className="mr-2 text-ui-sm text-warning">{t("chat.card.contract.nowVersion", { version: current.version })}</span> : null}
-              </span>
-            );
-          })
+          // One decision per line (critique of 29 September 2026): a row of links ran into each other.
+          <ul className="space-y-0.5" data-testid="contract-decisions">
+            {relied.map(([id, version]) => {
+              const current = decisions.find((d) => d.id === id);
+              return (
+                <li key={id} className="flex min-w-0 items-baseline gap-2" data-testid="contract-decision">
+                  <IconRosetteDiscountCheck className="size-3 shrink-0 translate-y-0.5 text-muted-foreground" stroke={1.8} />
+                  <span className="min-w-0">
+                    <DecisionLink id={id} version={version} />
+                    {current && current.version !== version ? <span className="text-ui-sm text-warning">{t("chat.card.contract.nowVersion", { version: current.version })}</span> : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <span className="text-ui-sm text-muted-foreground">{t("chat.card.noneFeminine")}</span>
         )}

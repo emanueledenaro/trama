@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { DelegatedChoice, FullDelegation, GitHubIssue, ProjectDocument } from "@shared/domain";
+import type { DelegatedChoice, FullDelegation, GitHubIssue, MandateRequest, ProjectDocument, ProjectGoal } from "@shared/domain";
+import { pendingMandateRequest } from "@shared/domain";
 import { activeDelegation } from "@shared/delegation";
+import { workingGoals } from "@shared/goals";
+import { updateGoal } from "./goals";
 import { shortId } from "@shared/ids";
 import { t } from "./personLanguage";
 import { DELEGABLE_ACTIONS } from "@shared/labels";
+import { resolveMandateRequest } from "./pact";
 import { findPersonRequest, PersonRequestError } from "./personRequest";
 
 export { activeDelegation } from "@shared/delegation";
@@ -80,6 +84,21 @@ export function requireDelegation(document: ProjectDocument): FullDelegation {
   return current;
 }
 
+/**
+ * The goals the Coordinator proposed before the delegation, which waited for the person's yes (issue #423): with the
+ * delegation they open, as a goal proposed under it does, each recorded as a choice for the person to review. Returns
+ * the goals opened.
+ */
+export function openProposedGoals(document: ProjectDocument, now = new Date()): ProjectGoal[] {
+  requireDelegation(document);
+  const proposed = workingGoals(document).filter((g) => g.status === "proposed");
+  for (const goal of proposed) {
+    updateGoal(document, goal.id, { status: "open" }, now);
+    recordChoice(document, { kind: "goal", subject: goal.title, choice: goal.outcome, targetId: goal.id }, now);
+  }
+  return proposed;
+}
+
 /** Records a choice the Coordinator made with the delegation, and the doubt it had, for the person to review. */
 export function recordChoice(
   document: ProjectDocument,
@@ -117,9 +136,26 @@ export function markChoiceSeen(document: ProjectDocument, id: string, now = new 
 export const choicesToReview = (document: Pick<ProjectDocument, "delegatedChoices">): DelegatedChoice[] =>
   (document.delegatedChoices ?? []).filter((c) => !c.seenAt);
 
+/** How many takeTicket turns an issue gets while none of them turns it into work: then the next issue goes first. */
+export const TICKET_ATTEMPTS = 3;
+
+/** The takeTicket turns that took issue `number`. */
+const ticketTurns = (document: ProjectDocument, number: number) => document.requests.filter((r) => r.step?.move === "takeTicket" && r.step.issue === number);
+
+/**
+ * Whether issue `number` became work: a plan or an assignment that names it, or one that a takeTicket turn for it
+ * started. Pure.
+ */
+export function ticketWorked(document: ProjectDocument, number: number): boolean {
+  const turns = new Set(ticketTurns(document, number).map((r) => r.id));
+  const started = (work: { issueNumber: number | null; requestId: string | null }) => work.issueNumber === number || (work.requestId !== null && turns.has(work.requestId));
+  return document.plans.some(started) || document.team.specialists.some((s) => s.assignments.some(started));
+}
+
 /**
  * The next open issue to take with "fai tutti i ticket": one with clear criteria (the `ready-for-agent` label), not
- * already worked on by a request, a plan or an assignment, nor taken before with the delegation; the oldest first.
+ * already worked on by a request, a plan or an assignment, nor taken before with the delegation; the oldest first. An
+ * issue whose takeTicket turns made no work, as after a provider error, is taken again, TICKET_ATTEMPTS times at most.
  * Null when the delegation does not cover the tickets or none is left. Pure.
  */
 export function nextTicket(document: ProjectDocument, issues: GitHubIssue[]): GitHubIssue | null {
@@ -127,7 +163,13 @@ export function nextTicket(document: ProjectDocument, issues: GitHubIssue[]): Gi
   const taken = new Set<number>();
   for (const plan of document.plans) if (plan.issueNumber) taken.add(plan.issueNumber);
   for (const assignment of document.team.specialists.flatMap((s) => s.assignments)) if (assignment.issueNumber) taken.add(assignment.issueNumber);
-  for (const choice of document.delegatedChoices ?? []) if (choice.kind === "ticket" && choice.targetId) taken.add(Number(choice.targetId));
+  for (const choice of document.delegatedChoices ?? []) {
+    if (choice.kind !== "ticket" || !choice.targetId) continue;
+    const number = Number(choice.targetId);
+    const turns = ticketTurns(document, number).length;
+    // A ticket taken before the turns named their issue stays taken.
+    if (!turns || turns >= TICKET_ATTEMPTS || ticketWorked(document, number)) taken.add(number);
+  }
   return (
     issues
       .filter((i) => i.state === "open" && i.labels.some((l) => l.toLowerCase() === READY_LABEL) && !taken.has(i.number))
@@ -150,6 +192,45 @@ export function mandateForDelegation(document: ProjectDocument, moduleIds: strin
     authorizedActions: [...DELEGABLE_ACTIONS],
     limits: mandate?.status === "granted" ? mandate.limits : [],
   };
+}
+
+/**
+ * The mandate that covers the modules the project gained after the full delegation was given (issue #423), as a folder
+ * the work created, or null. The delegation brings a mandate over every module; one that appears later is covered too,
+ * with the same actions. A module that a version since the delegation knew stays as the person left it, so what they
+ * narrowed from the Mandate view stays narrowed; a mandate they revoked stays revoked. Pure.
+ */
+export function mandateForNewModules(document: ProjectDocument, moduleIds: string[]) {
+  const delegation = activeDelegation(document);
+  const mandate = document.mandate;
+  if (!delegation || mandate?.status !== "granted") return null;
+  const versions = [...mandate.history, mandate];
+  // The version in force when the delegation came, and every one since.
+  const known = [versions.filter((v) => v.grantedAt < delegation.grantedAt).at(-1), ...versions.filter((v) => v.grantedAt >= delegation.grantedAt)];
+  const seen = new Set(known.flatMap((v) => (v ? [...v.scopeModuleIds, ...(v.restriction?.removedModuleIds ?? [])] : [])));
+  const added = moduleIds.filter((id) => !seen.has(id));
+  if (!added.length) return null;
+  return {
+    objectives: mandate.objectives,
+    priorities: mandate.priorities,
+    scopeModuleIds: [...mandate.scopeModuleIds, ...added],
+    authorizedActions: mandate.authorizedActions,
+    limits: mandate.limits,
+  };
+}
+
+/**
+ * Under the full delegation, the pending mandate request that the mandate in force already covers waits for nobody
+ * (ADR 0022): it is granted with that version, as when the delegation itself widened the mandate. A request for more
+ * than the mandate has, as for what the person took away since, stays theirs. Returns the request answered, or null.
+ */
+export function settleCoveredMandateRequest(document: ProjectDocument, now = new Date()): MandateRequest | null {
+  const mandate = document.mandate;
+  const pending = pendingMandateRequest(document);
+  if (!activeDelegation(document) || mandate?.status !== "granted" || !pending) return null;
+  const covered =
+    pending.scopeModuleIds.every((id) => mandate.scopeModuleIds.includes(id)) && pending.authorizedActions.every((a) => mandate.authorizedActions.includes(a));
+  return covered ? resolveMandateRequest(document, pending.id, "granted", mandate.version, now) : null;
 }
 
 export { PersonRequestError };

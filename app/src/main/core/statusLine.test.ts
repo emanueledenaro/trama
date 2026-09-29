@@ -6,6 +6,8 @@ import { emptyDocument } from "./document";
 import { createGoal } from "./goals";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { setPaused } from "./continuousWork";
+import { grantDelegation, revokeDelegation } from "./fullDelegation";
+import { translate } from "@shared/i18n";
 import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON, PAUSED_SENTENCE, statusLine } from "./statusLine";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -152,6 +154,29 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     expect(line.action).toBeNull();
   });
 
+  it("says continuous work is off when the Coordinator's own next move would never start by itself", () => {
+    const document = confirmed();
+    request(document, "r3");
+    slicedPlan(document, "r3");
+    team(document);
+    // Off in Impostazioni: not "the next step is mine", but that the Coordinator waits for a message, with the move.
+    const off = statusLine(document, null, null, new Date(), false);
+    expect(off).toMatchObject({
+      state: "waiting",
+      text: "Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.",
+      reason: "Acceso, il prossimo passo sarebbe mio: assegno S1.",
+      continuousWorkOff: true,
+    });
+    // On, the line is the usual one and carries no flag.
+    const on = statusLine(document, null, null, new Date(), true);
+    expect(on).toMatchObject({ state: "next", text: "Il prossimo passo è mio: assegno S1." });
+    expect(on.continuousWorkOff).toBeUndefined();
+    // A move that runs is said as it is: continuous work only holds the moves that have not started.
+    const assigning = request(document, "r4", { state: "running", step: { move: "assignWork", by: "trama" } });
+    expect(statusLine(document, assigning.id, null, new Date(), false)).toMatchObject({ state: "working", text: "Sto assegnando S1." });
+    expect(statusLine(document, assigning.id, null, new Date(), false).continuousWorkOff).toBeUndefined();
+  });
+
   it("changes with the move in progress and the next step", () => {
     const document = confirmed();
     request(document, "r3");
@@ -268,6 +293,35 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     expect(line.action).toMatchObject({ move: "reviewCandidate", actor: "person", targetId: stale.id });
   });
 
+  it("does not say it waits for the person when a verified candidate waits only for the Coordinator's green light", () => {
+    const document = confirmed();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    request(document, "r3");
+    team(document);
+    const luca = assign(
+      document,
+      { specialist: "Luca", kind: "agreedTicket", objective: "Carrello", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-6-luna", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Scrivi" },
+      document.mandate!.version,
+      "r3",
+      at(2),
+    );
+    endTurn(document, luca.id, null, { kind: "completed", text: "Fatto" });
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: luca.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-1", baseSHA: "base", diff: "+x", changedFiles: ["Sources/Orders/Cart.swift"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    );
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: candidate.snapshotId });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Cancello superato" });
+    expect(statusLine(document, null).text).toBe("Il prossimo passo è mio: do il via libera al candidato.");
+    setPersonLanguage("en");
+    try {
+      expect(statusLine(document, null).text).toBe("The next step is mine: give the candidate the green light.");
+    } finally {
+      setPersonLanguage("it");
+    }
+  });
+
   it("says the work is paused, keeps what still ends, and keeps the person's button (A05)", () => {
     const document = confirmed();
     request(document, "r3");
@@ -287,8 +341,47 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
   });
 });
 
+describe("statusLine with the full delegation (issue #423)", () => {
+  function delegate(document: ProjectDocument) {
+    const text = "Fai tutto tu, io vado a dormire";
+    document.events.push({ id: "E-person", sequence: document.events.length + 1, origin: "person", requestId: null, createdAt: at(0).toISOString(), content: { type: "personMessage", text, moduleId: null, moduleName: null, composer: true } });
+    grantDelegation(document, { quote: text, tickets: false }, at(0));
+  }
+
+  it("says what the Coordinator does next instead of waiting for the person on a mandate request", () => {
+    const document = confirmed();
+    delegate(document);
+    createMandateRequest(document, { requestId: "r2", reason: "Serve anche docs/", objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(statusLine(document, null)).toMatchObject({ state: "next", text: "Il prossimo passo è mio: preparo il piano." });
+    // Without the delegation the request is the person's, and it holds the work.
+    revokeDelegation(document, { kind: "view" });
+    expect(statusLine(document, null)).toMatchObject({ state: "waiting", text: "Aspetto te per andare avanti." });
+  });
+
+  it("says it decides with the delegation what waits for the person, and does not wait for them while it decides", () => {
+    const document = emptyDocument("p");
+    delegate(document);
+    request(document, "r1");
+    grill(document, "r1");
+    mandate(document);
+    expect(statusLine(document, null)).toMatchObject({ state: "next", text: "Il prossimo passo è mio: decido con la tua delega." });
+    // The person can still answer: the card's button stays.
+    expect(statusLine(document, null).action).toMatchObject({ move: "answerQuestions" });
+    const deciding = request(document, "r2", { state: "running", step: { move: "decideWithDelegation", by: "trama" } });
+    expect(statusLine(document, deciding.id).text).toBe("Sto decidendo con la tua delega.");
+  });
+});
+
 describe("statusLine in the person's language (issue #301)", () => {
   afterEach(() => setPersonLanguage("it"));
+
+  it("never writes the subject twice when the next move follows what runs now", () => {
+    const keys = ["main.statusLine.next.settleReview", "main.statusLine.next.clearCandidate", "delegation.move.decide.next", "delegation.move.ticket.next"] as const;
+    for (const key of keys) {
+      const line = translate("en", "main.statusLine.nowThen", { now: "Checking S1", next: translate("en", key) });
+      expect(line).not.toMatch(/\bI I\b/);
+    }
+  });
 
   it("writes the line in English", () => {
     setPersonLanguage("en");

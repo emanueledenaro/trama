@@ -30,6 +30,7 @@ const KIND_KEYS: Record<DelegatedChoice["kind"], MessageKey> = {
   interfaceCandidate: "delegation.kind.interfaceCandidate",
   goal: "delegation.kind.goal",
   ticket: "delegation.kind.ticket",
+  route: "delegation.kind.route",
   doubt: "delegation.kind.doubt",
 };
 

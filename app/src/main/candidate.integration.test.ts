@@ -19,6 +19,7 @@ afterEach(async () => {
   await controller?.stop();
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
+  delete process.env.FAKE_CODEX_AUTOMATIC;
 });
 
 async function until(check: () => boolean, timeout = 10_000): Promise<void> {
@@ -93,10 +94,12 @@ describe("verified candidate in the chat (V05)", () => {
     expect(document.events.some((e) => e.content.type === "coordinatorText" && e.content.text.includes("candidate_not_verified"))).toBe(true);
     expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "candidate" && e.content.referenceId === failed.id)).toBe(true);
 
-    // The correction is new work: a new candidate with new evidence; the failed one keeps its evidence.
+    // The correction is new work: a new candidate with new evidence; the failed one keeps its evidence. It goes on in
+    // the working copy of the work it corrects, where the work done so far is.
     await controller.send("[assegna] [correggi-spazi]", null, null, null);
     const fix = specialist.assignments[1]!;
     await until(() => fix.status === "completed");
+    expect(fix.workspace!.worktreeRoot).toBe(work.workspace!.worktreeRoot);
     await controller.send(`[candidato:${fix.id}:${decision.id}:tutte]`, null, null, null);
     const corrected = document.candidates[1]!;
     expect(corrected.id).not.toBe(failed.id);
@@ -225,6 +228,89 @@ describe("the checks after an ended assignment (issue #204)", () => {
     const again = () => document.requests.filter((r) => r.step?.by === "trama");
     await until(() => again().length === 2 && again()[1]!.state === "completed" && project.runningRequestId === null, 20_000);
     expect(again()[1]!.step?.stalled).toBe(reason);
+  }, 60_000);
+
+  /**
+   * The sequence of ui-check (V04, then issue #204): with continuous work off the person stops Ada's work and resumes
+   * it, and it ends without a candidate. Turned back on, continuous work runs a round at once and starts its checks.
+   * FAKE_CODEX_AUTOMATIC=wait keeps that move running, as in ui-check: the person's next message sets it aside (ADR 0023).
+   */
+  it("checks the work the person resumed as soon as continuous work is back on, and the next work's own checks follow", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "wait";
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    controller = new TramaController(await mkdtemp(join(tmpdir(), "trama-data-")), {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.updateSettings({ continuousWork: false });
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const project = controller.snapshot.project!;
+    const document = project.document;
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller.send("[chiedi-decisione]", null, null, null);
+    await controller.answerDecision(document.decisionRequests[0]!.id, 0, null);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Documentare l'annullamento degli ordini"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree", "integrateCandidate"],
+      limits: [],
+    });
+    await until(() => project.runningRequestId === null, 20_000);
+    const ada = findSpecialist(document, "Ada")!;
+    await controller.send("[assegna] [lento] [con-decisioni]", null, null, null);
+    const resumed = ada.assignments[0]!;
+    await until(() => resumed.status === "running", 20_000);
+    await controller.stopSpecialistWork(resumed.id);
+    await until(() => resumed.status === "stopped", 20_000);
+    await controller.resumeSpecialistWork(resumed.id);
+    await until(() => resumed.status === "completed" && project.runningRequestId === null, 20_000);
+    const automatic = () => document.requests.filter((r) => r.step?.by === "trama" && r.step.move === "verifyCandidate");
+    expect(automatic()).toEqual([]);
+
+    await controller.updateSettings({ continuousWork: true });
+    await until(() => automatic().length === 1 && project.runningRequestId === automatic()[0]!.id);
+    // Started by Trama, from the round or from the end of the work that waited while continuous work was off.
+    expect(automatic()[0]!.step).toMatchObject({ move: "verifyCandidate", by: "trama" });
+    // The person writes while that move runs (ADR 0023): the move gives way at once, without a stop of theirs, and the
+    // message runs and becomes Ada's second assignment, a work of its own.
+    const setAside = automatic()[0]!;
+    await controller.send("[assegna] [luna]", null, null, null);
+    await until(() => setAside.state === "interrupted", 20_000);
+    await until(() => ada.assignments.length === 2 && ada.assignments[1]!.status === "completed", 20_000);
+    expect(project.queuedMessages).toEqual([]);
+    // The move's line says it was set aside for the person's message; it is no stop of theirs, and nothing it holds stops.
+    expect(setAside.step?.setAside).toBe("Messa da parte per il tuo messaggio: Trama la riprende dopo.");
+    expect(activityLog(t, document.requests, document.events).find((e) => e.requestId === setAside.id)).toMatchObject({
+      outcome: "setAside",
+      detail: "Messa da parte per il tuo messaggio: Trama la riprende dopo.",
+    });
+    expect(resumed.status).toBe("completed");
+    const luna = ada.assignments[1]!;
+    expect(luna.objective).toContain("[luna]");
+    expect(luna.replaces).toBeUndefined();
+    expect(luna.workspace!.worktreeRoot).not.toBe(resumed.workspace!.worktreeRoot);
+    // Its end starts its own checks, which stall on the assignment id as in the live run, naming only this work.
+    // The first automatic move, the resumed work's checks, may also come from an ended assignment: take the one after it.
+    const ended = () => automatic().slice(1).find((r) => r.step?.trigger === "assignmentEnded");
+    await until(() => ended()?.state === "completed" && project.runningRequestId === null, 30_000);
+    expect(ended()!.step?.stalled).toBe(`La mossa automatica non è riuscita: l'incarico ${luna.id} è concluso ma il suo candidato non è stato dichiarato.`);
+    await until(() => Boolean(project.nextSteps[ended()!.id]));
+    expect(project.nextSteps[ended()!.id]).toMatchObject({ move: "verifyCandidate", label: "Esegui le verifiche" });
   }, 60_000);
 
   it("declares the candidate and verifies it when the Coordinator follows what verify_candidate answers", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EventContent, EventOrigin, GitHubIssue, ProjectDocument } from "@shared/domain";
+import type { EventContent, EventOrigin, GitHubIssue, MandateAction, ProjectDocument } from "@shared/domain";
 import { delegationLine, keepsAwake } from "@shared/delegation";
 import { emptyDocument } from "./document";
 import {
@@ -8,13 +8,17 @@ import {
   DelegationError,
   grantDelegation,
   mandateForDelegation,
+  mandateForNewModules,
   markChoiceSeen,
   nextTicket,
   recordChoice,
   requireDelegation,
   revokeDelegation,
+  settleCoveredMandateRequest,
 } from "./fullDelegation";
+import { createMandateRequest, grantMandate, revokeMandate } from "./pact";
 import { PersonRequestError } from "./personRequest";
+import { restrictMandate } from "./projectMandate";
 
 const AT = "2026-09-29T01:00:00.000Z";
 const LATER = "2026-09-29T02:00:00.000Z";
@@ -109,6 +113,27 @@ describe("full delegation (issue #423)", () => {
     expect(nextTicket(document, issues)).toBeNull();
   });
 
+  it("takes an issue again when the turn that took it made no work, three times at most", () => {
+    const document = emptyDocument("p");
+    add(document, "person", typed("Fai tutti i ticket"));
+    grantDelegation(document, { quote: "fai tutti i ticket", tickets: true }, new Date(AT));
+    const issues = [issue(9, ["ready-for-agent"]), issue(12, ["ready-for-agent"])];
+    const attempt = (id: string, state: "completed" | "failed") =>
+      document.requests.push({ id, text: "Prendi la #9", moduleId: null, state, model: null, effort: null, createdAt: AT, completedAt: AT, failure: null, goalId: null, step: { move: "takeTicket", by: "trama", issue: 9 } });
+    recordChoice(document, { kind: "ticket", subject: "Issue #9", choice: "Presa", targetId: "9" });
+    // The turn that took #9 failed before any plan: #9 is not lost, it is still the next one.
+    attempt("t1", "failed");
+    expect(nextTicket(document, issues)?.number).toBe(9);
+    // Its work started in that turn: the next one is #12, never #9 again.
+    document.plans.push({ requestId: "t1", issueNumber: null } as never);
+    expect(nextTicket(document, issues)?.number).toBe(12);
+    document.plans = [];
+    // Three turns that made nothing: #9 gives way to the next issue.
+    attempt("t2", "completed");
+    attempt("t3", "completed");
+    expect(nextTicket(document, issues)?.number).toBe(12);
+  });
+
   it("widens the mandate to every module and action when the one in force is narrower", () => {
     const document = emptyDocument("p");
     expect(mandateForDelegation(document, ["A", "B"])).toMatchObject({ scopeModuleIds: ["A", "B"], authorizedActions: expect.arrayContaining(["plan", "integrateCandidate"]) });
@@ -117,6 +142,44 @@ describe("full delegation (issue #423)", () => {
     const widened = mandateForDelegation(document, ["A", "B"])!;
     document.mandate = { version: 2, objectives: ["o"], priorities: [], scopeModuleIds: ["A", "B"], authorizedActions: widened.authorizedActions, limits: [], grantedAt: AT, status: "granted", revocation: null, history: [] } as never;
     expect(mandateForDelegation(document, ["A", "B"])).toBeNull();
+  });
+
+  it("covers the modules the project gains after the delegation, and leaves out what the person took away since", () => {
+    const document = emptyDocument("p");
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["A"], authorizedActions: ["plan"], limits: ["l"] }, new Date(AT));
+    add(document, "person", typed("Fai tutto tu"), LATER);
+    // Without the delegation a new module waits for the person's mandate.
+    expect(mandateForNewModules(document, ["A", "B"])).toBeNull();
+    grantDelegation(document, { quote: "fai tutto tu", tickets: false }, new Date(LATER));
+    grantMandate(document, mandateForDelegation(document, ["A", "B"])!, new Date(LATER));
+    // Nothing new: the mandate the delegation brought knows every module.
+    expect(mandateForNewModules(document, ["A", "B"])).toBeNull();
+    expect(mandateForNewModules(document, ["A", "B", "C"])).toMatchObject({ objectives: ["o"], limits: ["l"], scopeModuleIds: ["A", "B", "C"], authorizedActions: document.mandate!.authorizedActions });
+
+    // The person narrows the mandate from the Mandate view: B and the merge stay out, only the new module comes in.
+    restrictMandate(document, { scopeModuleIds: ["A"], authorizedActions: ["plan", "executeInWorktree"] }, new Date(LATEST));
+    expect(mandateForNewModules(document, ["A", "B", "C"])).toMatchObject({ scopeModuleIds: ["A", "C"], authorizedActions: ["plan", "executeInWorktree"] });
+
+    // A mandate the person revoked stays revoked.
+    revokeMandate(document, "Basta così", new Date(LATEST));
+    expect(mandateForNewModules(document, ["A", "B", "C"])).toBeNull();
+  });
+
+  it("answers a mandate request the delegation's mandate covers, and leaves the person one that asks for more", () => {
+    const document = emptyDocument("p");
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["A", "B"], authorizedActions: ["plan", "executeInWorktree"], limits: [] }, new Date(AT));
+    const ask = (actions: MandateAction[]) =>
+      createMandateRequest(document, { requestId: null, reason: "Serve", objectives: ["o"], priorities: [], scopeModuleIds: ["A"], authorizedActions: actions, limits: [] });
+    ask(["plan"]);
+    // Without the delegation the request is the person's.
+    expect(settleCoveredMandateRequest(document)).toBeNull();
+    add(document, "person", typed("Fai tutto tu"), LATER);
+    grantDelegation(document, { quote: "fai tutto tu", tickets: false }, new Date(LATER));
+    expect(settleCoveredMandateRequest(document, new Date(LATEST))).toMatchObject({ resolution: { kind: "granted", version: 1 } });
+    // A request for an action the mandate does not have stays the person's.
+    const more = ask(["integrateCandidate"]);
+    expect(settleCoveredMandateRequest(document)).toBeNull();
+    expect(more.resolution).toBeNull();
   });
 
   it("says in the chat with the person's words that it does everything, and keeps the computer awake only with open work", () => {
