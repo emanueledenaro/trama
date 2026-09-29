@@ -3009,14 +3009,14 @@ await closePanels();
 await page.setViewportSize({ width: 1280, height: 820 });
 // The person drives each step here, so Trama's automatic moves (W04, checked above) stay off.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
-const candidateProject = await mkdtemp(join(tmpdir(), "trama-ui-candidato-"));
+const candidateProject = await mkdtemp(join(tmpdir(), "Negozio-ordini-"));
 await cp(resolve("resources/DemoProject"), candidateProject, { recursive: true });
 const gitIn = (...args) => execFileSync("git", ["-C", candidateProject, ...args], { stdio: "ignore" });
 gitIn("init", "-q", "-b", "main");
 gitIn("add", ".");
 gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
-await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
+await page.getByTestId("dialog-title").filter({ hasText: "Negozio-ordini" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
 // Issue #244: the project mandate waits at the opening. Here the person writes a narrower mandate of their own.
 const declinedMandate = await openWaiting("mandate");
