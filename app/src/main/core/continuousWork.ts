@@ -157,7 +157,8 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
     return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
   }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
-  const holds = (move: NextMove) => holdsWork(state, move);
+  // With the delegation, which brings the full mandate (ADR 0022), a mandate request no longer holds the work.
+  const holds = (move: NextMove) => holdsWork(state, move) && !(move === "grantMandate" && activeDelegation(document));
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
   // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).

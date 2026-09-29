@@ -743,6 +743,19 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     expect(projectMove(screen.document, "round", free)?.move.move).toBe("clearCandidate");
   });
 
+  it("does not let a mandate request hold the work while the delegation, which brings the full mandate, is in force", () => {
+    const document = delegated();
+    request(document, "r1");
+    answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+    mandate(document, ["plan", "executeInWorktree"]);
+    request(document, "r2", { step: { move: "confirmUnderstanding", by: "person" } });
+    createMandateRequest(document, { requestId: "r2", reason: "Serve anche docs/", objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(moveOf(document, "r2")).toBe("preparePlan");
+    // Without the delegation the request is the person's, and it holds the work.
+    revokeDelegation(document, { kind: "view" });
+    expect(moveOf(document, "r2")).toBeNull();
+  });
+
   it("says a ticket stalled when its turn made no work, and asks for the issue on the plan", () => {
     const document = delegated(true);
     mandate(document, ["plan"]);
