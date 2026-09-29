@@ -3540,7 +3540,10 @@ export class TramaController {
       const busy = this.continuationGuards(project).busy;
       // The person's steps the mandate lets the Coordinator take (A06) go first: they can open its next move.
       if (!busy) details.push(...this.takeDelegatedSteps(project));
-      const move = busy ? null : (this.startAutomaticMove(project, [{ requestId: null, event: "round" }]) ?? this.startTicketMove(project));
+      // The events of the work that waited for Riprendi come before the round's own retry: they are news (no work is lost).
+      const waited = busy ? [] : this.deferredWork.filter((d) => d.projectId === project.id);
+      if (waited.length) this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+      const move = busy ? null : (this.startAutomaticMove(project, [...waited, { requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;
       recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
@@ -3694,8 +3697,8 @@ export class TramaController {
   /**
    * The person pauses or resumes the continuous work of the open project (A05). In pause no automatic move, round or
    * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. The events of
-   * the work that arrive meanwhile wait: resuming weighs them first, then runs a round at once. The state is saved with
-   * the project and holds after a restart.
+   * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
+   * is saved with the project and holds after a restart.
    */
   async pauseContinuousWork(paused: boolean): Promise<void> {
     const project = this.requireProject();
@@ -3719,12 +3722,6 @@ export class TramaController {
     this.changedIn(project);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
-    // The events of the work that arrived in pause, or during the turn that ran then, come first (no work is lost).
-    if (!paused && !this.continuationGuards(project).busy) {
-      const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
-      this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
-      if (deferred.length) this.startAutomaticMove(project, deferred);
-    }
     if (!paused) await this.runRound();
   }
 

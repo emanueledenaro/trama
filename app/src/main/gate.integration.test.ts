@@ -383,7 +383,8 @@ describe("the candidate gate (W10)", () => {
     process.env.TRAMA_GATE_TURN_WAIT_MS = "300";
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     const gate = document.gates![0]!;
-    expect(gate.status).toBe("reviewing");
+    // The gate is still at work, on its checks or with the reviewers (long checks go on in the background too).
+    expect(["checking", "reviewing"]).toContain(gate.status);
     // The person pauses while the reviewers work, with continuous work on; then the gate blocks.
     await controller!.pauseContinuousWork(true);
     await controller!.updateSettings({ continuousWork: true });
