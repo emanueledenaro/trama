@@ -160,10 +160,33 @@ export function currentStateText(document: ProjectDocument, requestId: string, h
     fixedBansLine(),
     delegationRuleLine(document),
     autonomyLine(document),
+    ...branchLines(document),
     ...planLines(document, requestId),
     ...candidateLines(document, headSHA),
   ];
   return lines.join("\n");
+}
+
+/**
+ * The divergence of the project's branch, read on the branch as it is on GitHub (U02, negozio 29 September), and whose
+ * move the realignment is: the Coordinator's within the mandate, in a working copy, never the person's checkout.
+ * @model-text
+ */
+function branchLines(document: ProjectDocument): string[] {
+  const divergence = document.branchDivergence;
+  if (!divergence) return [];
+  const own = divergence.branch ?? "il branch del progetto";
+  const other = divergence.defaultBranch;
+  const conflicts = files(divergence.conflictingFiles);
+  const move = "Riallinearli tocca a te dentro il mandato, senza chiedere alla persona di risolvere i file:";
+  if (divergence.branch === other) {
+    return [
+      `Branch del progetto: la copia della persona di ${own} ha ${divergence.ahead} commit che ${own} su GitHub non ha, e GitHub ne ha ${divergence.behind} che la copia non ha; la loro unione lascia in conflitto ${conflicts}. ${move} una copia di lavoro dal branch della persona che unisce origin/${own} e risolve i conflitti, poi il candidato verificato e la pull request verso ${own}. La copia della persona non si tocca.`,
+    ];
+  }
+  return [
+    `Branch del progetto: ${own} e ${other} su GitHub sono andati in direzioni diverse (${divergence.ahead} commit solo in ${own}, ${divergence.behind} solo in ${other}); la loro unione lascia in conflitto ${conflicts}. ${move} una copia di lavoro di ${own} che unisce origin/${other} e risolve i conflitti, poi il candidato verificato e la pull request verso ${own}.`,
+  ];
 }
 
 /** @model-text */
