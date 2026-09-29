@@ -243,6 +243,25 @@ describe("independent movement (W08)", () => {
     expect(first!.assignment).toMatchObject({ provider: "claudeAgent", model: "sonnet" });
   });
 
+  it("takes the person's model for the developer, and the fallback while that cannot run (issue #455)", () => {
+    const tickets = [ticket(1, [], "Sources/Orders")];
+    const { document } = project(tickets);
+    const ada = document.team.specialists.find((s) => s.name === "Ada")!;
+    ada.chosenModel = { provider: "claudeAgent", model: "opus", effort: "high", chosenAt: at(1).toISOString() };
+    const providers = [
+      { id: "codex" as const, models: ["gpt-5.6-luna"] },
+      { id: "claudeAgent" as const, models: ["opus"] },
+    ];
+    const [chosen] = picked(pickSlices(document, input({ providers })));
+    expect(chosen!.assignment).toMatchObject({ provider: "claudeAgent", model: "opus", effort: "high" });
+
+    const other = project(tickets).document;
+    other.team.specialists.find((s) => s.name === "Ada")!.chosenModel = { provider: "claudeAgent", model: "opus", effort: "high", chosenAt: at(1).toISOString() };
+    const [fallback] = picked(pickSlices(other, input()));
+    expect(fallback!.assignment).toMatchObject({ provider: "codex", model: "gpt-5.6-luna" });
+    expect(fallback!.assignment.effort).toBeUndefined();
+  });
+
   it("keeps a developer whose work is paused on a question out of the free ones (W06)", () => {
     const tickets = [ticket(1, [], "Sources/Orders"), ticket(2, [], "Anche Sources/Orders")];
     const { document } = project(tickets);

@@ -323,6 +323,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.worktreeRemovedBranchKept": "Branch {branch} stays.",
   "main.controller.modelNotInCatalog":
     "Model {model} is not in the catalog of {provider}.",
+  "main.controller.specialistModelSetTitle": "Model of {name} chosen by the person",
+  "main.controller.specialistModelSetDetail": "{provider} {model}. It applies to the next assignments; the work in progress does not change.",
+  "main.controller.specialistModelSetDetailEffort":
+    "{provider} {model}, effort {effort}. It applies to the next assignments; the work in progress does not change.",
+  "main.controller.specialistModelClearedTitle": "Model of {name} chosen by the Coordinator again",
+  "main.controller.specialistModelClearedDetail": "For the next assignments the Coordinator chooses provider and model.",
   "main.controller.assignmentProviderChangedTitle":
     "Assignment provider changed",
   "main.controller.assignmentProviderChangedDetail":
@@ -1521,6 +1527,9 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.coordinatorTools.card.mandate": "Mandate",
   "main.coordinatorTools.card.decision": "Decision",
   "main.coordinatorTools.card.teamProposal": "Team proposal",
+  "main.coordinatorTools.personModel": "Model the person chose for this agent.",
+  "main.coordinatorTools.personModelMissing":
+    "The model the person chose for this agent is not available now: it works on the Coordinator's default model.",
   "main.coordinatorTools.card.assignment": "Assignment",
   "main.coordinatorTools.card.route": "Ask Trama route",
   "main.coordinatorTools.card.domainProposal": "Glossary and ADR",
@@ -1551,6 +1560,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.team.resumedWithAnswer": "Resumed with the answer to question {id}",
   "main.team.resumedWithFindings":
     "Resumed with the blocking findings on candidate {id}",
+  "main.team.personModelReason": "Model the person chose for this agent.",
   "main.team.providerSet": "Provider set by the person: {provider} {model}",
 
   // MARK: Pact, mandate, goals, plan, slices and candidates

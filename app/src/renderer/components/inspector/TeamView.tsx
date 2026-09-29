@@ -1,6 +1,5 @@
 import { assignmentLine, specialistLine } from "@shared/duties";
 import {
-  IconArrowLeft,
   IconCheck,
   IconChecklist,
   IconChevronDown,
@@ -19,7 +18,7 @@ import { useId, useState } from "react";
 import type { BacklogItem, BacklogReason, SquadBacklogView } from "@shared/backlog";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment, Squad } from "@shared/domain";
-import { findGoal } from "@shared/goals";
+import { chatComposer, findGoal } from "@shared/goals";
 import { LANGUAGES, type MessageKey, type Translate, translator } from "@shared/i18n";
 import { PROVIDERS } from "@shared/providers";
 import { AGENT_PALETTE, colorName } from "@shared/identity";
@@ -31,6 +30,7 @@ import { assignmentStatus, candidateStatus } from "@shared/states";
 import { type MemberSign, memberSign, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
 import { AgentAvatar, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
+import { type ModelChoice, ModelPicker } from "@/components/chat/ModelPicker";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -618,15 +618,14 @@ function squadLine(t: Translate, document: Parameters<typeof squadPart>[0], spec
 const OPEN_WORK: SpecialistAssignment["status"][] = ["preparing", "running", "stopRequested", "paused", "stopped", "failed"];
 
 /**
- * A person of the squad (issue #333, the specialist of W13): the header with the bot, the name, the role and the sign,
- * Ask and the menu with Rename and Remove; then the work now, the last result, the assignments and the conversations
- * between agents as compact rows; and closed at the bottom why it is in the squad, when it steps in, its working copy
- * and its color. Until B07 it opens in the side bar with the way back.
+ * A person of the squad (issue #333, the specialist of W13), in its editor tab: the header with the bot, the name, the
+ * role, the squad and the sign, Ask and the menu with Rename and Remove; then the work now, the settings in view (model
+ * and look, issue #455), the last result, the assignments and the conversations between agents as compact rows; and
+ * closed at the bottom why it is in the squad, when it steps in and its working copy.
  */
 export function SpecialistView({ id }: { id: string }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
-  const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -634,7 +633,6 @@ export function SpecialistView({ id }: { id: string }) {
   const [whyOpen, toggleWhy] = useFold();
   const [dutiesOpen, toggleDuties] = useFold();
   const [workspaceOpen, toggleWorkspace] = useFold();
-  const [colorOpen, toggleColor] = useFold();
   const document = project.document;
   const specialist = document.team.specialists.find((s) => s.id === id);
   if (!specialist) return <div className="p-4"><EmptyNote>{t("teams.person.missing")}</EmptyNote></div>;
@@ -642,7 +640,6 @@ export function SpecialistView({ id }: { id: string }) {
   const busy = current && ["preparing", "running", "stopRequested"].includes(current.status);
   const fixed = isFixedRole(specialist.role);
   const sign = memberSign(document, project.candidateReports, specialist);
-  const squad = squadPart(document, specialist).squad;
   const now = current && OPEN_WORK.includes(current.status) ? current : null;
   const lastResult = [...specialist.assignments].reverse().find((a) => a.status === "completed" && a.id !== now?.id) ?? null;
   const others = [...specialist.assignments].reverse().filter((a) => a.id !== now?.id && a.id !== lastResult?.id);
@@ -656,22 +653,9 @@ export function SpecialistView({ id }: { id: string }) {
   return (
     <div data-testid="specialist" data-specialist-id={specialist.id}>
       <div className="border-b border-[color:var(--app-surface-divider)] px-4 pt-3 pb-3">
-        <div className="flex min-w-0 items-center gap-1 text-ui-sm text-muted-foreground">
-          <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setInspector({ kind: "team" })}>
-            <IconArrowLeft className="size-3.5" /> {t("workbench.view.teams")}
-          </button>
-          {squad ? (
-            <>
-              <span aria-hidden className="text-muted-foreground/60">
-                ›
-              </span>
-              <span className="min-w-0 truncate">{squad.name}</span>
-            </>
-          ) : null}
-        </div>
         {/* The bot sits beside the header, so it takes no room from the name and the status; the status never shrinks.
             The id stays on hover. */}
-        <div className="mt-2 flex items-start gap-3" data-testid="specialist-header" title={specialist.id}>
+        <div className="flex items-start gap-3" data-testid="specialist-header" title={specialist.id}>
           <AgentAvatar agent={specialist} size={48} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
@@ -756,6 +740,7 @@ export function SpecialistView({ id }: { id: string }) {
       </div>
       <NowSection assignment={now} />
       {now && ["stopped", "failed"].includes(now.status) ? <AssignmentProvider assignment={now} /> : null}
+      {specialist.status !== "removed" ? <SpecialistSettings specialist={specialist} /> : null}
       {lastResult ? (
         <InspectorSection title={t("teams.person.lastResult")}>
           <div className="-mx-2" data-testid="specialist-last-result">
@@ -819,11 +804,6 @@ export function SpecialistView({ id }: { id: string }) {
               {t("teams.person.removeWorkspace")}
             </Button>
           </div>
-        </Fold>
-      ) : null}
-      {specialist.status !== "removed" ? (
-        <Fold open={colorOpen} onToggle={toggleColor} title={t("teams.person.color")}>
-          <AgentColorPicker specialist={specialist} />
         </Fold>
       ) : null}
     </div>
@@ -988,12 +968,82 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
   );
 }
 
+const SETTING_PILL =
+  "inline-flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-[color:var(--color-border-light)] px-2.5 text-ui-sm text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)]";
+
+/**
+ * The agent's settings, always in view (issue #455): the model of its next assignments, with the composer's picker,
+ * and its look. The person's model wins over the Coordinator's pick; when it cannot run now the card says so and the
+ * agent works on the Coordinator's default model.
+ */
+function SpecialistSettings({ specialist }: { specialist: Specialist }) {
+  const t = useT();
+  const project = useUi((s) => s.app?.project)!;
+  const providers = useUi((s) => s.app!.providers);
+  const chosen = specialist.chosenModel ?? null;
+  const coordinatorProvider: ProviderId = chatComposer(project.document).selectedProvider ?? project.document.coordinator.threadProvider ?? "codex";
+  const provider = chosen?.provider ?? coordinatorProvider;
+  const models = providers[provider]?.models ?? [];
+  const info = chosen ? models.find((m) => m.model === chosen.model) : undefined;
+  const connected = chosen ? isUsableAccount(providers[chosen.provider]?.account) : true;
+  const missing = Boolean(chosen && connected && models.length && !info);
+  const problem = !chosen
+    ? null
+    : !connected
+      ? t("teams.settings.providerOff", { provider: providerLabel(chosen.provider), name: specialist.name })
+      : missing
+        ? t("teams.settings.modelGone", { provider: providerLabel(chosen.provider), model: chosen.model, name: specialist.name })
+        : null;
+  const choose = (choice: ModelChoice | null) => void act("specialist:setModel", { specialistId: specialist.id, choice });
+  return (
+    <InspectorSection title={t("teams.settings.title")}>
+      <div className="flex flex-col gap-4" data-testid="specialist-settings">
+        <div data-testid="specialist-model">
+          <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.settings.model")}</h5>
+          <p className="mt-0.5 text-ui-sm text-muted-foreground">
+            {chosen ? t("teams.settings.modelNote", { name: specialist.name }) : t("teams.settings.coordinatorNote")}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <ModelPicker
+              className={SETTING_PILL}
+              selectedProvider={provider}
+              selectedModel={chosen?.model ?? null}
+              effort={chosen ? (chosen.effort ?? info?.defaultReasoningEffort ?? null) : null}
+              modelMissing={Boolean(problem)}
+              busy={false}
+              fastMode={false}
+              emptyLabel={t("teams.settings.coordinatorChooses")}
+              ariaLabel={t("teams.settings.modelLabel", { name: specialist.name })}
+              testId="specialist-model-picker"
+              onChoose={choose}
+            />
+            {chosen ? (
+              <Button size="sm" variant="ghost" data-testid="specialist-model-reset" onClick={() => choose(null)}>
+                {t("teams.settings.reset")}
+              </Button>
+            ) : null}
+          </div>
+          {problem ? (
+            <p className="mt-2 text-ui-sm text-warning" data-testid="specialist-model-problem">
+              {problem}
+            </p>
+          ) : null}
+        </div>
+        <div data-testid="specialist-look">
+          <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.settings.look")}</h5>
+          <AgentColorPicker specialist={specialist} />
+        </div>
+      </div>
+    </InspectorSection>
+  );
+}
+
 /** The agent's color (W15): Trama picked a free one; the person may choose another from the palette. */
 function AgentColorPicker({ specialist }: { specialist: Specialist }) {
   const t = useT();
   return (
     <>
-      <p className="text-ui-sm text-muted-foreground">{t("teams.color.note")}</p>
+      <p className="mt-0.5 text-ui-sm text-muted-foreground">{t("teams.color.note")}</p>
       <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("teams.color.label")}>
         {AGENT_PALETTE.map((entry) => {
           const selected = entry.color === specialist.color;

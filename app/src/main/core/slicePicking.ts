@@ -51,14 +51,24 @@ export function coversModules(specialist: Specialist, moduleIds: string[]): bool
 /** When the developer last ended work: a developer free for longer picks first. */
 const freeSince = (specialist: Specialist) => specialist.assignments.at(-1)?.updatedAt ?? specialist.createdAt;
 
-/** The provider and model of the developer's work: its own, the plan's latest slice, or the fallback, while connected. */
-export function providerFor(specialist: Specialist, earlier: SpecialistAssignment[], input: PickInput): { provider: ProviderId; model: string } | null {
+/**
+ * The provider and model of the developer's work, while connected: the person's choice for the developer (issue #455),
+ * or the fallback when that cannot run now; without a choice its own latest, the plan's latest slice, or the fallback.
+ */
+export function providerFor(
+  specialist: Specialist,
+  earlier: SpecialistAssignment[],
+  input: PickInput,
+): { provider: ProviderId; model: string; effort?: string | null } | null {
   const own = specialist.assignments.at(-1);
-  const options = [
-    specialist.model ? { provider: specialist.provider ?? own?.provider ?? "codex", model: specialist.model } : null,
-    ...earlier.map((a) => ({ provider: a.provider ?? "codex", model: a.model })).reverse(),
-    input.fallback,
-  ];
+  const chosen = specialist.chosenModel;
+  const options = chosen
+    ? [{ provider: chosen.provider, model: chosen.model, effort: chosen.effort }, input.fallback]
+    : [
+        specialist.model ? { provider: specialist.provider ?? own?.provider ?? "codex", model: specialist.model } : null,
+        ...earlier.map((a) => ({ provider: a.provider ?? "codex", model: a.model })).reverse(),
+        input.fallback,
+      ];
   for (const option of options) {
     if (!option) continue;
     const connected = input.providers.find((p) => p.id === option.provider);
@@ -170,6 +180,7 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
           decisionIds,
           model: chosen.model,
           provider: chosen.provider,
+          effort: chosen.effort ?? null,
           modelReason: t("main.slicePicking.modelReason"),
           goalId: requestGoalId(document, plan.requestId),
           tools: previous?.tools.includes("edits") ? previous.tools : ["edits"],

@@ -331,6 +331,12 @@ export const mainIt = {
   "main.controller.worktreeRemovedBranchKept": "Il branch {branch} resta.",
   "main.controller.modelNotInCatalog":
     "Il modello {model} non è nel catalogo di {provider}.",
+  "main.controller.specialistModelSetTitle": "Modello di {name} scelto dalla persona",
+  "main.controller.specialistModelSetDetail": "{provider} {model}. Vale per i prossimi incarichi; il lavoro in corso non cambia.",
+  "main.controller.specialistModelSetDetailEffort":
+    "{provider} {model}, sforzo {effort}. Vale per i prossimi incarichi; il lavoro in corso non cambia.",
+  "main.controller.specialistModelClearedTitle": "Modello di {name} di nuovo scelto dal Coordinatore",
+  "main.controller.specialistModelClearedDetail": "Per i prossimi incarichi il Coordinatore sceglie provider e modello.",
   "main.controller.assignmentProviderChangedTitle":
     "Provider dell'incarico cambiato",
   "main.controller.assignmentProviderChangedDetail":
@@ -1576,6 +1582,9 @@ export const mainIt = {
   "main.coordinatorTools.card.mandate": "Mandato",
   "main.coordinatorTools.card.decision": "Decisione",
   "main.coordinatorTools.card.teamProposal": "Proposta del team",
+  "main.coordinatorTools.personModel": "Modello scelto dalla persona per questo agente.",
+  "main.coordinatorTools.personModelMissing":
+    "Il modello scelto dalla persona per questo agente ora non è disponibile: lavora con il modello predefinito del Coordinatore.",
   "main.coordinatorTools.card.assignment": "Incarico",
   "main.coordinatorTools.card.route": "Percorso di Ask Trama",
   "main.coordinatorTools.card.domainProposal": "Glossario e ADR",
@@ -1606,6 +1615,7 @@ export const mainIt = {
   "main.team.resumedWithAnswer": "Ripresa con la risposta alla domanda {id}",
   "main.team.resumedWithFindings":
     "Ripresa con i rilievi bloccanti sul candidato {id}",
+  "main.team.personModelReason": "Modello scelto dalla persona per questo agente.",
   "main.team.providerSet":
     "Provider impostato dalla persona: {provider} {model}",
 
