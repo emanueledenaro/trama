@@ -767,20 +767,6 @@ await shot("03c-decision-answered");
 await answeredLine.getByRole("button", { name: /^Apri: / }).click();
 await answeredLine.getByText("Apri nel Patto").waitFor();
 await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
-// Issue #331: what the person decided today stays closed at the end of Aspetta te; opened, it names the answer.
-{
-  await openView("Aspetta te");
-  const decided = page.getByTestId("side-bar").getByTestId("waiting-decided");
-  await decided.waitFor();
-  const toggle = decided.getByRole("button", { name: /^Decise oggi/ });
-  if ((await toggle.getAttribute("aria-expanded")) !== "false" || (await decided.getByTestId("waiting-decided-item").count())) throw new Error("Decise oggi is open before the person opens it");
-  await toggle.click();
-  await decided.getByTestId("waiting-decided-item").filter({ hasText: "Cosa succede a un ordine pagato annullato?" }).filter({ hasText: "Risposta data" }).waitFor();
-  await decided.scrollIntoViewIfNeeded();
-  await themeShots("31d-waiting-decided-today");
-  await toggle.click();
-  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
-}
 // The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there, in the bottom
 // panel under the conversation (issue #337).
 await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
@@ -1190,6 +1176,21 @@ await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await shot("04e8-bots-chat-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await shot("04e9-bots-chat-light");
+// Issue #331: what the person decided today stays closed at the end of Aspetta te; opened, it names the answer. It is
+// read after the bots' cost at rest, so its screenshots do not fall in that measure.
+{
+  await openView("Aspetta te");
+  const decided = page.getByTestId("side-bar").getByTestId("waiting-decided");
+  await decided.waitFor();
+  const toggle = decided.getByRole("button", { name: /^Decise oggi/ });
+  if ((await toggle.getAttribute("aria-expanded")) !== "false" || (await decided.getByTestId("waiting-decided-item").count())) throw new Error("Decise oggi is open before the person opens it");
+  await toggle.click();
+  await decided.getByTestId("waiting-decided-item").filter({ hasText: "Cosa succede a un ordine pagato annullato?" }).filter({ hasText: "Risposta data" }).waitFor();
+  await decided.scrollIntoViewIfNeeded();
+  await themeShots("31d-waiting-decided-today");
+  await toggle.click();
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
 
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
 await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
