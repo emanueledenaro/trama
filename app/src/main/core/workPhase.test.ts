@@ -276,6 +276,37 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     ]);
   });
 
+  it("gives the realignment to the Coordinator, never the merge to the person, when GitHub finds conflicts between the pull request and its base", () => {
+    // The negozio case: the merge of pull request #25 stopped because GitHub finds conflicts with its base.
+    const { document, assignment } = withAssignment();
+    const published = candidate(document, assignment.id, "pass", "approved");
+    published.pullRequest = {
+      url: "https://github.com/emanueledenaro/negozio/pull/25",
+      number: 25,
+      branch: "chore/issue-24-consolidare-il-riallineamento-ripartire-trama-c4e84cfe",
+      headSHA: "ddcdddb00dfe3e8ae7723829d7c43edda05b1baa",
+      at: at(5).toISOString(),
+    };
+    const stopped = { by: "person" as const, fingerprint: "f", status: "stopped" as const, at: at(6).toISOString(), mergeSHA: null, mandateVersion: null };
+    for (const merge of [
+      // Recorded before Trama kept the cause apart: only the words say it.
+      { ...stopped, detail: "GitHub trova conflitti tra la pull request #25 e la base." },
+      { ...stopped, detail: "GitHub finds conflicts between pull request #25 and the base." },
+      { ...stopped, detail: "GitHub trova conflitti tra la pull request #25 e la base.", baseConflict: true },
+    ]) {
+      published.merge = merge;
+      const state = workState(document, "r3");
+      expect(state.moves.map((m) => m.move)).not.toContain("mergePullRequest");
+      expect(state).toMatchObject({ phase: "blocked", block: "worktreeConflict", moves: [{ move: "assignWork", actor: "coordinator" }] });
+      expect(state.blocker).toContain("#25");
+      expect(state.blocker).toContain(published.id);
+      expect(state.why).toBe("La pull request del lavoro di Ada è in conflitto con la sua base su GitHub: va riallineata e pubblicata di nuovo.");
+    }
+    // Any other stop keeps the pull request with the person, as before.
+    published.merge = { ...stopped, detail: "Sul branch della pull request #25 è arrivato altro lavoro dopo la pubblicazione: serve un nuovo candidato con nuove verifiche." };
+    expect(moves(document, "r3")).toEqual(["mergePullRequest"]);
+  });
+
   it("leaves the green light of an approved candidate to the Coordinator within the mandate, also after a gate that ended in the background", () => {
     const { document, assignment } = withAssignment();
     mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);

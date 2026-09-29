@@ -1446,7 +1446,8 @@ export interface CandidateMerge {
   fingerprint: string;
   /**
    * "waiting": the pull request's checks are still running, and Trama tries again. "failed": GitHub refused it, and Trama
-   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person.
+   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person; or GitHub found
+   * conflicts with the base (`baseConflict`), and the Coordinator realigns the candidate's branch.
    */
   status: "running" | "waiting" | "merged" | "failed" | "stopped";
   /** Why it waits, failed or stopped, in the person's words; null otherwise. */
@@ -1458,6 +1459,11 @@ export interface CandidateMerge {
   mandateVersion?: number | null;
   /** A serious destructive change the Coordinator does not merge (issue #41): it waits for the person. */
   stop?: MergeStop | null;
+  /**
+   * True when the merge stopped because GitHub finds conflicts between the pull request, still at the head Trama pushed,
+   * and its base: the Coordinator realigns the candidate's branch and publishes it again, the person has nothing to merge.
+   */
+  baseConflict?: boolean;
 }
 
 /** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */

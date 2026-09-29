@@ -8,7 +8,7 @@ import type { PullRequestStatus } from "./tickets";
 import { DomainError } from "./pact";
 import { t } from "./personLanguage";
 import { authorize } from "./team";
-import { ITALIAN } from "@shared/i18n";
+import { ITALIAN, LANGUAGES, translate } from "@shared/i18n";
 
 /**
  * The merge of a verified candidate (issue #247, Q1 and Q9). With the Coordinator's green light within the mandate and
@@ -197,8 +197,45 @@ export function declineDestructiveMerge(candidate: Candidate, now = new Date()):
  */
 export function pullRequestDrift(expectedHead: string, status: PullRequestStatus): string | null {
   if (status.headSHA && status.headSHA !== expectedHead) return t("main.merge.drift.newWork", { number: String(status.number) });
-  if (status.mergeable === false) return t("main.merge.drift.conflicts", { number: String(status.number) });
+  if (baseConflict(expectedHead, status)) return t("main.merge.drift.conflicts", { number: String(status.number) });
   return null;
+}
+
+/**
+ * Stops the merge when the pull request read right before it is not the one Trama checked, and returns why in the
+ * person's words; null when it is. A stop on conflicts with the base is kept apart (`baseConflict`): the next move is the
+ * Coordinator's realignment of the candidate's branch, not a merge for the person.
+ */
+export function stopOnDrift(
+  document: ProjectDocument,
+  candidate: Candidate,
+  by: MergeAuthority,
+  expectedHead: string,
+  status: PullRequestStatus,
+  now = new Date(),
+): string | null {
+  const drift = pullRequestDrift(expectedHead, status);
+  if (!drift) return null;
+  recordMerge(document, candidate, by, "stopped", drift, now);
+  if (baseConflict(expectedHead, status)) candidate.merge!.baseConflict = true;
+  return drift;
+}
+
+/** Whether GitHub finds conflicts between the pull request, still at the head Trama pushed, and its base. Pure. */
+export const baseConflict = (expectedHead: string, status: PullRequestStatus): boolean =>
+  !(status.headSHA && status.headSHA !== expectedHead) && status.mergeable === false;
+
+/**
+ * Whether the candidate's merge stopped on conflicts between its pull request and the base: the next move is the
+ * Coordinator's realignment, not a merge for the person. Stops recorded before `baseConflict` say it only in words, in
+ * the language the person had then.
+ */
+export function pullRequestConflicted(candidate: Candidate): boolean {
+  const merge = candidate.merge;
+  if (merge?.status !== "stopped" || !candidate.pullRequest || candidate.pullRequest.mergedAt) return false;
+  if (merge.baseConflict) return true;
+  const number = String(candidate.pullRequest.number);
+  return LANGUAGES.some((language) => merge.detail === translate(language, "main.merge.drift.conflicts", { number }));
 }
 
 /**

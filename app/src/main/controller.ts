@@ -393,7 +393,7 @@ import { clampActiveSquads, clampDevelopersPerSquad } from "@shared/squads";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
-import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
+import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate, stopDestructiveMerge, stopOnDrift } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
@@ -7436,9 +7436,8 @@ export class TramaController {
       }
       if (checks?.checks === "failure") throw new DomainError(t("main.controller.mergeChecksRed", { number: `${pull.number}` }));
       // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
-      const drift = checks ? pullRequestDrift(pull.headSHA, checks) : null;
+      const drift = checks ? stopOnDrift(document, candidate, by, pull.headSHA, checks) : null;
       if (drift) {
-        recordMerge(document, candidate, by, "stopped", drift);
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason: drift }, by));
         this.changedIn(project);
         return;
