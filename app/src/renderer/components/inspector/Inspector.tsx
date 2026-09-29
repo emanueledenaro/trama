@@ -61,6 +61,7 @@ const targetId = (target: InspectorTarget): string | null => (target.kind === "c
 export function InspectorTitle({ target }: { target: InspectorTarget }) {
   const t = useT();
   const waitingItem = useUi((s) => (target.kind === "waiting" && target.key ? (s.app?.project?.waiting ?? []).find((i) => i.key === target.key) ?? null : null));
+  const waitingCount = useUi((s) => (target.kind === "waiting" ? (s.app?.project?.waiting?.length ?? 0) : 0));
   const candidateId = waitingItem?.kind === "candidate" ? waitingItem.targetId : null;
   const record = useRecord(targetId(target) ?? candidateId);
   const id = targetId(target) ?? candidateId ?? undefined;
@@ -68,6 +69,15 @@ export function InspectorTitle({ target }: { target: InspectorTarget }) {
     return (
       <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="side-bar-title">
         {TITLES.waiting}
+        {waitingCount ? (
+          // The count in the header, as on the icon of the activity bar (issue #331).
+          <>
+            <Sep />
+            <span className="text-muted-foreground tabular-nums" data-testid="side-bar-count">
+              {waitingCount}
+            </span>
+          </>
+        ) : null}
         {waitingItem ? (
           <>
             <Sep />
@@ -100,6 +110,9 @@ export function useTargetTitle(target: InspectorTarget): { title: string; id: st
   const t = useT();
   const recordId = targetId(target) ?? (target.kind === "specialist" || target.kind === "goal" ? target.id : null);
   const record = useRecord(recordId);
+  // A discussion between agents (A12) is named by its motive, so two open discussions tell each other apart.
+  const motive = useUi((s) => (target.kind === "agentThread" ? (s.app?.project?.document.agentThreads?.find((th) => th.id === target.id)?.discussion?.motive ?? null) : null));
+  if (motive && target.kind === "agentThread") return { title: motive, id: target.id };
   // The id stays on the hover of the tab (issue #270).
   const id = recordId ?? undefined;
   return { title: detailTitle(target, record ? asTitle(record.label) : null, t), id };
