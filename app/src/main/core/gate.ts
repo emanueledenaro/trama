@@ -599,12 +599,18 @@ function isEvidence(gate: CandidateGate, role: GateRole): boolean {
   return role === "regressionGuardian" || (role === "security" && gate.reviews.some((r) => isNote(r.report, "main.gate.secretNote")));
 }
 
-/** Whether an overruled finding covers this figure's finding: the same figure, on the same file or, without one, with the same title. */
+/**
+ * Whether an overruled finding covers this figure's finding: the same figure, on the same file or, without one, with the
+ * same title. Security's findings are also told apart by their title: a decision on one weakness must not silence a new
+ * one in the same file. So a rephrased Security finding blocks again, and the Coordinator overrules it once more.
+ */
 export function overruledMatch(memory: OverruledFinding, role: GateRole, finding: GateFinding): boolean {
   if (memory.role !== role) return false;
   const file = fileOf(finding.file);
+  const sameTitle = normalTitle(memory.title) === normalTitle(finding.title);
+  if (role === "security") return sameTitle && (!memory.file || !file || memory.file === file);
   if (memory.file && file) return memory.file === file;
-  return normalTitle(memory.title) === normalTitle(finding.title);
+  return sameTitle;
 }
 
 /** The overruled findings that belong to the work of `assignmentId`: its lineage, earlier work it replaced included. */
