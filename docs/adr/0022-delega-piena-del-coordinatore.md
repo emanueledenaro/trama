@@ -14,6 +14,15 @@ Decisione:
 - **Anche di notte.** Finché la delega è in vigore, il progetto ha lavoro aperto e non è in Pausa, Trama chiede al sistema di non andare in stop. Senza lavoro aperto torna il comportamento normale. Alla ripresa dopo uno stop parte subito un giro, che riprende dal punto registrato.
 - **I dubbi non fermano il lavoro.** Il Coordinatore sceglie la strada che consiglierebbe e scrive il dubbio accanto alla scelta. Quando la persona torna nella finestra dopo un'assenza, Trama scrive il riepilogo "Mentre non c'eri" con cosa ha fatto e cosa ha deciso con la delega, con i dubbi, ciascuno da rivedere.
 
+Aggiunte del 29 settembre 2026, dalla prova della delega e del ritorno della persona:
+
+- **Il mandato segue il progetto.** Finché la delega è in vigore, i moduli che il progetto acquista dopo, come una cartella nuova creata dal lavoro, entrano in una versione nuova del mandato, prima di ogni turno del Coordinatore e nel giro, scritta in Attività. Quello che la persona ha tolto dalla vista Mandato dopo la delega resta fuori, e un mandato revocato resta revocato. Una richiesta di mandato che il mandato in vigore copre già è concessa con quella versione e non resta in "Aspetta te".
+- **Gli obiettivi proposti prima si aprono.** Quando la persona dà la delega, gli obiettivi che il Coordinatore aveva proposto si aprono come quelli proposti dopo, ciascuno registrato tra le scelte da rivedere.
+- **Un errore non ferma la notte.** Con la delega il giro riprende il lavoro anche dopo un turno della persona finito con un errore. Lo Stop resta della persona, ed è registrato nei dati con chi l'ha chiesto, non riconosciuto dal nome mostrato.
+- **Sveglio anche fra due issue.** Con "fai tutti i ticket" il computer non va in stop finché resta una issue da prendere, anche quando il lavoro della precedente è unito.
+- **Il ritorno vale anche alla riapertura.** Trama registra quando la persona lascia il progetto, perché Trama si chiude o perché apre un altro progetto. Quando lo riapre dopo un'assenza lunga, scrive il riepilogo "Mentre non c'eri". Il riepilogo del ritorno conta anche i disaccordi decisi con `settle_review` (ADR 0023).
+- **La riga di stato dice cosa fa il Coordinatore.** Con la delega, per una domanda o un candidato che aspettano l'ok o per una richiesta di mandato, la riga di stato non dice "Aspetto te" ma la mossa del Coordinatore, per esempio "decido con la tua delega". Il pulsante della persona resta sulla scheda.
+
 Alternative scartate:
 
 - **Riconoscere "fai tutto tu" con una regola sul testo.** Una frase come "non fare tutto tu" o una richiesta con parole diverse sfuggirebbe o sbaglierebbe. Il Coordinatore capisce il senso e Trama controlla solo che le parole citate siano della persona.
