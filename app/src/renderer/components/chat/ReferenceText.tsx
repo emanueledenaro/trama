@@ -40,21 +40,15 @@ function linked(text: string, index: ReferenceIndex, before: string, key: string
     const previous = written;
     written += part.text;
     if ("reference" in part) {
-      // The punctuation right after a link stays on its line (issue #459).
+      // The punctuation right after a link goes inside it: a line breaks after a button but never before a comma
+      // inside its text (issue #459).
       const next = parts[position + 1];
       const glued = next && !("reference" in next) && !("unknown" in next) ? leadingPunctuation(next.text).glued : "";
-      const name = (
+      return (
         <Name key={`${key}-${position}`} reference={part.reference}>
           {referenceText(part.reference, part.text, previous)}
-        </Name>
-      );
-      return glued ? (
-        <span key={`${key}-${position}`} className="whitespace-nowrap">
-          {name}
           {glued}
-        </span>
-      ) : (
-        name
+        </Name>
       );
     }
     if ("unknown" in part) {
