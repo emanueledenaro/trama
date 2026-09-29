@@ -82,7 +82,8 @@
   --content-heading-weight: 500;
   --content-heading-line-height: 1.32;
 
-  /* Codex seed: surface #ffffff, ink #0d0d0d, accent #0169cc. */
+  /* One neutral surface for every provider (issue #457): white in light, #212121 in dark, with the glass on top.
+     The provider themes below change only the accents. Codex seed: ink #0d0d0d, accent #0169cc. */
   --ink: #0d0d0d;
   --surface: #ffffff;
   --color-background-surface: var(--surface);
@@ -139,21 +140,32 @@
   --app-shell-background: var(--surface);
   --app-sidebar-backdrop-filter: none;
 
-  /* Panels laid out as in VS Code (Light Modern / Dark Modern): the sidebar and the inspector are a shade darker
-     than the central area, and 1px borders separate them edge to edge. The values follow VS Code's on the neutral
-     Codex surface (sideBar.background #F8F8F8, sideBar.border and panel.border #E5E5E5 over editor #FFFFFF) and
-     derive from each provider's own surface, so every provider theme keeps its colors. */
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 97%, black);
+  /* The window's sections, as in VS Code (Light Modern / Dark Modern), each a slightly different neutral tint so they
+     stand apart without extra lines (issue #457): the editor on the surface, then the bottom panel, the side bar, the
+     activity bar with the title bar, and the status bar, a step darker each. The same for every provider. 1px borders
+     separate the panels edge to edge (sideBar.border and panel.border #E5E5E5 in VS Code). */
+  --app-editor-tint: #ffffff;
+  --app-panel-tint: #fafafa;
+  --app-sidebar-tint: #f7f7f7;
+  --app-activitybar-tint: #f2f2f2;
+  --app-statusbar-tint: #eeeeee;
+  --app-editor-surface: var(--app-editor-tint);
+  --app-panel-surface: var(--app-panel-tint);
+  --app-sidebar-surface: var(--app-sidebar-tint);
+  --app-activitybar-surface: var(--app-activitybar-tint);
+  --app-statusbar-surface: var(--app-statusbar-tint);
   --app-inspector-surface: var(--app-sidebar-surface);
   --app-panel-border: color-mix(in srgb, var(--surface) 90%, black);
-  /* VS Code focusBorder: the lit sash. */
-  --app-focus-border: #005fb8;
+  /* The lit sash, VS Code's focusBorder, takes the provider's accent. */
+  --app-focus-border: var(--color-text-accent);
+  /* The light over the glass: neutral, so no provider color reaches the background. */
+  --glass-light: #8e8ea0;
 }
 
 :root.dark {
   color-scheme: dark;
-  --ink: #fcfcfc;
-  --surface: #111111;
+  --ink: #ececec;
+  --surface: #212121;
   --color-border-heavy: rgb(252 252 252 / 0.16);
   --color-border-light: rgb(252 252 252 / 0.06);
   --color-text-foreground-secondary: rgb(252 252 252 / 0.65);
@@ -170,9 +182,13 @@
   --ring: #737373;
   --destructive: color-mix(in srgb, #ef4444 90%, white);
   /* Dark Modern on the neutral surface: sideBar.background #181818, borders #2B2B2B, editor #1F1F1F. */
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 78%, black);
+  --app-editor-tint: #212121;
+  --app-panel-tint: #1d1d1d;
+  --app-sidebar-tint: #1a1a1a;
+  --app-activitybar-tint: #171717;
+  --app-statusbar-tint: #141414;
   --app-panel-border: color-mix(in srgb, var(--surface) 95%, white);
-  --app-focus-border: #0078d4;
+  --glass-light: #ffffff;
 }
 
 :root[data-platform="darwin"],
@@ -180,10 +196,14 @@
   /* The whole window is glass: the native material (macOS under-window, Acrylic on Windows 11) shows the
      windows behind, blurred. Content and cards are layered translucent surfaces, opaque enough for text. */
   --app-shell-background: transparent;
-  /* Opaque enough that each provider's own surface color reads, whatever desktop is behind; a hint still shows. */
-  --app-content-glass: color-mix(in srgb, var(--surface) 80%, transparent);
+  /* The editor and the bottom panel are opaque enough that their tint reads, whatever desktop is behind, with a touch of
+     the neutral glass light; left transparent they took the color of whatever sat behind the window. The bars show more. */
+  --app-editor-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-editor-tint) 80%, transparent));
+  --app-panel-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-panel-tint) 80%, transparent));
   --card: color-mix(in srgb, var(--surface) 78%, transparent);
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 55%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, var(--app-sidebar-tint) 55%, transparent);
+  --app-activitybar-surface: color-mix(in srgb, var(--app-activitybar-tint) 55%, transparent);
+  --app-statusbar-surface: color-mix(in srgb, var(--app-statusbar-tint) 55%, transparent);
   /* The inspector can float over the chat: it keeps an opaque surface. */
   --app-inspector-surface: var(--color-background-surface);
   --app-sidebar-backdrop-filter: none;
@@ -191,20 +211,23 @@
 
 :root.dark[data-platform="darwin"],
 :root.dark[data-platform="win32"] {
-  --app-content-glass: color-mix(in srgb, var(--surface) 78%, transparent);
+  --app-editor-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-editor-tint) 78%, transparent));
+  --app-panel-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-panel-tint) 78%, transparent));
   --card: color-mix(in srgb, var(--surface) 70%, transparent);
-  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 60%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, var(--app-sidebar-tint) 60%, transparent);
+  --app-activitybar-surface: color-mix(in srgb, var(--app-activitybar-tint) 60%, transparent);
+  --app-statusbar-surface: color-mix(in srgb, var(--app-statusbar-tint) 60%, transparent);
 }
 
 :root[data-platform="darwin"] body,
 :root[data-platform="win32"] body {
-  /* One even, steady veil of the Coordinator's provider light over the glass (useProviderGlow in App.tsx).
+  /* One even, steady veil of the neutral glass light, the same for every provider (issue #457).
      It does not animate: repainting the whole window over the native material every frame made it lag. */
-  background: color-mix(in srgb, var(--glow-1) 18%, transparent) !important;
+  background: color-mix(in srgb, var(--glass-light) 18%, transparent) !important;
 }
 :root.dark[data-platform="darwin"] body,
 :root.dark[data-platform="win32"] body {
-  background: color-mix(in srgb, var(--glow-1) 32%, transparent) !important;
+  background: color-mix(in srgb, var(--glass-light) 32%, transparent) !important;
 }
 
 /* Neutral light for providers with a monochrome mark. */
@@ -216,14 +239,13 @@
 }
 
 
-/* Provider themes: Trama takes the look of the provider the dialog uses (data-provider on the root, set by
+/* Provider themes: Trama takes the accents of the provider the dialog uses (data-provider on the root, set by
    useProviderTheme in App.tsx). Colors come from each provider's own site (see docs/progettazione/temi-provider.md):
-   base ink and surface, the light over the glass, a text-safe accent for each mode, the primary button.
-   Status colors (errors, warnings, success) stay the same for every provider. */
+   the provider's light for the mark and the decision cards, a text-safe accent for each mode, the primary button,
+   the focus ring, the side bar selection and the person's message bubble. The surface, the ink, the section tints and
+   the glass light stay neutral (issue #457), and status colors (errors, warnings, success) stay the same for every provider. */
 :root[data-provider="codex"] {
-  --ink: #0d0d0d;
-  --surface: #ffffff;
-  --glow-1: #8e8ea0;
+  --provider-light: #8e8ea0;
   --color-text-accent: #0a6fd6;
   --primary: #0d0d0d;
   --primary-foreground: #ffffff;
@@ -232,9 +254,7 @@
   --sidebar-selected: color-mix(in srgb, #0a6fd6 12%, transparent);
 }
 :root.dark[data-provider="codex"] {
-  --ink: #ececec;
-  --surface: #212121;
-  --glow-1: #ffffff;
+  --provider-light: #ffffff;
   --color-text-accent: #5aaeff;
   --primary: #ececec;
   --primary-foreground: #171717;
@@ -243,9 +263,7 @@
   --sidebar-selected: color-mix(in srgb, #5aaeff 12%, transparent);
 }
 :root[data-provider="claudeAgent"] {
-  --ink: #141413;
-  --surface: #faf9f5;
-  --glow-1: #d97757;
+  --provider-light: #d97757;
   --color-text-accent: #b4532f;
   --primary: #c96442;
   --primary-foreground: #ffffff;
@@ -254,9 +272,7 @@
   --sidebar-selected: color-mix(in srgb, #b4532f 12%, transparent);
 }
 :root.dark[data-provider="claudeAgent"] {
-  --ink: #f0eee6;
-  --surface: #262624;
-  --glow-1: #d97757;
+  --provider-light: #d97757;
   --color-text-accent: #e38a67;
   --primary: #d97757;
   --primary-foreground: #141413;
@@ -265,9 +281,7 @@
   --sidebar-selected: color-mix(in srgb, #e38a67 12%, transparent);
 }
 :root[data-provider="cursor"] {
-  --ink: #26251e;
-  --surface: #f7f7f4;
-  --glow-1: #cac6be;
+  --provider-light: #cac6be;
   --color-text-accent: #c93f00;
   --primary: #26251e;
   --primary-foreground: #f7f7f4;
@@ -276,9 +290,7 @@
   --sidebar-selected: color-mix(in srgb, #c93f00 12%, transparent);
 }
 :root.dark[data-provider="cursor"] {
-  --ink: #edecec;
-  --surface: #14120b;
-  --glow-1: #47433c;
+  --provider-light: #47433c;
   --color-text-accent: #ff7a3d;
   --primary: #edecec;
   --primary-foreground: #14120b;
@@ -287,9 +299,7 @@
   --sidebar-selected: color-mix(in srgb, #ff7a3d 12%, transparent);
 }
 :root[data-provider="antigravity"] {
-  --ink: #121317;
-  --surface: #f8f9fc;
-  --glow-1: #3186ff;
+  --provider-light: #3186ff;
   --color-text-accent: #1f63e0;
   --primary: #3186ff;
   --primary-foreground: #ffffff;
@@ -298,9 +308,7 @@
   --sidebar-selected: color-mix(in srgb, #1f63e0 12%, transparent);
 }
 :root.dark[data-provider="antigravity"] {
-  --ink: #e6eaf0;
-  --surface: #121317;
-  --glow-1: #3186ff;
+  --provider-light: #3186ff;
   --color-text-accent: #749bff;
   --primary: #3186ff;
   --primary-foreground: #ffffff;
@@ -309,9 +317,7 @@
   --sidebar-selected: color-mix(in srgb, #749bff 12%, transparent);
 }
 :root[data-provider="grok"] {
-  --ink: #000000;
-  --surface: #f9f8f7;
-  --glow-1: #9a9894;
+  --provider-light: #9a9894;
   --color-text-accent: #1e1f22;
   --primary: #000000;
   --primary-foreground: #ffffff;
@@ -320,9 +326,7 @@
   --sidebar-selected: color-mix(in srgb, #1e1f22 12%, transparent);
 }
 :root.dark[data-provider="grok"] {
-  --ink: #fcfcfc;
-  --surface: #1e1f22;
-  --glow-1: #ffffff;
+  --provider-light: #ffffff;
   --color-text-accent: #ffffff;
   --primary: #fcfcfc;
   --primary-foreground: #1e1f22;
@@ -331,9 +335,7 @@
   --sidebar-selected: color-mix(in srgb, #ffffff 12%, transparent);
 }
 :root[data-provider="droid"] {
-  --ink: #0d0d0d;
-  --surface: #f5f5f5;
-  --glow-1: #d15010;
+  --provider-light: #d15010;
   --color-text-accent: #b0430b;
   --primary: #d15010;
   --primary-foreground: #ffffff;
@@ -342,9 +344,7 @@
   --sidebar-selected: color-mix(in srgb, #b0430b 12%, transparent);
 }
 :root.dark[data-provider="droid"] {
-  --ink: #f5f5f5;
-  --surface: #0d0d0d;
-  --glow-1: #d15010;
+  --provider-light: #d15010;
   --color-text-accent: #ff8a4c;
   --primary: #e0601c;
   --primary-foreground: #ffffff;
@@ -353,9 +353,7 @@
   --sidebar-selected: color-mix(in srgb, #ff8a4c 12%, transparent);
 }
 :root[data-provider="devin"] {
-  --ink: #191919;
-  --surface: #fcfcfc;
-  --glow-1: #00a558;
+  --provider-light: #00a558;
   --color-text-accent: #2166e8;
   --primary: #191919;
   --primary-foreground: #ffffff;
@@ -364,9 +362,7 @@
   --sidebar-selected: color-mix(in srgb, #2166e8 12%, transparent);
 }
 :root.dark[data-provider="devin"] {
-  --ink: #f2f2f2;
-  --surface: #131313;
-  --glow-1: #00a558;
+  --provider-light: #00a558;
   --color-text-accent: #5c9aff;
   --primary: #f2f2f2;
   --primary-foreground: #131313;
@@ -375,9 +371,7 @@
   --sidebar-selected: color-mix(in srgb, #5c9aff 12%, transparent);
 }
 :root[data-provider="opencode"] {
-  --ink: #211e1e;
-  --surface: #f1f0f0;
-  --glow-1: #8e8b8b;
+  --provider-light: #8e8b8b;
   --color-text-accent: #0a7f0a;
   --primary: #211e1e;
   --primary-foreground: #f1f0f0;
@@ -386,9 +380,7 @@
   --sidebar-selected: color-mix(in srgb, #0a7f0a 12%, transparent);
 }
 :root.dark[data-provider="opencode"] {
-  --ink: #dad9d9;
-  --surface: #181616;
-  --glow-1: #8e8b8b;
+  --provider-light: #8e8b8b;
   --color-text-accent: #2fd12f;
   --primary: #dad9d9;
   --primary-foreground: #181616;
@@ -397,9 +389,7 @@
   --sidebar-selected: color-mix(in srgb, #2fd12f 12%, transparent);
 }
 :root[data-provider="pi"] {
-  --ink: #13110f;
-  --surface: #f3f2f0;
-  --glow-1: #4b607c;
+  --provider-light: #4b607c;
   --color-text-accent: #4b607c;
   --primary: #4b607c;
   --primary-foreground: #ffffff;
@@ -408,9 +398,7 @@
   --sidebar-selected: color-mix(in srgb, #4b607c 12%, transparent);
 }
 :root.dark[data-provider="pi"] {
-  --ink: #ebe7e4;
-  --surface: #161d27;
-  --glow-1: #6a9fcc;
+  --provider-light: #6a9fcc;
   --color-text-accent: #8db8dc;
   --primary: #6a9fcc;
   --primary-foreground: #0d1116;
@@ -424,8 +412,8 @@
    colors of the app icon are in docs/brand/README.md. */
 :root {
   --trama-mark-from: var(--color-text-accent);
-  --trama-mark-mid: color-mix(in oklab, var(--color-text-accent) 72%, var(--glow-1, #8e8ea0));
-  --trama-mark-to: color-mix(in oklab, var(--color-text-accent) 45%, var(--glow-1, #8e8ea0));
+  --trama-mark-mid: color-mix(in oklab, var(--color-text-accent) 72%, var(--provider-light, #8e8ea0));
+  --trama-mark-to: color-mix(in oklab, var(--color-text-accent) 45%, var(--provider-light, #8e8ea0));
   --trama-mark-back: color-mix(in oklab, var(--color-text-accent) 58%, black);
   --trama-mark-deep: color-mix(in oklab, var(--color-text-accent) 32%, black);
   --trama-mark-shade: color-mix(in oklab, var(--color-text-accent) 22%, black);
@@ -672,14 +660,14 @@
   }
 }
 
-/* Registered so the light fades from one provider to the next instead of jumping. */
-@property --glow-1 {
+/* Registered so the provider's light, an accent, fades from one provider to the next instead of jumping. */
+@property --provider-light {
   syntax: "<color>";
   inherits: true;
   initial-value: transparent;
 }
 :root {
-  transition: --glow-1 1.4s ease;
+  transition: --provider-light 1.4s ease;
 }
 
 /* The effort slider as an energy beam (ModelPicker): a flickering beam with a white core and a solid white knob,
@@ -814,15 +802,12 @@ button {
     backdrop-filter: var(--app-sidebar-backdrop-filter, none);
   }
 
+  /* The editor's surface; the bottom panel sets its own tint with app-panel-surface. */
   .chat-content-card {
-    background: var(--color-background-surface);
+    background: var(--app-content-surface, var(--app-editor-surface));
   }
-  /* The content adds no surface of its own: the same steady veil colors the whole window evenly. */
-  /* The dialog is glass in the provider's own surface color with a touch of its light, like the sidebar and
-     the inspector; left transparent it took the color of whatever desktop sat behind the window. */
-  :root[data-platform="darwin"] .chat-content-card,
-  :root[data-platform="win32"] .chat-content-card {
-    background: color-mix(in srgb, var(--glow-1) 7%, var(--app-content-glass));
+  .app-panel-surface {
+    --app-content-surface: var(--app-panel-surface);
   }
   /* On glass the composer is nearly opaque. Instead of a scrim, which drew a band of shade, the timeline
      fades out toward the composer; the composer keeps 8px from the status bar below it (issue #330). */
@@ -1199,7 +1184,7 @@ button {
   border: 1px solid color-mix(in srgb, var(--foreground) 13%, transparent);
   border-radius: 14px;
   padding: 0.7rem 0.95rem;
-  background: color-mix(in srgb, var(--glow-1, var(--info)) 9%, color-mix(in srgb, var(--foreground) 6%, transparent));
+  background: color-mix(in srgb, var(--provider-light, var(--info)) 9%, color-mix(in srgb, var(--foreground) 6%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
   backdrop-filter: blur(16px) saturate(1.3);
 }
@@ -1249,7 +1234,7 @@ button {
   color: color-mix(in srgb, var(--callout) 70%, var(--foreground));
 }
 .chat-markdown .chat-callout--decision {
-  --callout: var(--glow-1, var(--info));
+  --callout: var(--provider-light, var(--info));
 }
 .chat-markdown .chat-callout--blocked,
 .chat-markdown .chat-callout--caution {
@@ -1279,9 +1264,9 @@ button {
   backdrop-filter: blur(16px) saturate(1.3);
 }
 .chat-compare__card--recommended {
-  border: 1.5px solid color-mix(in srgb, var(--glow-1, var(--info)) 55%, color-mix(in srgb, var(--foreground) 30%, transparent));
-  background: color-mix(in srgb, var(--glow-1, var(--info)) 12%, color-mix(in srgb, var(--foreground) 7%, transparent));
-  box-shadow: 0 6px 24px -12px color-mix(in srgb, var(--glow-1, var(--info)) 80%, transparent), inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--provider-light, var(--info)) 55%, color-mix(in srgb, var(--foreground) 30%, transparent));
+  background: color-mix(in srgb, var(--provider-light, var(--info)) 12%, color-mix(in srgb, var(--foreground) 7%, transparent));
+  box-shadow: 0 6px 24px -12px color-mix(in srgb, var(--provider-light, var(--info)) 80%, transparent), inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
 }
 .chat-compare__title {
   display: flex;

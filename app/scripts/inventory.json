@@ -2130,7 +2130,6 @@
     "Superseded: the second older version still waits in Aspetta te",
     "Superseded: the superseded candidate can still be approved",
     "Tema Scuro did not darken the window",
-    "The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}",
     "The Antigravity Coordinator did not run read-only: ${agyCalls}",
     "The Ask Trama route does not show \"${expected}\"",
     "The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}",
