@@ -784,6 +784,34 @@ describe("TramaController", () => {
     }
   }, 90_000);
 
+  it("never starts an automatic move beside the person's message while Trama still prepares it: the move waits for the turn", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document)[0]?.state === "completed" && project.runningRequestId === null, 20_000);
+      const before = document.requests.length;
+      // The person sends a screenshot: Trama saves it before the turn starts.
+      const image = { name: "schermata.png", mimeType: "image/png", dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" };
+      const sent = controller!.send("Guarda questa schermata del checkout", null, null, null, [image]);
+      // Meanwhile an event of the work arrives: its move must not run beside the person's turn.
+      (controller as unknown as { continueWork(project: unknown, requestId: string | null, event: string): void }).continueWork(project, null, "issueOpened");
+      await sent;
+      await until(() => document.requests.length > before + 1 && project.runningRequestId === null, 20_000);
+      await new Promise((r) => setTimeout(r, 300));
+      // The person's message runs first, and one move follows it once its turn ended, weighing the event too.
+      const [person, move, ...rest] = document.requests.slice(before);
+      expect(person).toMatchObject({ text: "Guarda questa schermata del checkout", state: "completed" });
+      expect(move!.step).toMatchObject({ move: "preparePlan", by: "trama" });
+      expect(move!.createdAt >= person!.completedAt!).toBe(true);
+      expect(rest).toEqual([]);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
   it("keeps the events of the work that arrive in pause and weighs them at Riprendi, so no work is lost", async () => {
     process.env.FAKE_CODEX_AUTOMATIC = "idle";
     try {

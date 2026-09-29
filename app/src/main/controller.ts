@@ -2666,9 +2666,11 @@ export class TramaController {
     const goal = goalId ? requireGoal(project.document, goalId) : null;
     // Only a message the person typed empties the composer; a recorded choice or a step's button leaves the draft alone.
     const typed = removable && !step;
+    // Another message is being prepared (its images saved) or runs: this one waits for it, never beside it.
+    const taken = project.runningRequestId !== null || this.preparingTurn.has(project.id);
     // An automatic move never waits in the queue: the turn running now is a newer event (W04).
-    if (project.runningRequestId && step?.by === "trama") return;
-    if (project.runningRequestId) {
+    if (taken && step?.by === "trama") return;
+    if (taken) {
       this.queue.push({
         id: randomUUID(),
         projectId: project.id,
@@ -2687,14 +2689,22 @@ export class TramaController {
       this.changed();
       return;
     }
-    if (provider && provider !== this.coordinatorProvider(project.document)) {
-      // Let an opening or a study in progress end first, so the switch is not undone by its late result.
-      if (this.starting) await this.starting.attempt.catch(() => undefined);
-      if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
+    // Until the request runs the Coordinator is taken: a message, a move or an event meanwhile waits for this turn.
+    this.preparingTurn.add(project.id);
+    let attachments: string[];
+    try {
+      if (provider && provider !== this.coordinatorProvider(project.document)) {
+        // Let an opening or a study in progress end first, so the switch is not undone by its late result.
+        if (this.starting) await this.starting.attempt.catch(() => undefined);
+        if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
+      }
+      // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0019).
+      this.rolloverIfDue(project);
+      attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
+    } finally {
+      // No await from here to the running request: nothing can start in between.
+      this.preparingTurn.delete(project.id);
     }
-    // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0019).
-    this.rolloverIfDue(project);
-    const attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
     const activeProvider = this.coordinatorProvider(document);
@@ -3033,6 +3043,7 @@ export class TramaController {
       this.quitting ||
       this.state.project !== project ||
       project.runningRequestId !== null ||
+      this.preparingTurn.has(project.id) ||
       this.queue.some((q) => q.projectId === project.id) ||
       project.document.requests.at(-1)?.id !== view.requestId;
     const failed = project.document.requests.find((r) => r.id === view.requestId);
@@ -3185,6 +3196,8 @@ export class TramaController {
   private deferredWork: { projectId: string; requestId: string | null; event: WorkEvent }[] = [];
   /** The automatic move that is starting and has no running request yet: no second move meanwhile. */
   private automaticStarting: { projectId: string } | null = null;
+  /** The projects whose next Coordinator turn Trama prepares now (saving its images): the Coordinator is taken. */
+  private readonly preparingTurn = new Set<string>();
   /** The periodic round of continuous work (A05), on while Trama is open. */
   private roundTimer: NodeJS.Timeout | null = null;
   /** The round that runs now: a tick meanwhile waits for the next one. */
@@ -3220,7 +3233,11 @@ export class TramaController {
     return {
       enabled: this.state.settings.continuousWork !== false,
       paused: isPaused(project.document),
-      busy: project.runningRequestId !== null || this.automaticStarting?.projectId === project.id || this.queue.some((q) => q.projectId === project.id),
+      busy:
+        project.runningRequestId !== null ||
+        this.preparingTurn.has(project.id) ||
+        this.automaticStarting?.projectId === project.id ||
+        this.queue.some((q) => q.projectId === project.id),
       unavailable,
     };
   }
