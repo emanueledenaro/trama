@@ -16,6 +16,8 @@ import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, decide, grantMandate, revokeMandate } from "./pact";
 import { assign, beginTurn, confirmTeam, developers, endTurn, proposeTeam, recordWorkspace } from "./team";
 import { NEXT_MOVES } from "./workPhase";
+import { formSquads } from "./squads";
+import { teamSquads } from "@shared/squads";
 
 /** Only what read_team and propose_team use. */
 function teamContext(document: ProjectDocument): ToolContext {
@@ -416,6 +418,59 @@ describe("Coordinator tools for the agents' identity (W13, W15)", () => {
     expect(team.specialists.find((s: { id: string }) => s.id === ada.id)).toMatchObject({ name: "Giulia", tag: "Interfaccia", color: ada.color });
     expect(COORDINATOR_TOOLS.find((t) => t.name === "rename_specialist")!.description).toMatch(/without a mandate/);
     expect(developerInstructions("Demo")).toMatch(/rename_specialist/);
+  });
+});
+
+describe("Coordinator tools for the squads the person changes (A11)", () => {
+  const setup = () => {
+    const document = emptyDocument("p");
+    let changes = 0;
+    const context = { ...teamContext(document), changed: () => void changes++ } as ToolContext;
+    const members = [
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Checkout"],
+      ["Carla", "Sources/Catalog"],
+      ["Elena", "Sources/Checkout"],
+    ] as const;
+    const proposal = proposeTeam(document, { requestId: null, summary: null, members: members.map(([name, id]) => ({ name, competence: "TS", reason: "r", moduleIds: [id] })) });
+    confirmTeam(document, proposal.id, null, null);
+    const module = (id: string, name: string) => ({ id, name, summary: "", relativePath: id, files: [], dependencies: [], symbol: "" });
+    formSquads(document, [module("Sources/Catalog", "Catalogo"), module("Sources/Checkout", "Checkout")]);
+    return { document, context, changes: () => changes };
+  };
+
+  it("rename_squad renames the squad the person names, without a mandate, and keeps its id", async () => {
+    const { document, context, changes } = setup();
+    const catalog = teamSquads(document)[0]!;
+    expect(document.mandate).toBeNull();
+    const renamed = parse(await runCoordinatorTool("rename_squad", { squad: "catalogo", name: "Vetrina" }, context));
+    expect(renamed).toMatchObject({ squadID: catalog.id, previousName: "Catalogo", name: "Vetrina", status: "renamed" });
+    expect(document.squadChanges!.at(-1)).toMatchObject({ kind: "rename", by: "coordinator" });
+    expect(changes()).toBeGreaterThan(0);
+    const refused = await runCoordinatorTool("rename_squad", { squad: "Checkout", name: "Vetrina" }, context);
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("A squad called Vetrina already exists.");
+    const unknown = await runCoordinatorTool("rename_squad", { squad: "Magazzino", name: "Scorte" }, context);
+    expect(unknown.content[0]!.text).toContain("unknown_squad");
+    const team = parse(await runCoordinatorTool("read_team", {}, context));
+    expect(team.squads[0]).toMatchObject({ id: catalog.id, name: "Vetrina", changedByPerson: true });
+    expect(team.squads[1]).toMatchObject({ name: "Checkout", changedByPerson: false });
+  });
+
+  it("merge_squads leaves who stays to the person beyond three developers; split_squad splits by areas", async () => {
+    const { document, context } = setup();
+    const [catalog, checkout] = teamSquads(document);
+    const waiting = parse(await runCoordinatorTool("merge_squads", { squad: "Checkout", into: "Catalogo" }, context));
+    expect(waiting).toMatchObject({ status: "waiting_for_person", intoID: catalog!.id, squadID: checkout!.id });
+    expect(waiting.proposedKeepIDs).toHaveLength(3);
+    expect(document.team.squadMerge).toMatchObject({ intoId: catalog!.id, fromId: checkout!.id });
+    expect(teamSquads(document)).toHaveLength(2);
+    const ada = developers(document).find((s) => s.name === "Ada")!.id;
+    const split = await runCoordinatorTool("split_squad", { squad: "Catalogo", name: "Solo catalogo", moduleIDs: ["Sources/Catalog"], developerIDs: [ada] }, context);
+    // A squad with one area does not split: the refusal carries the reason.
+    expect(split.content[0]!.text).toContain("The squad Catalogo has one area only");
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "merge_squads")!.description).toMatch(/without|needs no mandate/);
+    expect(developerInstructions("Demo")).toMatch(/rename_squad, merge_squads or split_squad/);
   });
 });
 
