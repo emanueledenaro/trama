@@ -7,6 +7,9 @@ import { activityLog } from "@shared/activity";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -123,7 +126,7 @@ describe("merge with the green light, interface candidates held for the person (
     await expect(git(["rev-parse", "refs/heads/main"], remote)).rejects.toThrow();
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Candidato ${first.id} unito con il via libera del Coordinatore`)).toBe(true);
     // The merge is in Activity and, as a milestone, in the recap.
-    const entry = activityLog(document.requests, document.events, [], [], [], document.candidates).find((e) => e.kind === "merge")!;
+    const entry = activityLog(t, document.requests, document.events, [], [], [], document.candidates).find((e) => e.kind === "merge")!;
     expect(entry).toMatchObject({ label: "Candidato unito con il via libera del Coordinatore", outcome: "done", pullRequest: { number: 21 } });
     await until(() => (document.recap?.told ?? []).includes(`merged:${first.id}`));
     const recap = document.recap!.recaps.at(-1)!;

@@ -7,13 +7,14 @@ import type {
   RecapRecord,
   SliceView,
 } from "@shared/domain";
-import { ACTIVITY_OUTCOME_LABELS, type ActivityOutcome, activityLog } from "@shared/activity";
+import { type ActivityOutcome, activityLog, activityOutcomeLabel } from "@shared/activity";
+import { ITALIAN } from "@shared/i18n";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
 import { LANGUAGES, type MessageKey, translate } from "@shared/i18n";
 import { personLanguage, t } from "./personLanguage";
 
-export { asksForRecap, RECAP_COMMAND, recapTitle } from "@shared/recap";
+export { asksForRecap, recapCommand, recapTitle } from "@shared/recap";
 
 /**
  * The Coordinator's recap (A03, Q6): at each milestone (a slice done, a candidate merged, a goal achieved) and when the
@@ -170,7 +171,7 @@ function moveLine(label: string, outcome: ActivityOutcome, detail: string | null
   const reason = (prefix ? detail!.slice(prefix.length) : detail)?.trim();
   const sentence = reason ? `. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}` : "";
   const fact = MOVE_FACTS[label];
-  return fact ? `${t(fact)} ${t(FACT_OUTCOMES[outcome])}${sentence}` : `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
+  return fact ? `${t(fact)} ${t(FACT_OUTCOMES[outcome])}${sentence}` : `${label}: ${activityOutcomeLabel(t, outcome).toLowerCase()}${sentence}`;
 }
 
 /** A round, or a step the Coordinator took for the person (A06): "Seam confermati dal Coordinatore: ...". */
@@ -182,7 +183,7 @@ function stepLine(entry: { label: string; outcome: ActivityOutcome; detail: stri
 /** An action the person asked for (issue #422): what it was and what happened, without the command. */
 function requestedLine(entry: { label: string; outcome: ActivityOutcome; detail: string | null }): string {
   const summary = entry.detail?.split("\n")[0] ?? "";
-  return `${entry.label} (${ACTIVITY_OUTCOME_LABELS[entry.outcome].toLowerCase()}): ${summary}`.trim();
+  return `${entry.label} (${activityOutcomeLabel(t, entry.outcome).toLowerCase()}): ${summary}`.trim();
 }
 
 /**
@@ -190,7 +191,7 @@ function requestedLine(entry: { label: string; outcome: ActivityOutcome; detail:
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
-  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates, [], personLanguage(), document.requestedActions ?? [])
+  const entries = activityLog(t, document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates, [], document.requestedActions ?? [])
     .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({
@@ -230,7 +231,7 @@ export function writeRecap(
     milestones: input.milestones.map((m) => m.text),
     done: doneSince(document, lastRecapAt(document)),
     doing: statusLine(document, input.runningRequestId).text,
-    needs: waitingForYou(document, input.sources).map((item) => ({ key: item.key, label: item.label, title: item.title })),
+    needs: waitingForYou(ITALIAN, document, input.sources).map((item) => ({ key: item.key, label: item.label, title: item.title })),
   };
   // What the Coordinator decided with the full delegation since the last recap, with its doubts (issue #423).
   const since = lastRecapAt(document);

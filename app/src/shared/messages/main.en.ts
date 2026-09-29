@@ -676,6 +676,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.duties.diagnosisLineNotReproduced": "Diagnosis: bug not reproduced",
   "main.duties.architectureLineProposals":
     "Architecture review: {count} proposals to decide",
+  "main.duties.architectureLineProposals.one":
+    "Architecture review: one proposal to decide",
   "main.duties.architectureLineNothing":
     "Architecture review: nothing to report",
 

@@ -1,9 +1,11 @@
 // The Italian catalog (issue #301). Italian is the source: every key exists here first, and `en.ts` must
 // translate each one. A key ending in `.one` is the singular that `translate` picks when `count` is 1.
 import { mainIt } from "./main.it";
+import { sharedIt } from "./shared.it";
 
 export const it = {
   ...mainIt,
+  ...sharedIt,
   // Time
   "time.now": "ora",
   "time.minutes": "{count}m",

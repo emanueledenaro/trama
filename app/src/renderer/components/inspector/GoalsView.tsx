@@ -5,10 +5,10 @@ import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
 import { type GoalState, goalState } from "@shared/workOverview";
 import type { MessageKey } from "@shared/i18n";
 import { useT } from "@/lib/i18n";
-import { GOAL_STATUS_LABELS, findGoal, goalDialogIsEmpty, goalLinks, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
+import { findGoal, goalStatusLabel, goalDialogIsEmpty, goalLinks, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
 import type { GoalExampleInputPayload } from "@shared/ipc";
 import { PROVIDERS } from "@shared/providers";
-import { ASSIGNMENT_STATUS, candidateStatus } from "@shared/states";
+import { assignmentStatus, candidateStatus } from "@shared/states";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
@@ -29,7 +29,8 @@ const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondar
 };
 
 export function GoalStatusBadge({ status }: { status: GoalStatus }) {
-  return <Badge tone={STATUS_TONE[status]}>{GOAL_STATUS_LABELS[status]}</Badge>;
+  const t = useT();
+  return <Badge tone={STATUS_TONE[status]}>{goalStatusLabel(t, status)}</Badge>;
 }
 
 const GOAL_TONE: Record<GoalState, "warning" | "info" | "success" | "secondary" | "outline"> = {
@@ -200,6 +201,7 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
 }
 
 export function GoalsView({ create }: { create?: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
@@ -261,11 +263,11 @@ export function GoalsView({ create }: { create?: boolean }) {
                     <span className="block truncate text-ui-sm text-muted-foreground">
                       {isArchived(goal) ? (
                         <>
-                          {GOAL_STATUS_LABELS[goal.status]}
+                          {goalStatusLabel(t, goal.status)}
                           <Sep />
                         </>
                       ) : null}
-                      {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
+                      {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(t, project.document, goal.id)}
                     </span>
                   </span>
                 </button>
@@ -297,6 +299,7 @@ function ExampleList({ examples }: { examples: GoalExample[] }) {
 }
 
 export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
@@ -304,7 +307,6 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
   const [editing, setEditing] = useState(edit);
   const [linking, setLinking] = useState("");
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
-  const t = useT();
   // A proposed goal is confirmed or discarded in Aspetta te (issue #331): the detail keeps its editor and a line to it.
   const waitingGoal = useWaitingItem("goal", id);
   const document = project.document;
@@ -475,7 +477,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
               <span className="min-w-0 flex-1 truncate text-foreground">
                 <AgentName agent={specialist} /> <span className="text-muted-foreground"><Sep />{assignment.objective}</span>
               </span>
-              <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
+              <Badge tone={assignmentStatus(t, assignment.status).tone}>{assignmentStatus(t, assignment.status).label}</Badge>
             </span>
             <span className="block truncate text-ui-sm text-muted-foreground">
               {providerName(assignment.provider)}<Sep />{assignment.model}
@@ -499,7 +501,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
                 <Sep />
                 {candidate.changedFiles.length} file
               </span>
-              {report ? <Badge tone={candidateStatus(report).tone}>{candidateStatus(report).label}</Badge> : null}
+              {report ? <Badge tone={candidateStatus(t, report).tone}>{candidateStatus(t, report).label}</Badge> : null}
             </button>
           );
         })}
@@ -553,6 +555,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
 
 /** Shown at the top of the chat filtered on a goal: what the filter shows and what the next message is about. */
 export function GoalDialogHeader({ goalId }: { goalId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
@@ -571,7 +574,7 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
       </div>
       <p className="mt-1 line-clamp-2 text-ui-sm text-muted-foreground">{goal.outcome}</p>
       <p className="mt-1 text-ui-xs text-muted-foreground">
-        {goal.examples.length ? `${accepted} esempi accettati, ${refused} rifiutati` : "Esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}<Sep />{" "}
+        {goal.examples.length ? `${accepted} esempi accettati, ${refused} rifiutati` : "Esempi da definire"}<Sep />{goalWorkSummary(t, project.document, goal.id)}<Sep />{" "}
         <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
           dettagli
         </button>

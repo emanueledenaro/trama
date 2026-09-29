@@ -9,6 +9,9 @@ import { git } from "./core/process";
 import { developers, findSpecialist } from "./core/team";
 import { sliceViews } from "./core/slices";
 import { workState } from "./core/workPhase";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -188,7 +191,7 @@ describe("team flow", () => {
     expect((document.autonomousSteps ?? []).map((s) => s.move)).toEqual(["formSquads", "confirmUnderstanding", "confirmSeams", "confirmSlices"]);
     expect(document.team.squads?.map((s) => [s.name, s.moduleIds, s.developerIds])).toEqual([["Orders", ["Sources/Orders"], [findSpecialist(document, "Ada")!.id]]]);
     // Activity tells them from the records; the chat keeps no line for them (Q6).
-    const told = activityLog(document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
+    const told = activityLog(t, document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
     expect(told).toEqual([
       "Fette confermate dal Coordinatore",
       "Seam confermati dal Coordinatore",

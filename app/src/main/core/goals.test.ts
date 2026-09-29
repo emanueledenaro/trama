@@ -28,6 +28,9 @@ import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./
 import { AppStorage } from "./storage";
 import { setPersonLanguage } from "./personLanguage";
 import { statusLine } from "./statusLine";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const input = {
   title: "Revisione degli ordini",
@@ -199,7 +202,7 @@ describe("goals (UX01)", () => {
     const goal = createGoal(reopened, input);
     const links = goalLinks(reopened, goal.id);
     expect([links.assignments, links.candidates, links.decisions, links.openQuestions]).toEqual([[], [], [], []]);
-    expect(goalWorkSummary(reopened, goal.id)).toBe("nessun incarico");
+    expect(goalWorkSummary(t, reopened, goal.id)).toBe("nessun incarico");
   });
 
   it("gives the Coordinator the goal context", () => {
@@ -502,7 +505,7 @@ describe("projects overview (UX03)", () => {
       outcome: null,
     });
     const live = { selected: true, candidateReports: [], source: "live" as const, runningAssignments: 0 };
-    const items = waitingForYou(document);
+    const items = waitingForYou(t, document);
     const entry = summarizeProject(recent("a", "Alfa"), document, live);
     expect(items.length).toBeGreaterThan(0);
     expect(entry.waiting).toEqual({ count: items.length, first: { key: items[0]!.key, label: items[0]!.label, title: items[0]!.title } });
@@ -623,7 +626,7 @@ describe("projects overview (UX03)", () => {
       { state: "building", blockers: [{ code: "DECISION_CHANGED", detail: decision.id }], clearanceInvalidated: false, approvalInvalidated: false, mergeRoute: "coordinator" },
     ];
     const summary = summarizeProject(recent("x", "X"), document, { source: "live", selected: true, runningAssignments: 0, candidateReports: reports });
-    const waiting = waitingForYou(document, { candidateReports: Object.fromEntries(document.candidates.map((c, index) => [c.id, reports[index]!])) });
+    const waiting = waitingForYou(t, document, { candidateReports: Object.fromEntries(document.candidates.map((c, index) => [c.id, reports[index]!])) });
     expect(waiting.map((i) => i.key)).toEqual([`candidate:${document.candidates[1]!.id}`]);
     expect(summary).toMatchObject({ toApprove: waiting.length, pendingDecisions: 0, attention: "approval" });
   });

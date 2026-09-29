@@ -6,6 +6,9 @@ import { createMandateRequest } from "./pact";
 import { markTold, MAX_DONE, milestones, newMilestones, writeRecap } from "./recap";
 import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON } from "./statusLine";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute)).toISOString();
 
@@ -99,9 +102,9 @@ describe("asking for a recap", () => {
   ])("leaves %s to the Coordinator", (text) => expect(asksForRecap(text)).toBe(false));
 
   it("titles the card by what made it", () => {
-    expect(recapTitle({ reason: "request", milestones: [] })).toBe("Riepilogo");
-    expect(recapTitle({ reason: "milestone", milestones: ["a"] })).toBe("Riepilogo: un traguardo");
-    expect(recapTitle({ reason: "milestone", milestones: ["a", "b"] })).toBe("Riepilogo: 2 traguardi");
+    expect(recapTitle(t, { reason: "request", milestones: [] })).toBe("Riepilogo");
+    expect(recapTitle(t, { reason: "milestone", milestones: ["a"] })).toBe("Riepilogo: un traguardo");
+    expect(recapTitle(t, { reason: "milestone", milestones: ["a", "b"] })).toBe("Riepilogo: 2 traguardi");
   });
 });
 
@@ -236,8 +239,8 @@ describe("the recap of the full delegation (issue #423)", () => {
     expect(back.delegated?.map((c) => [c.id, c.doubt])).toEqual([["DC-2", "Non so per i buoni"]]);
     const quiet = writeRecap(document, { id: "R3", at: "2026-09-29T08:00:00.000Z", reason: "request", milestones: [], runningRequestId: null, sources: {} });
     expect(quiet).not.toHaveProperty("delegated");
-    expect(recapTitle({ reason: "return", milestones: [] })).toBe("Mentre non c'eri");
-    expect(recapTitle({ reason: "return", milestones: [] }, "en")).toBe("While you were away");
+    expect(recapTitle(translator("it"), { reason: "return", milestones: [] })).toBe("Mentre non c'eri");
+    expect(recapTitle(translator("en"), { reason: "return", milestones: [] })).toBe("While you were away");
   });
 });
 

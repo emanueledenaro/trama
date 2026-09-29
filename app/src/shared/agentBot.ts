@@ -1,4 +1,5 @@
 import type { Candidate, Specialist, TeamRole } from "./domain";
+import type { Translate } from "./i18n";
 import type { PresenceStatus } from "./presence";
 
 /**
@@ -146,16 +147,8 @@ export function transitionMove(from: AgentActivity | null, to: AgentActivity): {
   return null;
 }
 
-/** Italian words for the state, for the avatar's tooltip. */
-export const ACTIVITY_LABEL: Record<AgentActivity, string> = {
-  idle: "a riposo",
-  thinking: "pensa",
-  working: "lavora",
-  waiting: "aspetta te",
-  blocked: "bloccato",
-  done: "ha finito",
-  inactive: "inattivo",
-};
+/** The words for the state, for the avatar's tooltip. */
+export const activityLabel = (t: Translate, activity: AgentActivity): string => t(`shared.bot.${activity}`);
 
 type ActivityAgent = Pick<Specialist, "id" | "status"> & {
   assignments: Pick<Specialist["assignments"][number], "status" | "waitingForProvider">[];

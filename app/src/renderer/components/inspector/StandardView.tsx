@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
+import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION, cleanCodeRules } from "@shared/cleanCode";
 import { RuleLabel } from "@/components/chat/RuleLabel";
 import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ export function StandardView() {
         <p className="text-ui-xs text-muted-foreground">{t("settings.standard.description", { version: CLEAN_CODE_VERSION })}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">{t("settings.standard.note", { source: CLEAN_CODE_SOURCE })}</p>
         <ul className="-mx-2 mt-2 flex flex-col">
-          {CLEAN_CODE_RULES.map((rule) => (
+          {cleanCodeRules(t).map((rule) => (
             <li key={rule.id} className="flex items-start gap-3 rounded-md px-2 py-1.5" data-testid="standard-rule">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-ui text-foreground">

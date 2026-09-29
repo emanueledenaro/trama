@@ -2,7 +2,8 @@ import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { TOOL_REFUSED_TITLE } from "@shared/codex";
+import { toolRefusedTitle } from "@shared/codex";
+import { ITALIAN } from "@shared/i18n";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 
@@ -120,7 +121,7 @@ describe("the Coordinator uses Trama's tools, never the provider's (issue #228)"
     await controller.start();
     await controller.openProject(repo);
     await until(() => controller!.snapshot.project?.phase.kind === "ready" && controller!.snapshot.project.github.status !== "loading", 20_000);
-    const refused = controller.snapshot.project!.document.events.filter((e) => e.content.type === "activity" && e.content.title === TOOL_REFUSED_TITLE);
+    const refused = controller.snapshot.project!.document.events.filter((e) => e.content.type === "activity" && e.content.title === toolRefusedTitle(ITALIAN));
     expect(refused).toHaveLength(1);
     expect(refused[0]!.content).toMatchObject({ detail: expect.stringContaining("Richiesta: gh issue list") });
   }, 90_000);
@@ -140,7 +141,7 @@ describe("the Coordinator uses Trama's tools, never the provider's (issue #228)"
 
     await controller.send("[issue-gh] leggi le issue", null, null, null);
     await until(() => replies().some((text) => text.startsWith("github")));
-    const refused = document.events.filter((e) => e.content.type === "activity" && e.content.title === TOOL_REFUSED_TITLE);
+    const refused = document.events.filter((e) => e.content.type === "activity" && e.content.title === toolRefusedTitle(ITALIAN));
     expect(refused).toHaveLength(1);
     expect(refused[0]!.content).toMatchObject({
       tone: "error",

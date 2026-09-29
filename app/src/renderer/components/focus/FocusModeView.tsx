@@ -2,7 +2,7 @@ import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocu
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
-import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
@@ -53,7 +53,7 @@ const axisState = (axis: AuditAxis): StepState =>
 function axisNote(axis: AuditAxis, t: Translate): string {
   if (axis.status === "waiting") return t("focus.axis.waiting");
   if (axis.status === "running") return axis.model ? t("focus.axis.runningWith", { model: axis.model }) : t("focus.axis.running");
-  if (axis.status === "skipped") return axis.report ? plainText(axis.report) : t("focus.axis.skipped");
+  if (axis.status === "skipped") return axis.report ? plainText(t, axis.report) : t("focus.axis.skipped");
   if (axis.status === "failed") return axis.failure ?? t("focus.axis.failed");
   const count = axis.findings ?? 0;
   return count === 0 ? t("focus.axis.none") : t("focus.axis.findings", { count });
@@ -70,7 +70,7 @@ function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
     <ol className="divide-y divide-[color:var(--app-surface-divider)]" aria-label={t("focus.column.progress")}>
       <Step state="done" title={t("focus.step.fixedPoint")}>
         <p className="text-ui-sm text-muted-foreground">
-          <span className="font-mono text-[11.5px] text-foreground/85" title={audit.fixedPoint}>{fixedPointText(audit, t)}</span>
+          <span className="font-mono text-[11.5px] text-foreground/85" title={audit.fixedPoint}>{fixedPointText(t, audit)}</span>
           <Sep />
           {t("focus.files", { count: audit.changedFiles.length })}
           {audit.commits ? <><Sep />{t("focus.commits", { count: audit.commits.length })}</> : null}
@@ -125,13 +125,13 @@ function FindingButton({ finding, auditId, actionable, selected, onSelect }: { f
         )}
       >
         <span className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+          <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
           {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
           <span className="text-ui text-foreground">{finding.title}</span>
         </span>
         <span className="block text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
           {withNodes(t("focus.evidence"), {
-            evidence: evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence),
+            evidence: evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</span> : evidenceLabel(t, evidence),
           })}
         </span>
       </button>
@@ -223,7 +223,7 @@ function ReviewBody({ audit, review, reportLabel, selected, onSelect }: { audit:
 /** Center: the findings of each axis, kept apart as the skill presents them, then each axis's own report. */
 function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: string | null; onSelect(id: string): void }) {
   const t = useT();
-  const tally = findingTally(audit);
+  const tally = findingTally(t, audit);
   const lenses = auditLenses(audit);
   const lensLine = lensSummary(audit, t);
   return (
@@ -232,7 +232,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
         <section aria-label={t("focus.summary")}>
           <h3 className="mb-1.5 text-ui-sm font-medium text-muted-foreground">{t("focus.summary")}</h3>
           <div className="chat-card px-3.5 py-2.5">
-            <p className="text-ui text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
+            <p className="text-ui text-foreground" data-testid="focus-audit-summary">{plainText(t, audit.summary)}</p>
             {lensLine ? <p className="mt-1 text-ui text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
             {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
           </div>
@@ -283,7 +283,7 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
     <div className="space-y-3" data-testid="focus-proof" data-finding={finding.id}>
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+          <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
           {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
         </div>
         <p className="text-ui text-foreground">{finding.title}</p>
@@ -296,7 +296,7 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
           <p className="mt-1 whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p>
         ) : (
           <>
-            <p className="mt-1 font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</p>
+            <p className="mt-1 font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</p>
             {evidence.kind === "fileLine" && evidence.quote ? (
               <p className="mt-1 text-ui-sm text-muted-foreground">
                 {withNodes(t("focus.proof.quote"), { quote: <code className="font-mono text-[11.5px] text-foreground/85">{evidence.quote}</code> })}
@@ -380,7 +380,7 @@ export function FocusModeView() {
         <div className="flex min-w-[12rem] flex-1 items-center gap-2">
           <IconFocus2 className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
           <h1 className="min-w-0 truncate font-system-ui text-ui text-foreground" data-testid="focus-mode-title">
-            <span className="font-medium">{t("focus.title")}</span> <span className="text-muted-foreground">{focusTargetOf(audit.target, assignment?.objective, t)}</span>
+            <span className="font-medium">{t("focus.title")}</span> <span className="text-muted-foreground">{focusTargetOf(t, audit.target, assignment?.objective)}</span>
           </h1>
           <span className="flex shrink-0 items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
             <Sep />

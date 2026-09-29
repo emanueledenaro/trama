@@ -35,6 +35,8 @@ import { loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, proposeTeam } from "./team";
 
+const t = translator("it");
+
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
 const codeReview = () => loadNativeSkill(skillsDirectory, "code-review");
 const original = () => readFile(join(skillsDirectory, "code-review/SKILL.md"));
@@ -380,7 +382,7 @@ describe("Trama's lenses next to the axes (F05)", () => {
     expect(lensSummary(audit)).toBe("Sicurezza: 1 rilievo, il più grave: Il percorso esce dalla radice. Qualità dei test: nessun rilievo. Documenti e codice: non riuscita.");
     expect(audit.lenses!.security.items).toEqual([expect.objectContaining({ id: "security-1", status: "pending" })]);
     expect(auditFindings(audit).map((f) => f.id)).toEqual(["security-1"]);
-    expect(findingTally(audit)).toBe("1 da verificare");
+    expect(findingTally(t, audit)).toBe("1 da verificare");
   });
 
   it("closes on a lens's report when both axes failed, and fails only when no session produced one", () => {

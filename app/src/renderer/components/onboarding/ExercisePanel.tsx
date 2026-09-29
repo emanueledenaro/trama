@@ -1,12 +1,13 @@
 import { IconCircleCheck, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
-import { EXERCISES, type ExerciseId, exerciseDescriptor, exerciseSteps, hasUsableProvider, resumeStep } from "@shared/onboarding";
+import { EXERCISE_IDS, type ExerciseId, exerciseDescriptor, exerciseSteps, hasUsableProvider, resumeStep } from "@shared/onboarding";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { StepRow } from "./StepRow";
 import { Sep } from "@/components/ui/sep";
+import { useT } from "@/lib/i18n";
 
 const DECISION_PROMPT =
   "Esercizio: fammi una domanda di prodotto sul caso dell'ordine pagato annullato, con alternative concrete, usando request_decision. Non modificare nulla.";
@@ -19,10 +20,11 @@ function send(text: string) {
 
 /** Actions for the step the exercise waits for. They never mark a step: the state does. */
 function CurrentActions({ exercise, step }: { exercise: ExerciseId; step: string | null }) {
+  const t = useT();
   const setInspector = useUi((s) => s.setInspector);
   const running = useUi((s) => s.app?.project?.runningRequestId ?? null);
   const [simulating, setSimulating] = useState(false);
-  const descriptor = exerciseDescriptor(exercise);
+  const descriptor = exerciseDescriptor(t, exercise);
   if (!step) return null;
   const prompt = (label: string, text: string) => (
     <>
@@ -88,16 +90,17 @@ function CurrentActions({ exercise, step }: { exercise: ExerciseId; step: string
 
 /** The exercise guide over the example project's chat (C13, C14). It can be closed and recalled. */
 export function ExercisePanel() {
+  const t = useT();
   const exercise = useUi((s) => s.exercise);
   const setExercise = useUi((s) => s.setExercise);
   const app = useUi((s) => s.app)!;
   const project = app.project;
   const steps = useMemo(
-    () => (exercise && project?.isDemo ? exerciseSteps(exercise, project.document, { providerReady: hasUsableProvider(app) }) : []),
-    [exercise, project, app],
+    () => (exercise && project?.isDemo ? exerciseSteps(t, exercise, project.document, { providerReady: hasUsableProvider(app) }) : []),
+    [exercise, project, app, t.language],
   );
   if (!exercise || !project?.isDemo) return null;
-  const descriptor = exerciseDescriptor(exercise);
+  const descriptor = exerciseDescriptor(t, exercise);
   const current = resumeStep(steps);
   const completed = app.onboarding.completedExercises;
 
@@ -113,7 +116,7 @@ export function ExercisePanel() {
         </button>
       </div>
       <div className="flex gap-1 px-3 pt-2" role="tablist" aria-label="Esercizi">
-        {EXERCISES.map((e, index) => (
+        {EXERCISE_IDS.map((id) => exerciseDescriptor(t, id)).map((e, index) => (
           <button
             key={e.id}
             type="button"

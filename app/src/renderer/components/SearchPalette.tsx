@@ -19,11 +19,11 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
-import { useT } from "@/lib/i18n";
 import type * as React from "react";
 import { mentionCandidates } from "@shared/mentions";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 interface PaletteItem {
   id: string;
@@ -37,12 +37,12 @@ interface PaletteItem {
 const ICON = "size-3.5 shrink-0 text-muted-foreground";
 
 export function SearchPalette() {
+  const t = useT();
   const open = useUi((s) => s.dialog === "search");
   const setDialog = useUi((s) => s.setDialog);
   const app = useUi((s) => s.app);
   const setInspector = useUi((s) => s.setInspector);
   const focusComposer = useUi((s) => s.focusComposer);
-  const t = useT();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
 
@@ -110,7 +110,7 @@ export function SearchPalette() {
     const filter = (list: PaletteItem[]) => (text ? list.filter((i) => i.label.toLowerCase().includes(text) || i.meta?.toLowerCase().includes(text)) : list);
     const objects: PaletteItem[] =
       project && text
-        ? mentionCandidates(text, { modules: project.snapshot.modules, issues: project.github.issues, decisions: project.document.decisions })
+        ? mentionCandidates(t, text, { modules: project.snapshot.modules, issues: project.github.issues, decisions: project.document.decisions })
             .slice(0, 20)
             .map((candidate) => {
               const { kind, key } = candidate.mention;

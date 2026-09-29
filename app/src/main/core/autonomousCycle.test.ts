@@ -17,6 +17,9 @@ import { answerDecisionRequest, createDecisionRequest, grantMandate, revokeManda
 import { doneSince } from "./recap";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 import { workState } from "./workPhase";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const free: ContinuationGuards = { enabled: true, paused: false, busy: false, unavailable: null };
 
@@ -228,11 +231,11 @@ describe("correcting a step the Coordinator took (A06)", () => {
     const document = grilled();
     mandate(document, ["plan"]);
     const step = recordAutonomousStep(document, delegatedSteps(document, free)[0]!, "Comprensione della richiesta.", new Date(tick()));
-    const [entry] = activityLog(document.requests, document.events, [], [], document.autonomousSteps);
+    const [entry] = activityLog(t, document.requests, document.events, [], [], document.autonomousSteps);
     expect(entry).toMatchObject({ kind: "step", label: "Comprensione confermata dal Coordinatore", outcome: "done", detail: "Comprensione della richiesta." });
     expect(doneSince(document, null).map((f) => f.text)).toEqual(["Comprensione confermata dal Coordinatore: Comprensione della richiesta."]);
     correctAutonomousStep(document, step.id, "Anche il cliente", new Date(tick()));
-    expect(activityLog(document.requests, document.events, [], [], document.autonomousSteps)[0]).toMatchObject({ outcome: "corrected" });
+    expect(activityLog(t, document.requests, document.events, [], [], document.autonomousSteps)[0]).toMatchObject({ outcome: "corrected" });
     expect(doneSince(document, null)[0]!.text).toBe("Comprensione confermata dal Coordinatore (corretto da te): Comprensione della richiesta. Correzione: Anche il cliente");
   });
 });

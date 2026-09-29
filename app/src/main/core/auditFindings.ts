@@ -9,6 +9,7 @@ import { isLightModel } from "./duties";
 import { t } from "./personLanguage";
 import { extractJsonAnswer } from "./providers/types";
 import { containsExcludedComponent, readRepositoryFile, RepositoryScannerError } from "./repositoryScanner";
+import { ITALIAN } from "@shared/i18n";
 
 /**
  * Verification of focus mode's findings (F02, issue #126). Each finding carries a proof. Trama rechecks the proofs it
@@ -224,7 +225,7 @@ export function confirmationTurn(
   const subject = target.kind === "candidate" ? `sul candidato ${input.candidateId}` : target.kind === "module" ? `sul modulo ${target.moduleName} (\`${target.path}\`)` : "sul progetto";
   const proof =
     evidence.kind === "fileLine"
-      ? `\`${evidenceLabel(evidence)}\`${evidence.quote ? `, riga citata: \`${evidence.quote}\`` : ""}`
+      ? `\`${evidenceLabel(ITALIAN, evidence)}\`${evidence.quote ? `, riga citata: \`${evidence.quote}\`` : ""}`
       : evidence.kind === "command"
         ? `il comando \`${evidence.command}\``
         : `riproduzione:\n${evidence.steps}`;

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ITALIAN } from "@shared/i18n";
 import type { AssignmentStatus, AutonomousStep, ProjectDocument, Specialist, Squad, TeamRole, WorkPlan } from "@shared/domain";
 import { shortId } from "@shared/ids";
 import type { RepositoryModule } from "@shared/repository";
@@ -59,7 +60,7 @@ function freeName(document: ProjectDocument, base: string): string {
 
 /** A member Trama adds to a squad: its lead, its QA, or a developer for its area. */
 export function addMember(document: ProjectDocument, role: TeamRole, area: SquadArea, now: Date): Specialist {
-  const profile = roleProfile(role);
+  const profile = roleProfile(ITALIAN, role);
   const draft =
     role === "developer"
       ? {
