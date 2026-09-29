@@ -29,3 +29,7 @@ Controllo di #252 sul branch `feature/issue-252-timed-agent-discussions-e96min`.
 - Risultati su Linux nel container (xvfb), su main `48397bf`: `tsc` senza errori, `vitest` 164 file e 1548 test passati (3 saltati), `npm run build` ok, `ui-check` completato con 570 schermate (540 su main). Il passo delle discussioni sta alla fine del percorso del progetto di esempio: prima, i suoi turni in più del Coordinatore facevano partire una revisione automatica della memoria e cambiavano i passi successivi.
 
 Non verificato: nessuna esecuzione reale di Codex. Nel catalogo del server di prova di ui-check al momento del passo non c'è un modello leggero, quindi i turni mostrano il modello del ruolo; la scelta del modello leggero è coperta dai test di unità. La scadenza reale al giro periodico (ogni cinque minuti) non è provata in ui-check, che non aspetta il tempo massimo: la coprono i test di unità.
+
+## Riallineamento con B07 (#384)
+
+Dopo il merge di main con B07 la discussione si apre in una scheda dell'editor accanto alla Conversazione, come gli altri dettagli; le righe delle discussioni restano nella vista Squadre e la riga della scheda attiva è segnata. I passi `41a`-`41f` di ui-check leggono la discussione nella scheda. Le schermate dopo in `docs/images/a12/` vengono da questo giro. Risultati su main `910dbfa`: `check-inventory` senza `--write` ok, `tsc` senza errori, `vitest` 168 file e 1627 test passati (3 saltati), `npm run build` ok, `ui-check` completato con 670 schermate.
