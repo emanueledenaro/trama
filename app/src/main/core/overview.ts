@@ -1,7 +1,7 @@
 import type { AttentionReason, CandidateReport, GitHubSnapshot, ProjectDocument, ProjectOverview, RecentProject } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
 import { presenceFreshness, type PresenceView } from "@shared/presence";
-import { ITALIAN } from "@shared/i18n";
+import { t } from "./personLanguage";
 import { type WaitingKind, waitingForYou } from "@shared/waitingForYou";
 import { currentAssignment } from "./team";
 
@@ -30,7 +30,7 @@ export function summarizeProject(
   // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision. The
   // counts come from the list of Aspetta te (issue #390), so the overview never shows what the project does not.
   const reports = Object.fromEntries(document.candidates.flatMap((candidate, index) => (input.candidateReports[index] ? [[candidate.id, input.candidateReports[index]]] : [])));
-  const waiting = waitingForYou(ITALIAN, document, { candidateReports: reports });
+  const waiting = waitingForYou(t, document, { candidateReports: reports });
   const count = (kind: WaitingKind) => waiting.filter((item) => item.kind === kind).length;
   const openDecisions = count("question");
   const openMandates = count("mandate");
@@ -49,14 +49,14 @@ export function summarizeProject(
   const waitingForCapacity = input.waitingForCapacity ?? 0;
   const ci = input.ci ?? null;
   const reasons: string[] = [];
-  if (openDecisions) reasons.push(`${openDecisions} ${openDecisions === 1 ? "decisione richiesta" : "decisioni richieste"}`);
-  if (openMandates) reasons.push(`${openMandates} ${openMandates === 1 ? "richiesta di mandato" : "richieste di mandato"}`);
-  if (openTeams) reasons.push(`${openTeams} ${openTeams === 1 ? "proposta di team" : "proposte di team"}`);
-  if (blockedWork) reasons.push(`${blockedWork} ${blockedWork === 1 ? "lavoro fermo o fallito" : "lavori fermi o falliti"}`);
-  if (toApprove) reasons.push(`${toApprove} ${toApprove === 1 ? "risultato da approvare" : "risultati da approvare"}`);
-  if (runningWork) reasons.push(`${runningWork} ${runningWork === 1 ? "incarico in corso" : "incarichi in corso"}`);
-  if (waitingForCapacity) reasons.push(`${waitingForCapacity} ${waitingForCapacity === 1 ? "incarico aspetta" : "incarichi aspettano"} uno sviluppatore libero`);
-  if (ci?.failing) reasons.push(`CI rossa su ${ci.failing} pull request`);
+  if (openDecisions) reasons.push(t("main.overview.decisions", { count: openDecisions }));
+  if (openMandates) reasons.push(t("main.overview.mandates", { count: openMandates }));
+  if (openTeams) reasons.push(t("main.overview.teams", { count: openTeams }));
+  if (blockedWork) reasons.push(t("main.overview.blocked", { count: blockedWork }));
+  if (toApprove) reasons.push(t("main.overview.toApprove", { count: toApprove }));
+  if (runningWork) reasons.push(t("main.overview.running", { count: runningWork }));
+  if (waitingForCapacity) reasons.push(t("main.overview.waitingForCapacity", { count: waitingForCapacity }));
+  if (ci?.failing) reasons.push(t("main.overview.ciFailing", { count: ci.failing }));
   const attention: AttentionReason | null = pendingDecisions
     ? "decision"
     : blockedWork
@@ -68,7 +68,7 @@ export function summarizeProject(
           : null;
   return {
     id: recent.id,
-    name: recent.isDemo ? "Progetto di esempio" : recent.name,
+    name: recent.isDemo ? t("main.overview.demoName") : recent.name,
     path: recent.path,
     isDemo: recent.isDemo,
     source: input.source,
@@ -93,7 +93,7 @@ export function summarizeProject(
 export function unreadableProject(recent: RecentProject, error: string | null, priority = 0): ProjectOverview {
   return {
     id: recent.id,
-    name: recent.isDemo ? "Progetto di esempio" : recent.name,
+    name: recent.isDemo ? t("main.overview.demoName") : recent.name,
     path: recent.path,
     isDemo: recent.isDemo,
     source: error ? "unreadable" : "notSaved",

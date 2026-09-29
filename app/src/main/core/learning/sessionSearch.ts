@@ -12,6 +12,7 @@ import { searchMessages, type SearchDocument } from "./searchIndex";
 
 type JsonRecord = Record<string, unknown>;
 
+// @model-text: the id of the project dialog in the tool protocol.
 export const PROJECT_DIALOG_ID = "progetto";
 const DISCOVER_SCAN_LIMIT = 300;
 const BOOKEND_CAP = 1200;
@@ -56,6 +57,7 @@ export const SESSION_SEARCH_PROPERTIES = {
     items: { type: "string" },
     description: "Discovery shape only. Dialog ids already inspected this task. Those dialogs are omitted so a later query explores instead of repeating the same hit. Cap 20.",
   },
+  // @model-text: tool schema for the model.
   session_id: { type: "string", description: "Scroll or read shape. The dialog to read inside ('progetto' or a goal id). Use the session_id returned from a prior discovery call." },
   around_message_id: { type: "integer", description: "Scroll shape. Message id to center the window on — use match_message_id from a discovery result, or any id from a prior window." },
   window: { type: "integer", description: "Scroll shape only. Messages to return on each side of the anchor (anchor itself always included). Clamped to [1, 20]. Default 5." },
@@ -101,6 +103,7 @@ function messageOf(event: ConversationEvent): StoredMessage | null {
   }
 }
 
+/** @model-text: the dialog's title in the tool result for the model. */
 function sessionTitle(document: ProjectDocument, sessionId: string): string {
   if (sessionId === PROJECT_DIALOG_ID) return "Chat del progetto";
   return document.goals?.find((g) => g.id === sessionId)?.title ?? sessionId;

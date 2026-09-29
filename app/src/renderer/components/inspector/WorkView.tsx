@@ -1,14 +1,15 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
+import { useT } from "@/lib/i18n";
 import type { CandidateState } from "@shared/domain";
 import { candidateState, candidateStatus, planStatus } from "@shared/states";
 import { Badge } from "@/components/ui/field";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
-import { useT } from "@/lib/i18n";
 
 const ORDER: CandidateState[] = ["decided", "building", "verified", "superseded"];
 
-export function WorkView() {
+/** The candidates by state and the plans, a section of the Lavoro view (issue #332). */
+export function CandidateList() {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -16,7 +17,7 @@ export function WorkView() {
   const plans = project.document.plans;
   if (!candidates.length && !plans.length) {
     return (
-      <div className="p-4">
+      <div className="px-2">
         <EmptyNote>Nessun candidato.</EmptyNote>
       </div>
     );

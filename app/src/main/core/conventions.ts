@@ -1,6 +1,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CommitConventions, WorkKind } from "@shared/domain";
+import { t } from "./personLanguage";
 import { git } from "./process";
 
 /**
@@ -109,7 +110,7 @@ export function conventionsFromText(input: { instructions: { path: string; text:
   let headerMaxLength = DEFAULT_CONVENTIONS.headerMaxLength;
   let prefixes = pickPrefixes(prefixCounts(input.branches), DEFAULT_CONVENTIONS.branchPrefixes);
   if (input.branches.length && Object.entries(prefixes).some(([kind, prefix]) => DEFAULT_CONVENTIONS.branchPrefixes[kind as BranchKind] !== prefix)) {
-    sources.push("branch esistenti");
+    sources.push(t("main.conventions.existingBranches"));
   }
   if (input.commitlint) {
     sources.push(input.commitlint.path);
@@ -186,7 +187,7 @@ export async function readProjectConventions(root: string): Promise<CommitConven
 /**
  * Words a complete description does not end with, in Italian and English: articles, prepositions and conjunctions.
  * "in", "on" and "out" stay out of the list: "log in" and "opt out" end a description well. Single letters stay out
- * too: "change a" may name a file or a variable.
+ * too: "change a" may name a file or a variable. @model-text: a word list for parsing, not a text the person reads.
  */
 const DANGLING_WORDS = new Set(
   (
@@ -236,30 +237,32 @@ export function parseCommitMessage(message: string, conventions: CommitConventio
   const header = lines[0] ?? "";
   const match = HEADER.exec(header);
   if (!match) {
-    if (!header.trim()) problems.push("Il messaggio è vuoto.");
-    else if (/^[A-Za-z][\w-]*(\([^()]*\))?!?:\S/.test(header)) problems.push("Dopo i due punti serve uno spazio prima della descrizione.");
-    else if (/^[A-Za-z][\w-]*(\([^()]*\))?!?\s+:/.test(header)) problems.push("I due punti vanno subito dopo il tipo o l'ambito, senza spazi.");
-    else if (/^[A-Za-z][\w-]*\(/.test(header)) problems.push("L'ambito va tra una sola coppia di parentesi, subito dopo il tipo.");
-    else problems.push(`Il titolo deve iniziare con un tipo seguito da due punti e spazio, per esempio "feat: add the search palette". Titolo attuale: "${header}".`);
+    if (!header.trim()) problems.push(t("main.conventions.emptyMessage"));
+    else if (/^[A-Za-z][\w-]*(\([^()]*\))?!?:\S/.test(header)) problems.push(t("main.conventions.spaceAfterColon"));
+    else if (/^[A-Za-z][\w-]*(\([^()]*\))?!?\s+:/.test(header)) problems.push(t("main.conventions.colonPlacement"));
+    else if (/^[A-Za-z][\w-]*\(/.test(header)) problems.push(t("main.conventions.scopeParentheses"));
+    else problems.push(t("main.conventions.headerForm", { header }));
     return { commit: null, problems };
   }
   const [, type, scope, bang, description] = match as unknown as [string, string, string | undefined, string | undefined, string];
-  if (!conventions.types.includes(type.toLowerCase())) problems.push(`Il tipo "${type}" non è tra quelli ammessi dal progetto: ${conventions.types.join(", ")}.`);
+  if (!conventions.types.includes(type.toLowerCase())) problems.push(t("main.conventions.typeNotAllowed", { type, types: conventions.types.join(", ") }));
   if (scope !== undefined) {
-    if (!scope.trim()) problems.push("L'ambito tra parentesi è vuoto: scrivilo o togli le parentesi.");
-    else if (/\s/.test(scope)) problems.push(`L'ambito "${scope}" è un nome senza spazi.`);
+    if (!scope.trim()) problems.push(t("main.conventions.emptyScope"));
+    else if (/\s/.test(scope)) problems.push(t("main.conventions.scopeSpaces", { scope }));
     else if (conventions.scopes && !conventions.scopes.map((s) => s.toLowerCase()).includes(scope.toLowerCase())) {
-      problems.push(`L'ambito "${scope}" non è tra quelli ammessi dal progetto: ${conventions.scopes.join(", ")}.`);
+      problems.push(t("main.conventions.scopeNotAllowed", { scope, scopes: conventions.scopes.join(", ") }));
     }
   }
-  if (!description.trim()) problems.push("Manca la descrizione dopo i due punti.");
-  else if (/^\s/.test(description)) problems.push("La descrizione segue subito i due punti e un solo spazio.");
+  if (!description.trim()) problems.push(t("main.conventions.missingDescription"));
+  else if (/^\s/.test(description)) problems.push(t("main.conventions.descriptionSpacing"));
   else {
     const dangling = danglingEnd(description);
-    if (dangling) problems.push(`La descrizione sembra tagliata a metà: finisce con "${dangling}". Scrivila completa.`);
+    if (dangling) problems.push(t("main.conventions.descriptionCut", { end: dangling }));
   }
-  if (header.length > conventions.headerMaxLength) problems.push(`Il titolo ha ${header.length} caratteri: il progetto ne ammette al massimo ${conventions.headerMaxLength}.`);
-  if (lines.length > 1 && lines[1]!.trim() !== "") problems.push("Il corpo inizia dopo una riga vuota sotto il titolo.");
+  if (header.length > conventions.headerMaxLength) {
+    problems.push(t("main.conventions.headerTooLong", { length: String(header.length), max: String(conventions.headerMaxLength) }));
+  }
+  if (lines.length > 1 && lines[1]!.trim() !== "") problems.push(t("main.conventions.bodyBlankLine"));
 
   const paragraphs = lines.slice(1).join("\n").trim().split(/\n\s*\n/).filter((p) => p.trim());
   const last = paragraphs.at(-1);
@@ -276,7 +279,7 @@ export function parseCommitMessage(message: string, conventions: CommitConventio
       // A line that looks like a footer with spaces in its token breaks rule 9; otherwise it continues the value (rule 10).
       const spaced = /^([A-Za-z][\w-]*(?: [\w-]+)+)(: | #)/.exec(line);
       if (spaced && !/^breaking[ -]change$/i.test(spaced[1]!)) {
-        problems.push(`Il token del footer "${spaced[1]}" usa spazi: usa i trattini (${spaced[1]!.replace(/ /g, "-")}).`);
+        problems.push(t("main.conventions.footerSpaces", { token: spaced[1]!, hyphenated: spaced[1]!.replace(/ /g, "-") }));
       }
       if (footers.length) footers.at(-1)!.value += `\n${line}`;
     }
@@ -284,12 +287,12 @@ export function parseCommitMessage(message: string, conventions: CommitConventio
   for (const line of (last ?? "").split("\n")) {
     const breaking = /^(breaking[ -]change)\s*(:|#)/i.exec(line);
     if (!breaking) continue;
-    if (!isBreakingToken(breaking[1]!)) problems.push(`"${breaking[1]}" va scritto in maiuscolo: BREAKING CHANGE.`);
-    else if (line.trim() === `${breaking[1]}:`) problems.push("BREAKING CHANGE deve descrivere la modifica incompatibile.");
-    else if (!line.startsWith(`${breaking[1]}: `)) problems.push(`${breaking[1]} è seguito da due punti, uno spazio e la descrizione.`);
+    if (!isBreakingToken(breaking[1]!)) problems.push(t("main.conventions.breakingUppercase", { token: breaking[1]! }));
+    else if (line.trim() === `${breaking[1]}:`) problems.push(t("main.conventions.breakingDescription"));
+    else if (!line.startsWith(`${breaking[1]}: `)) problems.push(t("main.conventions.breakingForm", { token: breaking[1]! }));
   }
   for (const footer of footers) {
-    if (isBreakingToken(footer.token) && footer.separator === ": " && !footer.value.trim()) problems.push("BREAKING CHANGE deve descrivere la modifica incompatibile.");
+    if (isBreakingToken(footer.token) && footer.separator === ": " && !footer.value.trim()) problems.push(t("main.conventions.breakingDescription"));
   }
   const breaking = Boolean(bang) || footers.some((f) => isBreakingToken(f.token) && f.separator === ": ");
   const body = bodyParagraphs.join("\n\n").trim() || null;
@@ -304,7 +307,7 @@ export function validateCommitMessage(message: string, conventions: CommitConven
 /** Thrown when Trama refuses to commit a message. */
 export class CommitMessageError extends Error {
   constructor(readonly problems: string[]) {
-    super(`Messaggio di commit non valido: ${problems.join(" ")}`);
+    super(t("main.conventions.invalidMessage", { problems: problems.join(" ") }));
   }
 }
 
@@ -441,12 +444,14 @@ export function validateBranchName(branch: string, conventions: CommitConvention
   const prefix = slash > 0 ? branch.slice(0, slash) : "";
   const description = slash > 0 ? branch.slice(slash + 1) : "";
   const prefixes = new Set([...Object.values(conventions.branchPrefixes), ...Object.values(PREFIX_ALIASES).flat()]);
-  if (!prefix || !prefixes.has(prefix)) problems.push(`Il branch "${branch}" inizia con un tipo: ${[...new Set(Object.values(conventions.branchPrefixes))].map((p) => `${p}/`).join(", ")}.`);
+  if (!prefix || !prefixes.has(prefix)) {
+    problems.push(t("main.conventions.branchType", { branch, prefixes: [...new Set(Object.values(conventions.branchPrefixes))].map((p) => `${p}/`).join(", ") }));
+  }
   const release = prefix === conventions.branchPrefixes.release || prefix === "release";
-  if (!description) problems.push("Dopo il tipo serve una descrizione breve.");
+  if (!description) problems.push(t("main.conventions.branchDescription"));
   else if (!(release ? /^[a-z0-9.-]+$/ : /^[a-z0-9-]+$/).test(description)) {
-    problems.push(release ? "La descrizione usa solo minuscole, cifre, trattini e punti." : "La descrizione usa solo minuscole, cifre e trattini; i punti solo nelle versioni di release/.");
-  } else if (/[-.]{2}|^[-.]|[-.]$/.test(description)) problems.push("Trattini e punti non vanno ripetuti, né all'inizio o alla fine.");
+    problems.push(t(release ? "main.conventions.releaseCharacters" : "main.conventions.branchCharacters"));
+  } else if (/[-.]{2}|^[-.]|[-.]$/.test(description)) problems.push(t("main.conventions.branchRepeats"));
   return problems;
 }
 

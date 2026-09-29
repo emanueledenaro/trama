@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, LANGUAGES, LANGUAGE_NAMES_IN_ENGLISH, type MessageKey, translate } from "@shared/i18n";
 import { randomUUID } from "node:crypto";
 import type { Candidate, CandidateGate, GateFinding, GateReview, GateRole, ProjectDocument, SpecialistAssignment, SuiteComparison } from "@shared/domain";
 import { candidateSuperseded } from "@shared/conflictScope";
@@ -12,6 +12,7 @@ import { inspectCandidate, latestCandidate } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { extractJsonAnswer } from "./providers/types";
+import { t } from "./personLanguage";
 import { findAssignment } from "./team";
 import { ITALIAN } from "@shared/i18n";
 
@@ -107,15 +108,18 @@ export function stopAtChecks(gate: CandidateGate, failed: string[], now = new Da
       continue;
     }
     review.status = "skipped";
-    review.report = CHECKS_FAILED_NOTE;
+    review.report = checksFailedNote();
     review.finishedAt = now.toISOString();
   }
   gate.updatedAt = now.toISOString();
 }
 
-export const CHECKS_FAILED_NOTE = "Non è partito: una verifica richiesta non è passata.";
+export const checksFailedNote = () => t("main.gate.checksFailedNote");
 
-export const ENVIRONMENT_NOTE = "Non è partito: una verifica richiesta non è riuscita per la sandbox o la macchina.";
+export const environmentNote = () => t("main.gate.environmentNote");
+
+/** Whether a stored report is one of these notes, in any language: the gate keeps the words of the language it ran in. */
+const isNote = (report: string | null, key: MessageKey) => LANGUAGES.some((language) => report === translate(language, key));
 
 /**
  * A required check failed because of the sandbox or the machine (issue #271): it left no evidence, so no reviewer
@@ -124,14 +128,14 @@ export const ENVIRONMENT_NOTE = "Non è partito: una verifica richiesta non è r
  */
 export function stopAtEnvironment(gate: CandidateGate, checks: string[], now = new Date()): void {
   const at = now.toISOString();
-  for (const review of gate.reviews) Object.assign(review, idleReview(review.role), { status: "skipped", report: ENVIRONMENT_NOTE, finishedAt: at });
+  for (const review of gate.reviews) Object.assign(review, idleReview(review.role), { status: "skipped", report: environmentNote(), finishedAt: at });
   gate.status = "failed";
-  gate.failure = `Le verifiche ${checks.join(", ")} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.`;
+  gate.failure = t("main.gate.environmentFailure", { checks: checks.join(", ") });
   gate.finishedAt = at;
   gate.updatedAt = at;
 }
 
-export const SECRET_NOTE = "Non è partito: il diff contiene un segreto, e Trama non lo manda ai modelli.";
+export const secretNote = () => t("main.gate.secretNote");
 
 /**
  * Trama's own scan found a secret or a sensitive file in the diff: no model session opens on it. Security's finding is
@@ -147,12 +151,12 @@ export function stopAtSecrets(gate: CandidateGate, secrets: string[], now = new 
     } else if (review.role === "security") {
       Object.assign(review, {
         status: "done",
-        findings: secrets.map((s): GateFinding => ({ severity: "blocking", title: `Segreto nel diff: ${s}`, detail: "Trama l'ha trovato prima dei revisori: togli il segreto dal lavoro e, se è una chiave vera, revocala.", file: null })),
-        report: `Trama ha trovato nel diff: ${secrets.join(", ")}. Nessun modello ha ricevuto il diff.`,
+        findings: secrets.map((s): GateFinding => ({ severity: "blocking", title: t("main.gate.secretTitle", { secret: s }), detail: t("main.gate.secretDetail"), file: null })),
+        report: t("main.gate.secretReport", { secrets: secrets.join(", ") }),
         finishedAt: at,
       });
     } else {
-      Object.assign(review, { status: "skipped", report: SECRET_NOTE, finishedAt: at });
+      Object.assign(review, { status: "skipped", report: secretNote(), finishedAt: at });
     }
   }
   gate.updatedAt = at;
@@ -217,16 +221,16 @@ const checkTitle = (check: string) => CHECKS[check as ReadOnlyCheck]?.title ?? c
 export function guardianOutcome(suite: SuiteComparison[]): { report: string; findings: GateFinding[] } {
   if (!suite.length) {
     return {
-      report: "Il candidato non richiede build né test: non c'è una suite da confrontare.",
-      findings: [{ severity: "advisory", title: "Nessuna suite da confrontare", detail: "Tra le verifiche richieste non ci sono build né test.", file: null }],
+      report: t("main.gate.noSuiteReport"),
+      findings: [{ severity: "advisory", title: t("main.gate.noSuiteTitle"), detail: t("main.gate.noSuiteDetail"), file: null }],
     };
   }
   const findings: GateFinding[] = [];
   for (const c of suite) {
     const title = checkTitle(c.check);
-    if (isRegression(c)) findings.push({ severity: "blocking", title: `Regressione: ${title}`, detail: `${title} passa sulla base e fallisce sul candidato.`, file: null });
-    else if (c.base === "notRun" || c.candidate === "notRun") findings.push({ severity: "advisory", title: `${title} non confrontabile`, detail: suiteLine(ITALIAN, c, title), file: null });
-    else if (c.base === "fail" && c.candidate === "fail") findings.push({ severity: "advisory", title: `${title} fallisce già sulla base`, detail: suiteLine(ITALIAN, c, title), file: null });
+    if (isRegression(c)) findings.push({ severity: "blocking", title: t("main.gate.regressionTitle", { check: title }), detail: t("main.gate.regressionDetail", { check: title }), file: null });
+    else if (c.base === "notRun" || c.candidate === "notRun") findings.push({ severity: "advisory", title: t("main.gate.notComparable", { check: title }), detail: suiteLine(t, c, title), file: null });
+    else if (c.base === "fail" && c.candidate === "fail") findings.push({ severity: "advisory", title: t("main.gate.alreadyFailing", { check: title }), detail: suiteLine(t, c, title), file: null });
   }
   return { report: suite.map((c) => `- ${suiteLine(ITALIAN, c, checkTitle(c.check))}`).join("\n"), findings };
 }
@@ -244,7 +248,7 @@ export function cleanCodeOutcome(review: {
     file: f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : null,
   }));
   if (review.verdict === "changesRequested" && !findings.some((f) => f.severity === "blocking")) {
-    findings.unshift({ severity: "blocking", title: "Il revisore chiede modifiche", detail: review.summary, file: null });
+    findings.unshift({ severity: "blocking", title: t("main.gate.changesRequested"), detail: review.summary, file: null });
   }
   return { report: review.summary, findings };
 }
@@ -254,7 +258,7 @@ export function closeGate(gate: CandidateGate, now = new Date()): void {
   const blocked = gate.checksFailed.length > 0 || gate.reviews.some((r) => r.status === "done" && blockingFindings(r).length > 0);
   const failed = gate.reviews.filter((r) => r.status === "failed");
   gate.status = blocked ? "blocked" : failed.length ? "failed" : "passed";
-  if (!blocked && failed.length) gate.failure = `${failed.map((r) => roleProfile(ITALIAN, r.role).name).join(", ")}: revisione non riuscita. Rilancia la revisione.`;
+  if (!blocked && failed.length) gate.failure = t("main.gate.reviewsFailed", { names: failed.map((r) => roleProfile(t, r.role).name).join(", ") });
   gate.finishedAt = now.toISOString();
   gate.updatedAt = now.toISOString();
 }
@@ -276,7 +280,7 @@ export function failGate(gate: CandidateGate, failure: string, now = new Date())
 /** A gate still running on disk lost its sessions when Trama closed: it stays, marked as interrupted. */
 export function interruptGates(document: ProjectDocument, now = new Date()): void {
   for (const gate of document.gates ?? []) {
-    if (isGateRunning(gate)) failGate(gate, "La revisione si è interrotta alla chiusura di Trama: rilanciala.", now);
+    if (isGateRunning(gate)) failGate(gate, t("main.gate.interrupted"), now);
   }
 }
 
@@ -285,21 +289,21 @@ const figureName = (document: ProjectDocument, role: GateRole) =>
 
 /** One line per figure, in the order of the spec's table: what the Coordinator and the pull request read. */
 export function gateSummary(document: ProjectDocument, gate: CandidateGate): string {
-  const secret = gate.reviews.some((r) => r.report === SECRET_NOTE);
-  const lines = gate.reviews.filter((r) => r.report !== CHECKS_FAILED_NOTE && r.report !== SECRET_NOTE).map((r) => {
+  const secret = gate.reviews.some((r) => isNote(r.report, "main.gate.secretNote"));
+  const lines = gate.reviews.filter((r) => !isNote(r.report, "main.gate.checksFailedNote") && !isNote(r.report, "main.gate.secretNote")).map((r) => {
     const name = figureName(document, r.role);
     // The record keeps a skill's own words ("no spec available"); the summary the Coordinator repeats is Trama's (issue #392).
-    if (r.status === "skipped") return plainText(ITALIAN, `${name}: ${r.report ?? "saltato"}.`).replace(/\.\.$/, ".");
-    if (r.status === "failed") return `${name}: revisione non riuscita.`;
-    if (r.status !== "done") return `${name}: in corso.`;
+    if (r.status === "skipped") return plainText(t, t("main.gate.summary.skipped", { name, report: r.report ?? t("main.gate.summary.skippedDefault") })).replace(/\.\.$/, ".");
+    if (r.status === "failed") return t("main.gate.summary.failed", { name });
+    if (r.status !== "done") return t("main.gate.summary.running", { name });
     const blocking = blockingFindings(r);
-    if (blocking.length) return `${name}: ${blocking.length === 1 ? "1 rilievo bloccante" : `${blocking.length} rilievi bloccanti`}, il primo: ${blocking[0]!.title.replace(/\.$/, "")}.`;
-    if (r.findings.length) return `${name}: ${r.findings.length === 1 ? "1 suggerimento" : `${r.findings.length} suggerimenti`}.`;
-    return `${name}: niente da segnalare.`;
+    if (blocking.length) return t("main.gate.summary.blocking", { name, count: blocking.length, first: blocking[0]!.title.replace(/\.$/, "") });
+    if (r.findings.length) return t("main.gate.summary.suggestions", { name, count: r.findings.length });
+    return t("main.gate.summary.nothing", { name });
   });
-  if (secret) lines.push("Gli altri revisori non sono partiti: il diff contiene un segreto, e Trama non lo manda ai modelli.");
+  if (secret) lines.push(t("main.gate.summary.secretOthers"));
   if (!gate.checksFailed.length) return lines.join(" ");
-  return [`Verifiche non superate: ${gate.checksFailed.join(", ")}.`, ...lines, "Gli altri revisori non sono partiti: la verifica fallita passa al debugger."].join(" ");
+  return [t("main.gate.summary.checksFailed", { checks: gate.checksFailed.join(", ") }), ...lines, t("main.gate.summary.checksOthers")].join(" ");
 }
 
 /** The blocking findings the developer reads, each with the figure that raised it. */
@@ -329,15 +333,15 @@ export function pendingReturns(document: ProjectDocument): CandidateGate[] {
 export function returnWaiting(code: string, message: string): string {
   switch (code) {
     case "specialist_busy":
-      return "Lo sviluppatore lavora a un altro incarico: riprende questo quando è libero.";
+      return t("main.gate.waiting.specialistBusy");
     case "parallel_limit":
-      return "Gli sviluppatori al lavoro sono già al limite del progetto: il lavoro riprende quando uno si libera.";
+      return t("main.gate.waiting.parallelLimit");
     case "work_not_independent":
-      return "Qualcuno lavora sugli stessi moduli: il lavoro riprende quando finisce.";
+      return t("main.gate.waiting.workNotIndependent");
     case "no_worktree":
-      return "La copia di lavoro dell'incarico non c'è più: serve un nuovo incarico.";
+      return t("main.gate.waiting.noWorktree");
     case "specialist_removed":
-      return "Lo sviluppatore non è più nel team: serve un nuovo incarico.";
+      return t("main.gate.waiting.specialistRemoved");
     default:
       return message;
   }
@@ -408,9 +412,10 @@ export interface ReviewerTurn {
   outputSchema: Record<string, unknown>;
 }
 
+/** @model-text: a line of the reviewer's prompt. */
 const checkLine = (evidence: Candidate["evidence"][string]) => `- ${evidence.check}: ${evidence.result === "pass" ? "superata" : "non superata"} (\`${evidence.command}\`)`;
 
-/** The read-only session of one figure: the diff, the checks and, for the spec reviewer, the spec, all as data. */
+/** The read-only session of one figure: the diff, the checks and, for the spec reviewer, the spec, all as data. @model-text */
 export function reviewerTurn(
   input: {
     projectName: string;
@@ -459,15 +464,15 @@ export function readReviewerAnswer(raw: string): { report: string; findings: Gat
   try {
     answer = JSON.parse(extractJsonAnswer(raw)) as typeof answer;
   } catch {
-    throw new GateError("unreadable_answer", "Il revisore non ha restituito un rapporto leggibile.");
+    throw new GateError("unreadable_answer", t("main.gate.unreadableAnswer"));
   }
-  if (typeof answer.report !== "string" || !Array.isArray(answer.findings)) throw new GateError("unreadable_answer", "Il revisore non ha restituito un rapporto leggibile.");
+  if (typeof answer.report !== "string" || !Array.isArray(answer.findings)) throw new GateError("unreadable_answer", t("main.gate.unreadableAnswer"));
   // A finding outside the schema makes the figure fail: dropping it could turn a blocking finding into a signature.
   const findings = answer.findings.map((item): GateFinding => {
     const f = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
     const title = typeof f.title === "string" ? f.title.trim() : "";
     const valid = (f.severity === "blocking" || f.severity === "advisory") && title && typeof f.detail === "string" && typeof f.file === "string";
-    if (!valid) throw new GateError("malformed_finding", "Il revisore ha restituito un rilievo fuori dallo schema: la revisione non vale.");
+    if (!valid) throw new GateError("malformed_finding", t("main.gate.malformedFinding"));
     return { severity: f.severity as GateFinding["severity"], title, detail: (f.detail as string).trim() || title, file: (f.file as string).trim() || null };
   });
   return { report: answer.report, findings };

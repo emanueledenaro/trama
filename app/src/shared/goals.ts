@@ -146,7 +146,7 @@ export function goalWorkSummary(t: Translate, document: ProjectDocument, goalId:
   const running = links.assignments.filter((a) => ["preparing", "running", "stopRequested"].includes(a.assignment.status)).length;
   const parts: string[] = [];
   if (links.openQuestions.length) parts.push(t("shared.goal.decisions", { count: links.openQuestions.length }));
-  if (running) parts.push(t("shared.goal.running", { count: running }));
+  if (running) parts.push(t("main.overview.running", { count: running }));
   if (links.candidates.length) parts.push(t("shared.goal.candidates", { count: links.candidates.length }));
   if (!links.assignments.length) parts.push(t("shared.goal.noAssignments"));
   return parts.join(", ");

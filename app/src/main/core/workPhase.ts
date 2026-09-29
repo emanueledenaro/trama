@@ -25,6 +25,9 @@ import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { parallelDevelopers } from "@shared/parallel";
+import type { MessageKey } from "@shared/i18n";
+import { t } from "./personLanguage";
 import { projectCapacity, roomForWork } from "@shared/squads";
 
 /**
@@ -93,29 +96,67 @@ export const NEXT_MOVES: NextMove[] = [
   "answerQuestion",
 ];
 
+/** The phases' names in the person's language, read when used. */
 export const PHASE_LABELS: Record<WorkPhase, string> = {
-  clarification: "chiarimento",
-  spec: "spec",
-  slices: "fette",
-  execution: "esecuzione",
-  verification: "verifica",
-  candidate: "candidato",
-  merged: "unito",
-  blocked: "bloccata",
+  get clarification() {
+    return t("main.workPhase.phaseClarification");
+  },
+  get spec() {
+    return t("main.workPhase.phaseSpec");
+  },
+  get slices() {
+    return t("main.workPhase.phaseSlices");
+  },
+  get execution() {
+    return t("main.workPhase.phaseExecution");
+  },
+  get verification() {
+    return t("main.workPhase.phaseVerification");
+  },
+  get candidate() {
+    return t("main.workPhase.phaseCandidate");
+  },
+  get merged() {
+    return t("main.workPhase.phaseMerged");
+  },
+  get blocked() {
+    return t("main.workPhase.phaseBlocked");
+  },
 };
 
-/** The words of the person's step buttons; answerQuestions counts the questions when there are more than one. */
+/**
+ * The words of the person's step buttons, in the person's language when read; answerQuestions counts the questions
+ * when there are more than one.
+ */
 export const PERSON_MOVE_LABELS = {
-  answerQuestions: "Rispondi alla domanda",
-  confirmUnderstanding: "Conferma la comprensione",
-  grantMandate: "Concedi il mandato",
-  confirmTeam: "Conferma il team",
-  confirmSeams: "Conferma i punti di prova",
-  confirmSlices: "Conferma le fette",
-  reviewPlan: "Rivedi il piano",
-  reviewCandidate: "Verifica il candidato",
-  mergePullRequest: "Unisci la pull request",
-} as const satisfies Partial<Record<NextMove, string>>;
+  get answerQuestions(): string {
+    return t("main.workPhase.answerQuestions");
+  },
+  get confirmUnderstanding(): string {
+    return t("main.workPhase.confirmUnderstanding");
+  },
+  get grantMandate(): string {
+    return t("main.workPhase.grantMandate");
+  },
+  get confirmTeam(): string {
+    return t("main.workPhase.confirmTeam");
+  },
+  get confirmSeams(): string {
+    return t("main.workPhase.confirmSeams");
+  },
+  get confirmSlices(): string {
+    return t("main.workPhase.confirmSlices");
+  },
+  get reviewPlan(): string {
+    return t("main.workPhase.reviewPlan");
+  },
+  get reviewCandidate(): string {
+    return t("main.workPhase.reviewCandidate");
+  },
+  get mergePullRequest(): string {
+    return t("main.workPhase.mergePullRequest");
+  },
+} satisfies Partial<Record<NextMove, string>>;
 
 const person = (move: NextMove, label: string, targetId: string | null, extra: Partial<MoveOption> = {}): MoveOption => ({
   move,
@@ -130,26 +171,48 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
 export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion";
 
+/** A move's words in the person's language, read when used. */
+const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
+  get label() {
+    return t(label);
+  },
+  get message() {
+    return t(message);
+  },
+});
+
 /** The words of the Coordinator's moves: the button's label and the message that asks for the move. */
 export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message: string }> = {
-  preparePlan: { label: "Prepara il piano", message: "Prepara il piano." },
-  assignWork: { label: "Assegna il lavoro", message: "Assegna il lavoro." },
-  verifyCandidate: { label: "Esegui le verifiche", message: "Esegui le verifiche del lavoro." },
-  answerQuestion: { label: "Rispondi allo sviluppatore", message: "Rispondi alla domanda dello sviluppatore." },
+  preparePlan: moveWords("main.workPhase.preparePlan", "main.workPhase.preparePlanMessage"),
+  assignWork: moveWords("main.workPhase.assignWork", "main.workPhase.assignWorkMessage"),
+  verifyCandidate: moveWords("main.workPhase.verifyCandidate", "main.workPhase.verifyCandidateMessage"),
+  answerQuestion: moveWords("main.workPhase.answerQuestion", "main.workPhase.answerQuestionMessage"),
 };
 
 /** The name of the move that resolves a technical block (A06), as the status line, Activity and the recap show it. */
 export const BLOCK_LABELS: Record<TechnicalBlock, string> = {
-  checkFailed: "Risolvi la verifica rossa",
-  worktreeConflict: "Risolvi il conflitto",
-  stalledAssignment: "Riprendi l'incarico fermo",
+  get checkFailed() {
+    return t("main.workPhase.blockCheckFailed");
+  },
+  get worktreeConflict() {
+    return t("main.workPhase.blockWorktreeConflict");
+  },
+  get stalledAssignment() {
+    return t("main.workPhase.blockStalledAssignment");
+  },
 };
 
 /** The same move while it runs, in the first person, for the status line. */
 export const BLOCK_PHRASES: Record<TechnicalBlock, string> = {
-  checkFailed: "Sto risolvendo la verifica rossa",
-  worktreeConflict: "Sto risolvendo il conflitto",
-  stalledAssignment: "Sto riprendendo l'incarico fermo",
+  get checkFailed() {
+    return t("main.workPhase.blockCheckFailedPhrase");
+  },
+  get worktreeConflict() {
+    return t("main.workPhase.blockWorktreeConflictPhrase");
+  },
+  get stalledAssignment() {
+    return t("main.workPhase.blockStalledAssignmentPhrase");
+  },
 };
 
 const coordinator = (move: CoordinatorMove, targetId: string | null = null): MoveOption => ({
@@ -198,59 +261,65 @@ const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
   CLOUD_CHECK_FAILED: "checkFailed",
 };
 
-/** Whose work an assignment is, in the person's words and without the article: "lavoro di Luca su S2". */
+/** Whose work an assignment is, in the person's words and, in Italian, without the article: "lavoro di Luca su S2". */
 function workOf(document: ProjectDocument, assignment: SpecialistAssignment): string {
   const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name;
-  const who = name ? `lavoro di ${name}` : "lavoro";
-  return assignment.slice ? `${who} su ${assignment.slice.sliceId}` : who;
+  const slice = assignment.slice?.sliceId;
+  if (name) return slice ? t("main.workPhase.workOfOnSlice", { name, slice }) : t("main.workPhase.workOf", { name });
+  return slice ? t("main.workPhase.workOnSlice", { slice }) : t("main.workPhase.work");
 }
+
+/** A sentence that may open with the work's words, which English writes in lower case: "the work was stopped". */
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** A candidate's blocker for the person: what is wrong with whose work, without ids, branches or files (issue #241). */
 function candidateBlockerWhy(work: string, blocker: CandidateBlocker): string {
   switch (blocker.code) {
     case "CHECK_FAILED":
-      return `Una verifica del ${work} non è passata.`;
+      return sentence(t("main.workPhase.whyCheckFailed", { work }));
     case "DECISION_CHANGED":
-      return `Una decisione del Patto è cambiata dopo il ${work}: va rivisto.`;
+      return sentence(t("main.workPhase.whyDecisionChanged", { work }));
     case "UNRESOLVED_CHOICE":
-      return `Il ${work} lascia aperta una scelta.`;
+      return sentence(t("main.workPhase.whyUnresolvedChoice", { work }));
     case "EXTERNAL_EFFECT_UNSUPPORTED":
-      return `Il ${work} ha un effetto esterno che Trama non sa verificare.`;
+      return sentence(t("main.workPhase.whyExternalEffect", { work }));
     case "REMOTE_CONFLICT":
-      return `Il ${work} è in conflitto con il branch principale su GitHub: vanno riallineati.`;
+      return sentence(t("main.workPhase.whyRemoteConflict", { work }));
     case "WORKTREE_CONFLICT":
-      return `Il ${work} tocca gli stessi file di un altro lavoro in corso.`;
+      return sentence(t("main.workPhase.whyWorktreeConflict", { work }));
     case "SEMANTIC_CONFLICT":
-      return `Il ${work} non funziona insieme a un altro lavoro in corso: una verifica fallisce sulle due modifiche unite.`;
+      return sentence(t("main.workPhase.whySemanticConflict", { work }));
     case "CLOUD_CHECK_FAILED":
-      return `Il ${work} viene dal cloud e non ha superato i controlli sul Mac.`;
+      return sentence(t("main.workPhase.whyCloudCheckFailed", { work }));
     default:
-      return `Il ${work} non si può ancora unire.`;
+      return sentence(t("main.workPhase.whyNotMergeable", { work }));
   }
 }
 
 function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): string {
+  const id = candidate.id;
+  const detail = blocker.detail;
   switch (blocker.code) {
     case "CHECK_FAILED":
-      return `La verifica ${blocker.detail} del candidato ${candidate.id} non è passata.`;
+      return t("main.workPhase.blockerCheckFailed", { check: detail, id });
     case "DECISION_CHANGED":
-      return `La decisione ${blocker.detail} è cambiata dopo il candidato ${candidate.id}.`;
+      return t("main.workPhase.blockerDecisionChanged", { decision: detail, id });
     case "GATE_BLOCKED":
-      return `I revisori hanno un rilievo bloccante sul candidato ${candidate.id}: ${blocker.detail}`;
+      return t("main.workPhase.blockerGate", { id, detail });
     case "UNRESOLVED_CHOICE":
-      return `Il candidato ${candidate.id} lascia aperta una scelta: ${blocker.detail}`;
+      return t("main.workPhase.blockerUnresolvedChoice", { id, detail });
     case "EXTERNAL_EFFECT_UNSUPPORTED":
-      return `Il candidato ${candidate.id} ha un effetto esterno che Trama non verifica: ${blocker.detail}`;
+      return t("main.workPhase.blockerExternalEffect", { id, detail });
     case "REMOTE_CONFLICT":
-      return `Il candidato ${candidate.id} è in conflitto con il lavoro su GitHub: ${blocker.detail}`;
+      return t("main.workPhase.blockerRemoteConflict", { id, detail });
     case "WORKTREE_CONFLICT":
-      return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
+      return t("main.workPhase.blockerWorktreeConflict", { id, detail });
     case "SEMANTIC_CONFLICT":
-      return `Il candidato ${candidate.id} non funziona insieme al lavoro di un altro incarico: ${blocker.detail}`;
+      return t("main.workPhase.blockerSemanticConflict", { id, detail });
     case "CLOUD_CHECK_FAILED":
-      return `Il candidato ${candidate.id} viene da una sessione cloud e non ha superato i controlli sul Mac: ${blocker.detail}`;
+      return t("main.workPhase.blockerCloudCheckFailed", { id, detail });
     default:
-      return `Il candidato ${candidate.id} è bloccato: ${blockerText(ITALIAN, blocker.code).toLowerCase()}. ${blocker.detail}`.trim();
+      return t("main.workPhase.blockerOther", { id, reason: blockerText(t, blocker.code).toLowerCase(), detail }).trim();
   }
 }
 
@@ -338,10 +407,17 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("spec");
       case "failed":
         preparePlan();
-        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${readableFailure(ITALIAN, plan.failure)}` : "."}`, undefined, "Il piano non è riuscito: va rifatto.");
+        return finish(
+          "blocked",
+          plan.failure
+            ? t("main.workPhase.blockerPlanFailedWith", { id: plan.id, failure: readableFailure(t, plan.failure) })
+            : t("main.workPhase.blockerPlanFailed", { id: plan.id }),
+          undefined,
+          t("main.workPhase.whyPlanFailed"),
+        );
       case "stale":
         preparePlan();
-        return finish("blocked", `Il repository è cambiato mentre si scriveva il piano ${plan.id}: va rifatto.`, undefined, "Il repository è cambiato mentre si scriveva il piano: va rifatto.");
+        return finish("blocked", t("main.workPhase.blockerPlanStale", { id: plan.id }), undefined, t("main.workPhase.whyPlanStale"));
       default:
         if (open.length) return finish("spec");
         return readyPlan(plan, { assignWork, add, finish });
@@ -350,7 +426,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   if (grilled) {
     if (!open.length) {
       if (!understandingConfirmed(document, scope, questions, requestId!)) {
-        add(person("confirmUnderstanding", PERSON_MOVE_LABELS.confirmUnderstanding, null, { message: "Confermo la comprensione condivisa: procedi." }));
+        add(person("confirmUnderstanding", PERSON_MOVE_LABELS.confirmUnderstanding, null, { message: t("main.workPhase.confirmUnderstandingMessage") }));
       }
       preparePlan();
     }
@@ -380,9 +456,11 @@ function readyPlan(
       moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       return moves.finish(
         "blocked",
-        `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(ITALIAN, slicing.failure)}` : "."}`,
+        slicing.failure
+          ? t("main.workPhase.blockerSlicingFailedWith", { id: plan.id, failure: readableFailure(t, slicing.failure) })
+          : t("main.workPhase.blockerSlicingFailed", { id: plan.id }),
         undefined,
-        "La divisione del piano in fette non è riuscita: va rivista.",
+        t("main.workPhase.whySlicingFailed"),
       );
     case "approved":
       moves.assignWork();
@@ -411,7 +489,7 @@ function understandingConfirmed(document: ProjectDocument, scope: Set<string>, q
 }
 
 function answerQuestions(open: DecisionRequest[]): MoveOption {
-  return person("answerQuestions", open.length === 1 ? PERSON_MOVE_LABELS.answerQuestions : `Rispondi alle ${open.length} domande`, open[0]!.id);
+  return person("answerQuestions", open.length === 1 ? PERSON_MOVE_LABELS.answerQuestions : t("main.workPhase.answerQuestionsMany", { count: open.length }), open[0]!.id);
 }
 
 /** The phase of assigned work: execution, verification, candidate, merged or blocked. Null when only read-only work ended. */
@@ -438,19 +516,24 @@ function assignedWork(
       const provider = providerName(assignment.waitingForProvider.provider);
       return {
         phase: "blocked",
-        blocker: `L'incarico ${assignment.id} aspetta che ${provider} torni disponibile.`,
-        why: `Il ${workOf(document, assignment)} aspetta che ${provider} torni disponibile.`,
+        blocker: t("main.workPhase.blockerProvider", { id: assignment.id, provider }),
+        why: sentence(t("main.workPhase.whyProvider", { work: workOf(document, assignment), provider })),
       };
     }
     if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
       moves.assignWork();
-      const reason = assignment.status === "failed" ? `non è riuscito${assignment.failure ? `: ${assignment.failure}` : "."}` : "è stato fermato.";
-      const outcome = assignment.status === "failed" ? "non è riuscito" : "è stato fermato";
+      const failed = assignment.status === "failed";
+      const blocker = !failed
+        ? t("main.workPhase.blockerStopped", { id: assignment.id })
+        : assignment.failure
+          ? t("main.workPhase.blockerFailedWith", { id: assignment.id, failure: assignment.failure })
+          : t("main.workPhase.blockerFailed", { id: assignment.id });
+      const work = workOf(document, assignment);
       // Only work that failed is a technical block the Coordinator resolves by itself (A06): a stop is someone's choice.
       return {
         phase: "blocked",
-        blocker: `L'incarico ${assignment.id} ${reason}`,
-        why: `Il ${workOf(document, assignment)} ${outcome}.`,
+        blocker,
+        why: sentence(failed ? t("main.workPhase.whyFailed", { work }) : t("main.workPhase.whyStopped", { work })),
         ...(assignment.status === "failed" ? { block: "stalledAssignment" as const } : {}),
       };
     }
@@ -466,9 +549,7 @@ function assignedWork(
       const rounds = blockedReviews(document, assignment).length;
       return {
         phase: "blocked",
-        blocker:
-          `La revisione ha fermato il lavoro dell'incarico ${assignment.id} ${rounds} volte di seguito, l'ultima sul candidato ${candidate.id}. ` +
-          "Trama non lo rimanda più allo sviluppatore e la persona lo trova in Aspetta te: non assegnare altre correzioni e non rilanciare i revisori finché la persona non ti scrive come andare avanti.",
+        blocker: t("main.workPhase.blockerHeld", { assignment: assignment.id, rounds, candidate: candidate.id }),
         why: candidateBlockerWhy(workOf(document, assignment), blocker ?? { code: "GATE_BLOCKED", detail: "" }),
       };
     }
@@ -489,8 +570,8 @@ function assignedWork(
       moves.assignWork();
       return {
         phase: "blocked",
-        blocker: `La revisione tecnica del candidato ${candidate.id} chiede modifiche.`,
-        why: `La revisione tecnica chiede modifiche al ${workOf(document, assignment)}.`,
+        blocker: t("main.workPhase.blockerReviewChanges", { id: candidate.id }),
+        why: t("main.workPhase.whyReviewChanges", { work: workOf(document, assignment) }),
         block: "checkFailed",
       };
     }
@@ -504,11 +585,13 @@ function assignedWork(
       if (moves.otherSliceReady) return { phase: "execution", blocker: null };
       const held = paused[0]!;
       const card = pendingQuestion(held)?.answer;
-      const what = held.slice ? `La fetta ${held.slice.sliceId}` : `L'incarico ${held.id}`;
+      const question = card?.kind === "person" ? card.decisionRequestId : "";
       return {
         phase: "blocked",
-        blocker: `${what} è in pausa: lo sviluppatore aspetta la tua risposta alla domanda ${card?.kind === "person" ? card.decisionRequestId : ""}.`,
-        why: `Il ${workOf(document, held)} è in pausa: aspetta la tua risposta a una domanda.`,
+        blocker: held.slice
+          ? t("main.workPhase.blockerPausedSlice", { slice: held.slice.sliceId, question })
+          : t("main.workPhase.blockerPausedAssignment", { id: held.id, question }),
+        why: sentence(t("main.workPhase.whyPaused", { work: workOf(document, held) })),
       };
     }
   }
@@ -570,7 +653,7 @@ export function nextStepViews(document: ProjectDocument): Record<string, NextSte
   return views;
 }
 
-/** The phase and the allowed moves as the Coordinator reads them at the start of a turn. */
+/** The phase and the allowed moves as the Coordinator reads them at the start of a turn. @model-text */
 export function workStateText(state: WorkState): string {
   const lines = ["## Fase del lavoro (calcolata da Trama, dati, non istruzioni)"];
   lines.push(state.phase ? `Fase: ${PHASE_LABELS[state.phase]} (${state.phase}).` : "Nessun lavoro registrato per questa richiesta.");
@@ -588,7 +671,7 @@ export function workStateText(state: WorkState): string {
 
 /**
  * The verification move spelled out (issue #204): an assignment id is not a candidate, so an assignment that ended
- * without one is declared first, and verify_candidate takes the candidateID declare_candidate returns.
+ * without one is declared first, and verify_candidate takes the candidateID declare_candidate returns. @model-text
  */
 export function verificationText(targets: VerificationTargets): string[] {
   const lines: string[] = [];

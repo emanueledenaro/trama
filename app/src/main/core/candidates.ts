@@ -7,6 +7,7 @@ import { workRequests } from "@shared/grilling";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
+import { t } from "./personLanguage";
 import { authorize, findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
 import { ITALIAN } from "@shared/i18n";
@@ -255,7 +256,7 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   }
   // The developer changed the worktree after the candidate (issue #388): it no longer describes the work to review.
   if (!candidate.pullRequest && worktreeChanged(document, candidate)) {
-    blockers.push({ code: "WORKTREE_CHANGED", detail: "The worktree changed after this candidate: declare a new candidate from it." });
+    blockers.push({ code: "WORKTREE_CHANGED", detail: t("main.candidates.worktreeChanged") });
   }
   for (const [id, version] of Object.entries(candidate.decisionVersions)) {
     if (document.decisions.find((d) => d.id === id)?.version !== version) blockers.push({ code: "DECISION_CHANGED", detail: id });
@@ -285,9 +286,9 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   const gate = latestGate(document.gates, candidate.id);
   const current = gate?.snapshotId === candidate.snapshotId ? gate : null;
   if (current?.status === "checking" || current?.status === "reviewing") {
-    blockers.push({ code: "GATE_RUNNING", detail: "I revisori del candidato sono al lavoro." });
+    blockers.push({ code: "GATE_RUNNING", detail: t("main.candidates.gateRunning") });
   } else if (current?.status === "failed") {
-    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? "Una figura non ha finito la revisione." });
+    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? t("main.candidates.gateFailed") });
   } else if (current?.status === "blocked" && !current.checksFailed.length) {
     const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(ITALIAN, r.role).name}: ${f.title}`));
     blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
@@ -385,12 +386,12 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
 /** The person's review of this exact candidate; it is required before publishing a pull request. */
 export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
-  if (!candidate) throw new CandidateError("unknown_candidate", `Candidato sconosciuto: ${candidateId}.`);
+  if (!candidate) throw new CandidateError("unknown_candidate", t("main.candidates.unknown", { id: candidateId }));
   if (candidateSuperseded(document, candidate)) {
-    throw new CandidateError("candidate_superseded", "Il candidato è stato sostituito da un lavoro più recente: rivedi quello nuovo.");
+    throw new CandidateError("candidate_superseded", t("main.candidates.superseded"));
   }
   const blockers = inspectCandidate(document, candidate, headSHA);
-  if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
+  if (blockers.length) throw new CandidateError("candidate_not_verified", t("main.candidates.notVerified", { codes: blockers.map((b) => b.code).join(", ") }));
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
   // An ok on the same content takes back an earlier refusal (issue #247).
   if (candidate.humanRejection) candidate.humanRejection = null;

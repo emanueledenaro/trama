@@ -10,7 +10,7 @@ import {
   DEFAULT_TRIAGE_LABELS,
   keepInLocalBacklog,
   labelsAfterTriage,
-  LOCAL_BACKLOG_REASON,
+  localBacklogReason,
   parseTriageLabels,
   placeProblems,
   problemIssueBody,
@@ -266,7 +266,7 @@ describe("found problems (A08)", () => {
     redTest(document, "h1", 1);
     const [problem] = collectProblems(document, null, at(2));
     expect(keepInLocalBacklog(document, at(3))).toEqual([problem]);
-    expect(problem!.placement).toEqual({ kind: "backlog", at: at(3).toISOString(), reason: LOCAL_BACKLOG_REASON });
+    expect(problem!.placement).toEqual({ kind: "backlog", at: at(3).toISOString(), reason: localBacklogReason() });
     expect(problemsWithoutIssue(document)).toEqual([]);
     // The item stands: the same check red again is the same problem.
     redTest(document, "h2", 4);

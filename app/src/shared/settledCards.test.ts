@@ -87,7 +87,7 @@ describe("settledCard (issue #271)", () => {
     const document = emptyDocument("p");
     const plan = (id: string, extra: Partial<WorkPlan>) => ({ id, summary: `Piano ${id}`, status: "ready", ...extra }) as WorkPlan;
     document.plans.push(plan("P-1", { status: "superseded" }), plan("P-2", { slicing: { status: "approved" } as WorkPlan["slicing"] }), plan("P-3", { slicing: { status: "proposed" } as WorkPlan["slicing"] }));
-    expect(settledCard(t, document, card("plan", "P-1"), context())?.outcome.label).toBe("Superato");
+    expect(settledCard(t, document, card("plan", "P-1"), context())?.outcome.label).toBe("Sostituito");
     expect(settledCard(t, document, card("plan", "P-2"), context())).toBeNull();
     expect(settledCard(t, document, card("plan", "P-3"), context())).toBeNull();
   });
@@ -110,7 +110,7 @@ describe("settledCard (issue #271)", () => {
     document.candidates.push({ id: "C-1", assignmentId: "A-1", specialistId: "S-1", changedFiles: ["package.json"] } as ProjectDocument["candidates"][number]);
     expect(settledCard(t, document, card("candidate", "C-1"), context({ "C-1": "verified" }))).toBeNull();
     expect(settledCard(t, document, card("candidate", "C-1"), context({ "C-1": "decided" }))).toBeNull();
-    expect(settledCard(t, document, card("candidate", "C-1"), context({ "C-1": "superseded" }))).toMatchObject({ subject: "1 file", outcome: { label: "Superato", tone: "secondary" } });
+    expect(settledCard(t, document, card("candidate", "C-1"), context({ "C-1": "superseded" }))).toMatchObject({ subject: "1 file", outcome: { label: "Sostituito", tone: "secondary" } });
     // A merged candidate is settled too, with its pull request (issue #247).
     document.candidates[0]!.pullRequest = { url: "u", number: 21, branch: "b", at: at, mergedAt: at };
     expect(settledCard(t, document, card("candidate", "C-1"), context({ "C-1": "decided" }))).toMatchObject({ outcome: { label: "Unito, #21", tone: "success" } });

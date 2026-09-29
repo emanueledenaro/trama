@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { SpecialistAssignment } from "@shared/domain";
 import { activeTerms } from "@shared/mandate";
 import { DELEGABLE_ACTIONS } from "@shared/labels";
@@ -15,6 +15,7 @@ import {
   restrictionMessage,
   restrictMandate,
 } from "./projectMandate";
+import { setPersonLanguage } from "./personLanguage";
 import { translator } from "@shared/i18n";
 
 const t = translator("it");
@@ -157,5 +158,28 @@ describe("refused actions in Aspetta te (issue #244)", () => {
     expect(waitingForYou(t, document)).toEqual([]);
     recordFixedBanRefusal(document, { ban: "tagOrRelease", action: "git tag v1", by: { kind: "coordinator" } });
     expect(waitingForYou(t, document).map((i) => i.kind)).toEqual(["fixedBan"]);
+  });
+});
+
+describe("project mandate texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("asks, narrows and refuses in the person's language", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    const request = proposeProjectMandate(document, MODULES, at(0));
+    expect(request.reason).toMatch(/^I propose a mandate for the whole work cycle of the project/);
+    expect(request.objectives).toEqual([
+      "Carry the project's work cycle forward: understanding, squads, spec, slices, assignment, checks and merge with the green light.",
+    ]);
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: MODULES, authorizedActions: [...DELEGABLE_ACTIONS], limits: [] }, at(1));
+    expect(() => restrictMandate(document, { scopeModuleIds: MODULES, authorizedActions: [...DELEGABLE_ACTIONS] }, at(2))).toThrow("The restriction removes nothing.");
+    const restricted = restrictMandate(document, { scopeModuleIds: [MODULES[0]!], authorizedActions: [...DELEGABLE_ACTIONS] }, at(3));
+    expect(restrictionMessage(restricted)).toBe(
+      "I narrowed the mandate: it is now at version 2, removed the modules Sources/Catalog. No work in progress was outside the narrowed mandate. It applies from your next turn: work outside the narrowed mandate does not restart, the rest goes on.",
+    );
+    const refusal = recordFixedBanRefusal(document, { ban: "tagOrRelease", action: "git tag v1", by: { kind: "coordinator" } });
+    expect(fixedBanActivity(refusal).detail).toContain("No mandate grants it: you find it in Waiting for you.");
+    expect(() => acknowledgeFixedBanRefusal(document, "V-0")).toThrow("Stopped action not found.");
   });
 });

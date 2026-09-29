@@ -1,4 +1,5 @@
 import type { ConversationEvent, CoordinatorRequest } from "./domain";
+import { LANGUAGES, type MessageKey, translate } from "./i18n";
 import { deriveTimelineRows, type TimelineRow } from "./timeline";
 
 /**
@@ -22,8 +23,29 @@ export interface TechnicalStep {
   details: string[];
 }
 
-/** Steps that say nothing without their text: the model's notes and reasoning. i18n-exempt: titles of the records. */
-const EMPTY_WITHOUT_TEXT = new Set(["Nota dello specialista", "Nota del Coordinatore", "Ragionamento"]);
+/** The titles of catalog keys in every language: a stored step keeps the language it was written in (issue #301). */
+const inEveryLanguage = (...keys: MessageKey[]): Set<string> => new Set(LANGUAGES.flatMap((language) => keys.map((key) => translate(language, key))));
+/** The opening of a key's text before its first placeholder, in every language. */
+const openingsOf = (key: MessageKey): string[] => LANGUAGES.map((language) => translate(language, key).split("{")[0]!);
+
+const NOTES = inEveryLanguage("main.controller.specialistNoteTitle", "main.controller.coordinatorNoteTitle");
+const REASONING = inEveryLanguage("main.controller.reasoningTitle", "main.controller.specialistReasoningTitle");
+const EDITS = inEveryLanguage("main.controller.specialistEditFailed");
+const EDIT_OPENINGS = openingsOf("main.controller.fileChangeTitle");
+const MESSAGE_SENT = inEveryLanguage("main.controller.messageSentTitle");
+
+/** Steps that say nothing without their text: the model's notes and reasoning. */
+const EMPTY_WITHOUT_TEXT = new Set([...NOTES, ...REASONING]);
+
+/** What a step is, from its title in any language, for its icon. */
+// i18n-exempt: reads the titles of stored steps, written in Italian before the catalogs existed.
+export function stepKind(title: string): "tool" | "reasoning" | "edit" | "note" | null {
+  if (title.startsWith("Strumento") || title.includes(":")) return "tool";
+  if (REASONING.has(title)) return "reasoning";
+  if (title.startsWith("Modifica") || EDITS.has(title) || EDIT_OPENINGS.some((opening) => title.startsWith(opening))) return "edit";
+  if (MESSAGE_SENT.has(title) || NOTES.has(title) || title.startsWith("Nota")) return "note";
+  return null;
+}
 
 /** Whether an activity is a note or a reasoning without text. */
 export function isEmptyStep(event: ConversationEvent): boolean {

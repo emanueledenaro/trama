@@ -6,18 +6,17 @@ import { actionLabel, DELEGABLE_ACTIONS } from "@shared/labels";
 import { ITALIAN } from "@shared/i18n";
 import type { StoppedWork } from "@shared/mandate";
 import { createMandateRequest, DomainError } from "./pact";
+import { t } from "./personLanguage";
 
 /**
  * The project mandate (issue #244, ADR 0017): one mandate for the whole cycle of work, asked when a project opens
  * without one, granted once and narrowed at any time. The fixed bans stay outside every mandate (`@shared/fixedBans`).
  */
 
-export const PROJECT_MANDATE_REASON =
-  "Propongo un mandato per tutto il ciclo di lavoro del progetto: comprensione, squadre, spec, fette, assegnazione, verifica e unione con il via libera. Lo concedi una volta e puoi restringerlo in ogni momento. I divieti fissi restano esclusi.";
+/** The reason of the project mandate request, in the person's language when Trama asks. */
+export const projectMandateReason = () => t("main.projectMandate.reason");
 
-export const PROJECT_MANDATE_OBJECTIVES = [
-  "Portare avanti il ciclo di lavoro del progetto: comprensione, squadre, spec, fette, assegnazione, verifica e unione con il via libera.",
-];
+export const projectMandateObjectives = () => [t("main.projectMandate.objective")];
 
 /**
  * Whether Trama asks for the project mandate now: no mandate in force, no request waiting, and the person has not
@@ -38,8 +37,8 @@ export function proposeProjectMandate(document: ProjectDocument, moduleIds: stri
     document,
     {
       requestId: null,
-      reason: PROJECT_MANDATE_REASON,
-      objectives: PROJECT_MANDATE_OBJECTIVES,
+      reason: projectMandateReason(),
+      objectives: projectMandateObjectives(),
       priorities: [],
       scopeModuleIds: moduleIds,
       authorizedActions: [...DELEGABLE_ACTIONS],
@@ -61,17 +60,17 @@ export function restrictMandate(
   now = new Date(),
 ): ProjectMandate {
   const mandate = document.mandate;
-  if (mandate?.status !== "granted") throw new DomainError("Non c'è un mandato in vigore da restringere.");
+  if (mandate?.status !== "granted") throw new DomainError(t("main.projectMandate.noMandateToRestrict"));
   const scopeModuleIds = mandate.scopeModuleIds.filter((id) => input.scopeModuleIds.includes(id));
   const authorizedActions = mandate.authorizedActions.filter((a) => input.authorizedActions.includes(a));
   const added = [...input.scopeModuleIds.filter((id) => !mandate.scopeModuleIds.includes(id)), ...input.authorizedActions.filter((a) => !mandate.authorizedActions.includes(a))];
-  if (added.length) throw new DomainError("Una restrizione toglie moduli o azioni, non ne aggiunge: per allargare il mandato correggilo.");
+  if (added.length) throw new DomainError(t("main.projectMandate.restrictionAdds"));
   if (scopeModuleIds.length === 0 || authorizedActions.length === 0) {
-    throw new DomainError("Il mandato ristretto tiene almeno un modulo e un'azione: per togliere tutto revocalo.");
+    throw new DomainError(t("main.projectMandate.restrictionEmpty"));
   }
   const removedModuleIds = mandate.scopeModuleIds.filter((id) => !scopeModuleIds.includes(id));
   const removedActions = mandate.authorizedActions.filter((a) => !authorizedActions.includes(a));
-  if (removedModuleIds.length === 0 && removedActions.length === 0) throw new DomainError("La restrizione non toglie niente.");
+  if (removedModuleIds.length === 0 && removedActions.length === 0) throw new DomainError(t("main.projectMandate.restrictionNothing"));
   const { status: _status, revocation: _revocation, history, ...snapshot } = mandate;
   const restricted: ProjectMandate = {
     ...snapshot,
@@ -96,15 +95,17 @@ export function restrictionMessage(
 ): string {
   const removed = mandate.restriction;
   const parts = [
-    removed?.removedModuleIds.length ? `tolti i moduli ${removed.removedModuleIds.map(moduleName).join(", ")}` : null,
-    removed?.removedActions.length ? `tolte le azioni ${removed.removedActions.map((a) => actionLabel(ITALIAN, a).toLowerCase()).join(", ")}` : null,
+    removed?.removedModuleIds.length ? t("main.projectMandate.removedModules", { modules: removed.removedModuleIds.map(moduleName).join(", ") }) : null,
+    removed?.removedActions.length
+      ? t("main.projectMandate.removedActions", { actions: removed.removedActions.map((a) => actionLabel(t, a).toLowerCase()).join(", ") })
+      : null,
   ].filter(Boolean);
   const outside = stopped.filter((w) => !w.dependsOn).map((w) => w.assignment.id);
-  const dependents = stopped.filter((w) => w.dependsOn).map((w) => `${w.assignment.id} (dipende da ${w.dependsOn!.id})`);
+  const dependents = stopped.filter((w) => w.dependsOn).map((w) => t("main.projectMandate.dependsOn", { id: w.assignment.id, dependsOn: w.dependsOn!.id }));
   const halted = stopped.length
-    ? ` Ho fermato ${[...outside, ...dependents].join(", ")}: i worktree restano com'erano, il diff non si perde. Per riprendere, ripianifica e delega di nuovo dentro il mandato ristretto.`
-    : " Nessun lavoro in corso era fuori dal mandato ristretto.";
-  return `Ho ristretto il mandato: ora è alla versione ${mandate.version}, ${parts.join("; ")}.${halted} Vale dal tuo prossimo turno: il lavoro fuori dal mandato ristretto non riparte, il resto continua.`;
+    ? t("main.projectMandate.halted", { work: [...outside, ...dependents].join(", ") })
+    : t("main.projectMandate.nothingHalted");
+  return t("main.projectMandate.restricted", { version: String(mandate.version), parts: parts.join("; "), halted });
 }
 
 // MARK: Refusals
@@ -130,7 +131,7 @@ export function recordFixedBanRefusal(
 /** The person has seen a refused action: it leaves "Aspetta te" and stays in the history. */
 export function acknowledgeFixedBanRefusal(document: ProjectDocument, id: string, now = new Date()): FixedBanRefusal {
   const refusal = document.fixedBanRefusals?.find((r) => r.id === id);
-  if (!refusal) throw new DomainError("Azione fermata non trovata.");
+  if (!refusal) throw new DomainError(t("main.projectMandate.refusalNotFound"));
   refusal.acknowledgedAt ??= now.toISOString();
   return refusal;
 }
@@ -140,8 +141,8 @@ export function fixedBanActivity(refusal: FixedBanRefusal) {
   const info = fixedBanInfo(ITALIAN, refusal.ban);
   return {
     type: "activity" as const,
-    title: `Azione fermata da un divieto fisso: ${info.label.toLowerCase()}`,
-    detail: `${refusal.action}\n${info.reason} Nessun mandato la concede: la trovi in Aspetta te.`,
+    title: t("main.projectMandate.refusalTitle", { ban: info.label.toLowerCase() }),
+    detail: `${refusal.action}\n${t("main.projectMandate.refusalDetail", { reason: info.reason })}`,
     tone: "error" as const,
   };
 }

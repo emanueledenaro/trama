@@ -30,6 +30,7 @@ import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { cloudWorking } from "@shared/workPlace";
 import { readDeveloperReport } from "./implementation";
 import { pendingQuestion, pendingState } from "./developerQuestions";
+import { t } from "./personLanguage";
 
 /** The fixed roles' profiles in every language: no developer takes a fixed role's name, in Italian or in English. */
 const fixedRoleProfiles = () => LANGUAGES.flatMap((language) => FIXED_ROLES.map((role) => roleProfile(translator(language), role)));
@@ -78,7 +79,7 @@ function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Speciali
         name: profile.name,
         tag: profile.tag,
         competence: profile.competence,
-        reason: "Ogni team di Trama ha questa figura, in ogni progetto.",
+        reason: t("main.team.fixedRoleReason"),
         moduleIds: [],
       },
       "fixedRole",
@@ -251,7 +252,7 @@ export function newSpecialist(member: ProposedSpecialist, origin: Specialist["or
     model: null,
     tools: ["commands"],
     updatedAt: now.toISOString(),
-    lastUpdate: "Nel team",
+    lastUpdate: t("main.team.inTheTeam"),
     assignments: [],
     removal: null,
   };
@@ -298,14 +299,14 @@ export function teamMessage(document: ProjectDocument, proposal: TeamProposal): 
     .filter((s) => resolution && resolution.kind !== "superseded" && resolution.specialistIds.includes(s.id))
     .map((s) => `${s.name} (${s.id}, ${s.competence})`)
     .join(", ");
-  if (resolution?.kind === "confirmed") return `Ho confermato il team che hai proposto: ${members}.`;
+  if (resolution?.kind === "confirmed") return t("main.team.confirmed", { members });
   if (resolution?.kind === "corrected") {
-    let text = `Ho corretto il team: resta ${members}.`;
-    if (resolution.removedNames.length) text += ` Ho tolto ${resolution.removedNames.join(", ")}.`;
+    let text = t("main.team.corrected", { members });
+    if (resolution.removedNames.length) text += ` ${t("main.team.removed", { names: resolution.removedNames.join(", ") })}`;
     if (resolution.note) text += ` ${resolution.note}`;
     return text;
   }
-  return "La proposta di team precedente non vale più.";
+  return t("main.team.superseded");
 }
 
 // MARK: Specialists
@@ -369,7 +370,7 @@ export function removeSpecialist(document: ProjectDocument, id: string, reason: 
   specialist.status = "removed";
   specialist.removal = { removedBy: actor, reason: why, removedAt: now.toISOString() };
   specialist.updatedAt = now.toISOString();
-  specialist.lastUpdate = `Uscito dal team: ${why}`;
+  specialist.lastUpdate = t("main.team.left", { why });
   return specialist;
 }
 
@@ -531,7 +532,7 @@ function recordAssignment(specialist: Specialist, fields: AssignmentFields, now:
     result: null,
     failure: null,
     updatedAt: now.toISOString(),
-    lastUpdate: `Incarico ricevuto: ${fields.objective}`,
+    lastUpdate: t("main.team.assignmentReceived", { objective: fields.objective }),
     reportedStatus: null,
   };
   specialist.assignments.push(assignment);
@@ -605,7 +606,7 @@ export function assignDuty(document: ProjectDocument, order: DutyOrder, mandateV
 export function recordWorkspace(document: ProjectDocument, id: string, workspace: WorktreeSession, now = new Date()): void {
   updateAssignment(document, id, now, (assignment) => {
     assignment.workspace = workspace;
-    assignment.lastUpdate = `Worktree pronto sul branch ${workspace.branch}`;
+    assignment.lastUpdate = t("main.team.worktreeReady", { branch: workspace.branch });
   });
 }
 
@@ -634,7 +635,7 @@ export function beginCloudWork(document: ProjectDocument, id: string, session: C
       endedAt: null,
       outcome: null,
     });
-    assignment.lastUpdate = `Al lavoro in una sessione cloud sul branch ${session.branch}`;
+    assignment.lastUpdate = t("main.team.cloudWorking", { branch: session.branch });
   });
 }
 
@@ -694,7 +695,7 @@ export function beginTurn(
     const question = pendingQuestion(assignment);
     if (question && pendingState(assignment) === "answered") question.resumedAt = now.toISOString();
     assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, provider, startedAt: now.toISOString(), endedAt: null, outcome: null });
-    assignment.lastUpdate = `Turno ${assignment.turns.length} in corso con ${model}`;
+    assignment.lastUpdate = t("main.team.turnRunning", { number: assignment.turns.length, model });
   });
 }
 
@@ -702,7 +703,7 @@ function confirmStop(assignment: SpecialistAssignment, note: string, now: Date):
   const stop = pendingStop(assignment);
   if (stop) stop.confirmedAt = now.toISOString();
   assignment.status = "stopped";
-  assignment.lastUpdate = `Fermato: ${note}`;
+  assignment.lastUpdate = t("main.team.stopped", { note });
 }
 
 export type TurnEnd = { kind: "completed"; text: string } | { kind: "interrupted" } | { kind: "failed"; message: string };
@@ -721,26 +722,26 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       // Work under a contract ends with the developer's structured report (W05): its statement, never evidence.
       if (assignment.seams) assignment.report = readDeveloperReport(outcome.text, assignment.seams);
       assignment.failure = null;
-      assignment.lastUpdate = "Incarico concluso";
+      assignment.lastUpdate = t("main.team.assignmentDone");
       // A developer who asked the Coordinator a question (W06) pauses until the answer: the work is not done.
       const question = pendingQuestion(assignment);
       if (question) {
         assignment.status = "paused";
-        assignment.lastUpdate = `Aspetta la risposta alla domanda ${question.id}`;
+        assignment.lastUpdate = t("main.team.waitsForAnswer", { id: question.id });
       }
     } else if (outcome.kind === "interrupted") {
-      confirmStop(assignment, "Il provider ha interrotto il turno.", now);
+      confirmStop(assignment, t("main.team.providerInterrupted"), now);
     } else if (pendingStop(assignment)) {
       confirmStop(assignment, outcome.message, now);
     } else {
       assignment.status = "failed";
       assignment.failure = outcome.message;
-      assignment.lastUpdate = `Turno non riuscito: ${outcome.message}`;
+      assignment.lastUpdate = t("main.team.turnFailed", { message: outcome.message });
       // A question asked before the failure still pauses the work (W06): it stays visible to the Coordinator.
       const question = pendingQuestion(assignment);
       if (question) {
         assignment.status = "paused";
-        assignment.lastUpdate = `Aspetta la risposta alla domanda ${question.id}. Il turno non è riuscito: ${outcome.message}`;
+        assignment.lastUpdate = t("main.team.waitsForAnswerAfterFailure", { id: question.id, message: outcome.message });
       }
     }
   });
@@ -764,7 +765,7 @@ export function requestStop(
     if (pendingStop(assignment)) return;
     assignment.status = "stopRequested";
     assignment.stops.push({ requestedBy: actor, reason: why, requestedAt: now.toISOString(), thenRemove, confirmedAt: null });
-    assignment.lastUpdate = `Arresto richiesto da ${actor}: ${why}`;
+    assignment.lastUpdate = t("main.team.stopRequested", { actor, why });
   });
 }
 
@@ -809,7 +810,7 @@ export function resumeAssignment(document: ProjectDocument, id: string, now = ne
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
     a.failure = null;
-    a.lastUpdate = `Ripresa dell'incarico con ${a.model}`;
+    a.lastUpdate = t("main.team.resumed", { model: a.model });
   });
 }
 
@@ -834,7 +835,7 @@ export function resumePausedAssignment(document: ProjectDocument, id: string, no
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
     a.failure = null;
-    a.lastUpdate = `Ripresa con la risposta alla domanda ${pendingQuestion(a)!.id}`;
+    a.lastUpdate = t("main.team.resumedWithAnswer", { id: pendingQuestion(a)!.id });
   });
 }
 
@@ -864,7 +865,7 @@ export function reopenForFindings(
     a.status = "preparing";
     a.failure = null;
     a.gateReturn = { ...returned, at: now.toISOString() };
-    a.lastUpdate = `Ripresa con i rilievi bloccanti sul candidato ${returned.candidateId}`;
+    a.lastUpdate = t("main.team.resumedWithFindings", { id: returned.candidateId });
   });
 }
 
@@ -881,6 +882,7 @@ export function markReported(document: ProjectDocument, ids: string[]): void {
   }
 }
 
+/** @model-text: the statuses as the Coordinator reads them in the team updates. */
 export const ASSIGNMENT_STATUS_TEXT: Record<AssignmentStatus, string> = {
   preparing: "in preparazione",
   running: "al lavoro",
@@ -891,6 +893,7 @@ export const ASSIGNMENT_STATUS_TEXT: Record<AssignmentStatus, string> = {
   paused: "in pausa per una domanda",
 };
 
+/** The team updates Trama sends to the Coordinator. @model-text */
 export function teamReport(document: ProjectDocument): { text: string; ids: string[] } | null {
   const pending = unreportedAssignments(document);
   if (!pending.length) return null;
@@ -970,7 +973,7 @@ export function changeAssignmentProvider(
     a.provider = provider;
     a.model = trimmed;
     if (changed) a.threadId = null;
-    a.lastUpdate = `Provider impostato dalla persona: ${provider} ${trimmed}`;
+    a.lastUpdate = t("main.team.providerSet", { provider, model: trimmed });
   });
 }
 

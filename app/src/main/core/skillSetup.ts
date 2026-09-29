@@ -4,6 +4,7 @@ import { copyFile, lstat, mkdir, readdir, readFile, realpath, rm, rmdir, writeFi
 import { dirname, join, relative } from "node:path";
 import { ITALIAN } from "@shared/i18n";
 import { aiHeroAttribution } from "@shared/skills";
+import { t } from "./personLanguage";
 
 export const SKILL_RELEASE = "v1.2.3";
 export const SKILL_COMMIT = "6acc160e4e0cd062dbbbd7a1b26ae92855edf07e";
@@ -73,9 +74,12 @@ interface PlannedWrite {
   data: Buffer;
 }
 
+// @model-text: the documents below are written into the project for its agents. Their bytes are recorded in the
+// manifest, so they do not follow the interface language.
 const agentsPointer = "# Istruzioni del progetto\n\nLeggere docs/agents/aihero-setup.md prima di usare le skill tecniche incluse.";
 const SETUP_DOCUMENT = "docs/agents/aihero-setup.md";
 
+/** @model-text: project document for the agents. */
 function configurationDocument(repository: string): string {
   const list = (names: string[]) => names.map((s) => `- ${s}`).join("\n");
   const renames = Object.entries(RENAMED_SKILLS)
@@ -102,6 +106,7 @@ ${list(SLASH_ONLY_SKILLS)}
 Leggere il relativo file \`SKILL.md\` in \`.agents/skills\` prima di usare una skill. Le istruzioni già presenti nel progetto restano prioritarie.`;
 }
 
+/** @model-text: project document for the agents. */
 function issueTrackerDocument(repository: string | null): string {
   if (repository) {
     return `# Issue tracker: GitHub
@@ -119,12 +124,14 @@ Trama non ha un repository remoto selezionato. Nessun tracker remoto è stato sc
 Fino a quando il progetto non seleziona GitHub, conservare specifiche e ticket locali in \`.scratch/<feature>/\`. Usare \`.scratch/<feature>/spec.md\` per la specifica e \`.scratch/<feature>/issues/<NN>-<slug>.md\` per i ticket. Non creare o sincronizzare issue remote.`;
 }
 
+// @model-text: project document for the agents.
 const domainDocument = `# Documentazione di dominio
 
 Prima di esplorare il progetto, leggere \`CONTEXT.md\` alla radice quando esiste e le decisioni pertinenti in \`docs/adr/\`. Se i file non esistono, procedere senza crearli automaticamente.
 
 Usare il vocabolario definito nel contesto del progetto. Se una modifica contraddice una decisione esistente, segnalarlo senza riscrivere la decisione.`;
 
+// @model-text: project document for the agents.
 const triageLabelsDocument = `# Etichette di triage
 
 Questa mappa descrive i ruoli che le skill usano. Non prova che le etichette esistano nel tracker remoto.
@@ -153,7 +160,7 @@ async function walkFiles(directory: string, base: string): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Il setup non può usare il percorso: ${relative(base, path)}`);
+    if (entry.isSymbolicLink()) throw new Error(t("main.skills.unsafePath", { path: relative(base, path) }));
     if (entry.isDirectory()) found.push(...(await walkFiles(path, base)));
     else if (entry.isFile()) found.push(path);
   }
@@ -165,11 +172,11 @@ async function bundledFiles(resourcesRoot: string): Promise<PlannedWrite[]> {
   let total = 0;
   for (const skill of SELECTED_SKILLS) {
     const directory = join(resourcesRoot, "skills", skill);
-    if (!existsSync(join(directory, "SKILL.md"))) throw new Error(`Manca una risorsa AI Hero richiesta: skills/${skill}/SKILL.md`);
+    if (!existsSync(join(directory, "SKILL.md"))) throw new Error(t("main.skills.missingResource", { skill }));
     for (const path of await walkFiles(directory, resourcesRoot)) {
       const data = await readFile(path);
       total += data.length;
-      if (total > MAXIMUM_PACKAGED_BYTES) throw new Error(`Le risorse AI Hero superano il limite locale di 3 MB: ${total} byte.`);
+      if (total > MAXIMUM_PACKAGED_BYTES) throw new Error(t("main.skills.tooLarge", { bytes: String(total) }));
       files.push({ relativePath: `.agents/skills/${relative(join(resourcesRoot, "skills"), path).split("\\").join("/")}`, data });
     }
   }
@@ -219,6 +226,7 @@ export async function prepareSkills(projectRoot: string, resourcesRoot: string, 
   const root = await realpath(projectRoot);
   const writes = [
     ...(await bundledFiles(resourcesRoot)),
+    // @model-text: project document for the agents.
     { relativePath: SETUP_DOCUMENT, data: Buffer.from(configurationDocument(repository ?? "Non selezionato")) },
     { relativePath: "docs/agents/issue-tracker.md", data: Buffer.from(issueTrackerDocument(repository)) },
     { relativePath: "docs/agents/domain.md", data: Buffer.from(domainDocument) },
@@ -231,10 +239,10 @@ export async function prepareSkills(projectRoot: string, resourcesRoot: string, 
   const missing: PlannedWrite[] = [];
   for (const write of writes) {
     const target = join(root, write.relativePath);
-    if (!(await isInside(target, root))) throw new Error(`Il setup non può usare il percorso: ${write.relativePath}`);
+    if (!(await isInside(target, root))) throw new Error(t("main.skills.unsafePath", { path: write.relativePath }));
     if (existsSync(target)) {
       report.existingPreserved.push(write.relativePath);
-      if (!(await readFile(target)).equals(write.data)) report.warnings.push(`Conflitto preservato: ${write.relativePath}.`);
+      if (!(await readFile(target)).equals(write.data)) report.warnings.push(t("main.skills.conflictPreserved", { path: write.relativePath }));
     } else {
       missing.push(write);
     }
@@ -322,6 +330,7 @@ export async function updateSkills(projectRoot: string, resourcesRoot: string, r
   if (manifest.version === SKILL_VERSION) return prepareSkills(root, resourcesRoot, repository);
   const bundle = [
     ...(await bundledFiles(resourcesRoot)),
+    // @model-text: project document for the agents.
     { relativePath: SETUP_DOCUMENT, data: Buffer.from(configurationDocument(repository ?? "Non selezionato")) },
   ];
   const backup = join(root, BACKUPS, now.toISOString().replace(/[:.]/g, "-"));
@@ -329,13 +338,13 @@ export async function updateSkills(projectRoot: string, resourcesRoot: string, r
   const replaced: PlannedWrite[] = [];
   for (const write of bundle) {
     const target = join(root, write.relativePath);
-    if (!(await isInside(target, root))) throw new Error(`Il setup non può usare il percorso: ${write.relativePath}`);
+    if (!(await isInside(target, root))) throw new Error(t("main.skills.unsafePath", { path: write.relativePath }));
     if (!existsSync(target)) continue;
     const current = await readFile(target);
     if (current.equals(write.data)) continue;
     if (manifest.files[write.relativePath] !== sha(current)) {
       report.existingPreserved.push(write.relativePath);
-      report.warnings.push(`Modificato da te, non aggiornato: ${write.relativePath}.`);
+      report.warnings.push(t("main.skills.changedNotUpdated", { path: write.relativePath }));
       continue;
     }
     replaced.push(write);
@@ -343,7 +352,7 @@ export async function updateSkills(projectRoot: string, resourcesRoot: string, r
   const { retired, kept } = await renamedSkillFiles(root, manifest, await upstreamHashes(resourcesRoot));
   for (const path of kept) {
     report.existingPreserved.push(path);
-    report.warnings.push(`Modificato da te, conservato con il vecchio nome: ${path}.`);
+    report.warnings.push(t("main.skills.changedKeptOldName", { path }));
   }
   for (const relativePath of [...replaced.map((w) => w.relativePath), ...retired]) {
     const saved = join(backup, relativePath);
@@ -378,7 +387,7 @@ export async function rollbackSkills(projectRoot: string): Promise<{ restored: s
   const root = await realpath(projectRoot);
   const backups = existsSync(join(root, BACKUPS)) ? (await readdir(join(root, BACKUPS))).sort() : [];
   const latest = backups.at(-1);
-  if (!latest) throw new Error("Non c'è un aggiornamento del metodo da annullare.");
+  if (!latest) throw new Error(t("main.skills.nothingToRollBack"));
   const directory = join(root, BACKUPS, latest);
   const restored: string[] = [];
   const preserved: string[] = [];

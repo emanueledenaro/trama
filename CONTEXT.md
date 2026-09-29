@@ -14,39 +14,71 @@ Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, i
 
 Nei testi per la persona Trama usa l'italiano semplice del glossario dell'interfaccia (`docs/glossario.md`): nomi al posto degli id, che restano al passaggio del mouse, e parole comuni al posto del gergo. Nell'interfaccia il task in focus si chiama lavoro in primo piano, la focus mode esame approfondito, i seam punti di prova e il worktree copia di lavoro.
 
-### Termini in inglese
+### Glossario inglese
 
-Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese semplice. Il catalogo è in `app/src/shared/messages/`.
+Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese semplice. Ogni termine italiano ha una sola traduzione.
 
 | Italiano | Inglese |
 | --- | --- |
 | Coordinatore | Coordinator |
-| Aspetta te | Waiting for you |
-| Mandato, mandato di progetto | Mandate, project mandate |
-| Patto Vivo, scheda del Patto | Living Pact, Pact card |
-| Squadra, capo squadra | Squad, squad lead |
-| Missione | Mission |
+| Sviluppatore | Developer |
+| Ruoli fissi | Fixed roles |
+| Squadre, squadra | Squads, squad |
 | Obiettivo | Goal |
 | Piano | Plan |
 | Fetta | Slice |
 | Incarico | Assignment |
-| Sviluppatore | Developer |
 | Candidato | Candidate |
-| Verifica | Check |
-| Revisori | Reviewers |
-| Esame approfondito | In-depth review |
+| Verifiche, verifica | Checks, check |
+| Revisori, revisione | Reviewers, review |
+| Esame approfondito | Deep review |
 | Punti di prova | Test points |
-| Chiarimento | Clarification |
+| Copia di lavoro | Working copy |
+| Patto Vivo, Patto | Living Pact, Pact |
+| Scheda del Patto | Pact card |
+| Decisione | Decision |
+| Mandato, mandato di progetto | Mandate, project mandate |
+| Via libera | Green light |
+| Aspetta te | Waiting for you |
 | Attività | Activity |
-| Giro del Coordinatore | Coordinator round |
-| Riepilogo, traguardo | Recap, milestone |
+| Riepilogo | Recap |
 | Memoria | Memory |
 | Lavoro in primo piano | Work in focus |
-| Pausa del Coordinatore | Coordinator pause |
-| Sospendere un lavoro | Suspend work |
-| Divieti fissi | Fixed bans |
-| Percorso di Ask Trama | Ask Trama route |
+| Riga di stato | Status line |
+| Prossimo passo | Next step |
+| Chiarimento | Clarification |
+| Comprensione condivisa | Shared understanding |
+| Lavoro continuo | Continuous work |
+| Giro | Round |
+| Mossa automatica | Automatic move |
+| Studio del progetto | Project study |
+| Pausa | Pause |
+| Domanda dello sviluppatore | Developer question |
+| Chat tra agenti | Agent chat |
+| Sovrapposizione | Overlap |
+| Divergenza del branch | Branch divergence |
+| Collegamenti | Connections |
+| Impostazioni | Settings |
+| Panoramica | Overview |
+| Turno | Turn |
+| Rilievo, rilievo bloccante | Finding, blocking finding |
+| Suggerimento | Suggestion |
+| Divieto fisso | Fixed ban |
+| Pratica | Practice |
 | Presenza | Presence |
+| Percorso (Chiedi a Trama) | Route |
+| Pianificatore, divisore | Planner, slicer |
+| Suddivisione, divisione in fette | Breakdown, splitting into slices |
+| Triage, diagnosi, correzione | Triage, diagnosis, fix |
+| Revisione dell'architettura | Architecture review |
+| Test di regressione | Regression test |
+| Proposta | Proposal |
+| Lavoro del progetto | Project work |
+| Progetto di esempio | Example project |
+| Capo squadra | Squad lead |
+| Missione | Mission |
+| Traguardo | Milestone |
+| Sospendere un lavoro | Suspend work |
 | Guardiano delle regressioni | Regression guardian |
 
 ## Ruoli e coordinamento

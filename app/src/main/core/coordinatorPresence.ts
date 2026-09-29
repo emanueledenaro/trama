@@ -3,6 +3,7 @@ import type { ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { type PresenceEntry, type PresenceStatus, type PresenceTask, type PresenceView } from "@shared/presence";
 import type { RepositoryModule } from "@shared/repository";
 import { ITALIAN } from "@shared/i18n";
+import { t } from "./personLanguage";
 
 /**
  * The Coordinator uses the presence (G04, #177, decisions 10 and 11 of #173): it reads who works on what, avoids the
@@ -40,9 +41,14 @@ const line = (value: string, limit = 120) =>
     .trim()
     .slice(0, limit);
 
-/** Whose work it is, in words for the Coordinator: "Bea" or "l'agente Nora di Bea". */
+/** Whose work it is, in words for the Coordinator: "Bea" or "l'agente Nora di Bea". @model-text */
 export function occupantName(occupant: Occupant): string {
   return occupant.agent ? `l'agente ${line(occupant.agent, 60)} di ${line(occupant.person, 60)}` : line(occupant.person, 60);
+}
+
+/** Whose work it is, in words for the person, in their language: "Bea" or "l'agente Nora di Bea". */
+export function occupantLabel(occupant: Occupant): string {
+  return occupant.agent ? t("main.coordinatorPresence.agentOf", { agent: line(occupant.agent, 60), person: line(occupant.person, 60) }) : line(occupant.person, 60);
 }
 
 /**
@@ -154,6 +160,7 @@ export function agentOverlapKey(overlap: AgentOverlap): string {
   return `${overlap.assignmentId}:${overlap.occupant.user}:${overlap.occupant.agent ?? ""}:${[...overlap.files].sort().join(",")}`;
 }
 
+/** @model-text: Italian and English words to ignore when matching titles and branches, not a text. */
 const STOP_WORDS = new Set([
   "della", "delle", "dello", "degli", "nella", "nelle", "nello", "negli", "sulla", "sulle", "sullo", "dalla", "dalle", "anche", "senza",
   "quando", "come", "ogni", "questo", "questa", "quello", "quella", "sono", "essere", "fare", "dopo", "prima", "invece", "feature",
@@ -254,7 +261,7 @@ export function presenceForTool(document: ProjectDocument, view: PresenceView | 
 
 /**
  * The presence section of the Coordinator's message, each turn while someone else is at work: who touches what, the
- * overlaps of its own agents and the rules of decisions 10 and 11. Null when nobody else is at work.
+ * overlaps of its own agents and the rules of decisions 10 and 11. Null when nobody else is at work. @model-text
  */
 export function presenceSection(document: ProjectDocument, view: PresenceView | null | undefined, modules: RepositoryModule[]): string | null {
   const others = occupants(view).filter((o) => o.files.length || o.task || o.branch);

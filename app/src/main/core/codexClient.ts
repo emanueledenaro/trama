@@ -6,7 +6,9 @@ import { createInterface } from "node:readline";
 import type { AccountStatus, CodexModel, TurnEvent } from "@shared/codex";
 import { commandBan, type FixedBan, pathBan } from "@shared/fixedBans";
 import type { LoadedSkill } from "@shared/skills";
+import { t } from "./personLanguage";
 import { runProcess } from "./process";
+import { interruptedTurnError } from "./providers/types";
 import { checkedOutBranch } from "./push";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -58,7 +60,7 @@ export function startedItemBan(item: JsonObject): { ban: FixedBan; action: strin
   }
   if (item.type === "fileChange") {
     const path = asArray(item.changes).map((c) => asString(asObject(c)?.path)).find((p) => p && pathBan(p));
-    return path ? { ban: pathBan(path)!, action: `Modifica di ${path}` } : null;
+    return path ? { ban: pathBan(path)!, action: t("main.codexClient.fileChangeAction", { path }) } : null;
   }
   return null;
 }
@@ -87,10 +89,7 @@ export function resolveCodexExecutable(configured?: string | null): string {
       // Try the next candidate.
     }
   }
-  throw new CodexError(
-    "executableNotFound",
-    "Codex CLI non trovato. Installa Codex e accedi con ChatGPT dal terminale o da Collegamenti.",
-  );
+  throw new CodexError("executableNotFound", t("main.codexClient.notInstalled"));
 }
 
 /**
@@ -106,23 +105,23 @@ export async function restrictedAppServerArguments(executable: string, reservedS
     outputLimit: 1_048_576,
   }).catch(() => null);
   if (!result || result.exitCode !== 0) {
-    throw new CodexError("executableNotFound", "Codex non ha restituito l'inventario MCP necessario al runtime ristretto.");
+    throw new CodexError("executableNotFound", t("main.codexClient.mcpInventoryMissing"));
   }
   let rows: unknown;
   try {
     rows = JSON.parse(result.stdout);
   } catch {
-    throw new CodexError("malformedMessage", "Inventario MCP non leggibile.");
+    throw new CodexError("malformedMessage", t("main.codexClient.mcpInventoryUnreadable"));
   }
   const args = [...APP_SERVER_ARGUMENTS];
   for (const row of Array.isArray(rows) ? rows : []) {
     const name = typeof row?.name === "string" ? row.name : "";
     const type = typeof row?.transport?.type === "string" ? row.transport.type : "";
     if (!/^[A-Za-z0-9_-]+$/.test(name)) {
-      throw new CodexError("malformedMessage", "L'inventario MCP contiene una voce senza nome valido.");
+      throw new CodexError("malformedMessage", t("main.codexClient.mcpEntryWithoutName"));
     }
     if (name === reservedServerName) {
-      throw new CodexError("malformedMessage", `Un server MCP globale usa il nome ${name}, riservato agli strumenti di Trama.`);
+      throw new CodexError("malformedMessage", t("main.codexClient.reservedServerName", { name }));
     }
     const value =
       type === "stdio"
@@ -226,7 +225,7 @@ export class CodexClient {
       return { kind: "unavailable", message: (error as Error).message };
     }
     const result = asObject(await this.request("account/read", { refreshToken: false }));
-    if (!result) throw new CodexError("malformedMessage", "risposta account/read non valida");
+    if (!result) throw new CodexError("malformedMessage", t("main.codexClient.invalidAccountRead"));
     const account = asObject(result.account);
     if (!account) return { kind: "signedOut" };
     const type = asString(account.type);
@@ -236,17 +235,17 @@ export class CodexClient {
       // from the server and say what the account can do now.
       const limits = await this.readRateLimits().catch(() => null);
       const plan = limits?.plan ?? asString(account.planType);
-      if (!plan) throw new CodexError("malformedMessage", "account ChatGPT senza piano");
+      if (!plan) throw new CodexError("malformedMessage", t("main.codexClient.accountWithoutPlan"));
       if (limits?.blocked) {
         return {
           kind: "blocked",
-          message: `Hai esaurito l'utilizzo di ChatGPT (piano ${plan}).`,
+          message: t("main.codexClient.usageExhausted", { plan }),
           until: limits.resetsAt,
         };
       }
       return { kind: "chatgpt", email, plan };
     }
-    return { kind: "unsupported", type: type ?? "sconosciuto" };
+    return { kind: "unsupported", type: type ?? t("main.codexClient.unknownAccountType") };
   }
 
   /** The server's view of the account: current plan and whether ordinary usage is allowed now. */
@@ -268,7 +267,7 @@ export class CodexClient {
     const result = asObject(await this.request("account/login/start", { type: "chatgpt" }));
     const url = asString(result?.authUrl);
     if (!url || !/^https?:\/\//i.test(url)) {
-      throw new CodexError("malformedMessage", "risposta account/login/start incompleta");
+      throw new CodexError("malformedMessage", t("main.codexClient.incompleteLoginStart"));
     }
     return url;
   }
@@ -279,11 +278,11 @@ export class CodexClient {
     let cursor: string | null = null;
     let pages = 0;
     do {
-      if (++pages > 20) throw new CodexError("malformedMessage", "model/list ha superato il limite di pagine");
+      if (++pages > 20) throw new CodexError("malformedMessage", t("main.codexClient.modelListTooManyPages"));
       const params: JsonObject = { includeHidden: false, limit: 100 };
       if (cursor) params.cursor = cursor;
       const result = asObject(await this.request("model/list", params));
-      if (!result) throw new CodexError("malformedMessage", "risposta model/list incompleta");
+      if (!result) throw new CodexError("malformedMessage", t("main.codexClient.incompleteModelList"));
       for (const value of asArray(result.data)) {
         const item = asObject(value);
         const model = asString(item?.model);
@@ -361,7 +360,7 @@ export class CodexClient {
       ),
     );
     const id = asString(asObject(result?.thread)?.id);
-    if (!id) throw new CodexError("malformedMessage", "risposta thread/start senza thread.id");
+    if (!id) throw new CodexError("malformedMessage", t("main.codexClient.threadStartWithoutId"));
     this.rememberPermissions(id, options.permissions);
     return { threadId: id, replaced: Boolean(options.resumeThreadId) };
   }
@@ -374,9 +373,9 @@ export class CodexClient {
   /** Runs one turn and resolves with the final answer. Events stream through `onEvent`. */
   async runTurn(options: TurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
-    if (!prompt) throw new CodexError("emptyPrompt", "Il messaggio è vuoto.");
+    if (!prompt) throw new CodexError("emptyPrompt", t("main.provider.emptyMessage"));
     validateModel(options.model);
-    if (this.activeTurn || this.pendingTurn) throw new CodexError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.activeTurn || this.pendingTurn) throw new CodexError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const pending = { interrupted: false, stopped: false };
     this.pendingTurn = pending;
     try {
@@ -384,10 +383,10 @@ export class CodexClient {
     } finally {
       if (this.pendingTurn === pending) this.pendingTurn = null;
     }
-    if (pending.stopped) throw new CodexError("processExited", "Codex è stato chiuso.");
+    if (pending.stopped) throw new CodexError("processExited", t("main.provider.closed", { provider: "Codex" }));
     if (pending.interrupted) {
       options.onEvent({ type: "interrupted" });
-      throw new Error("Turno interrotto.");
+      throw interruptedTurnError();
     }
 
     return new Promise<string>((resolve, reject) => {
@@ -442,7 +441,7 @@ export class CodexClient {
       this.request("turn/start", params)
         .then((result) => {
           const turnId = asString(asObject(asObject(result)?.turn)?.id);
-          if (!turnId) throw new CodexError("malformedMessage", "risposta turn/start senza turn.id");
+          if (!turnId) throw new CodexError("malformedMessage", t("main.codexClient.turnStartWithoutId"));
           if (typeof params.permissions === "string") this.threadPermissions.set(options.threadId, params.permissions);
           this.adoptTurnId(turn, turnId);
         })
@@ -483,7 +482,7 @@ export class CodexClient {
   stop(): void {
     if (this.pendingTurn) this.pendingTurn.stopped = true;
     this.pendingTurn = null;
-    const closed = new CodexError("processExited", "Codex è stato chiuso.");
+    const closed = new CodexError("processExited", t("main.provider.closed", { provider: "Codex" }));
     this.activeTurn?.reject(closed);
     // The process's exit no longer reaches `fail` once `child` is cleared: its requests end here, not at their timeout.
     for (const [, pending] of this.pending) {
@@ -500,13 +499,10 @@ export class CodexClient {
     const account = await this.readAccount();
     if (account.kind === "unavailable") throw new CodexError("executableNotFound", account.message);
     if (account.kind === "unsupported") {
-      throw new CodexError(
-        "unsupportedAccount",
-        `Trama accetta solo un account ChatGPT. Codex usa un account di tipo ${account.type}.`,
-      );
+      throw new CodexError("unsupportedAccount", t("main.codexClient.unsupportedAccount", { type: account.type }));
     }
     if (account.kind !== "chatgpt") {
-      throw new CodexError("authenticationRequired", "Accedi con ChatGPT da Collegamenti per usare Codex.");
+      throw new CodexError("authenticationRequired", t("main.codexClient.signIn"));
     }
   }
 
@@ -551,11 +547,11 @@ export class CodexClient {
       this.pending.clear();
       this.activeTurn?.reject(error);
     };
-    child.on("exit", (code) => fail(new CodexError("processExited", `Codex app-server è terminato (codice ${code ?? "?"}).`)));
+    child.on("exit", (code) => fail(new CodexError("processExited", t("main.codexClient.appServerExited", { code: String(code ?? "?") }))));
     child.on("error", () => undefined);
     // A closed pipe (EPIPE) must not crash the main process: treat it as the end of app-server.
     const streamFailed = (error: Error) => {
-      fail(new CodexError("processExited", `Codex app-server ha chiuso la comunicazione: ${error.message}`));
+      fail(new CodexError("processExited", t("main.codexClient.appServerClosedPipe", { error: error.message })));
       child.kill();
     };
     child.stdin.on("error", streamFailed);
@@ -569,13 +565,13 @@ export class CodexClient {
       }),
     );
     if (!result || !asString(result.userAgent)) {
-      throw new CodexError("malformedMessage", "risposta initialize incompleta");
+      throw new CodexError("malformedMessage", t("main.codexClient.incompleteInitialize"));
     }
     this.send({ method: "initialized", params: {} });
   }
 
   private send(message: JsonObject): void {
-    if (!this.child || !this.child.stdin.writable) throw new CodexError("processExited", "Codex app-server non è attivo.");
+    if (!this.child || !this.child.stdin.writable) throw new CodexError("processExited", t("main.codexClient.appServerNotRunning"));
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
@@ -589,7 +585,7 @@ export class CodexClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new CodexError("timedOut", `Timeout in attesa di ${method}.`));
+        reject(new CodexError("timedOut", t("main.codexClient.requestTimeout", { method })));
       }, timeoutMs ?? this.options.requestTimeoutMs ?? 30_000);
       this.pending.set(id, { resolve, reject, timer });
       try {
@@ -624,7 +620,7 @@ export class CodexClient {
       clearTimeout(pending.timer);
       const error = asObject(message.error);
       if (error) {
-        pending.reject(new CodexError("rpcError", asString(error.message) ?? "errore JSON-RPC"));
+        pending.reject(new CodexError("rpcError", asString(error.message) ?? t("main.codexClient.rpcError")));
       } else {
         pending.resolve(message.result ?? null);
       }
@@ -651,7 +647,7 @@ export class CodexClient {
         this.send({ id, result: { action: "decline", content: null } });
         return;
       default:
-        this.send({ id, error: { code: -32601, message: `Trama non supporta ${method}` } });
+        this.send({ id, error: { code: -32601, message: `Trama does not support ${method}` } });
     }
   }
 
@@ -726,7 +722,7 @@ export class CodexClient {
       case "error": {
         const turn = this.matchingTurn(params);
         if (turn && params.willRetry !== true) {
-          turn.failureMessage = asString(asObject(params.error)?.message) ?? "errore del modello";
+          turn.failureMessage = asString(asObject(params.error)?.message) ?? t("main.codexClient.modelError");
         }
         return;
       }
@@ -740,10 +736,10 @@ export class CodexClient {
           turn.resolve(text);
         } else if (status === "interrupted") {
           turn.onEvent({ type: "interrupted" });
-          turn.reject(new Error("Turno interrotto."));
+          turn.reject(interruptedTurnError());
         } else if (status === "failed") {
           const message =
-            asString(asObject(asObject(params.turn)?.error)?.message) ?? turn.failureMessage ?? "errore sconosciuto";
+            asString(asObject(asObject(params.turn)?.error)?.message) ?? turn.failureMessage ?? t("main.codexClient.unknownError");
           turn.onEvent({ type: "failed", message });
           turn.reject(new Error(message));
         }
@@ -839,6 +835,6 @@ function refusalText(result: Json | undefined): string | null {
 
 function validateModel(model: string): void {
   if (!model.trim() || model.includes("/")) {
-    throw new CodexError("invalidModel", `Modello non valido: ${model}`);
+    throw new CodexError("invalidModel", t("main.provider.invalidModel", { model }));
   }
 }

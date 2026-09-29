@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { FLOW_SKILLS, firstRunnableStep } from "@shared/askTrama";
 import { skillCandidates } from "@shared/skills";
 import {
@@ -15,6 +15,7 @@ import {
   routeReport,
   skillInRouteBinding,
 } from "./askTrama";
+import { setPersonLanguage } from "./personLanguage";
 import { COORDINATOR_SKILLS, COORDINATOR_TOOLS, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
@@ -163,5 +164,17 @@ describe("Ask Trama, the ask-trama skill run by Trama (M07)", () => {
     const refused = await runCoordinatorTool("propose_route", { ...args, steps: ["clear"] }, context);
     expect(refused.isError).toBe(true);
     expect(refused.content[0]!.text).toContain("invalid_arguments");
+  });
+});
+
+describe("Ask Trama in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the person's answer and the refusals in English", async () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    const route = proposeRoute(document, await input());
+    expect(answerRoute(route, false)).toBe(`I am not starting Ask Trama route ${route.id} (grill-with-docs → to-spec → to-tickets → implement).`);
+    expect(() => answerRoute(route, true)).toThrow("You already answered this route.");
   });
 });

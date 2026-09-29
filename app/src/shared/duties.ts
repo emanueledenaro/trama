@@ -83,7 +83,7 @@ export function assignmentLine(t: Translate, document: Pick<ProjectDocument, "de
   const answer = architectureAnswer(document, outcome);
   if (answer?.state === "answered") return t("shared.duties.architectureChosen", { chosen: answer.chosen ?? "" });
   if (answer?.state === "withdrawn") return t("shared.duties.architectureWithdrawn");
-  return t("shared.duties.architectureOpen", { count: outcome.proposals.length });
+  return t("main.duties.architectureLineProposals", { count: outcome.proposals.length });
 }
 
 /** A developer's last update: the line of its latest work while that is what the update says. */

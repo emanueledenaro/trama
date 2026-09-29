@@ -10,13 +10,13 @@ import { useUi } from "@/lib/store";
 /**
  * The divergence of the project's branch from the default branch on GitHub (U02), said once for the whole project
  * instead of the same conflict on every candidate. The status bar counts the files in conflict and opens this panel
- * (issue #330). The way out is the Coordinator's work within the mandate: the action puts the question in the
+ * (issue #330) with the files already shown, one click from the bar (issue #332). The way out is the Coordinator's work within the mandate: the action puts the question in the
  * composer and nothing leaves until the person sends it.
  */
-export function BranchDivergencePanel({ divergence, onDone }: { divergence: BranchDivergence; onDone: () => void }) {
+export function BranchDivergencePanel({ divergence, onDone, filesOpen = false }: { divergence: BranchDivergence; onDone: () => void; filesOpen?: boolean }) {
   const t = useT();
   const askCoordinator = useUi((s) => s.askCoordinator);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(filesOpen);
   const files = divergence.conflictingFiles;
   return (
     <section aria-label={t("workbench.status.divergence")} className="flex min-w-0 flex-col p-3" data-testid="branch-divergence">

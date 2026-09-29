@@ -8,6 +8,9 @@
  * third-party source listed in THIRD_PARTY_NOTICES.md; keep them unchanged.
  */
 
+import type { MessageKey } from "@shared/i18n";
+import { t } from "../personLanguage";
+
 export const MEMORY_NUDGE_INTERVAL = 10;
 export const SKILL_NUDGE_INTERVAL = 10;
 export const REVIEW_MAX_TOOL_CALLS = 16;
@@ -50,7 +53,7 @@ If a tool failed because of setup state, capture the FIX (install command, confi
 
 // The source prompt names protected kinds (bundled, hub, external dirs) that Trama's library does not
 // have, so only the pinned and person-owned rules stay, and its adopt command becomes Trama's
-// adoption in the Memory view.
+// adoption in the Memory view. @model-text: prompt for the review model.
 export const SKILL_REVIEW_PROMPT = `Review the conversation above and update the skill library. Be ACTIVE — most sessions produce at least one skill update, even if small. A pass that does nothing is a missed learning opportunity, not a neutral outcome.
 
 Target shape of the library: CLASS-LEVEL skills, each with a SKILL.md of always-on rules and a small \`references/\` set of topical depth. Not a flat list of narrow one-session skills, and not an umbrella hoarding a references/ file per session. This shapes HOW you update, not WHETHER you update.
@@ -90,6 +93,7 @@ ${DO_NOT_CAPTURE}
 
 'Nothing to save.' is a real option but should NOT be the default. If the session ran smoothly with no corrections and produced no new technique, just say 'Nothing to save.' and stop. Otherwise, act.`;
 
+// @model-text: prompt for the review model.
 export const COMBINED_REVIEW_PROMPT = `Review the conversation above and update two things:
 
 **Memory**: TWO distinct stores — pick the right one for each fact:
@@ -214,25 +218,38 @@ export function reviewTranscript(messages: TranscriptMessage[], tail = DIGEST_TA
 
 type JsonRecord = Record<string, unknown>;
 
-const SKILL_VERBS: Record<string, string> = { create: "creata", patch: "aggiornata", edit: "riscritta", write_file: "aggiornata", remove_file: "aggiornata", delete: "eliminata" };
+const SKILL_VERBS: Record<string, MessageKey> = {
+  create: "main.review.verb.created",
+  patch: "main.review.verb.updated",
+  edit: "main.review.verb.rewritten",
+  write_file: "main.review.verb.updated",
+  remove_file: "main.review.verb.updated",
+  delete: "main.review.verb.deleted",
+};
 
-const REVIEW_STOP_LINES: Record<string, string> = {
-  "The review was stopped.": "La revisione è stata fermata.",
-  "The review ran out of time.": "La revisione ha finito il tempo a disposizione.",
-  "The review used a tool outside memory and skills.": "La revisione ha usato uno strumento fuori da memoria e skill: Trama l'ha fermata.",
+/** The review's own stop messages, which the controller writes in English, and how the person reads them. */
+const REVIEW_STOP_LINES: Record<string, MessageKey> = {
+  "The review was stopped.": "main.review.stopped",
+  "The review ran out of time.": "main.review.timedOut",
+  "The review used a tool outside memory and skills.": "main.review.foreignTool",
 };
 
 /** Why a review stopped, as the person reads it in Memoria and Attività; a provider's own error stays as it is. */
-export const reviewErrorLine = (message: string) => REVIEW_STOP_LINES[message] ?? message;
+export const reviewErrorLine = (message: string) => {
+  const key = REVIEW_STOP_LINES[message];
+  return key ? t(key) : message;
+};
 
 /** The Activity line of a review's staged memory change (issue #305): the review's own message is for the model. */
-export const REVIEW_STAGED_LINE = "Proposta di modifica della memoria: la trovi in Memoria";
+export const reviewStagedLine = (): string => t("main.review.staged");
 
-const skillLine = (name: string, action: string, filePath: unknown, archived: boolean) =>
-  `Skill '${name}' ${archived ? "archiviata" : (SKILL_VERBS[action] ?? "aggiornata")}${typeof filePath === "string" && filePath ? ` (${filePath})` : ""}`;
+const skillLine = (name: string, action: string, filePath: unknown, archived: boolean) => {
+  const verb = t(archived ? "main.review.verb.archived" : (SKILL_VERBS[action] ?? "main.review.verb.updated"));
+  return typeof filePath === "string" && filePath ? t("main.review.skillLineWithPath", { name, verb, path: filePath }) : t("main.review.skillLine", { name, verb });
+};
 
 /**
- * The summary of the review's actions in the default ("on") mode: one plain Italian line per successful memory or
+ * The summary of the review's actions in the default ("on") mode: one plain line in the person's language per successful memory or
  * skill write of the review, staged proposals included; failures and reads say nothing (issue #305).
  */
 export function summarizeReviewActions(calls: { tool: string; args: JsonRecord; result: JsonRecord }[]): string[] {
@@ -241,13 +258,13 @@ export function summarizeReviewActions(calls: { tool: string; args: JsonRecord; 
     if (tool !== "memory" && tool !== "skill_manage") continue;
     if (result.success !== true) continue;
     if (result.staged === true) {
-      if (result.proposal_staged) actions.push(REVIEW_STAGED_LINE);
+      if (result.proposal_staged) actions.push(reviewStagedLine());
       continue;
     }
     if (tool === "memory") {
       if (String(result.message ?? "").toLowerCase().includes("already exists")) continue;
       const target = (typeof result.target === "string" ? result.target : null) ?? (typeof args.target === "string" ? args.target : "memory");
-      actions.push(target === "user" ? "Profilo aggiornato" : "Memoria aggiornata");
+      actions.push(t(target === "user" ? "main.review.profileUpdated" : "main.review.memoryUpdated"));
       continue;
     }
     if (Array.isArray(result.results)) {

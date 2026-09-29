@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { TechnicalReview } from "@shared/domain";
 import { NO_SPEC, nothingToReport } from "@shared/gate";
 import { ITALIAN } from "@shared/i18n";
-import { SECRET_NOTE } from "./core/gate";
+import { secretNote } from "./core/gate";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
@@ -226,7 +226,7 @@ describe("the candidate gate (W10)", () => {
     expect(gate.status).toBe("blocked");
     expect(gate.reviews.find((r) => r.role === "security")!.findings).toEqual([expect.objectContaining({ severity: "blocking", title: "Segreto nel diff: chiave API in NOTE.md" })]);
     for (const role of ["specReviewer", "cleanCode", "performance", "ux", "devops", "documentation"]) {
-      expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "skipped", report: SECRET_NOTE });
+      expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "skipped", report: secretNote() });
     }
     expect(candidate.technicalReview).toMatchObject({ verdict: "changesRequested", gateId: gate.id });
     expect(candidate.clearance).toBeNull();

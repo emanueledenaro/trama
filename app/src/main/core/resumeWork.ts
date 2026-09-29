@@ -1,8 +1,9 @@
 import type { ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { classifyProviderFailure, type ProviderWaitReason, waitReasonOf } from "@shared/providerFailure";
 import { isPaused } from "./continuousWork";
-import { ASSIGNMENT_CRASH_NOTE, ASSIGNMENT_QUIT_NOTE, CRASH_NOTE, QUIT_NOTE } from "./document";
-import { ITALIAN } from "@shared/i18n";
+import { closingNoteTexts } from "./document";
+import { localeOf } from "@shared/i18n";
+import { personLanguage, t } from "./personLanguage";
 
 /**
  * Resuming the always active Coordinator (issue #249, on top of C11 and A05). A provider limit holds the moves and the
@@ -33,9 +34,10 @@ export interface ReopeningResume {
 
 const NOTHING: ReopeningResume = { turn: null, assignments: [] };
 
-/** Older documents wrote this sentence when Esci stopped a specialist (C11). */
+/** Older documents wrote this sentence when Esci stopped a specialist (C11). @model-text: matched against persisted records, never shown. */
 const OLD_ASSIGNMENT_QUIT_NOTE = "Esci: Trama si sta chiudendo. Riprendi l'incarico quando vuoi.";
-const QUIT_STOPS = [ASSIGNMENT_QUIT_NOTE, OLD_ASSIGNMENT_QUIT_NOTE, ASSIGNMENT_CRASH_NOTE];
+const QUIT_STOPS = [...closingNoteTexts("assignmentQuit"), OLD_ASSIGNMENT_QUIT_NOTE, ...closingNoteTexts("assignmentCrash")];
+const CLOSED_TURNS = [...closingNoteTexts("quit"), ...closingNoteTexts("crash")];
 
 /** Whether a specialist's latest stop came from Trama closing, by Esci or by a crash, rather than from someone's request. */
 export const stoppedByClosing = (assignment: SpecialistAssignment): boolean => {
@@ -55,10 +57,10 @@ export function reopeningResume(document: ProjectDocument, continuousWork: boole
   if (!continuousWork || isPaused(document) || document.mandate?.status !== "granted") return NOTHING;
   const latest = document.requests.at(-1);
   let turn: ReopeningResume["turn"] = null;
-  if (latest?.state === "interrupted" && (latest.failure === QUIT_NOTE || latest.failure === CRASH_NOTE)) {
+  if (latest?.state === "interrupted" && CLOSED_TURNS.includes(latest.failure ?? "")) {
     turn = { requestId: latest.id, kind: "resume" };
   } else if (latest?.state === "failed" && latest.failure) {
-    const failure = classifyProviderFailure(ITALIAN, latest.failure, { now });
+    const failure = classifyProviderFailure(t, latest.failure, { now });
     const reason = waitReasonOf(failure.kind);
     if (reason) turn = { requestId: latest.id, kind: "wait", reason, until: failure.until };
   }
@@ -69,14 +71,14 @@ export function reopeningResume(document: ProjectDocument, continuousWork: boole
   return { turn, assignments };
 }
 
-const clock = (until: string) => new Date(until).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
-const day = (until: string) => new Date(until).toLocaleDateString("it-IT", { day: "numeric", month: "long" });
+const clock = (until: string) => new Date(until).toLocaleTimeString(localeOf(personLanguage()), { hour: "2-digit", minute: "2-digit" });
+const day = (until: string) => new Date(until).toLocaleDateString(localeOf(personLanguage()), { day: "numeric", month: "long" });
 
 /** The time a limit ends, in words: "alle 15:30", or "il 3 ottobre alle 15:30" when it is not today. */
 export function untilText(until: string, now = new Date()): string {
   const end = new Date(until);
   const sameDay = end.toDateString() === now.toDateString();
-  return sameDay ? `alle ${clock(until)}` : `il ${day(until)} alle ${clock(until)}`;
+  return sameDay ? t("main.resumeWork.atTime", { time: clock(until) }) : t("main.resumeWork.onDayAtTime", { day: day(until), time: clock(until) });
 }
 
 /**
@@ -85,11 +87,12 @@ export function untilText(until: string, now = new Date()): string {
  */
 export function providerWaitLine(wait: ProviderWait, now = new Date()): { text: string; reason: string } {
   const when = wait.until !== null && Date.parse(wait.until) > now.getTime() ? untilText(wait.until, now) : null;
+  const provider = wait.provider;
   const text =
     wait.reason === "unreachable"
-      ? `Aspetto che ${wait.provider} torni raggiungibile.`
+      ? t("main.resumeWork.unreachable", { provider })
       : wait.reason === "quotaExhausted"
-        ? `Aspetto che la quota di ${wait.provider} si sblocchi${when ? ` ${when}` : ": il provider non dice quando"}.`
-        : `Aspetto la fine del limite di ${wait.provider}${when ? `, prevista ${when}` : ": il provider non dice quando finisce"}.`;
-  return { text, reason: "Fino ad allora non parte nessun turno. Poi riprendo da solo." };
+        ? when ? t("main.resumeWork.quotaUntil", { provider, when }) : t("main.resumeWork.quota", { provider })
+        : when ? t("main.resumeWork.limitUntil", { provider, when }) : t("main.resumeWork.limit", { provider });
+  return { text, reason: t("main.resumeWork.waitReason") };
 }

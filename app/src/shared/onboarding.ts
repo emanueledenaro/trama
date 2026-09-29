@@ -470,7 +470,7 @@ export function recentProjectStatus(t: Translate, entry: ProjectOverview | null)
   if (entry.runningWork) work.push(t("shared.recent.running", { count: entry.runningWork }));
   if (entry.pendingDecisions) work.push(t("shared.recent.decisions", { count: entry.pendingDecisions }));
   if (entry.blockedWork) work.push(t("shared.recent.blocked", { count: entry.blockedWork }));
-  if (entry.toApprove) work.push(t("shared.recent.toApprove", { count: entry.toApprove }));
+  if (entry.toApprove) work.push(t("main.overview.toApprove", { count: entry.toApprove }));
   if (!work.length) work.push(t("shared.recent.nothing"));
   const colleagues =
     entry.colleagues === null ? null : entry.colleagues === 0 ? t("shared.recent.noColleagues") : t("shared.recent.colleagues", { count: entry.colleagues });

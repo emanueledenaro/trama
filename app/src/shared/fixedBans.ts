@@ -148,7 +148,7 @@ function unwrap(words: string[]): string[] {
       if (option === "--") break;
       if (valued.includes(option)) start++;
     }
-    // timeout takes its duration before the command.
+    // timeout takes its duration before the command. i18n-exempt: a program name, not text.
     if (program(word) === "timeout" && start < words.length) start++;
   }
   return words.slice(start);

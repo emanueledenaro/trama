@@ -1,6 +1,7 @@
 import type { EventContent, ProjectMandate } from "@shared/domain";
 import { type FixedBan, fixedBanInfo, pushBan } from "@shared/fixedBans";
 import { execFileSync } from "node:child_process";
+import { t } from "./personLanguage";
 import { runProcess } from "./process";
 import { type Authorization, authorize } from "./team";
 import { ITALIAN } from "@shared/i18n";
@@ -33,20 +34,20 @@ export const pushAuthorization = (mandate: ProjectMandate | null): Authorization
 export function pushRefusal(authorization: Authorization): string {
   switch (authorization) {
     case "mandate_missing":
-      return "Il progetto non ha un mandato: Trama non pubblica branch su GitHub.";
+      return t("main.push.noMandate");
     case "mandate_revoked":
-      return "Il mandato è revocato: Trama non pubblica branch su GitHub.";
+      return t("main.push.mandateRevoked");
     case "authorized":
       return "";
     default:
-      return "Il mandato non permette di aprire pull request: Trama non pubblica branch su GitHub.";
+      return t("main.push.mandateNoPullRequests");
   }
 }
 
 /** The fixed ban on pushing `branch`, with its reason in the person's words; null when none applies (issue #244). */
 export function fixedPushRefusal(branch: string, mainBranches: string[] = []): { ban: FixedBan; reason: string } | null {
   const ban = pushBan(branch, mainBranches);
-  return ban ? { ban, reason: `${fixedBanInfo(ITALIAN, ban).reason} Nessun mandato lo concede: Trama non pubblica ${branch}.` } : null;
+  return ban ? { ban, reason: t("main.push.bannedReason", { reason: fixedBanInfo(t, ban).reason, branch }) } : null;
 }
 
 /**
@@ -81,26 +82,26 @@ export async function pushBranch(input: {
     timeoutMs: 120_000,
   });
   if (push.exitCode !== 0) {
-    const detail = push.stderr.trim().split("\n").at(-1) || `uscita ${push.exitCode ?? "?"}`;
+    const detail = push.stderr.trim().split("\n").at(-1) || t("main.push.exitCode", { code: String(push.exitCode ?? "?") });
     input.onRecord({ outcome: "failed", branch: input.branch, remote, reason: detail });
-    throw new Error(`git push non riuscito: ${detail}`);
+    throw new Error(t("main.push.failedError", { detail }));
   }
   input.onRecord({ outcome: "pushed", branch: input.branch, remote });
 }
 
-/** How a push record reads in the conversation: plain Italian, the branch and the remote in the detail. */
+/** How a push record reads in the conversation: plain words, the branch and the remote in the detail. */
 export function pushActivity(record: PushRecord): ActivityContent {
-  const where = `${record.branch} su ${record.remote}`;
+  const where = t("main.push.where", { branch: record.branch, remote: record.remote });
   switch (record.outcome) {
     case "refused":
-      if (record.ban) return { type: "activity", title: "Pubblicazione fermata da un divieto fisso", detail: `${where}\n${record.reason}`, tone: "error" };
-      return { type: "activity", title: "Pubblicazione fermata dal mandato", detail: `${where}\n${record.reason}`, tone: "error" };
+      if (record.ban) return { type: "activity", title: t("main.push.banned"), detail: `${where}\n${record.reason}`, tone: "error" };
+      return { type: "activity", title: t("main.push.refused"), detail: `${where}\n${record.reason}`, tone: "error" };
     case "started":
-      return { type: "activity", title: "Trama sta pubblicando un branch su GitHub", detail: where, tone: "info" };
+      return { type: "activity", title: t("main.push.started"), detail: where, tone: "info" };
     case "pushed":
-      return { type: "activity", title: "Trama ha pubblicato un branch su GitHub", detail: where, tone: "tool" };
+      return { type: "activity", title: t("main.push.pushed"), detail: where, tone: "tool" };
     case "failed":
-      return { type: "activity", title: "Pubblicazione del branch non riuscita", detail: `${where}\n${record.reason}`, tone: "error" };
+      return { type: "activity", title: t("main.push.failed"), detail: `${where}\n${record.reason}`, tone: "error" };
   }
 }
 
@@ -115,10 +116,10 @@ export function isGitPushCommand(command: string): boolean {
 export function agentPushActivity(command: string, succeeded: boolean): ActivityContent {
   return {
     type: "activity",
-    title: succeeded ? "Un agente ha eseguito git push fuori da Trama" : "Un agente ha provato a pubblicare con git push",
+    title: t(succeeded ? "main.push.agentPushed" : "main.push.agentTried"),
     detail: succeeded
-      ? `Richiesta: ${command}\nControlla il remoto: solo Trama pubblica, e solo con un mandato che lo permette.`
-      : `Richiesta: ${command}\nIl sandbox l'ha fermato: solo Trama pubblica, e solo con un mandato che lo permette.`,
+      ? t("main.push.agentPushedDetail", { command })
+      : t("main.push.agentTriedDetail", { command }),
     tone: "error",
   };
 }

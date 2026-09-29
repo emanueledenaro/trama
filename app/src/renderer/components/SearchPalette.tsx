@@ -89,7 +89,7 @@ export function SearchPalette() {
             { id: "mandate", label: "Mandato", icon: <IconShieldCheck className={ICON} />, run: inspect({ kind: "mandate" }) },
             { id: "team", label: "Squadre", icon: <IconUsersGroup className={ICON} />, run: inspect({ kind: "team" }) },
             { id: "work", label: "Lavoro", icon: <IconFileDiff className={ICON} />, run: inspect({ kind: "work" }) },
-            { id: "group", label: "Il lavoro del gruppo", icon: <IconGitPullRequest className={ICON} />, run: inspect({ kind: "group" }) },
+            { id: "group", label: t("work.branches.title"), icon: <IconGitPullRequest className={ICON} />, run: inspect({ kind: "group" }) },
             { id: "issues", label: "Issue", icon: <IconCircleDot className={ICON} />, run: inspect({ kind: "issues" }) },
             { id: "memory", label: "Memoria del Coordinatore", icon: <IconBrain className={ICON} />, run: inspect({ kind: "memory" }) },
           ]
@@ -127,7 +127,7 @@ export function SearchPalette() {
             })
         : [];
     return [...filter(actions), ...filter(projects), ...objects];
-  }, [app, query, setDialog, setInspector, focusComposer]);
+  }, [app, query, setDialog, setInspector, focusComposer, t]);
 
   const groups = [...new Set(items.map((i) => i.group))];
   const selected = Math.min(index, Math.max(0, items.length - 1));

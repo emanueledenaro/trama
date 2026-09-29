@@ -17,7 +17,7 @@ describe("one vocabulary of states (issue #272)", () => {
     expect(planStatus(t, plan({ slicing: slicing("drafting") }))).toMatchObject({ label: "Divisione in fette", busy: true });
     expect(planStatus(t, plan({ slicing: slicing("failed") })).tone).toBe("destructive");
     expect(planStatus(t, plan({})).label).toBe("Da rivedere");
-    expect(planStatus(t, plan({ status: "superseded" })).label).toBe("Superato");
+    expect(planStatus(t, plan({ status: "superseded" })).label).toBe("Sostituito");
   });
 
   it("does not call a finished candidate under construction", () => {
@@ -26,7 +26,7 @@ describe("one vocabulary of states (issue #272)", () => {
     // Reviewers that did not finish are run again: nothing to fix yet, as the work phase says.
     expect(candidateStatus(t, { state: "building", blockers: [{ code: "GATE_FAILED", detail: "" }] }).label).toBe("In verifica");
     expect(candidateStatus(t, { state: "verified", blockers: [] }).label).toBe("Verificato");
-    expect(candidateStatus(t, { state: "superseded", blockers: [] }).label).toBe("Superato");
+    expect(candidateStatus(t, { state: "superseded", blockers: [] }).label).toBe("Sostituito");
   });
 
   it("tells a slice suspended by its own pause from one that waits for an answer", () => {

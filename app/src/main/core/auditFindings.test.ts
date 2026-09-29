@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AuditFinding, CandidateEvidence, FindingEvidence, FocusAudit } from "@shared/domain";
 import { findingTally } from "@shared/findings";
 import { beginAxes, beginLenses, closeAudit, failAudit, type FindingDraft, finishAxis, readAxisAnswer } from "./audit";
@@ -10,11 +10,12 @@ import {
   confirmationModel,
   confirmationTurn,
   confirmFinding,
-  NO_STRONGER_MODEL,
+  noStrongerModel,
   readConfirmation,
   recheckEvidence,
   recheckFindings,
 } from "./auditFindings";
+import { setPersonLanguage } from "./personLanguage";
 import { translator } from "@shared/i18n";
 
 const t = translator("it");
@@ -177,7 +178,7 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
     confirmFinding(failed, { failure: "La conferma di gpt-5.5 non è riuscita: timeout." });
     expect(failed).toMatchObject({ status: "hypothesis", confirmation: null, basis: expect.stringContaining("timeout") });
     const alone = serious();
-    confirmFinding(alone, { failure: NO_STRONGER_MODEL });
+    confirmFinding(alone, { failure: noStrongerModel() });
     expect(alone.status).toBe("hypothesis");
     expect(confirmationModel("gpt-5.5-mini", "gpt-5.5")).toBe("gpt-5.5");
     expect(confirmationModel("gpt-5.5", "gpt-5.5")).toBeNull();
@@ -243,6 +244,22 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
       { title: "Senza citazione", severity: "minor", evidence: null },
       { title: "Senza prova", severity: "minor", evidence: null },
     ]);
+  });
+});
+
+describe("the basis of a finding in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("explains the recheck and the confirmation in English", async () => {
+    setPersonLanguage("en");
+    const root = await worktree();
+    expect((await recheckEvidence(line("Sources/Orders/Cancel.swift", 9, "x"), [], root)).basis).toBe("The file Sources/Orders/Cancel.swift has 4 lines: line 9 does not exist.");
+    const confirmed = finding({ title: "Manca il criterio", severity: "serious", evidence: { kind: "reproduction", steps: "Annullare" } });
+    confirmFinding(confirmed, { model: "gpt-5.5", confirmed: true, reason: "The test is missing." });
+    expect(confirmed.basis).toBe("Confirmed by gpt-5.5: The test is missing.");
+    const alone = finding({ title: "Manca il criterio", severity: "serious", evidence: { kind: "reproduction", steps: "Annullare" } });
+    confirmFinding(alone, { failure: noStrongerModel() });
+    expect(alone.basis).toBe("No model stronger than the axes' model is available to confirm it. It stays a hypothesis.");
   });
 });
 

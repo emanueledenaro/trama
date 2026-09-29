@@ -9,6 +9,7 @@ import type {
 } from "@shared/domain";
 import { shortId } from "@shared/ids";
 import { actionLabel, DELEGABLE_ACTIONS } from "@shared/labels";
+import { t } from "./personLanguage";
 
 export class DomainError extends Error {}
 
@@ -24,7 +25,7 @@ export function decide(
   const acceptedExample = input.acceptedExample.trim();
   const rationale = input.rationale.trim();
   if (!value || !acceptedExample || !rationale) {
-    throw new DomainError("Una decisione richiede comportamento, esempio e motivazione.");
+    throw new DomainError(t("main.pact.decisionIncomplete"));
   }
   const id = input.id?.trim() || shortId("D", randomUUID());
   const previous = document.decisions.find((d) => d.id === id);
@@ -58,7 +59,7 @@ export function grantMandate(
   const scopeModuleIds = clean(input.scopeModuleIds);
   const authorizedActions = [...new Set(input.authorizedActions)].filter((a) => DELEGABLE_ACTIONS.includes(a));
   if (objectives.length === 0 || scopeModuleIds.length === 0 || authorizedActions.length === 0) {
-    throw new DomainError("Un mandato richiede almeno un obiettivo, un modulo e un'azione autorizzata.");
+    throw new DomainError(t("main.pact.mandateIncomplete"));
   }
   const previous = document.mandate;
   const history = previous ? [...previous.history, snapshotOf(previous)] : [];
@@ -85,9 +86,9 @@ function snapshotOf(mandate: ProjectMandate) {
 
 export function revokeMandate(document: ProjectDocument, reason: string, now = new Date()): ProjectMandate {
   const mandate = document.mandate;
-  if (!mandate || mandate.status === "revoked") throw new DomainError("Non c'è un mandato attivo da revocare.");
+  if (!mandate || mandate.status === "revoked") throw new DomainError(t("main.pact.noMandateToRevoke"));
   const trimmed = reason.trim();
-  if (!trimmed) throw new DomainError("Indica il motivo della revoca.");
+  if (!trimmed) throw new DomainError(t("main.pact.revocationReasonMissing"));
   mandate.status = "revoked";
   mandate.revocation = { reason: trimmed, revokedAt: now.toISOString() };
   return mandate;
@@ -113,19 +114,19 @@ export function resolveMandateRequest(
 export function assertMandateRequestAnswerable(document: ProjectDocument, requestId: string | null): void {
   if (!requestId) return;
   const request = document.mandateRequests.find((r) => r.id === requestId);
-  if (!request) throw new DomainError(`Richiesta di mandato ${requestId} non trovata.`);
+  if (!request) throw new DomainError(t("main.pact.mandateRequestNotFound", { id: requestId }));
   const resolution = request.resolution;
   if (!resolution) return;
   if (resolution.kind === "superseded") {
-    throw new DomainError(`La richiesta di mandato ${requestId} è superata da ${resolution.supersededBy ?? "una richiesta più recente"}: non si può più concedere.`);
+    throw new DomainError(t("main.pact.mandateRequestSuperseded", { id: requestId, newer: resolution.supersededBy ?? t("main.pact.newerRequest") }));
   }
-  throw new DomainError(`La richiesta di mandato ${requestId} ha già una risposta.`);
+  throw new DomainError(t("main.pact.mandateRequestAnswered", { id: requestId }));
 }
 
 /** Turns down a pending mandate request with the person's reason. The mandate in force is left untouched. */
 export function rejectMandateRequest(document: ProjectDocument, requestId: string, reason: string, now = new Date()): MandateRequest {
   assertMandateRequestAnswerable(document, requestId);
-  if (!reason.trim()) throw new DomainError("Indica perché rifiuti la proposta.");
+  if (!reason.trim()) throw new DomainError(t("main.pact.rejectionReasonMissing"));
   return resolveMandateRequest(document, requestId, "rejected", null, now)!;
 }
 
@@ -198,24 +199,24 @@ export function answerDecisionRequest(
   now = new Date(),
 ): { request: DecisionRequest; decision: PactDecision } {
   const request = document.decisionRequests.find((r) => r.id === requestId);
-  if (!request) throw new DomainError("Domanda non trovata.");
-  if (request.outcome) throw new DomainError("Hai già risposto a questa domanda.");
-  if (request.withdrawal) throw new DomainError("Hai ritirato questa domanda: non aspetta più una risposta.");
+  if (!request) throw new DomainError(t("main.pact.questionNotFound"));
+  if (request.outcome) throw new DomainError(t("main.pact.questionAlreadyAnswered"));
+  if (request.withdrawal) throw new DomainError(t("main.pact.questionWithdrawn"));
   let value: string;
   let example: string;
   if (answer.alternativeIndex !== null) {
     const alternative = request.alternatives[answer.alternativeIndex];
-    if (!alternative) throw new DomainError("Alternativa non valida.");
+    if (!alternative) throw new DomainError(t("main.pact.alternativeInvalid"));
     value = alternative.behavior;
     example = alternative.example;
   } else {
     value = answer.freeText?.trim() ?? "";
     example = request.concreteCase;
-    if (!value) throw new DomainError("Scrivi la tua decisione.");
+    if (!value) throw new DomainError(t("main.pact.decisionMissing"));
   }
   const decision = decide(
     document,
-    { id: request.revisesDecisionId, value, acceptedExample: example, rationale: `Risposta alla domanda: ${request.question}` },
+    { id: request.revisesDecisionId, value, acceptedExample: example, rationale: t("main.pact.answerRationale", { question: request.question }) },
     now,
   );
   request.outcome = {
@@ -234,13 +235,13 @@ export function answerDecisionRequest(
  */
 export function withdrawDecisionRequest(document: ProjectDocument, requestId: string, reason: string, now = new Date()): DecisionRequest {
   const request = document.decisionRequests.find((r) => r.id === requestId);
-  if (!request) throw new DomainError("Domanda non trovata.");
+  if (!request) throw new DomainError(t("main.pact.questionNotFound"));
   if (request.outcome) {
-    throw new DomainError("Hai già risposto a questa domanda: la decisione presa resta e si rivede con una decisione nuova.");
+    throw new DomainError(t("main.pact.answeredNotWithdrawable"));
   }
-  if (request.withdrawal) throw new DomainError("Hai già ritirato questa domanda.");
+  if (request.withdrawal) throw new DomainError(t("main.pact.questionAlreadyWithdrawn"));
   const trimmed = reason.trim();
-  if (!trimmed) throw new DomainError("Indica il motivo del ritiro.");
+  if (!trimmed) throw new DomainError(t("main.pact.withdrawalReasonMissing"));
   request.withdrawal = { reason: trimmed, withdrawnAt: now.toISOString() };
   return request;
 }
@@ -252,22 +253,26 @@ export function withdrawalMessage(request: DecisionRequest): string {
   const reason = sentence(request.withdrawal?.reason ?? "");
   const grilling = request.grilling;
   return grilling
-    ? `Ho ritirato la domanda ${grilling.number} del chiarimento, turno ${grilling.round}: «${request.question}». Motivo: ${reason} Non conta più come domanda aperta.`
-    : `Ho ritirato la domanda «${request.question}». Motivo: ${reason}`;
+    ? t("main.pact.withdrawalGrilling", { number: grilling.number, round: grilling.round, question: request.question, reason })
+    : t("main.pact.withdrawal", { question: request.question, reason });
 }
 
 export const mandateMessage = (kind: "granted" | "corrected" | "revoked", version: number | null, reason?: string) =>
   kind === "granted"
-    ? `Ho concesso il mandato (versione ${version}).`
+    ? t("main.pact.mandateGranted", { version: String(version) })
     : kind === "corrected"
-      ? `Ho corretto il mandato: ora è alla versione ${version}.`
-      : `Ho revocato il mandato.${reason ? ` Motivo: ${reason}` : ""}`;
+      ? t("main.pact.mandateCorrected", { version: String(version) })
+      : reason
+        ? t("main.pact.mandateRevokedWithReason", { reason })
+        : t("main.pact.mandateRevoked");
 
 export function mandateRejectionMessage(document: ProjectDocument, request: MandateRequest, reason: string): string {
   const mandate = document.mandate;
-  const kept = mandate?.status === "granted" ? ` Il mandato in vigore resta la versione ${mandate.version}, senza modifiche.` : " Resta senza mandato.";
-  return `Ho rifiutato la proposta di mandato ${request.id}.${kept} Motivo: ${sentence(reason.trim())}`;
+  const motive = sentence(reason.trim());
+  return mandate?.status === "granted"
+    ? t("main.pact.mandateRejectedKept", { id: request.id, version: String(mandate.version), reason: motive })
+    : t("main.pact.mandateRejectedNone", { id: request.id, reason: motive });
 }
 
 export const decisionMessage = (request: DecisionRequest, decision: PactDecision) =>
-  `Ho risposto alla domanda «${request.question}»: ${decision.value}. È la decisione ${decision.id}, versione ${decision.version} del Patto.`;
+  t("main.pact.decisionAnswered", { question: request.question, value: decision.value, id: decision.id, version: String(decision.version) });
