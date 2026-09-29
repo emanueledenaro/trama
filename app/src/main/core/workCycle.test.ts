@@ -236,6 +236,40 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     expect(marco.status).toBe("stopped");
   });
 
+  it("resumes work that later work replaced as new work on its working copy, so its next candidate is not superseded (the shop at 13:37)", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    blockedCandidate(document, marco, 2);
+    stopByTrama(document, marco, 3);
+    // Before this fix Bea got the same issue in an empty working copy of her own and ended without changes.
+    request(document, "r2", 4);
+    const empty = assign(
+      document,
+      { specialist: "Bea", kind: "decidedBehaviorCorrection", objective: "Correggere i documenti", issueNumber: 24, exercise: null, moduleIds: ["src/app"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Correggi" },
+      document.mandate!.version,
+      "r2",
+      at(5),
+    );
+    recordWorkspace(document, empty.id, { sourceRoot: "/tmp/negozio", worktreeRoot: "/tmp/Worktrees/8b8d354e", branch: "chore/issue-24-docs-trama-8b8d354e", baseSHA: "f1197f9" }, at(5));
+    endTurn(document, empty.id, null, { kind: "completed", text: "La correzione va ripresa nella copia di Marco" }, at(6));
+    const { context: tools, started } = context(document);
+
+    const result = parse(await runCoordinatorTool("resume_assignment", { assignment: marco.id, instructions: "Correggi i documenti nella tua copia.", reason: "Il merge è nella copia di Marco" }, tools));
+    const resumed = findSpecialist(document, "Marco")!.assignments.at(-1)!;
+    expect(result).toMatchObject({ assignmentID: resumed.id, status: "resumed", replacesAssignmentID: marco.id, branch: marco.workspace!.branch });
+    expect(resumed.id).not.toBe(marco.id);
+    expect(resumed.workspace).toEqual(marco.workspace);
+    expect(started).toEqual([resumed.id]);
+    endTurn(document, resumed.id, null, { kind: "completed", text: "Fatto" }, at(8));
+    const next = declareCandidate(
+      document,
+      { assignmentId: resumed.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-9", baseSHA: "f1197f9", diff: "+docs", changedFiles: ["src/app/page.tsx"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at(9),
+    );
+    expect(candidateSuperseded(document, next)).toBe(false);
+  });
+
   it("refuses work at work, work the person stopped, merged work and work without a working copy", async () => {
     const document = shop();
     const marco = realignment(document);

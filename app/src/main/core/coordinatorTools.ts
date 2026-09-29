@@ -31,6 +31,7 @@ import { type Discussion, discussions } from "@shared/discussions";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { GateSettlementError, overruleFinding } from "./gate";
 import { GATE_ROLES } from "@shared/gate";
+import { replacedBy, retiredWork } from "@shared/conflictScope";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
@@ -1660,22 +1661,27 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (!instructions || !reason) return toolFailure("invalid_arguments", "instructions (what to do now, for the developer) and reason (one line for the person) are required.");
         const problem = resumeProblem(document, assignment);
         if (problem) return toolFailure(problem.code, problem.message);
-        const other = typeof args.specialist === "string" && args.specialist.trim() ? findSpecialist(document, args.specialist) : null;
-        if (typeof args.specialist === "string" && args.specialist.trim() && !other) return toolFailure("unknown_specialist", `Unknown specialist: ${args.specialist}.`);
-        if (!other || other.id === assignment.specialistId) {
+        const developer = typeof args.specialist === "string" ? args.specialist.trim() : "";
+        const other = developer ? findSpecialist(document, developer) : null;
+        if (developer && !other) return toolFailure("unknown_specialist", `Unknown specialist: ${developer}.`);
+        // Work that later work replaced, or that you retired, resumes as new work on its working copy: its own next
+        // candidates would stay superseded by the later work.
+        const replaced = document.team.specialists.some((s) => s.assignments.some((later) => replacedBy(assignment, later))) || retiredWork(document, assignment.id);
+        const target = other ?? findSpecialist(document, assignment.specialistId)!;
+        if (target.id === assignment.specialistId && !replaced) {
           resumeWithInstructions(document, assignment.id, { text: instructions, reason });
           context.addCard("assignment", t("main.coordinatorTools.card.assignment"), assignment.id);
           context.changed();
           context.startAssignment(assignment.id);
           return toolSuccess({ assignmentID: assignment.id, status: "resumed", branch: assignment.workspace!.branch });
         }
-        if (isFixedRole(other.role)) return toolFailure("fixed_role", `${other.name} is a fixed role: hand the work to a developer.`);
-        // The other developer takes over the same work in the same working copy and branch: the earlier work is replaced.
-        const personal = other.chosenModel ? usableChoice(other.chosenModel, context.providers, true) : null;
+        if (isFixedRole(target.role)) return toolFailure("fixed_role", `${target.name} is a fixed role: hand the work to a developer.`);
+        // The developer takes over the same work in the same working copy and branch as new work: the earlier work is replaced.
+        const personal = target.chosenModel ? usableChoice(target.chosenModel, context.providers, true) : null;
         const handed = assign(
           document,
           {
-            specialist: other.id,
+            specialist: target.id,
             kind: assignment.kind,
             objective: assignment.objective,
             issueNumber: assignment.issueNumber,
@@ -1703,7 +1709,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.addCard("assignment", t("main.coordinatorTools.card.assignment"), handed.id);
         context.changed();
         context.startAssignment(handed.id);
-        return toolSuccess({ assignmentID: handed.id, specialistID: other.id, status: "handedOver", replacesAssignmentID: assignment.id, branch: handed.workspace!.branch });
+        const status = target.id === assignment.specialistId ? "resumed" : "handedOver";
+        return toolSuccess({ assignmentID: handed.id, specialistID: target.id, status, replacesAssignmentID: assignment.id, branch: handed.workspace!.branch });
       }
       case "commit_merge": {
         const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
