@@ -2,7 +2,7 @@ import { ReferenceText } from "@/components/chat/ReferenceText";
 import { IconBook, IconBug, IconPlayerPlay, IconSparkles, IconStethoscope } from "@tabler/icons-react";
 import { useState } from "react";
 import type { AutomaticWorkStatus, TeamRole } from "@shared/domain";
-import { AUTOMATIC_WORK_LABEL, AUTOMATIC_WORK_STATE } from "@shared/duties";
+import { automaticWorkLabel, automaticWorkState } from "@shared/duties";
 import { roleProfile } from "@shared/roster";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
@@ -29,8 +29,8 @@ function StartNow({ work }: { work: AutomaticWorkStatus }) {
       <Button
         size="xs"
         data-testid="automatic-work-start"
-        aria-label={t("automaticWork.startNamed", { work: AUTOMATIC_WORK_LABEL[work.kind] })}
-        title={t("automaticWork.startNamed", { work: AUTOMATIC_WORK_LABEL[work.kind] })}
+        aria-label={t("automaticWork.startNamed", { work: automaticWorkLabel(t, work.kind) })}
+        title={t("automaticWork.startNamed", { work: automaticWorkLabel(t, work.kind) })}
         disabled={blocked || starting}
         onClick={() => {
           setStarting(true);
@@ -46,19 +46,19 @@ function StartNow({ work }: { work: AutomaticWorkStatus }) {
 /** One automatic work as a row (issue #333): its icon, name and state, what it does and why it waits, and Avvia on the right. */
 function AutomaticWorkRow({ work, withRole }: { work: AutomaticWorkStatus; withRole: boolean }) {
   const t = useT();
-  const state = AUTOMATIC_WORK_STATE[work.state];
+  const state = automaticWorkState(t, work.state);
   const blocked = work.onRequest && !work.onRequest.allowed && work.state !== "running" ? work.onRequest.reason : null;
   return (
     <div data-testid="automatic-work" data-work={work.kind} data-state={work.state} className="flex items-start gap-2 py-1.5">
       <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground">{ICONS[work.kind]}</span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-ui text-foreground" title={AUTOMATIC_WORK_LABEL[work.kind]}>
-            {AUTOMATIC_WORK_LABEL[work.kind]}
+          <span className="min-w-0 flex-1 truncate text-ui text-foreground" title={automaticWorkLabel(t, work.kind)}>
+            {automaticWorkLabel(t, work.kind)}
             {withRole ? (
               <span className="text-muted-foreground">
                 <Sep />
-                {roleProfile(work.role).name}
+                {roleProfile(t, work.role).name}
               </span>
             ) : null}
           </span>

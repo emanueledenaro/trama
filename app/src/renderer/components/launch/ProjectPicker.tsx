@@ -8,7 +8,7 @@ import { useSeam } from "@/components/Seam";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { currentLanguage } from "@/lib/i18n";
+import { currentLanguage, useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 
 const ago = (iso: string) => formatAgo(currentLanguage(), iso);
@@ -25,7 +25,8 @@ function PickerMark() {
 }
 
 function RecentRow({ recent, entry }: { recent: { id: string; name: string; path: string; isDemo: boolean; lastOpenedAt: string }; entry: ProjectOverview | null }) {
-  const status = recentProjectStatus(entry);
+  const t = useT();
+  const status = recentProjectStatus(t, entry);
   const busy = (entry?.runningWork ?? 0) > 0;
   return (
     <li className="group/recent relative" data-testid="recent-project">

@@ -1,7 +1,8 @@
 import { IconArrowLeft, IconExternalLink, IconMessageCircle, IconPlayerPlay } from "@tabler/icons-react";
+import { useT } from "@/lib/i18n";
 import { useState } from "react";
 import { issueTriage } from "@shared/duties";
-import { ASSIGNMENT_STATUS } from "@/components/chat/Cards";
+import { assignmentStatus } from "@shared/states";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
@@ -12,6 +13,7 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
 export function IssueDetail({ number }: { number: number }) {
+  const t = useT();
   const issue = useUi((s) => s.app?.project?.github.issues.find((i) => i.number === number));
   const triage = useUi((s) => (s.app?.project ? issueTriage(s.app.project.document, number) : null));
   const onRequest = useTriageOnRequest();
@@ -65,7 +67,7 @@ export function IssueDetail({ number }: { number: number }) {
       {triage ? (
         <InspectorSection
           title="Triage di Trama"
-          aside={<Badge tone={ASSIGNMENT_STATUS[triage.status].tone}>{ASSIGNMENT_STATUS[triage.status].label}</Badge>}
+          aside={<Badge tone={assignmentStatus(t, triage.status).tone}>{assignmentStatus(t, triage.status).label}</Badge>}
         >
           {triage.duty?.outcome?.kind === "triage" && triage.result ? (
             <ChatMarkdown text={triage.result} />

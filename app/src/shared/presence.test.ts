@@ -14,6 +14,9 @@ import {
   shouldProposeConsent,
   shouldReproposeConsent,
 } from "./presence";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const now = new Date("2026-09-26T12:00:00Z");
 const ago = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString();
@@ -42,13 +45,13 @@ describe("presence freshness (decision 7)", () => {
     expect(presenceFreshness(record(), now).status).toBe("active");
     const idle = presenceFreshness(record({ lastActivityAt: ago(12) }), now);
     expect(idle).toEqual({ status: "idle", idleMinutes: 12, lastSeenAt: null });
-    expect(freshnessLabel(idle, now)).toBe("inattivo da 12 min");
+    expect(freshnessLabel(t, idle, now)).toBe("inattivo da 12 min");
   });
 
   it("shows the last time seen after a close or a missing heartbeat", () => {
     const closed = presenceFreshness(record({ closedAt: ago(90), updatedAt: ago(90) }), now);
     expect(closed.status).toBe("offline");
-    expect(freshnessLabel(closed, now)).toBe("visto l'ultima volta 2 ore fa");
+    expect(freshnessLabel(t, closed, now)).toBe("visto l'ultima volta 2 ore fa");
     expect(presenceFreshness(record({ updatedAt: ago(5) }), now).status).toBe("offline");
   });
 

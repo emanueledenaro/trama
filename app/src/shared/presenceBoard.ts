@@ -4,6 +4,7 @@
  * open pull requests and branches. The renderer draws these rows; it decides nothing about them.
  */
 import type { GitHubPullRequest, GitHubSnapshot } from "./domain";
+import type { Translate } from "./i18n";
 import { freshnessLabel, PRESENCE_IDLE_MS, relativeAgo, type PresenceAgent, type PresenceEntry, type PresenceStatus, type PresenceTask, type PresenceView } from "./presence";
 
 export interface BoardPullRequest {
@@ -51,14 +52,14 @@ const pullOf = (p: GitHubPullRequest): BoardPullRequest => ({ number: p.number, 
 const lower = (value: string) => value.toLowerCase();
 
 /** An agent is as fresh as its own last activity, and never fresher than the person it works for. */
-function agentFreshness(agent: PresenceAgent, owner: PresenceEntry, now: Date): { freshness: BoardFreshness; label: string } {
-  if (owner.status === "offline" || owner.status === "expired") return { freshness: owner.status, label: freshnessLabel(owner, now) };
+function agentFreshness(t: Translate, agent: PresenceAgent, owner: PresenceEntry, now: Date): { freshness: BoardFreshness; label: string } {
+  if (owner.status === "offline" || owner.status === "expired") return { freshness: owner.status, label: freshnessLabel(t, owner, now) };
   const quiet = now.getTime() - Date.parse(agent.lastActivityAt);
   if (quiet >= PRESENCE_IDLE_MS) {
     const idle = { status: "idle" as const, idleMinutes: Math.floor(quiet / 60_000), lastSeenAt: null };
-    return { freshness: "idle", label: freshnessLabel(idle, now) };
+    return { freshness: "idle", label: freshnessLabel(t, idle, now) };
   }
-  return { freshness: "active", label: freshnessLabel({ status: "active", idleMinutes: null, lastSeenAt: null }, now) };
+  return { freshness: "active", label: freshnessLabel(t, { status: "active", idleMinutes: null, lastSeenAt: null }, now) };
 }
 
 /**
@@ -66,7 +67,7 @@ function agentFreshness(agent: PresenceAgent, owner: PresenceEntry, now: Date): 
  * first) with theirs, then the authors of the other open pull requests, most recently updated first. A pull request
  * belongs to the agent whose branch it opens, else to the person on its branch or with its author's login.
  */
-export function groupBoard(input: { presence: PresenceView | null | undefined; snapshot: GitHubSnapshot | null | undefined; github: boolean; now: Date }): GroupBoard {
+export function groupBoard(t: Translate, input: { presence: PresenceView | null | undefined; snapshot: GitHubSnapshot | null | undefined; github: boolean; now: Date }): GroupBoard {
   const { presence, now } = input;
   const snapshot = input.github ? (input.snapshot ?? null) : null;
   const pulls = [...(snapshot?.pullRequests ?? [])];
@@ -104,11 +105,11 @@ export function groupBoard(input: { presence: PresenceView | null | undefined; s
       task: record.task,
       files: record.files,
       freshness: entry.status,
-      freshnessLabel: freshnessLabel(entry, now),
+      freshnessLabel: freshnessLabel(t, entry, now),
       pullRequests: take((p) => (!p.fromFork && branches.has(p.headRef)) || (login !== null && p.author !== null && lower(p.author) === lower(login))),
     });
     for (const agent of record.agents) {
-      const fresh = agentFreshness(agent, entry, now);
+      const fresh = agentFreshness(t, agent, entry, now);
       rows.push({
         key: `${key}/agent:${agent.id}`,
         kind: "agent",
@@ -144,7 +145,7 @@ export function groupBoard(input: { presence: PresenceView | null | undefined; s
       key: `github:${author ? lower(author) : "?"}`,
       kind: "github",
       self: false,
-      name: author ?? "Autore sconosciuto",
+      name: author ?? t("shared.presence.unknownAuthor"),
       login: author,
       agent: null,
       ownerKey: null,
@@ -153,7 +154,7 @@ export function groupBoard(input: { presence: PresenceView | null | undefined; s
       task: null,
       files: [],
       freshness: "github",
-      freshnessLabel: `su GitHub ${relativeAgo(latest.updatedAt, now)}`,
+      freshnessLabel: t("shared.presence.onGitHub", { ago: relativeAgo(t, latest.updatedAt, now) }),
       pullRequests: own.map(pullOf),
     };
     return { row, updated: Date.parse(latest.updatedAt) || 0 };

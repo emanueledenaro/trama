@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BLOCKER_TEXT, GLOSSARY, plainConflictReference, plainText, withoutRepeatedLead } from "./plainLanguage";
+import { blockerText, GLOSSARY, plainConflictReference, plainText, withoutRepeatedLead } from "./plainLanguage";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 describe("plain language for the person (issue #270)", () => {
   it("keeps the glossary of the documentation and of the code the same", () => {
@@ -14,17 +17,17 @@ describe("plain language for the person (issue #270)", () => {
   });
 
   it("names a skill without its path", () => {
-    expect(plainText("Skill ricevute: skill:improve-codebase-architecture:/home/user/trama/app/resources/AIHero/skills/improve-codebase-architecture/SKILL.md, tdd")).toBe(
+    expect(plainText(t, "Skill ricevute: skill:improve-codebase-architecture:/home/user/trama/app/resources/AIHero/skills/improve-codebase-architecture/SKILL.md, tdd")).toBe(
       "Skill ricevute: improve-codebase-architecture, tdd",
     );
-    expect(plainText("Letta /Users/ada/Library/Trama/skills/grilling/SKILL.md prima di rispondere")).toBe("Letta grilling prima di rispondere");
+    expect(plainText(t, "Letta /Users/ada/Library/Trama/skills/grilling/SKILL.md prima di rispondere")).toBe("Letta grilling prima di rispondere");
   });
 
   it("translates the technical codes and the skill's fixed phrases", () => {
-    expect(plainText("WORKTREE_CONFLICT con il lavoro di Ada")).toBe(`${BLOCKER_TEXT.WORKTREE_CONFLICT!.toLowerCase()} con il lavoro di Ada`);
-    expect(plainText("no spec available")).toBe("Nessun piano da confrontare");
-    expect(plainText("Spec: no spec available.")).toBe("Spec: nessun piano da confrontare.");
-    expect(plainText("Tutto a posto.")).toBe("Tutto a posto.");
+    expect(plainText(t, "WORKTREE_CONFLICT con il lavoro di Ada")).toBe(`${blockerText(t, "WORKTREE_CONFLICT").toLowerCase()} con il lavoro di Ada`);
+    expect(plainText(t, "no spec available")).toBe("Nessun piano da confrontare");
+    expect(plainText(t, "Spec: no spec available.")).toBe("Spec: nessun piano da confrontare.");
+    expect(plainText(t, "Tutto a posto.")).toBe("Tutto a posto.");
   });
 
   it("does not repeat the lead of a label", () => {

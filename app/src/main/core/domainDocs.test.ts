@@ -11,6 +11,9 @@ import { concludeDuty, nextDuty, startDomainWriting, withinMandate } from "./dut
 import { deliverNativeSkills, loadNativeSkill } from "./nativeSkills";
 import { decide, grantMandate } from "./pact";
 import { beginTurn, endTurn } from "./team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
 const runner = { provider: "codex" as const, model: "gpt-5.6-luna", modelReason: "Il modello più leggero del catalogo." };
@@ -107,7 +110,7 @@ describe("glossary and ADR proposals from the grilling decisions (M03)", () => {
     });
     expect(writing.instructions).toContain("**Ordine in revisione**:");
     expect(proposal).toMatchObject({ assignmentId: writing.id, waiting: null });
-    expect(dutyTriggerText(document, writing.duty!)).toBe(`Proposta di glossario e ADR ${proposal.id} dalle decisioni ${decisionId}`);
+    expect(dutyTriggerText(t, document, writing.duty!)).toBe(`Proposta di glossario e ADR ${proposal.id} dalle decisioni ${decisionId}`);
     // Once written it is never written again, and a revoked mandate stops it.
     expect(startDomainWriting(document, proposal, runner)).toBeNull();
     expect(withinMandate(document, writing)).toBe(true);

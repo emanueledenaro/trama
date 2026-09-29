@@ -206,7 +206,7 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
   const summary = entry.detail ?? entry.trigger;
   const meta = [
     formatDate(language, entry.startedAt),
-    duration !== null ? formatDuration(duration) : null,
+    duration !== null ? formatDuration(t, duration) : null,
     entry.squadChange ? t(entry.squadChange.by === "person" ? "activity.squad.byPerson" : "activity.squad.byCoordinator") : null,
     entry.kind === "round" || entry.kind === "problem" || entry.kind === "squad" ? null : dialogName(entry.goalId),
     entry.kind === "move" || entry.kind === "problem" ? entry.trigger : null,
@@ -553,6 +553,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
   const items = useMemo(() => {
     if (!document) return [];
     const entries = activityLog(
+      t,
       document.requests,
       document.events,
       document.continuousWork?.rounds ?? [],
@@ -560,7 +561,6 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       document.autonomousSteps ?? [],
       document.candidates,
       document.squadChanges ?? [],
-      language,
       document.requestedActions ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
@@ -568,7 +568,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
     const developerOf = (row: WorkRow) =>
       row.assignmentId ? (document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId))?.id ?? null) : null;
     return activityItems(entries, turns, developerOf);
-  }, [document, running, language]);
+  }, [document, running, t.language]);
   const people = useMemo(() => [...new Set(items.map((item) => item.who).filter((who) => who !== "coordinator"))], [items]);
   // A row asked from the chat shows whatever the filter: the filter steps aside for it.
   const focusHidden = focus && !filterActivity(items, filter).some((item) => item.id === focus.id);

@@ -70,6 +70,7 @@ import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
+import { ITALIAN } from "@shared/i18n";
 import { confirmByMessage, PersonRequestError, requestAction } from "./personRequest";
 import { activeDelegation, DelegationError, grantDelegation, recordChoice, requireDelegation, revokeDelegation } from "./fullDelegation";
 import { answerDecisionRequest } from "./pact";
@@ -936,7 +937,7 @@ function specialistDetail(specialist: Specialist): JsonObject {
     ...specialistSummary(specialist),
     competence: specialist.competence,
     reason: specialist.reason,
-    moments: roleDuties(specialist.role) as unknown as Json,
+    moments: roleDuties(ITALIAN, specialist.role) as unknown as Json,
     moduleIDs: specialist.moduleIds,
     model: specialist.model,
     assignment: current
@@ -1164,7 +1165,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             leadID: squad.leadId,
             qaID: squad.qaId,
             developerIDs: squad.developerIds,
-            status: squadStatusLine(document, squad),
+            status: squadStatusLine(ITALIAN, document, squad),
             // The squad's backlog (A13), from the top: take work from there, skipping blocked and paused slices.
             backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json,
             // The person renamed, merged or split it (A11): leave it as it is.

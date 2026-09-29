@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { activityLog } from "./activity";
 import type { ConversationEvent, CoordinatorRequest, RequestStep } from "./domain";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 function request(id: string, state: CoordinatorRequest["state"], step: RequestStep | null, minute: number, failure: string | null = null): CoordinatorRequest {
   const time = (m: number) => new Date(Date.UTC(2026, 8, 27, 10, m)).toISOString();
@@ -40,7 +43,7 @@ describe("activityLog: the Coordinator's automatic moves (issue #241)", () => {
       request("running", "running", { move: "verifyCandidate", by: "trama" }, 10),
     ];
     const events = [line("done", "Prepara il piano"), line("stalled", "Esegui le verifiche"), line("stopped", "Assegna il lavoro"), line("running", "Esegui le verifiche")];
-    const log = activityLog(requests, events);
+    const log = activityLog(t, requests, events);
     expect(log.map((e) => [e.requestId, e.label, e.outcome])).toEqual([
       ["running", "Esegui le verifiche", "running"],
       ["failed", "failed", "failed"],
@@ -65,13 +68,13 @@ describe("activityLog: the Coordinator's automatic moves (issue #241)", () => {
       content: { type: "activity", title: "Strumento di Trama: verify_candidate", detail: "A-1 is an assignment, not a candidate.", tone: "error" },
     };
     const passed: ConversationEvent = { ...failed, id: "E-ok", content: { type: "activity", title: "Strumento di Trama: read_team", detail: null, tone: "tool" } };
-    expect(activityLog(requests, [line("verify", "Esegui le verifiche"), failed, passed])[0]!.toolErrors).toEqual([
+    expect(activityLog(t, requests, [line("verify", "Esegui le verifiche"), failed, passed])[0]!.toolErrors).toEqual([
       { title: "Strumento di Trama: verify_candidate", detail: "A-1 is an assignment, not a candidate." },
     ]);
   });
 
   it("is empty without automatic moves", () => {
-    expect(activityLog([request("person", "completed", null, 0)], [])).toEqual([]);
+    expect(activityLog(t, [request("person", "completed", null, 0)], [])).toEqual([]);
   });
 
   it("lists the rounds with an outcome beside the moves, and says what started each move (A05)", () => {
@@ -80,7 +83,7 @@ describe("activityLog: the Coordinator's automatic moves (issue #241)", () => {
       { id: "R1", at: new Date(Date.UTC(2026, 8, 27, 10, 0)).toISOString(), detail: "Luca lavora sulla fetta S2.", requestId: null },
       { id: "R2", at: new Date(Date.UTC(2026, 8, 27, 10, 3)).toISOString(), detail: 'Avviata la mossa "Assegna il lavoro".', requestId: null },
     ];
-    const log = activityLog(requests, [line("round-move", "Assegna il lavoro")], rounds);
+    const log = activityLog(t, requests, [line("round-move", "Assegna il lavoro")], rounds);
     expect(log.map((e) => [e.kind, e.id])).toEqual([
       ["round", "R2"],
       ["move", "round-move"],

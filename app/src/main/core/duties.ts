@@ -18,8 +18,8 @@ import type {
   TriageOutcome,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
-import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH, type MessageKey, translate } from "@shared/i18n";
-import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
+import { DEFAULT_LANGUAGE, ITALIAN, type Language, LANGUAGE_NAMES_IN_ENGLISH, type MessageKey, translate } from "@shared/i18n";
+import { STRENGTH_ORDER, TRIAGE_STATES, triageCategoryLabel, triageStateLabel } from "@shared/duties";
 import { shortId } from "@shared/ids";
 import { openedForProblem } from "@shared/problems";
 import { activeTerms, coversAssignment, workLeftOut } from "@shared/mandate";
@@ -490,7 +490,7 @@ function requestBlocker(document: ProjectDocument, kind: AutomaticWorkRequest["k
   if (!context.runner) return new DutyRequestError("provider_unavailable", t("main.duties.requestProviderUnavailable"));
   const role = kind === "triage" ? "bugTriage" : "cleanCode";
   const busy = roleWork(document, role);
-  if (busy) return new DutyRequestError("role_busy", t("main.duties.requestRoleBusy", { role: roleProfile(role).name, id: busy.id }));
+  if (busy) return new DutyRequestError("role_busy", t("main.duties.requestRoleBusy", { role: roleProfile(t, role).name, id: busy.id }));
   if (kind === "architectureReview") {
     const card = openArchitectureCard(document);
     if (card) return new DutyRequestError("card_open", t("main.duties.requestCardOpen", { card }));
@@ -1037,9 +1037,9 @@ function triageResult(issueNumber: number | null, outcome: TriageOutcome, opened
   return [
     t("main.duties.triageResultTitle", {
       number: String(issueNumber),
-      category: TRIAGE_CATEGORY_LABEL[outcome.category],
+      category: triageCategoryLabel(t, outcome.category),
       state: outcome.state,
-      stateLabel: TRIAGE_STATE_LABEL[outcome.state],
+      stateLabel: triageStateLabel(t, outcome.state),
     }),
     outcome.reasoning,
     ...(outcome.verification ? [`${t("main.duties.headingVerification")}\n${outcome.verification}`] : []),
@@ -1134,7 +1134,7 @@ function outcomeLine(assignment: SpecialistAssignment): string {
   const outcome = assignment.duty?.outcome;
   switch (outcome?.kind) {
     case "triage":
-      return t("main.duties.triageLine", { number: String(assignment.issueNumber), category: TRIAGE_CATEGORY_LABEL[outcome.category], state: outcome.state });
+      return t("main.duties.triageLine", { number: String(assignment.issueNumber), category: triageCategoryLabel(t, outcome.category), state: outcome.state });
     case "diagnosis":
       return outcome.reproduced
         ? `${t("main.duties.diagnosisLineReproduced")}${outcome.cause ? ` ${outcome.cause}` : ""}`

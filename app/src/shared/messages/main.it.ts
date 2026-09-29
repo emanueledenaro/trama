@@ -700,6 +700,8 @@ export const mainIt = {
   "main.duties.diagnosisLineNotReproduced": "Diagnosi: bug non riprodotto",
   "main.duties.architectureLineProposals":
     "Revisione dell'architettura: {count} proposte da decidere",
+  "main.duties.architectureLineProposals.one":
+    "Revisione dell'architettura: una proposta da decidere",
   "main.duties.architectureLineNothing":
     "Revisione dell'architettura: niente da segnalare",
 

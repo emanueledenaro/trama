@@ -5,6 +5,7 @@ import { agentTag, paletteEntry } from "@shared/identity";
 import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
 import { AgentBot } from "./AgentBot";
+import { useT } from "@/lib/i18n";
 
 /**
  * An agent's identity (W15, W16): its bot and the short role tag, both in the agent's own color.
@@ -65,7 +66,8 @@ export function AgentAvatar({
 
 /** The tag `[Interfaccia]`; nothing when it only repeats the name, as for QA or DevOps. */
 export function AgentTag({ agent, className }: { agent: Agent; className?: string }) {
-  const tag = agentTag(agent);
+  const t = useT();
+  const tag = agentTag(t, agent);
   if (tag.toLocaleLowerCase("it") === agent.name.trim().toLocaleLowerCase("it")) return null;
   return (
     <span className={cn("agent-identity agent-tag", className)} style={agentStyle(agent)} data-testid="agent-tag">

@@ -166,7 +166,7 @@ export function GroupBoardSection() {
   const project = useUi((s) => s.app?.project)!;
   const github = project.github;
   const presence = project.isDemo ? null : project.presence;
-  const board = groupBoard({ presence, snapshot: github.snapshot, github: Boolean(github.repository), now: new Date() });
+  const board = groupBoard(t, { presence, snapshot: github.snapshot, github: Boolean(github.repository), now: new Date() });
   return (
     <InspectorSection title={t("work.group.title")}>
       {!project.isDemo ? (

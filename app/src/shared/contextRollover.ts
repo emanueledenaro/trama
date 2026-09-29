@@ -7,7 +7,7 @@ import { contextReading, type ContextUsage } from "./contextReading";
 
 export const DEFAULT_CONTEXT_THRESHOLD = 80;
 
-/** Why the new session exists, as the model reads it in the study turn of the reorder. */
+/** Why the new session exists, as the model reads it in the study turn of the reorder. i18n-exempt: text for the model. */
 export const CONTEXT_ROLLOVER_REASON = "riordino del contesto";
 
 /** The share of the window a reading uses, in whole percent within 0-100; null when unknown (issue #305's one reading). */

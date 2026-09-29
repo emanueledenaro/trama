@@ -294,7 +294,7 @@ describe("the person renames, merges and splits the squads (A11)", () => {
     const rename = renameSquad(document, checkout.id, "Pagamenti", "person", t, at(10));
     undoSquadChange(document, rename.id, t, at(11));
     mergeSquads(document, squad(document, "Catalogo").id, squad(document, "Admin").id, null, "coordinator", t, at(12));
-    const entries = activityLog([], [], [], [], [], [], document.squadChanges).filter((e) => e.kind === "squad");
+    const entries = activityLog(t, [], [], [], [], [], [], document.squadChanges).filter((e) => e.kind === "squad");
     expect(entries.map((e) => [e.label, e.detail, e.outcome])).toEqual([
       ["Squadre unite", "Admin si è unita a Catalogo.", "done"],
       ["Squadra rinominata", "Checkout si chiama ora Pagamenti.", "undone"],

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { conflictSide, divergenceHolds, divergenceQuestion, divergenceSummary, explainedByDivergence, replacedBy } from "./conflictScope";
 import type { BranchDivergence, ConflictAssessment, ProjectDocument, SpecialistAssignment } from "./domain";
 import type { PresenceRecord } from "./presence";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const work = (id: string, fields: Partial<SpecialistAssignment>) =>
   ({ id, specialistId: "S-Luca", createdAt: "2026-09-27T10:00:00Z", moduleIds: ["root"], issueNumber: null, slice: null, ...fields }) as SpecialistAssignment;
@@ -57,10 +60,10 @@ describe("conflict scope (U02)", () => {
   });
 
   it("says the divergence once, in plain words, and lets it explain the default branch's conflicts", () => {
-    expect(divergenceSummary(divergence)).toBe(
+    expect(divergenceSummary(t, divergence)).toBe(
       "Il branch chore/pre-apertura e main su GitHub sono andati in direzioni diverse (13 commit solo nel tuo branch, 7 commit solo su GitHub, 18 file in conflitto). Finché non li riallinei, il lavoro non si può unire a main.",
     );
-    expect(divergenceQuestion(divergence)).toMatch(/file-11\.ts e altri 6\. Come li riallineiamo\?/);
+    expect(divergenceQuestion(t, divergence)).toMatch(/file-11\.ts e altri 6\. Come li riallineiamo\?/);
     const document = { branchDivergence: divergence } as ProjectDocument;
     expect(explainedByDivergence(document, assessment({ remoteSHA: "4DF3C14" }))).toBe(true);
     expect(explainedByDivergence(document, assessment({ remoteSHA: "other", references: ["#7 feature"] }))).toBe(false);

@@ -1,3 +1,4 @@
+import type { MessageKey, Translate } from "./i18n";
 import type { AssignmentStatus, CandidateBlocker, CloudSessionStatus, CandidateReport, CandidateState, FocusTask, SliceState, WorkPlan } from "./domain";
 
 /**
@@ -13,16 +14,21 @@ export interface StateLabel {
   tone: StateTone;
 }
 
-export const ASSIGNMENT_STATUS: Record<AssignmentStatus, StateLabel> = {
-  preparing: { label: "In preparazione", tone: "info" },
-  running: { label: "Al lavoro", tone: "info" },
-  stopRequested: { label: "Arresto richiesto", tone: "warning" },
-  stopped: { label: "Fermato", tone: "secondary" },
-  completed: { label: "Concluso", tone: "success" },
-  failed: { label: "Non riuscito", tone: "destructive" },
+const ASSIGNMENT_TONE: Record<AssignmentStatus, StateTone> = {
+  preparing: "info",
+  running: "info",
+  stopRequested: "warning",
+  stopped: "secondary",
+  completed: "success",
+  failed: "destructive",
   // A developer's question holds the work until the answer: not the Coordinator's Pause, not a suspended task.
-  paused: { label: "Aspetta una risposta", tone: "warning" },
+  paused: "warning",
 };
+
+export const assignmentStatus = (t: Translate, status: AssignmentStatus): StateLabel => ({
+  label: t(`shared.assignment.${status}`),
+  tone: ASSIGNMENT_TONE[status],
+});
 
 /** The tone of each state of a cloud session (A19); its words are `cloudSession.status.<state>` in the catalog. */
 export const CLOUD_SESSION_TONE: Record<CloudSessionStatus, StateTone> = {
@@ -34,70 +40,72 @@ export const CLOUD_SESSION_TONE: Record<CloudSessionStatus, StateTone> = {
   failed: "destructive",
 };
 
-export const SLICE_STATE: Record<SliceState, StateLabel> = {
-  blocked: { label: "Bloccata", tone: "secondary" },
-  paused: { label: "Aspetta una risposta", tone: "warning" },
-  ready: { label: "Pronta", tone: "info" },
-  working: { label: "In lavoro", tone: "warning" },
-  verifying: { label: "In verifica", tone: "warning" },
-  done: { label: "Fatta", tone: "success" },
+const SLICE_TONE: Record<SliceState, StateTone> = {
+  blocked: "secondary",
+  paused: "warning",
+  ready: "info",
+  working: "warning",
+  verifying: "warning",
+  done: "success",
 };
 
 /** A slice held by its own pause (W08) is suspended, with the reason; one held by a developer's question waits for the answer. */
-export function sliceStatus(state: SliceState, ticket: { pause?: { reason: string } | null }): StateLabel {
-  return state === "paused" && ticket.pause ? { label: "Sospesa", tone: "warning" } : SLICE_STATE[state];
+export function sliceStatus(t: Translate, state: SliceState, ticket: { pause?: { reason: string } | null }): StateLabel {
+  return state === "paused" && ticket.pause ? { label: t("shared.slice.suspended"), tone: "warning" } : { label: t(`shared.slice.${state}`), tone: SLICE_TONE[state] };
 }
+
+const CANDIDATE_TONE: Record<CandidateState, StateTone> = {
+  building: "secondary",
+  verified: "info",
+  decided: "success",
+  superseded: "secondary",
+};
 
 /**
  * A candidate's state as a group of the Lavoro view. "building" is every candidate that is not ready yet: the work
  * ended, what is left is a check, the reviewers or something to fix. `candidateStatus` says which.
  */
-export const CANDIDATE_STATE: Record<CandidateState, StateLabel> = {
-  building: { label: "Non ancora pronto", tone: "secondary" },
-  verified: { label: "Verificato", tone: "info" },
-  decided: { label: "Deciso", tone: "success" },
-  superseded: { label: "Sostituito", tone: "secondary" },
-};
+export const candidateState = (t: Translate, state: CandidateState): StateLabel => ({ label: t(`shared.candidate.${state}`), tone: CANDIDATE_TONE[state] });
 
 /** Blockers that only wait for Trama to finish checking, or to run the reviewers again (as workPhase.ts): nothing to fix yet. */
 const STILL_CHECKING = new Set(["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"]);
 
 /** The badge of one candidate, the same in the card, in Lavoro and in the goal. */
-export function candidateStatus(report: Pick<CandidateReport, "state" | "blockers">): StateLabel {
-  if (report.state !== "building") return CANDIDATE_STATE[report.state];
-  return candidateBlockersStatus(report.blockers);
+export function candidateStatus(t: Translate, report: Pick<CandidateReport, "state" | "blockers">): StateLabel {
+  if (report.state !== "building") return candidateState(t, report.state);
+  return candidateBlockersStatus(t, report.blockers);
 }
 
-function candidateBlockersStatus(blockers: CandidateBlocker[]): StateLabel {
-  return blockers.every((b) => STILL_CHECKING.has(b.code)) ? { label: "In verifica", tone: "info" } : { label: "Da sistemare", tone: "warning" };
+function candidateBlockersStatus(t: Translate, blockers: CandidateBlocker[]): StateLabel {
+  return blockers.every((b) => STILL_CHECKING.has(b.code)) ? { label: t("shared.candidate.checking"), tone: "info" } : { label: t("shared.candidate.toFix"), tone: "warning" };
 }
 
 /** A plan's state with its slices, the same in its chat card and in Lavoro; `busy` when Trama is working on it. */
-export function planStatus(plan: Pick<WorkPlan, "status" | "slicing" | "spec">): StateLabel & { busy: boolean } {
-  const idle = (label: string, tone: StateTone) => ({ label, tone, busy: false });
+export function planStatus(t: Translate, plan: Pick<WorkPlan, "status" | "slicing" | "spec">): StateLabel & { busy: boolean } {
+  const idle = (key: MessageKey, tone: StateTone) => ({ label: t(key), tone, busy: false });
   switch (plan.status) {
     case "planning":
-      return { label: plan.spec?.seamsAnswer ? "Scrittura del piano" : "In preparazione", tone: "secondary", busy: true };
+      return { label: t(plan.spec?.seamsAnswer ? "shared.plan.writing" : "shared.plan.preparing"), tone: "secondary", busy: true };
     case "seams":
-      return idle("Punti di prova da rivedere", "warning");
+      return idle("shared.plan.seams", "warning");
     case "stale":
-      return idle("Da rivalutare", "warning");
+      return idle("shared.plan.stale", "warning");
     case "failed":
-      return idle("Non riuscito", "destructive");
+      return idle("shared.plan.failed", "destructive");
     case "superseded":
-      return idle("Sostituito", "secondary");
+      return idle("shared.plan.superseded", "secondary");
     case "ready":
       switch (plan.slicing?.status) {
         case "drafting":
-          return { label: "Divisione in fette", tone: "secondary", busy: true };
+          return { label: t("shared.plan.slicing"), tone: "secondary", busy: true };
         case "proposed":
-          return idle("Fette da rivedere", "warning");
+          return idle("shared.plan.slicesProposed", "warning");
         case "approved":
-          return idle(plan.slicing.approvedBy === "coordinator" ? "Fette confermate dal Coordinatore" : "Fette confermate", "success");
+          return idle(plan.slicing.approvedBy === "coordinator" ? "shared.plan.slicesByCoordinator" : "shared.plan.slicesConfirmed", "success");
         case "failed":
-          return idle("Divisione in fette non riuscita", "destructive");
+          return idle("shared.plan.slicingFailed", "destructive");
         default:
-          return idle("Da rivedere", "info");
+          return idle("shared.plan.toReview", "info");
       }
   }
 }
@@ -106,54 +114,38 @@ export function planStatus(plan: Pick<WorkPlan, "status" | "slicing" | "spec">):
  * The two pauses (issue #272): the Coordinator's Pause stops every automatic move of the project; suspending a task
  * only takes that task out of focus. They never share a name.
  */
-export const COORDINATOR_PAUSE = { pause: "Pausa del Coordinatore", resume: "Riprendi il Coordinatore" } as const;
-export const TASK_SUSPEND = { suspend: "Sospendi questo lavoro", resume: "Riprendi", state: "Sospeso" } as const;
+export const coordinatorPause = (t: Translate) => ({ pause: t("shared.pause.pause"), resume: t("shared.pause.resume") });
+export const taskSuspend = (t: Translate) => ({ suspend: t("shared.suspend.suspend"), resume: t("shared.suspend.resume"), state: t("shared.suspend.state") });
 
-export const FOCUS_STATUS: Record<FocusTask["status"], string> = {
-  focus: "In primo piano",
-  queued: "In coda",
-  paused: TASK_SUSPEND.state,
-};
+export const focusStatus = (t: Translate, status: FocusTask["status"]): string =>
+  status === "paused" ? t("shared.suspend.state") : t(status === "focus" ? "shared.focus.focus" : "shared.focus.queued");
 
-/** A read-only check of Trama by its name for the person, with the words for its two results. */
-interface CheckWords {
-  name: string;
-  pass: string;
-  fail: string;
-}
-
-const CHECK_WORDS: Record<string, CheckWords> = {
-  git_status: { name: "Stato del repository", pass: "letto", fail: "non leggibile" },
-  git_diff_check: { name: "Spazi e marcatori di conflitto", pass: "nessun problema", fail: "problemi trovati" },
-  swift_build: { name: "Compilazione Swift", pass: "riuscita", fail: "non riuscita" },
-  swift_test: { name: "Test Swift", pass: "superati", fail: "non superati" },
-  node_test: { name: "Test Node", pass: "superati", fail: "non superati" },
-  node_typecheck: { name: "Controllo dei tipi", pass: "superato", fail: "non superato" },
-};
+/** The read-only checks of Trama the catalog names, with the words for their two results. */
+const KNOWN_CHECKS = ["git_status", "git_diff_check", "swift_build", "swift_test", "node_test", "node_typecheck"] as const;
+type KnownCheck = (typeof KNOWN_CHECKS)[number];
+const isKnownCheck = (check: string): check is KnownCheck => (KNOWN_CHECKS as readonly string[]).includes(check);
 
 /** "git_status" reads "Stato del repository"; a check Trama does not know keeps its own name. */
-export function checkName(check: string): string {
-  return CHECK_WORDS[check]?.name ?? check;
+export function checkName(t: Translate, check: string): string {
+  return isKnownCheck(check) ? t(`shared.check.${check}`) : check;
 }
 
 /** "Stato del repository: letto", "Test Node: non superati", "Test Node: da eseguire". */
-export function checkOutcome(check: string, result: "pass" | "fail" | null): string {
-  return `${checkName(check)}: ${checkResult(check, result)}`;
+export function checkOutcome(t: Translate, check: string, result: "pass" | "fail" | null): string {
+  return t("shared.check.outcome", { name: checkName(t, check), result: checkResult(t, check, result) });
 }
 
-export function checkResult(check: string, result: "pass" | "fail" | null): string {
-  if (result === null) return "da eseguire";
-  const words = CHECK_WORDS[check];
-  if (!words) return result === "pass" ? "superata" : "non superata";
-  return result === "pass" ? words.pass : words.fail;
+export function checkResult(t: Translate, check: string, result: "pass" | "fail" | null): string {
+  if (result === null) return t("shared.check.notRun");
+  if (!isKnownCheck(check)) return t(result === "pass" ? "shared.check.pass" : "shared.check.fail");
+  return t(`shared.check.${check}.${result}`);
 }
 
 /** A span of time in whole units the person reads at a glance: "12 min", "3 ore", "2 giorni". */
-export function formatDuration(minutes: number): string {
+export function formatDuration(t: Translate, minutes: number): string {
   const whole = Math.max(0, Math.floor(minutes));
-  if (whole < 60) return `${whole} min`;
+  if (whole < 60) return t("shared.duration.minutes", { count: whole });
   const hours = Math.floor(whole / 60);
-  if (hours < 24) return hours === 1 ? "un'ora" : `${hours} ore`;
-  const days = Math.floor(hours / 24);
-  return days === 1 ? "un giorno" : `${days} giorni`;
+  if (hours < 24) return t("shared.duration.hours", { count: hours });
+  return t("shared.duration.days", { count: Math.floor(hours / 24) });
 }

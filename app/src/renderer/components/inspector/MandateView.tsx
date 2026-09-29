@@ -1,7 +1,7 @@
 import { IconChevronRight, IconHourglass } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
-import { FIXED_BANS } from "@shared/fixedBans";
+import { fixedBans } from "@shared/fixedBans";
 import { DelegationSection } from "@/components/chat/Delegation";
 import type { Translate } from "@shared/i18n";
 import { waitingItemFor } from "@shared/waitingForYou";
@@ -10,7 +10,7 @@ import { useWaiting } from "@/components/WaitingView";
 import { Button } from "@/components/ui/button";
 import { Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
-import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@/lib/labels";
+import { actionLabel, DELEGABLE_ACTIONS } from "@/lib/labels";
 import { act, useUi } from "@/lib/store";
 import { DisclosureSection, EmptyNote } from "./Inspector";
 import { ModulesList } from "./MapView";
@@ -28,7 +28,7 @@ const sentence = (items: string[]) => items.map((item, index) => (index === 0 ? 
 function restrictionText(t: Translate, restriction: NonNullable<MandateSnapshot["restriction"]>, moduleName: (id: string) => string): string {
   const parts = [
     restriction.removedModuleIds.length ? t("rules.mandate.removedModules", { list: restriction.removedModuleIds.map(moduleName).join(", ") }) : null,
-    restriction.removedActions.length ? t("rules.mandate.removedActions", { list: restriction.removedActions.map((a) => lower(ACTION_LABELS[a])).join(", ") }) : null,
+    restriction.removedActions.length ? t("rules.mandate.removedActions", { list: restriction.removedActions.map((a) => lower(actionLabel(t, a))).join(", ") }) : null,
   ].filter(Boolean);
   return t("rules.mandate.restriction", { parts: parts.join("; ") });
 }
@@ -198,13 +198,13 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
                 {t("rules.mandate.whereModules", { modules: granted.scopeModuleIds.map(moduleName).join(", "), count: granted.scopeModuleIds.length, total: modules.length })}
               </RuleRow>
               <RuleRow label={t("rules.mandate.can")} testId="mandate-can">
-                {sentence(granted.authorizedActions.map((a) => ACTION_LABELS[a]))}
+                {sentence(granted.authorizedActions.map((a) => actionLabel(t, a)))}
               </RuleRow>
             </>
           ) : null}
           {/* Every mandate, also one granted before the fixed bans existed, excludes them (issue #244). */}
           <RuleRow label={t("rules.mandate.never")} testId="fixed-bans" title={t("rules.mandate.neverNote")}>
-            {sentence(FIXED_BANS.map((ban) => ban.label))}
+            {sentence(fixedBans(t).map((ban) => ban.label))}
           </RuleRow>
         </dl>
         {granted?.restriction ? (
@@ -323,7 +323,7 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
                       checked={keptActions.includes(action)}
                       onChange={(e) => setKeptActions(e.target.checked ? [...keptActions, action] : keptActions.filter((a) => a !== action))}
                     />
-                    {ACTION_LABELS[action]}
+                    {actionLabel(t, action)}
                   </label>
                 ))}
               </div>
@@ -387,7 +387,7 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
                       checked={actions.includes(action)}
                       onChange={(e) => setActions(e.target.checked ? [...actions, action] : actions.filter((a) => a !== action))}
                     />
-                    {ACTION_LABELS[action]}
+                    {actionLabel(t, action)}
                   </label>
                 ))}
               </div>
