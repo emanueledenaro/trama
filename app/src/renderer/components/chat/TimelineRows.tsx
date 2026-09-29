@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconAlertTriangle, IconChevronRight, IconClockPause, IconCopy, IconFileText, IconPlayerStop } from "@tabler/icons-react";
+import { IconAlertTriangle, IconChevronRight, IconClockPause, IconCopy, IconFileText, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { NextStepView } from "@shared/domain";
@@ -10,6 +10,7 @@ import { compactSteps, failedSteps } from "@shared/technicalSteps";
 import { type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -244,8 +245,9 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           <div className="text-ui font-medium text-foreground">Turno interrotto</div>
           {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
         </div>
+        {/* Riprendi starts the turn again: icon and text (issue #338). */}
         <Button size="xs" variant="outline" className="shrink-0" onClick={retry}>
-          Riprendi
+          <IconPlayerPlay /> {t("chat.buttons.resumeTurn")}
         </Button>
       </div>
     );

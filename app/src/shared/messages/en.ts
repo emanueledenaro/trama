@@ -380,6 +380,8 @@ export const en: Record<keyof typeof it, string> = {
   "settings.presence.openProject": "Open a project to choose whether to share your presence.",
   "settings.presence.demo": "The example project does not share presence.",
   "settings.presence.share": "Share your presence in {name}",
+  "settings.presence.pause": "Pause the presence",
+  "settings.presence.resume": "Resume the presence",
   // Focus mode on a module or the project, full screen (F03)
   "focus.title": "In-depth review",
   "focus.target.module": "of the {name} module",
@@ -529,7 +531,6 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.editor.closeTab": "Close {name}",
   "workbench.editor.resize": "Width of the details beside the conversation",
   "workbench.editor.split": "Show the details beside the conversation",
-  "workbench.editor.unsplit": "Open the details over the conversation",
   // Focus mode lenses (F05)
   "audit.lenses.title": "Trama's lenses",
   "audit.lenses.addedBy": "Trama's additions",
@@ -957,8 +958,8 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.status.divergence": "Notice about the project's branch",
   "workbench.status.activity": "Activity",
   "workbench.status.pause": "Pause the Coordinator",
-  "workbench.status.pauseHint": "Pause the Coordinator: stops the project's automatic moves, rounds and automatic work",
   "workbench.status.resume": "Resume the Coordinator",
+  "workbench.status.resumeShort": "Resume",
   "workbench.status.resumeHint": "Resume the project's automatic work",
   "workbench.status.stop": "Stop",
   "workbench.status.stopMove": "Stop: {move}",
@@ -973,7 +974,7 @@ export const en: Record<keyof typeof it, string> = {
   "focus.pauseHint": "Takes this work out of focus: the next one in the queue comes forward",
   "focus.goTo": "Go to the work",
   "focus.queue": "Queued work",
-  "focus.open": "Open",
+  "focus.openInChat": "Show in the chat",
   "focus.resume": "Resume",
   "focus.bringForward": "Bring into focus",
   "focus.paused": "Suspended",
@@ -1351,6 +1352,7 @@ export const en: Record<keyof typeof it, string> = {
   "rules.modules.inMandate": "In the mandate",
   "rules.module.back": "Modules",
   "rules.module.ask": "Ask the Coordinator about this module",
+  "rules.module.askShort": "Ask",
   "rules.module.inMandate": "The module is in the mandate.",
   "rules.module.outOfMandate": "The module is not in the current mandate.",
   "rules.module.colleagues": "Colleagues at work here",
@@ -1407,6 +1409,11 @@ export const en: Record<keyof typeof it, string> = {
   "reviewLoop.label": "Work stopped several times",
   "reviewLoop.title": "{objective}: the review stopped it {count} times in a row. Tell the Coordinator how to go on.",
   "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
+  // Buttons of the chat and composer (issue #338)
+  "chat.buttons.resumeTurn": "Resume",
+  "chat.buttons.askRoute": "Ask the Coordinator for a route",
+  "chat.buttons.openDiff": "Open the diff",
+  "chat.buttons.examine": "In-depth examination",
 
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
   "fixedBan.card.handle": "No mandate grants it. If you want it done, write it to the Coordinator in the chat: it does it because you asked, and before deleting something it asks you to confirm.",

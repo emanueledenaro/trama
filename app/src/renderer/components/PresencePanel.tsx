@@ -1,6 +1,8 @@
+import { IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import type { PresenceView } from "@shared/presence";
 import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 import { act } from "@/lib/store";
 
 /**
@@ -28,13 +30,16 @@ export function PresenceControls({
   /** Writes the switch's name next to it, where no row label names it. */
   showLabel?: boolean;
 }) {
+  const t = useT();
   const sharing = consentChoice === "shared";
   const paused = sharing && Boolean(view?.consent?.paused);
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {sharing ? (
+        // Issue #338: "Sospendi la presenza" names what it pauses; both moves are icon and text.
         <Button size="xs" variant="ghost" onClick={() => void act("presence:pause", { paused: !paused })}>
-          {paused ? "Riprendi" : "Metti in pausa"}
+          {paused ? <IconPlayerPlay /> : <IconPlayerPause />}
+          {paused ? t("settings.presence.resume") : t("settings.presence.pause")}
         </Button>
       ) : null}
       {showLabel ? (
