@@ -732,6 +732,18 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     expect(projectMove(screen.document, "round", free)?.move.move).toBe("clearCandidate");
   });
 
+  it("says a ticket stalled when its turn made no work, and asks for the issue on the plan", () => {
+    const document = delegated(true);
+    mandate(document, ["plan"]);
+    expect(ticketMove(document, { number: 42, title: "Annullo" }, free, null)?.message).toContain("issueNumber 42");
+    request(document, "t1", { step: { move: "takeTicket", by: "trama", issue: 42 } });
+    expect(stalledMove(document, "t1")).toEqual({ move: "takeTicket", reason: "La mossa automatica non è riuscita: il turno non ha trasformato la issue #42 in lavoro." });
+    plan(document, "t1", "planning");
+    expect(stalledMove(document, "t1")).toBeNull();
+    // Open work holds the next ticket: never two at once.
+    expect(ticketMove(document, { number: 43, title: "Resi" }, free, null)).toBeNull();
+  });
+
   it("says the decision stalled when the turn left the question open, and not once it decided", () => {
     const document = delegated();
     request(document, "r1");

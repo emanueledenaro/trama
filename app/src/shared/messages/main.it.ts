@@ -2451,6 +2451,7 @@ export const mainIt = {
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Presa con la delega piena ({label}).",
   "main.delegation.stalled": "il Coordinatore non ha deciso quello che aspettava la persona.",
+  "main.delegation.ticketStalled": "il turno non ha trasformato la issue #{number} in lavoro.",
   "main.delegation.candidateSubject": "Candidato {id}",
   "main.delegation.approvedAfterShots": "Approvato dopo le schermate",
   "main.delegation.mandateObjective": "Portare avanti tutto il lavoro del progetto con la delega piena",

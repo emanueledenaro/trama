@@ -109,6 +109,27 @@ describe("full delegation (issue #423)", () => {
     expect(nextTicket(document, issues)).toBeNull();
   });
 
+  it("takes an issue again when the turn that took it made no work, three times at most", () => {
+    const document = emptyDocument("p");
+    add(document, "person", typed("Fai tutti i ticket"));
+    grantDelegation(document, { quote: "fai tutti i ticket", tickets: true }, new Date(AT));
+    const issues = [issue(9, ["ready-for-agent"]), issue(12, ["ready-for-agent"])];
+    const attempt = (id: string, state: "completed" | "failed") =>
+      document.requests.push({ id, text: "Prendi la #9", moduleId: null, state, model: null, effort: null, createdAt: AT, completedAt: AT, failure: null, goalId: null, step: { move: "takeTicket", by: "trama", issue: 9 } });
+    recordChoice(document, { kind: "ticket", subject: "Issue #9", choice: "Presa", targetId: "9" });
+    // The turn that took #9 failed before any plan: #9 is not lost, it is still the next one.
+    attempt("t1", "failed");
+    expect(nextTicket(document, issues)?.number).toBe(9);
+    // Its work started in that turn: the next one is #12, never #9 again.
+    document.plans.push({ requestId: "t1", issueNumber: null } as never);
+    expect(nextTicket(document, issues)?.number).toBe(12);
+    document.plans = [];
+    // Three turns that made nothing: #9 gives way to the next issue.
+    attempt("t2", "completed");
+    attempt("t3", "completed");
+    expect(nextTicket(document, issues)?.number).toBe(12);
+  });
+
   it("widens the mandate to every module and action when the one in force is narrower", () => {
     const document = emptyDocument("p");
     expect(mandateForDelegation(document, ["A", "B"])).toMatchObject({ scopeModuleIds: ["A", "B"], authorizedActions: expect.arrayContaining(["plan", "integrateCandidate"]) });

@@ -4,6 +4,7 @@ import { candidateSuperseded } from "@shared/conflictScope";
 import { touchesInterface } from "@shared/interfaceChange";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { contentFingerprint, inspectCandidate } from "./candidates";
+import { ticketWorked } from "./fullDelegation";
 import { focusView } from "./focus";
 import { isActive } from "./team";
 import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
@@ -227,7 +228,7 @@ export function ticketMove(
   return {
     move: "takeTicket",
     label: COORDINATOR_MOVES.takeTicket.label,
-    message: `Con la delega piena prendi la issue #${issue.number} «${issue.title}»: leggila con read_issues, trasformala in lavoro e portala fino all'unione, senza la persona.`,
+    message: `Con la delega piena prendi la issue #${issue.number} «${issue.title}»: leggila con read_issues, trasformala in lavoro (prepare_plan o assign_task con issueNumber ${issue.number}) e portala fino all'unione, senza la persona.`,
     goalId: null,
     model: latest?.model ?? null,
     effort: latest?.effort ?? null,
@@ -464,8 +465,11 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     case "decideWithDelegation":
       // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
       return delegatedHolds(document, state) ? t("main.delegation.stalled") : null;
-    case "takeTicket":
-      return null;
+    case "takeTicket": {
+      // The ticket became work in the turn: a plan or an assignment that names it, or that the turn started.
+      const issue = document.requests.find((r) => r.id === requestId)?.step?.issue;
+      return issue === undefined || ticketWorked(document, issue) ? null : t("main.delegation.ticketStalled", { number: issue });
+    }
   }
 }
 

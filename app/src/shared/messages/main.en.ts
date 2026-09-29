@@ -2375,6 +2375,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Taken with the full delegation ({label}).",
   "main.delegation.stalled": "the Coordinator did not decide what waited for the person.",
+  "main.delegation.ticketStalled": "the turn did not turn issue #{number} into work.",
   "main.delegation.candidateSubject": "Candidate {id}",
   "main.delegation.approvedAfterShots": "Approved after the screenshots",
   "main.delegation.mandateObjective": "Carry on all the project's work with the full delegation",

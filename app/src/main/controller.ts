@@ -3404,13 +3404,16 @@ export class TramaController {
     const latest = document.requests.at(-1) ?? null;
     const move = ticketMove(document, issue, this.continuationGuards(project), latest);
     if (!move || !issue) return null;
-    recordChoice(document, {
-      kind: "ticket",
-      subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
-      choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
-      targetId: String(issue.number),
-    });
-    const step: RequestStep = { move: move.move, by: "trama", trigger: "round" };
+    // An issue whose earlier turn made no work is taken again (nextTicket): the recap tells the choice once.
+    if (!(document.delegatedChoices ?? []).some((c) => c.kind === "ticket" && c.targetId === String(issue.number))) {
+      recordChoice(document, {
+        kind: "ticket",
+        subject: t("main.delegation.ticketSubject", { number: issue.number, title: issue.title }),
+        choice: t("main.delegation.ticketTaken", { label: READY_LABEL }),
+        targetId: String(issue.number),
+      });
+    }
+    const step: RequestStep = { move: move.move, by: "trama", trigger: "round", issue: issue.number };
     const starting = { projectId: project.id };
     this.automaticStarting = starting;
     void this.send(move.message, null, move.model, move.model ? move.effort : null, [], null, null, false, step)
