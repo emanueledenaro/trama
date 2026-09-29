@@ -266,7 +266,8 @@ function DiscussionRows({ squadId }: { squadId: string | null }) {
   const t = useT();
   const document = useUi((s) => s.app?.project?.document);
   const setInspector = useUi((s) => s.setInspector);
-  const selected = useUi((s) => (s.inspector?.kind === "agentThread" ? s.inspector.id : null));
+  // Issue #336: a discussion opens in a tab of the editor; its row is marked while that tab is the active one.
+  const selected = useUi((s) => (s.activeDetail?.startsWith("agentThread:") ? s.activeDetail.slice("agentThread:".length) : null));
   const now = Date.now();
   const rows = document ? squadDiscussions(document, squadId).slice(0, SHOWN_DISCUSSIONS) : [];
   if (!rows.length) return null;

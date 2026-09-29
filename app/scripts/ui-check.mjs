@@ -2378,13 +2378,15 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   await waitingRow.waitFor({ timeout: 20_000 });
   if (!(await squadPanel.getByTestId("squad").first().getByTestId("squad-discussions").count())) throw new Error("The discussions are not in their squad");
   if (await squadPanel.getByTestId("discussions-across").count()) throw new Error("A discussion inside one squad is listed between squads");
-  const thread = squadPanel.getByTestId("agent-thread");
+  // Issue #336 (B07): the discussion opens in a tab of the editor next to the conversation; its rows stay in Squadre.
+  const thread = detailPane().getByTestId("agent-thread");
   const discussionShots = async (name) => {
     for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(300);
-      // The discussion's header, or the squads' summary, on top of the side bar.
-      await squadPanel.locator('[data-testid="discussion-header"], [data-testid="squads-summary"]').first().evaluate((el) => (el.closest('[data-testid="agent-thread"]') ?? el).scrollIntoView({ block: "start" }));
+      // The discussion's header on top of its tab, or the squads' summary on top of the side bar.
+      const top = (await thread.count()) ? thread : squadPanel.getByTestId("squads-summary");
+      await top.evaluate((el) => el.scrollIntoView({ block: "start" }));
       await noHorizontalScroll(`${name} ${size}`);
       for (const provider of ["codex", "claudeAgent"]) {
         for (const dark of [false, true]) {
@@ -2447,7 +2449,7 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   await header.getByText("Stima e divisione del lavoro").waitFor();
   await discussionShots("e-discussion-decided");
   // Q17: the discussions run on the provider's lightest model; the person picks the role's model in the settings.
-  await page.getByRole("button", { name: "Impostazioni" }).click();
+  await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
   const discussionSettings = page.getByTestId("settings");
   await discussionSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
   const discussionModel = discussionSettings.getByTestId("discussion-model");
@@ -2459,7 +2461,7 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   await themeShots("41f-discussion-model-setting");
   await discussionModel.getByRole("radio", { name: "Il più leggero" }).click();
   await discussionModel.getByRole("radio", { name: "Il più leggero", checked: true }).waitFor();
-  await page.getByRole("button", { name: "Impostazioni" }).click();
+  await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
   await page.getByTestId("settings").waitFor({ state: "hidden" });
   await openView("Squadre");
 }
