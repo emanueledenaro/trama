@@ -95,11 +95,15 @@ export const KEPT_ROUNDS = 50;
  */
 export const ROUND_ATTEMPTS = 3;
 
-/** How many of the dialog's latest requests, from the newest, are Trama's automatic turns of `move`. */
+/**
+ * How many of the dialog's latest requests, from the newest, are Trama's automatic turns of `move`. A turn set aside
+ * for the person's message is no attempt (ADR 0023): it neither counts nor breaks the row.
+ */
 function attemptsInRow(dialog: ProjectDocument["requests"], move: CoordinatorMove): number {
   let count = 0;
   for (let index = dialog.length - 1; index >= 0; index--) {
     const step = dialog[index]!.step;
+    if (step?.by === "trama" && step.setAside) continue;
     if (step?.by !== "trama" || step.move !== move) break;
     count++;
   }
@@ -139,7 +143,8 @@ const mandateGranted = (document: ProjectDocument): boolean => document.mandate?
 /**
  * The one Coordinator move Trama starts after `event` on the work of `requestId` (the request whose turn,
  * plan or assignment ended), or null. Pure: at most one move per event, none after an error or an
- * interruption (except the round after an automatic turn that failed, or any turn with the full delegation), none from
+ * interruption (except the round after an automatic turn that failed, or any turn with the full delegation, and an
+ * automatic turn the person's message set aside), none from
  * the end of an automatic turn, none
  * while the work waits for the person, none in pause and none without a granted mandate. The round tries the same move
  * ROUND_ATTEMPTS times in a row at most.
@@ -157,7 +162,9 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // With the full delegation (ADR 0022) it takes up a failed turn of the person's too: they left the work to the
   // Coordinator and are not there to write again. A Stop stays the person's either way.
   const takenUp = event === "round" && latest.state === "failed" && (latest.step?.by === "trama" || activeDelegation(document) !== null);
-  if (latest.state !== "completed" && !takenUp) return null;
+  // An automatic turn the person's message set aside is no Stop of theirs (ADR 0023): the work goes on from it.
+  const setAside = latest.state === "interrupted" && latest.step?.by === "trama" && Boolean(latest.step.setAside);
+  if (latest.state !== "completed" && !takenUp && !setAside) return null;
   // An automatic turn never starts the next move: a move the Coordinator did not make is not retried in a loop.
   if (event === "turnEnded" && latest.step?.by === "trama") return null;
   // Only the current work of the dialog goes on: an older plan or assignment that ends starts nothing.
@@ -303,7 +310,8 @@ export function automaticMoveSection(
 
 /**
  * When the dialog's turn before `requestId` was an automatic turn of the same move that did not get there (a stall or an
- * error), what the new attempt reads: that it is one, and why the one before stopped. Null otherwise. @model-text
+ * error), what the new attempt reads: that it is one, and why the one before stopped. A turn set aside for the person's
+ * message did not fail: the new turn takes it up from what it already did (ADR 0023). Null otherwise. @model-text
  */
 function previousAttempt(document: ProjectDocument, requestId: string, move: CoordinatorMove): string | null {
   const index = document.requests.findIndex((r) => r.id === requestId);
@@ -311,6 +319,9 @@ function previousAttempt(document: ProjectDocument, requestId: string, move: Coo
   const goalId = document.requests[index]!.goalId ?? null;
   const previous = document.requests.slice(0, index).findLast((r) => (r.goalId ?? null) === goalId);
   if (previous?.step?.by !== "trama" || previous.step.move !== move) return null;
+  if (previous.state === "interrupted" && previous.step.setAside) {
+    return "Ripresa: Trama ha messo da parte il turno automatico precedente con questa mossa per far passare un messaggio della persona. Controlla prima cosa ha già fatto, poi porta a termine la mossa.";
+  }
   const why = previous.state === "failed" ? previous.failure : previous.step.stalled;
   if (previous.state === "completed" && !why) return null;
   return `Tentativo di nuovo: il turno automatico precedente con questa mossa non l'ha portata a termine${why ? ` (${why.replace(/\s+/g, " ").slice(0, 300)})` : ""}. Cerca un'altra strada per sbloccare il lavoro dentro il mandato: non aspettare la persona.`;

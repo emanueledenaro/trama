@@ -369,6 +369,28 @@ describe("projectMove: events of the whole project and the round (A05)", () => {
     expect(projectMove(person, "round", free)).toBeNull();
   });
 
+  it("takes up a move the person's message set aside, which is no stop of theirs and uses up no attempt of the round (ADR 0023)", () => {
+    const setAside = (document: ProjectDocument, id: string) =>
+      request(document, id, { step: { move: "preparePlan", by: "trama", setAside: "Messa da parte per il tuo messaggio: Trama la riprende dopo." }, state: "interrupted" });
+    const document = confirmed();
+    setAside(document, "r3");
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    // Any event of the work weighs it again, like the round.
+    expect(projectMove(document, "issueOpened", free)?.move.move).toBe("preparePlan");
+    // Moves set aside are not attempts: with two attempts among them the round still has one.
+    setAside(document, "r4");
+    request(document, "r5", { step: { move: "preparePlan", by: "trama" } });
+    setAside(document, "r6");
+    request(document, "r7", { step: { move: "preparePlan", by: "trama" } });
+    setAside(document, "r8");
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    // The new turn knows the one before gave way to the person's message: it did not fail.
+    request(document, "r9", { step: { move: "preparePlan", by: "trama" } });
+    const section = automaticMoveSection("preparePlan", null, document, "r9");
+    expect(section).toContain("per far passare un messaggio della persona");
+    expect(section).not.toContain("non l'ha portata a termine");
+  });
+
   it("weighs the task in focus first and leaves paused tasks alone", () => {
     const document = verifying();
     document.focus = { taskId: null, pausedTaskIds: ["work:r1"] };
