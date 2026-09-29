@@ -21,9 +21,13 @@ function ReviewRow({ gate, review, document }: { gate: CandidateGate; review: Ga
   const findings = [...gateRowFindings(gate, review, candidate)].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
   return (
     <li data-testid="gate-review" data-role={review.role} data-status={review.status} className="py-1">
-      <div className="flex min-w-0 items-center gap-2 text-ui-sm">
-        {figure ? <AgentName agent={figure} size={20} className="min-w-0" /> : <span className="min-w-0 truncate">{roleProfile(t, review.role).name}</span>}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+      {/* In a narrow side bar the name and its tag shorten with an ellipsis and never run over the badge; when even a
+          shortened name leaves no room, the badge moves under it, whole and on the right. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-ui-sm" data-testid="gate-review-head">
+        <span className="flex min-w-0 flex-[1_1_9rem] items-center" data-testid="gate-review-who">
+          {figure ? <AgentName agent={figure} size={20} className="min-w-0" fit /> : <span className="min-w-0 truncate">{roleProfile(t, review.role).name}</span>}
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5" data-testid="gate-review-outcome">
           {review.status === "running" ? <Spinner /> : null}
           <Badge tone={outcome.tone}>{outcome.label}</Badge>
         </span>
