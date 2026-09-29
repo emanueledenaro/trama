@@ -13,7 +13,9 @@ import { SideBar } from "@/components/workbench/SideBar";
 import { StatusBar } from "@/components/workbench/StatusBar";
 import { TitleBar } from "@/components/workbench/TitleBar";
 import { Toast } from "@/components/Toast";
+import { FilledScope } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
@@ -62,6 +64,8 @@ export function App() {
   const openedModule = useUi((s) => s.editorFocus === "detail" && (s.activeDetail?.startsWith("detail:module:") ?? false));
   // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
   const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
+  // While something waits, the window's one filled button is Aspetta te's (issue #338).
+  const waiting = useWaiting().length > 0;
   // The bottom panel with Activity: 200 px, 260 from a 1500 px wide window, remembered; the editor keeps its height above (issue #337).
   const panelOpen = useUi((s) => s.panelOpen && Boolean(s.app?.project));
   const panel = useResizableHeight("trama.panelHeight", {
@@ -208,17 +212,19 @@ export function App() {
                 <EditorArea />
               )}
               {panelOpen ? (
-                <ActivityPanel
-                  size={{
-                    height: panel.height,
-                    min: panel.bounds.min,
-                    max: panel.bounds.max,
-                    setHeight: panel.setHeight,
-                    reset: panel.reset,
-                    resizing: panel.resizing,
-                    setResizing: panel.setResizing,
-                  }}
-                />
+                <FilledScope allowed={!waiting}>
+                  <ActivityPanel
+                    size={{
+                      height: panel.height,
+                      min: panel.bounds.min,
+                      max: panel.bounds.max,
+                      setHeight: panel.setHeight,
+                      reset: panel.reset,
+                      resizing: panel.resizing,
+                      setResizing: panel.setResizing,
+                    }}
+                  />
+                </FilledScope>
               ) : null}
             </div>
           </div>

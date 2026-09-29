@@ -54,6 +54,7 @@ import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, examineCandidate, useUi } from "@/lib/store";
@@ -1629,21 +1630,19 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
   const actions = (
     <>
       <div className="cta-row mt-3">
+        {/* Issue #338: opening the diff and the examination are secondary, icons with their names; the decisions stay text. */}
         {diffOnScreen ? null : (
-          <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id, diff: true })}>
-            {t("chat.card.candidate.openDiff")}
-          </Button>
+          <IconButton size="icon-sm" label={t("chat.card.candidate.openDiff")} icon={<IconFileDiff />} onClick={() => setInspector({ kind: "candidate", id: candidate.id, diff: true })} />
         )}
         {/* The candidate's tab has the examination as its own section, with its own action (issue #336). */}
         {layout === "detail" ? null : (
-          <Button
-            size="sm"
-            variant="outline"
+          <IconButton
+            size="icon-sm"
+            label={t("chat.card.candidate.deepReview")}
+            icon={<IconFocus2 />}
             // The candidate's tab opens on its latest examination, or starts the first one (F01, issue #336).
             onClick={() => void examineCandidate(candidateId)}
-          >
-            <IconFocus2 /> {t("chat.card.candidate.deepReview")}
-          </Button>
+          />
         )}
         {route === "person" && report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>

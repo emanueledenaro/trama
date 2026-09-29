@@ -512,7 +512,7 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.composer.placeholder": "Message to the Coordinator. Use @ to cite modules, files, issues and decisions, / for a skill",
   "chat.composer.label": "Message to the Coordinator",
   "chat.composer.attach": "Attach images",
-  "chat.composer.askTrama": "Ask Trama: describe the situation and the Coordinator proposes the path",
+  "chat.composer.askTrama": "Ask the Coordinator for a route",
   "chat.composer.interrupt": "Stop",
   "chat.composer.send": "Send to the Coordinator",
   // Model picker

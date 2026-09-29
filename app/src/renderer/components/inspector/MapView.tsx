@@ -1,6 +1,7 @@
 import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle, IconShieldCheck } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { act, useUi } from "@/lib/store";
 import { moduleQuestion } from "@/lib/askCoordinator";
 import { OverlapMarkSign, OverlapRow } from "@/components/OverlapNotice";
@@ -108,12 +109,14 @@ export function ModuleView({ id }: { id: string }) {
           {inMandate ? t("rules.module.inMandate") : t("rules.module.outOfMandate")}
         </p>
         <div className="cta-row mt-3">
-          <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "module", moduleId: module.id })}>
-            <IconFocus2 stroke={1.8} /> {t("focus.openModule")}
-          </Button>
-          <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
-            <IconMessageCircle stroke={1.8} /> {t("rules.module.ask")}
-          </Button>
+          {/* Issue #338: the examination is secondary, an icon with its name; "Chiedi" with its icon fits the narrow side
+              bar, and its tooltip and name keep the whole question. */}
+          <IconButton size="icon-sm" label={t("focus.openModule")} icon={<IconFocus2 stroke={1.8} />} onClick={() => openFocusStart({ kind: "module", moduleId: module.id })} />
+          <Tooltip label={t("rules.module.ask")}>
+            <Button size="sm" variant="outline" aria-label={t("rules.module.ask")} onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
+              <IconMessageCircle stroke={1.8} /> {t("rules.module.askShort")}
+            </Button>
+          </Tooltip>
         </div>
       </div>
       <InspectorSection title={`${t("rules.module.files")} (${module.files.length})`}>

@@ -512,7 +512,7 @@ export const chatIt = {
   "chat.composer.placeholder": "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, / per una skill",
   "chat.composer.label": "Messaggio al Coordinatore",
   "chat.composer.attach": "Allega immagini",
-  "chat.composer.askTrama": "Ask Trama: descrivi la situazione e il Coordinatore propone il percorso",
+  "chat.composer.askTrama": "Chiedi un percorso al Coordinatore",
   "chat.composer.interrupt": "Interrompi",
   "chat.composer.send": "Invia al Coordinatore",
   // Model picker

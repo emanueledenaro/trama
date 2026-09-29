@@ -9,7 +9,7 @@ import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { useSeam } from "@/components/Seam";
 import { TramaMark } from "@/components/brand/TramaMark";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
@@ -253,7 +253,10 @@ function Timeline() {
         {rows.map((row, index) => (
           <div key={row.id} className="px-1" data-anchors={rowAnchors(row).join(" ") || undefined}>
             {tags[index] ? <GoalTag goalId={tags[index]} /> : null}
-            <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
+            {/* One filled button in the window (issue #338): Aspetta te's while something waits, else the last row's. */}
+            <FilledScope allowed={!waiting && index === rows.length - 1}>
+              <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
+            </FilledScope>
           </div>
         ))}
         {queued.map((message) => (
@@ -299,6 +302,8 @@ function Timeline() {
  */
 export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const project = useUi((s) => s.app?.project);
+  // While something waits, the window's one filled button is Aspetta te's (issue #338).
+  const waitingNow = useWaiting().length > 0;
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
   const page: EditorPage = mainView === "dialog" && !project ? "welcome" : mainView;
@@ -320,7 +325,9 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
             </div>
             {cover ? <div className="absolute inset-0 flex flex-col pb-14">{cover}</div> : null}
             {/* The exercise guides the person through the details too: it stays over a covering tab. */}
-            <ExercisePanel />
+            <FilledScope allowed={!waitingNow}>
+              <ExercisePanel />
+            </FilledScope>
             {/* The status bar sits right below: 8 px keep the composer off it and leave the conversation 580 px at 1280x800 (issue #330). */}
             <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
               <div className="pointer-events-auto">

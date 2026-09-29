@@ -186,7 +186,8 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
             </button>
           </Tooltip>
         ) : null}
-        <Tooltip label={t("workbench.sideBar.label")}>
+        {/* Issue #338: an icon's tooltip is its name, the same words a screen reader reads. */}
+        <Tooltip label={t("workbench.sideBar.toggle")}>
           <button type="button" className={cn(ICON_BUTTON, sidebarOpen && HEADER_CHIP_ACTIVE)} aria-label={t("workbench.sideBar.toggle")} aria-pressed={sidebarOpen} onClick={toggleSidebar}>
             <IconLayoutSidebar className="size-4" stroke={1.7} />
           </button>
@@ -207,7 +208,8 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
         ) : null}
         {splitAvailable ? (
           // The split editor (issue #336): in a wide window the details sit beside the conversation, or cover it.
-          <Tooltip label={splitEditor ? t("workbench.editor.unsplit") : t("workbench.editor.split")}>
+          // Its state is aria-pressed; the name stays the same, as the tooltip (issue #338).
+          <Tooltip label={t("workbench.editor.split")}>
             <button
               type="button"
               className={cn(ICON_BUTTON, splitEditor && HEADER_CHIP_ACTIVE)}

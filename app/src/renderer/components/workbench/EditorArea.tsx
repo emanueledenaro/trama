@@ -20,7 +20,9 @@ import { useEffect, useState } from "react";
 import type { MessageKey } from "@shared/i18n";
 import { ChatView } from "@/components/chat/ChatView";
 import { InspectorBody, targetTitle, useTargetTitle } from "@/components/inspector/Inspector";
+import { FilledScope } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { Sash, useResizableWidth } from "@/lib/resizable";
@@ -213,6 +215,8 @@ function TabStrip({
 /** The detail of a record in its editor tab: the same panel of today, with the room of the editor. */
 function DetailPane({ target }: { target: InspectorTarget }) {
   const t = useT();
+  // While something waits, the window's one filled button is Aspetta te's (issue #338): here primaries are outlines.
+  const waiting = useWaiting().length > 0;
   return (
     <div
       className="@container/inspector min-h-0 flex-1 overflow-y-auto"
@@ -222,7 +226,9 @@ function DetailPane({ target }: { target: InspectorTarget }) {
       role="tabpanel"
     >
       <div className="mx-auto w-full max-w-[52rem] pb-6">
-        <InspectorBody target={target} />
+        <FilledScope allowed={!waiting}>
+          <InspectorBody target={target} />
+        </FilledScope>
       </div>
     </div>
   );
