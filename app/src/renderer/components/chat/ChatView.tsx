@@ -314,7 +314,10 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
       ) : page === "settings" ? (
         <SettingsView />
       ) : page === "welcome" || !project ? (
-        <WelcomeView />
+        // The Benvenuto's one primary, the provider's Collega, gives way to Aspetta te's while something waits (issue #338).
+        <FilledScope allowed={!waitingNow}>
+          <WelcomeView />
+        </FilledScope>
       ) : (
         <>
           <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
@@ -333,7 +336,10 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
               <div className="pointer-events-auto">
                 <WaitingSummary />
                 <div hidden={Boolean(cover)}>
-                  <Composer />
+                  {/* "Collega un provider" in place of sending is the composer's primary: outlined while something waits. */}
+                  <FilledScope allowed={!waitingNow}>
+                    <Composer />
+                  </FilledScope>
                 </div>
               </div>
             </div>
