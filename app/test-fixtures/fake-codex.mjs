@@ -28,6 +28,9 @@ let rateLimitedTurns = 0;
 let outageTurns = 0;
 /** While the file FAKE_CODEX_QUOTA_FILE exists, the ChatGPT quota is used up: turns fail and the rate limits say so (C11). */
 const quotaExhausted = () => Boolean(process.env.FAKE_CODEX_QUOTA_FILE && existsSync(process.env.FAKE_CODEX_QUOTA_FILE));
+// Issue #461: while this file exists, an unscripted turn gets a short, complete Italian sentence instead of the
+// usual test-only echo, for the README screenshots taken during that window.
+const readmeShots = () => Boolean(process.env.FAKE_CODEX_README_SHOTS && existsSync(process.env.FAKE_CODEX_README_SHOTS));
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
@@ -881,12 +884,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho aperto la discussione nella squadra.");
         return;
       }
-      if (text.includes("[proponi-team]")) {
+      if (text.includes("[proponi-team]") || text.includes("Puoi proporre un team per il modulo Orders?")) {
         callTool(threadId, "propose_team", {
           summary: "Un solo specialista per il modulo Orders",
           specialists: [{ name: "Ada", tag: "Ordini", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }],
-        }).then((result) => {
+        }).then(async (result) => {
           toolDone("propose_team", result);
+          // A real proposal takes a moment to think through, not a handful of milliseconds.
+          await new Promise((resolve) => setTimeout(resolve, 650));
           finish("Ti ho proposto il team.");
         });
         return;
@@ -1152,7 +1157,9 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const reply =
         (text.startsWith("Studio del progetto scritto da Trama")
           ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
-          : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) +
+          : readmeShots()
+            ? "Ho letto le novità e continuo a lavorare sul modulo Orders. Vedi Sources/Orders/CancelPaidOrder.swift."
+            : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) +
         // "[chiede-conferma]" closes the reply with a generic confirmation question, the habit W04 corrects.
         (text.includes("[chiede-conferma]") ? "\n\nVuoi che prepari il piano?" : "") +
         (await declareStep());
