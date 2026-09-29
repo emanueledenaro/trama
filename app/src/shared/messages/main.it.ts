@@ -743,6 +743,9 @@ export const mainIt = {
   "main.workPhase.answerQuestion": "Rispondi allo sviluppatore",
   "main.workPhase.answerQuestionMessage":
     "Rispondi alla domanda dello sviluppatore.",
+  "main.workPhase.clearCandidate": "Dai il via libera",
+  "main.workPhase.clearCandidateMessage":
+    "Il cancello del candidato è superato: dai il via libera con clear_candidate, così Trama lo porta all'unione.",
   "main.workPhase.settleReview": "Decidi fra sviluppatore e revisori",
   "main.workPhase.settleReviewMessage":
     "La revisione ha fermato di nuovo lo stesso lavoro: leggi i rilievi dei revisori e la risposta dello sviluppatore e decidi tu con settle_review, poi porta avanti il lavoro.",
@@ -1444,6 +1447,7 @@ export const mainIt = {
   "main.statusLine.running.answerQuestion":
     "Sto rispondendo a uno sviluppatore",
   "main.statusLine.running.answerMessage": "Sto rispondendo al tuo messaggio",
+  "main.statusLine.running.clearCandidate": "Sto dando il via libera al candidato",
   "main.statusLine.running.writingPlan": "Sto scrivendo il piano",
   "main.statusLine.running.slicingPlan": "Sto dividendo il piano in fette",
   "main.statusLine.next.preparePlan": "preparo il piano",
@@ -1452,6 +1456,7 @@ export const mainIt = {
   "main.statusLine.next.verifyTarget": "verifico {target}",
   "main.statusLine.next.verifyWork": "verifico il lavoro",
   "main.statusLine.next.settleReview": "decido fra lo sviluppatore e i revisori",
+  "main.statusLine.next.clearCandidate": "do il via libera al candidato",
   "main.statusLine.next.answerQuestion": "rispondo allo sviluppatore",
   "main.statusLine.next.waitForYou": "aspetto te",
   "main.statusLine.nowThen": "{now}, poi {next}.",
@@ -1536,6 +1541,7 @@ export const mainIt = {
     "Blocco risolto dal Coordinatore: {kind}",
   "main.continuousWork.blockOpen": "Blocco ancora aperto: {kind}",
   "main.continuousWork.stall.unsettled": "Il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
+  "main.continuousWork.stall.uncleared": "il turno non ha dato il via libera al candidato verificato: usa clear_candidate, o assegna la correzione.",
   "main.continuousWork.block.checkFailed": "verifica rossa",
   "main.continuousWork.block.worktreeConflict": "conflitto tra lavori",
   "main.continuousWork.block.stalledAssignment": "incarico fermo",

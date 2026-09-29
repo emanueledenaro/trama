@@ -364,6 +364,8 @@ export type NextMove =
   | "answerQuestion"
   /** The review stopped the same work again (ADR 0023): the Coordinator settles the developer and the reviewers. */
   | "settleReview"
+  /** A verified candidate the mandate lets Trama merge waits for the Coordinator's green light (ADR 0023). */
+  | "clearCandidate"
   /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
   | "decideWithDelegation"
   /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */

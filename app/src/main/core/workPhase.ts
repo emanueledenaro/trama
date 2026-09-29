@@ -21,7 +21,7 @@ import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
-import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
+import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
@@ -169,7 +169,15 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 });
 
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "settleReview" | "decideWithDelegation" | "takeTicket";
+export type CoordinatorMove =
+  | "preparePlan"
+  | "assignWork"
+  | "verifyCandidate"
+  | "answerQuestion"
+  | "settleReview"
+  | "clearCandidate"
+  | "decideWithDelegation"
+  | "takeTicket";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -189,6 +197,8 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   answerQuestion: moveWords("main.workPhase.answerQuestion", "main.workPhase.answerQuestionMessage"),
   // The review stopped the same work twice (ADR 0023): the Coordinator settles it, never the person.
   settleReview: moveWords("main.workPhase.settleReview", "main.workPhase.settleReviewMessage"),
+  // The gate passed, also after the turn that asked for it ended (ADR 0023): the green light is the Coordinator's.
+  clearCandidate: moveWords("main.workPhase.clearCandidate", "main.workPhase.clearCandidateMessage"),
   // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
   decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
   takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
@@ -633,6 +643,12 @@ function assignedWork(
     }
     return { phase: "verification", blocker: null, verification };
   }
+  // The gate passed, also after the turn that asked for it ended (ADR 0023): the Coordinator's green light takes the work
+  // to the merge. Without this move a verified candidate the mandate lets Trama merge waited for nobody.
+  for (const { candidate } of edits) {
+    if (candidate!.pullRequest || !greenLightMissing(document, candidate!)) continue;
+    if (authorize(document.mandate, "integrateCandidate", candidate!.touchedModules) === "authorized") moves.add(coordinator("clearCandidate", candidate!.id));
+  }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
     moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
@@ -645,6 +661,16 @@ function assignedWork(
     return { phase: "candidate", blocker: null };
   }
   return { phase: "merged", blocker: null };
+}
+
+/**
+ * Whether the candidate lacks a green light that covers it: none yet, one given on other content, or one given under
+ * another mandate, which a merge by the Coordinator does not accept (issue #41).
+ */
+export function greenLightMissing(document: ProjectDocument, candidate: Candidate): boolean {
+  const clearance = candidate.clearance;
+  if (!clearance || clearance.fingerprint !== contentFingerprint(document, candidate)) return true;
+  return document.mandate?.status === "granted" && clearance.mandateVersion !== document.mandate.version;
 }
 
 /**
@@ -675,6 +701,8 @@ export function workStateText(state: WorkState): string {
   if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork, state.slices.limit));
   if (state.verification) lines.push(...verificationText(state.verification));
   if (state.questions) lines.push(questionsText(state.questions));
+  const clear = state.moves.find((m) => m.move === "clearCandidate");
+  if (clear?.targetId) lines.push(`Candidato verificato, con il cancello superato, che aspetta il tuo via libera: ${clear.targetId}.`);
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`

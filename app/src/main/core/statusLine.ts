@@ -74,6 +74,8 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
       return t("main.statusLine.running.answerQuestion");
     case "settleReview":
       return t("main.workPhase.blockReviewLoopPhrase");
+    case "clearCandidate":
+      return t("main.statusLine.running.clearCandidate");
     case "decideWithDelegation":
       return t("delegation.move.decide.running");
     case "takeTicket":
@@ -94,6 +96,8 @@ function nextPhrase(move: CoordinatorMove, target: string | null): string {
       return t("main.statusLine.next.answerQuestion");
     case "settleReview":
       return t("main.statusLine.next.settleReview");
+    case "clearCandidate":
+      return t("main.statusLine.next.clearCandidate");
     case "decideWithDelegation":
       return t("delegation.move.decide.next");
     case "takeTicket":

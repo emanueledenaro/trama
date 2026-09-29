@@ -21,7 +21,7 @@ import {
 } from "./continuousWork";
 import { grantDelegation, revokeDelegation } from "./fullDelegation";
 import { setPersonLanguage } from "./personLanguage";
-import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -537,6 +537,58 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
   it("tells the Coordinator that the checks run on a candidate, declared first from the assignment", () => {
     expect(automaticMoveSection("verifyCandidate")).toContain("chiama prima declare_candidate, poi verify_candidate con il candidateID");
     expect(automaticMoveSection("preparePlan")).not.toContain("declare_candidate");
+  });
+});
+
+describe("the green light after a gate that ended in the background (ADR 0023)", () => {
+  /** The Coordinator's checks ran, its turn ended while the reviewers worked, then the gate passed. */
+  function passed(actions: MandateAction[] = ["plan", "executeInWorktree", "integrateCandidate"]) {
+    const document = confirmed(actions);
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+    const assignment = work(document, "r4");
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    request(document, "r5", { step: { move: "verifyCandidate", by: "trama" } });
+    const at = new Date(Date.UTC(2026, 8, 25, 10, 6));
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["Sources/Orders/Review.swift"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at,
+    );
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, at);
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Cancello superato" }, at);
+    return { document, candidate };
+  }
+
+  it("starts the Coordinator's green light, so Trama can merge the work without the person", () => {
+    const { document, candidate } = passed();
+    expect(projectMove(document, "gateEnded", free)).toMatchObject({ requestId: "r5", move: { move: "clearCandidate" } });
+    // The round starts it too: the latest automatic turn made another move.
+    expect(projectMove(document, "round", free)?.move.move).toBe("clearCandidate");
+    expect(automaticMoveSection("clearCandidate")).toContain("clear_candidate");
+    clearCandidate(document, candidate.id, "Coordinatore", null);
+    expect(projectMove(document, "round", free)).toBeNull();
+    // A green light that no longer covers the content, as after a new check, is given again.
+    candidate.clearance!.fingerprint = "old";
+    expect(projectMove(document, "round", free)?.move.move).toBe("clearCandidate");
+  });
+
+  it("leaves the merge to the person when the mandate does not cover it", () => {
+    const { document } = passed(["plan", "executeInWorktree"]);
+    expect(projectMove(document, "gateEnded", free)).toBeNull();
+  });
+
+  it("says the move stalled when the turn gave no green light", () => {
+    const { document, candidate } = passed();
+    const move = request(document, "r6", { step: { move: "clearCandidate", by: "trama" } });
+    move.createdAt = new Date(Date.UTC(2026, 8, 25, 10, 7)).toISOString();
+    expect(stalledMove(document, "r6")?.reason).toContain("clear_candidate");
+    clearCandidate(document, candidate.id, "Coordinatore", null, new Date(Date.UTC(2026, 8, 25, 10, 8)));
+    candidate.clearance!.fingerprint = "old";
+    expect(stalledMove(document, "r6")).toBeNull();
   });
 });
 

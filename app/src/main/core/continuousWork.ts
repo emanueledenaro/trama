@@ -221,6 +221,7 @@ export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["
     ...(block ? [blockSection(block)] : []),
     ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
     ...(move === "takeTicket" ? [TAKE_TICKET] : []),
+    ...(move === "clearCandidate" ? [CLEAR_CANDIDATE] : []),
     ...(move === "verifyCandidate"
       ? [
           "Le verifiche girano su un candidato, non su un incarico: per un incarico concluso senza candidato chiama prima declare_candidate, poi verify_candidate con il candidateID che restituisce. La fase del lavoro qui sopra elenca gli incarichi e i candidati.",
@@ -258,6 +259,10 @@ function waitingChoices(document: ProjectDocument): string[] {
 /** What taking an open issue means (issue #423): the whole cycle without the person, doubts written down. @model-text */
 const TAKE_TICKET =
   "Porta la issue fino all'unione come faresti con una richiesta della persona: comprensione, piano, fette, incarichi, verifiche e unione. Un dubbio non ti ferma: scegli la strada che consiglieresti e scrivila con note_doubt.";
+
+/** What the green light after a passed gate means (ADR 0023): the Coordinator's decision, and Trama merges after it. @model-text */
+const CLEAR_CANDIDATE =
+  "Il candidato indicato nella fase del lavoro ha le verifiche verdi e il cancello dei revisori superato, anche se il cancello è finito dopo il tuo turno. Se è il lavoro chiesto dal Patto e dal mandato, dagli il via libera con clear_candidate: Trama lo pubblica e lo unisce da sola, e un candidato che cambia l'interfaccia aspetta l'ok della persona con le schermate. Se non lo è, assegna la correzione con assign_task. Non chiedere l'unione alla persona.";
 
 /** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. @model-text */
 const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
@@ -380,6 +385,15 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     case "settleReview":
       // The Coordinator settled a gate during the turn (ADR 0023): the move was made.
       return (document.gates ?? []).some((g) => g.settled && g.settled.at >= since) ? null : t("main.continuousWork.stall.unsettled");
+    case "clearCandidate": {
+      // A green light given in the turn on a candidate of this work means the move was made, even if newer content needs another.
+      const work = workRequests(document, requestId);
+      const cleared = document.candidates.some((candidate) => {
+        const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+        return Boolean(assignment?.requestId && work?.has(assignment.requestId) && candidate.clearance && candidate.clearance.at >= since);
+      });
+      return cleared ? null : t("main.continuousWork.stall.uncleared");
+    }
     case "decideWithDelegation":
       // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
       return delegatedHolds(state) ? t("main.delegation.stalled") : null;
