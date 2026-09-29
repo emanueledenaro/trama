@@ -422,6 +422,15 @@ export function splitReferences(text: string, index: ReferenceIndex): ReferenceP
 }
 
 /**
+ * The closing punctuation at the start of `text` (", ", ".", "»)."), apart from the rest. A reference is a button, and
+ * a line may break between a button and the text after it: the renderer keeps this stretch on the reference's line.
+ */
+export function leadingPunctuation(text: string): { glued: string; rest: string } {
+  const glued = /^[,.;:!?)\]»”]+/.exec(text)?.[0] ?? "";
+  return { glued, rest: text.slice(glued.length) };
+}
+
+/**
  * What a reference shows where `before` is the text written just before it: the short name when the text already
  * wrote the noun ("la fetta S2" shows "la fetta 2, ..."), the name with its noun otherwise. Paths, branches, commits,
  * names and composer mentions keep what was written.

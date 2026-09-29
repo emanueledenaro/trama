@@ -1,5 +1,5 @@
 import { plainText } from "@shared/plainLanguage";
-import { lookupReference, type Reference, type ReferenceIndex, referenceText, referenceTitle, splitReferences } from "@shared/references";
+import { leadingPunctuation, lookupReference, type Reference, type ReferenceIndex, referenceText, referenceTitle, splitReferences } from "@shared/references";
 import { unknownReferenceTitle } from "@/lib/remarkReferences";
 import { openReference, useRecord, useReferenceIndex } from "@/lib/references";
 import { useT } from "@/lib/i18n";
@@ -35,13 +35,19 @@ function ReferenceName({ reference, children }: { reference: Reference; children
 function linked(text: string, index: ReferenceIndex, before: string, key: string, links: boolean): { nodes: React.ReactNode[]; written: string } {
   const Name = links ? ReferenceButton : ReferenceName;
   let written = before;
-  const nodes = splitReferences(text, index).map((part, position) => {
+  const parts = splitReferences(text, index);
+  const nodes = parts.map((part, position) => {
     const previous = written;
     written += part.text;
     if ("reference" in part) {
+      // The punctuation right after a link goes inside it: a line breaks after a button but never before a comma
+      // inside its text (issue #459).
+      const next = parts[position + 1];
+      const glued = next && !("reference" in next) && !("unknown" in next) ? leadingPunctuation(next.text).glued : "";
       return (
         <Name key={`${key}-${position}`} reference={part.reference}>
           {referenceText(part.reference, part.text, previous)}
+          {glued}
         </Name>
       );
     }
@@ -52,7 +58,8 @@ function linked(text: string, index: ReferenceIndex, before: string, key: string
         </span>
       );
     }
-    return part.text;
+    const last = parts[position - 1];
+    return last && "reference" in last ? leadingPunctuation(part.text).rest : part.text;
   });
   return { nodes, written };
 }
