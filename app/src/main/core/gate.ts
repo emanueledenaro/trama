@@ -477,3 +477,51 @@ export function readReviewerAnswer(raw: string): { report: string; findings: Gat
   });
   return { report: answer.report, findings };
 }
+
+/**
+ * The Coordinator settles the disagreement on a blocked gate (ADR 0023). With the reviewers, the gate stays blocked and
+ * the developer resumes with the findings as the Coordinator's decision. With the developer, the reviewers' findings are
+ * overruled: the gate passes and the candidate's review approves it, with the reason. Trama's own evidence is never
+ * overruled: a failed check, a regression the guardian measured, a secret in the diff.
+ */
+export function settleGate(
+  gate: CandidateGate,
+  candidate: Candidate,
+  input: { side: "findings" | "developer"; reason: string; doubt?: string | null },
+  now = new Date(),
+): void {
+  if (gate.status !== "blocked") throw new GateSettlementError("not_blocked", `The gate of ${candidate.id} is not blocked: there is nothing to settle.`);
+  const reason = input.reason.trim().slice(0, 500);
+  if (!reason) throw new GateSettlementError("invalid_arguments", "Say why you decide so (reason).");
+  if (input.side === "developer") {
+    const evidence =
+      gate.checksFailed.length > 0 ||
+      gate.reviews.some((r) => r.role === "regressionGuardian" && blockingFindings(r).length > 0) ||
+      gate.reviews.some((r) => r.report === secretNote());
+    if (evidence) {
+      throw new GateSettlementError(
+        "evidence",
+        "The gate is blocked by Trama's own evidence (a failed check, a regression, a secret in the diff): it cannot be overruled. Side with the findings and have the developer fix it.",
+      );
+    }
+  }
+  const at = now.toISOString();
+  gate.settled = { side: input.side, reason, doubt: input.doubt?.trim() || null, at };
+  gate.updatedAt = at;
+  if (input.side === "developer") {
+    gate.status = "passed";
+    gate.returned = null;
+    if (candidate.technicalReview?.gateId === gate.id) {
+      candidate.technicalReview = { ...candidate.technicalReview, verdict: "approved", summary: t("main.gate.overruled", { reason }), at };
+    }
+  }
+}
+
+export class GateSettlementError extends Error {
+  constructor(
+    readonly code: "not_blocked" | "invalid_arguments" | "evidence",
+    message: string,
+  ) {
+    super(message);
+  }
+}

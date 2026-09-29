@@ -267,6 +267,8 @@ const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
     "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi assegna con assign_task il riallineamento del lavoro più recente sul più vecchio, o sul branch principale, sugli stessi moduli.",
   stalledAssignment:
     "Leggi con read_team perché l'incarico si è fermato, poi riassegnalo con assign_task, allo stesso sviluppatore o a un altro libero, con le istruzioni per superare il motivo.",
+  reviewLoop:
+    "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
 };
 
 /** @model-text */
@@ -318,6 +320,7 @@ const BLOCK_KIND_NAMES: Record<TechnicalBlock, MessageKey> = {
   checkFailed: "main.continuousWork.block.checkFailed",
   worktreeConflict: "main.continuousWork.block.worktreeConflict",
   stalledAssignment: "main.continuousWork.block.stalledAssignment",
+  reviewLoop: "main.continuousWork.block.reviewLoop",
 };
 
 /** A Coordinator move Trama started that the turn did not make, and why, in the person's words (issue #204). */
@@ -374,6 +377,9 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     case "answerQuestion":
       // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
       return null;
+    case "settleReview":
+      // The Coordinator settled a gate during the turn (ADR 0023): the move was made.
+      return (document.gates ?? []).some((g) => g.settled && g.settled.at >= since) ? null : t("main.continuousWork.stall.unsettled");
     case "decideWithDelegation":
       // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
       return delegatedHolds(state) ? t("main.delegation.stalled") : null;

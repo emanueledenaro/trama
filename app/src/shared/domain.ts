@@ -362,6 +362,8 @@ export type NextMove =
   | "assignWork"
   | "verifyCandidate"
   | "answerQuestion"
+  /** The review stopped the same work again (ADR 0023): the Coordinator settles the developer and the reviewers. */
+  | "settleReview"
   /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
   | "decideWithDelegation"
   /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
@@ -1968,7 +1970,8 @@ export interface AutonomousStep {
 }
 
 /** A technical block the Coordinator resolves by itself within the mandate (A06, Q3). */
-export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment";
+/** A technical block the Coordinator resolves by itself; "reviewLoop" is a review that stopped the same work twice (ADR 0023). */
+export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment" | "reviewLoop";
 
 export interface ProjectSettings {
   /** Developers at work at the same time before squads (W08); read as the squads' limit of developers when that is absent. */
@@ -2158,9 +2161,14 @@ export interface CandidateGate {
   /**
    * The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. `held`
    * is set when the work was blocked too many times in a row (issue #389): Trama does not resume it by itself, the
-   * person decides how to go on.
+   * Coordinator settles the disagreement (ADR 0023).
    */
   returned: { assignmentId: string; at: string; waiting: string | null; held?: boolean } | null;
+  /**
+   * The Coordinator settled the disagreement on this blocked gate (ADR 0023): with the reviewers, the developer resumes
+   * with the findings as its decision; with the developer, the reviewers' findings are overruled and the gate passes.
+   */
+  settled?: { side: "findings" | "developer"; reason: string; doubt: string | null; at: string } | null;
   failure: string | null;
   startedAt: string;
   updatedAt: string;

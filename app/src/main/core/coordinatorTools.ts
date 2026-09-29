@@ -29,6 +29,7 @@ import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainE
 import { decideDiscussion, DiscussionError, escalateDiscussion, openDiscussion, requireDiscussion } from "./discussions";
 import { type Discussion, discussions } from "@shared/discussions";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
+import { GateSettlementError } from "./gate";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
@@ -613,6 +614,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: true,
   },
   {
+    name: "settle_review",
+    description:
+      "Settle a disagreement between a developer and the candidate reviewers when the gate stopped the same work again (the work phase says so): you decide, never the person, and no identical round starts. Read with read_team the blocking findings and the developer's answer first, and weigh them against the Pact, the mandate, the project's rules and what the person wrote. side findings: the reviewers are right, the developer resumes in the same worktree with the findings as your decision. side developer: the findings are overruled, the gate passes and you take the candidate to the merge with clear_candidate. Trama's own evidence (a failed check, a regression the guardian measured, a secret in the diff) cannot be overruled. reason says why in the person's words; doubt what you are not sure about, or omit it. The choice is recorded in Activity and in the recap.",
+    properties: { candidate: text, side: { type: "string", enum: ["findings", "developer"] }, reason: text, doubt: text },
+    required: ["candidate", "side", "reason"],
+    readOnly: false,
+  },
+  {
     name: "clear_candidate",
     description:
       "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. With the green light and the candidate gate passed, Trama publishes the candidate as a pull request and merges it by itself; a candidate that changes the interface waits for the person's ok in Aspetta te instead. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
@@ -828,6 +837,11 @@ export interface ToolContext {
    * background and Trama starts the Coordinator's next move when it ends, so the turn frees the chat for the person.
    */
   reviewCandidate(candidateId: string): Promise<TechnicalReview | null>;
+  /**
+   * The Coordinator settles the disagreement on the candidate's blocked gate (ADR 0023). Returns why the developer has not
+   * resumed yet with the findings, or null.
+   */
+  settleReview?(candidateId: string, input: { side: "findings" | "developer"; reason: string; doubt: string | null }): { waiting: string | null };
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
   /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
@@ -1907,6 +1921,31 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
               }
             : {}),
         });
+      }
+      case "settle_review": {
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const side = args.side === "findings" || args.side === "developer" ? args.side : null;
+        if (!side) return toolFailure("invalid_arguments", "side is findings (the reviewers are right) or developer (the developer is right).");
+        if (!context.settleReview) return toolFailure("unavailable", "Settling a review is not available here.");
+        try {
+          const settled = context.settleReview(found.candidate.id, {
+            side,
+            reason: typeof args.reason === "string" ? args.reason : "",
+            doubt: typeof args.doubt === "string" ? args.doubt : null,
+          });
+          context.changed();
+          const next =
+            side === "developer"
+              ? "The findings are overruled and the gate passed: give the green light with clear_candidate."
+              : settled.waiting
+                ? "The developer has not resumed yet: " + settled.waiting
+                : "The developer resumed with the findings as your decision.";
+          return toolSuccess({ candidateID: found.candidate.id, side, next });
+        } catch (error) {
+          if (error instanceof GateSettlementError) return toolFailure(error.code, error.message);
+          throw error;
+        }
       }
       case "clear_candidate": {
         const found = candidateArgument(document, args.candidate);

@@ -1448,7 +1448,7 @@ export const it = {
   // Work the review stopped too many times in a row (issue #389)
   "reviewLoop.label": "Lavoro fermato più volte",
   "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
-  "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
+  "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola: decide il Coordinatore fra lo sviluppatore e i revisori.",
 
   // Discussions between agents (A12, issue #252)
   "thread.missing": "Questa conversazione tra agenti non esiste più.",

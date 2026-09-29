@@ -3,9 +3,10 @@ import { replacedBy } from "./conflictScope";
 
 /**
  * How many times in a row the candidate gate may stop the same work before Trama stops sending it back (issue #389).
- * From there on the work waits for the person in Aspetta te: neither Trama nor the Coordinator starts another round.
+ * From there on the Coordinator settles the disagreement between the developer and the reviewers (ADR 0023): the work
+ * never waits for the person, and another identical round never starts.
  */
-export const REVIEW_LOOP_LIMIT = 3;
+export const REVIEW_LOOP_LIMIT = 2;
 
 const assignmentsOf = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
 
@@ -41,11 +42,12 @@ export function blockedReviews(document: ProjectDocument, assignment: Specialist
   const gates = (document.gates ?? [])
     .filter((g) => lineage.has(g.assignmentId) && g.finishedAt !== null && g.finishedAt > since)
     .sort((a, b) => a.finishedAt!.localeCompare(b.finishedAt!));
-  const lastPassed = gates.findLastIndex((g) => g.status === "passed");
+  // A gate the Coordinator settled (ADR 0023) starts the count again, as a passed one does.
+  const lastPassed = gates.findLastIndex((g) => g.status === "passed" || Boolean(g.settled));
   return gates.slice(lastPassed + 1).filter((g) => g.status === "blocked");
 }
 
-/** Whether the work of `assignment` was stopped too many times in a row and now waits for the person (issue #389). */
+/** Whether the work of `assignment` was stopped too many times in a row and waits for the Coordinator to settle it (ADR 0023). */
 export function reviewLoopHeld(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
   return blockedReviews(document, assignment).length >= REVIEW_LOOP_LIMIT;
 }

@@ -1446,7 +1446,7 @@ export const en: Record<keyof typeof it, string> = {
   // Work the review stopped too many times in a row (issue #389)
   "reviewLoop.label": "Work stopped several times",
   "reviewLoop.title": "{objective}: the review stopped it {count} times in a row. Tell the Coordinator how to go on.",
-  "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
+  "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself: the Coordinator decides between the developer and the reviewers.",
 
   // Discussions between agents (A12, issue #252)
   "thread.missing": "This conversation between agents no longer exists.",

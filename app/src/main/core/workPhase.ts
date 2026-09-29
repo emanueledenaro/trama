@@ -169,7 +169,7 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 });
 
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "decideWithDelegation" | "takeTicket";
+export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "settleReview" | "decideWithDelegation" | "takeTicket";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -187,6 +187,8 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   assignWork: moveWords("main.workPhase.assignWork", "main.workPhase.assignWorkMessage"),
   verifyCandidate: moveWords("main.workPhase.verifyCandidate", "main.workPhase.verifyCandidateMessage"),
   answerQuestion: moveWords("main.workPhase.answerQuestion", "main.workPhase.answerQuestionMessage"),
+  // The review stopped the same work twice (ADR 0023): the Coordinator settles it, never the person.
+  settleReview: moveWords("main.workPhase.settleReview", "main.workPhase.settleReviewMessage"),
   // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
   decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
   takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
@@ -203,6 +205,9 @@ export const BLOCK_LABELS: Record<TechnicalBlock, string> = {
   get stalledAssignment() {
     return t("main.workPhase.blockStalledAssignment");
   },
+  get reviewLoop() {
+    return t("main.workPhase.blockReviewLoop");
+  },
 };
 
 /** The same move while it runs, in the first person, for the status line. */
@@ -215,6 +220,9 @@ export const BLOCK_PHRASES: Record<TechnicalBlock, string> = {
   },
   get stalledAssignment() {
     return t("main.workPhase.blockStalledAssignmentPhrase");
+  },
+  get reviewLoop() {
+    return t("main.workPhase.blockReviewLoopPhrase");
   },
 };
 
@@ -546,14 +554,17 @@ function assignedWork(
     // A candidate that lags its worktree (issue #388) is not the work: its blockers wait for the new candidate.
     if (worktreeChanged(document, candidate)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
-    // The review stopped this work too many times in a row (issue #389): it waits for the person in Aspetta te, with no
-    // move of the Coordinator, so neither Trama nor the Coordinator starts another round.
+    // The review stopped this work again (issue #389, ADR 0023): the Coordinator settles the disagreement between the
+    // developer and the reviewers, a technical block it resolves by itself; no identical round starts and nobody waits
+    // for the person.
     if (candidateHeld(document, candidate)) {
       const rounds = blockedReviews(document, assignment).length;
+      moves.add(coordinator("settleReview", candidate.id));
       return {
         phase: "blocked",
         blocker: t("main.workPhase.blockerHeld", { assignment: assignment.id, rounds, candidate: candidate.id }),
         why: candidateBlockerWhy(workOf(document, assignment), blocker ?? { code: "GATE_BLOCKED", detail: "" }),
+        block: "reviewLoop",
       };
     }
     if (blocker) {

@@ -715,13 +715,18 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.workPhase.verifyCandidateMessage": "Run the checks of the work.",
   "main.workPhase.answerQuestion": "Answer the developer",
   "main.workPhase.answerQuestionMessage": "Answer the developer's question.",
+  "main.workPhase.settleReview": "Decide between the developer and the reviewers",
+  "main.workPhase.settleReviewMessage":
+    "The review stopped the same work again: read the reviewers' findings and the developer's answer, decide with settle_review, then carry the work on.",
   "main.workPhase.blockCheckFailed": "Fix the red check",
   "main.workPhase.blockWorktreeConflict": "Resolve the conflict",
   "main.workPhase.blockStalledAssignment": "Resume the stalled assignment",
+  "main.workPhase.blockReviewLoop": "Decide between the developer and the reviewers",
   "main.workPhase.blockCheckFailedPhrase": "Fixing the red check",
   "main.workPhase.blockWorktreeConflictPhrase": "Resolving the conflict",
   "main.workPhase.blockStalledAssignmentPhrase":
     "Resuming the stalled assignment",
+  "main.workPhase.blockReviewLoopPhrase": "I am deciding between the developer and the reviewers",
   "main.workPhase.workOfOnSlice": "{name}'s work on {slice}",
   "main.workPhase.workOf": "{name}'s work",
   "main.workPhase.workOnSlice": "the work on {slice}",
@@ -769,7 +774,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} conflicts with the work on GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
-  "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and the person finds it in Waiting for you: do not assign more fixes and do not restart the reviewers until the person tells you how to go on.",
+  "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and does not restart the reviewers: you decide with settle_review. With the reviewers, the developer resumes with the findings as your decision; with the developer, the findings are overruled and the work goes on to the merge. Write the reason and the doubt, do not ask the person and do not assign the same work again.",
   "main.workPhase.blockerSemanticConflict":
     "Candidate {id} does not work together with the work of another assignment: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
@@ -1095,6 +1100,11 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Did not start: a required check could not run because of the sandbox or the machine.",
   "main.gate.environmentFailure":
     "The checks {checks} could not run because of the sandbox or the machine: start the review again when they run.",
+  "main.gate.overruled": "The Coordinator overruled the reviewers' findings: {reason}",
+  "main.gate.settledTitle": "The Coordinator decided between {developer} and the reviewers on candidate {candidate}",
+  "main.gate.settledFindings": "The reviewers are right: {reason}",
+  "main.gate.settledDeveloper": "The developer is right: {reason}",
+  "main.gate.settledDoubt": "Doubt: {doubt}",
   "main.gate.secretNote":
     "Did not start: the diff contains a secret, and Trama does not send it to the models.",
   "main.gate.secretTitle": "Secret in the diff: {secret}",
@@ -1389,6 +1399,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.next.assignWork": "assign the work",
   "main.statusLine.next.verifyTarget": "check {target}",
   "main.statusLine.next.verifyWork": "check the work",
+  "main.statusLine.next.settleReview": "I decide between the developer and the reviewers",
   "main.statusLine.next.answerQuestion": "answer the developer",
   "main.statusLine.next.waitForYou": "wait for you",
   "main.statusLine.nowThen": "{now}, then I {next}.",
@@ -1472,10 +1483,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.continuousWork.blockResolved":
     "Block resolved by the Coordinator: {kind}",
   "main.continuousWork.blockOpen": "Block still open: {kind}",
+  "main.continuousWork.stall.unsettled": "The turn did not decide between the developer and the reviewers: use settle_review.",
   "main.continuousWork.block.checkFailed": "red check",
   "main.continuousWork.block.worktreeConflict":
     "conflict between pieces of work",
   "main.continuousWork.block.stalledAssignment": "stalled assignment",
+  "main.continuousWork.block.reviewLoop": "disagreement between developer and reviewers",
   "main.continuousWork.moveFailed":
     "The automatic move did not succeed: {reason}",
   "main.continuousWork.stall.noPlan": "the Coordinator did not start the plan.",

@@ -342,6 +342,8 @@ import {
   stopAtSecrets,
   suiteChecks,
   usesCodeReview,
+  GateSettlementError,
+  settleGate,
 } from "./core/gate";
 import { blockingFindings, gateStatus, latestGate } from "@shared/gate";
 import { fixedBanInfo } from "@shared/fixedBans";
@@ -2326,6 +2328,7 @@ export class TramaController {
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
+          settleReview: (candidateId, input) => this.settleReview(current, candidateId, input),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           waitingFor: (candidateId) => {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
@@ -6432,20 +6435,71 @@ export class TramaController {
         ? { assignmentId: assignment.id, at: new Date().toISOString(), waiting: translate(this.state.language, "reviewLoop.held", { count: rounds }), held: true }
         : { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
     this.changedIn(project);
+    // Held work is the Coordinator's to settle (ADR 0023): Trama starts the move now, or after the running turn.
+    if (gate.returned.held) this.continueWork(project, null, "gateEnded");
+  }
+
+  /**
+   * The Coordinator settles the disagreement on a candidate's blocked gate (ADR 0023): with the reviewers the developer
+   * resumes with the findings as its decision, with the developer the findings are overruled. Told in Activity and, with
+   * the full delegation, among the choices of the recap.
+   */
+  private settleReview(
+    project: ActiveProjectState,
+    candidateId: string,
+    input: { side: "findings" | "developer"; reason: string; doubt: string | null },
+  ): { waiting: string | null } {
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId);
+    const gate = candidate ? latestGate(document.gates, candidate.id) : null;
+    if (!candidate || !gate) throw new GateSettlementError("not_blocked", `The candidate ${candidateId} has no gate to settle.`);
+    settleGate(gate, candidate, input);
+    const settled = gate.settled!;
+    let waiting: string | null = null;
+    if (input.side === "findings") {
+      // The findings go back once more, now as the Coordinator's decision; the count of rounds starts again from here.
+      waiting = this.resumeWithFindings(project, gate, [t("main.gate.settledFindings", { reason: settled.reason })]);
+      gate.returned = { assignmentId: gate.assignmentId, at: settled.at, waiting };
+    }
+    const assignment = findAssignment(document, gate.assignmentId);
+    const developer = assignment ? document.team.specialists.find((s) => s.id === assignment.specialistId)?.name : null;
+    const verdict = input.side === "findings" ? t("main.gate.settledFindings", { reason: settled.reason }) : t("main.gate.settledDeveloper", { reason: settled.reason });
+    appendEvent(
+      document,
+      "trama",
+      {
+        type: "activity",
+        title: t("main.gate.settledTitle", { developer: developer ?? gate.assignmentId, candidate: candidate.id }),
+        detail: settled.doubt ? `${verdict}\n${t("main.gate.settledDoubt", { doubt: settled.doubt })}` : verdict,
+        tone: "info",
+      },
+      null,
+    );
+    if (activeDelegation(document)) {
+      recordChoice(document, {
+        kind: "doubt",
+        subject: t("main.gate.settledTitle", { developer: developer ?? gate.assignmentId, candidate: candidate.id }),
+        choice: verdict,
+        targetId: candidate.id,
+        doubt: settled.doubt,
+      });
+    }
+    this.changedIn(project);
+    return { waiting };
   }
 
   /**
    * Resumes the developer with the gate's blocking findings, in its session and worktree, and says why it cannot when
    * it cannot. Only in the project open now: a project the person left keeps the work for when it opens again.
    */
-  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
+  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate, decision: string[] = []): string | null {
     const document = project.document;
     const assignment = findAssignment(document, gate.assignmentId);
     if (!assignment) return t("main.controller.findingsWaitAssignmentGone");
     if (project !== this.state.project) return t("main.controller.findingsWaitProjectClosed");
     if (!withinMandate(document, assignment)) return t("main.controller.findingsWaitMandate");
     try {
-      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
+      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: [...decision, ...returnFindings(document, gate)] });
     } catch (error) {
       return error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
     }

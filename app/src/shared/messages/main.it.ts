@@ -743,14 +743,19 @@ export const mainIt = {
   "main.workPhase.answerQuestion": "Rispondi allo sviluppatore",
   "main.workPhase.answerQuestionMessage":
     "Rispondi alla domanda dello sviluppatore.",
+  "main.workPhase.settleReview": "Decidi fra sviluppatore e revisori",
+  "main.workPhase.settleReviewMessage":
+    "La revisione ha fermato di nuovo lo stesso lavoro: leggi i rilievi dei revisori e la risposta dello sviluppatore e decidi tu con settle_review, poi porta avanti il lavoro.",
   // workPhase.ts: the moves that resolve a technical block.
   "main.workPhase.blockCheckFailed": "Risolvi la verifica rossa",
   "main.workPhase.blockWorktreeConflict": "Risolvi il conflitto",
   "main.workPhase.blockStalledAssignment": "Riprendi l'incarico fermo",
+  "main.workPhase.blockReviewLoop": "Decidi fra sviluppatore e revisori",
   "main.workPhase.blockCheckFailedPhrase": "Sto risolvendo la verifica rossa",
   "main.workPhase.blockWorktreeConflictPhrase": "Sto risolvendo il conflitto",
   "main.workPhase.blockStalledAssignmentPhrase":
     "Sto riprendendo l'incarico fermo",
+  "main.workPhase.blockReviewLoopPhrase": "Sto decidendo fra lo sviluppatore e i revisori",
   // workPhase.ts: whose work it is.
   "main.workPhase.workOfOnSlice": "lavoro di {name} su {slice}",
   "main.workPhase.workOf": "lavoro di {name}",
@@ -800,7 +805,7 @@ export const mainIt = {
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
-  "main.workPhase.blockerHeld": "La revisione ha fermato il lavoro dell'incarico {assignment} {rounds} volte di seguito, l'ultima sul candidato {candidate}. Trama non lo rimanda più allo sviluppatore e la persona lo trova in Aspetta te: non assegnare altre correzioni e non rilanciare i revisori finché la persona non ti scrive come andare avanti.",
+  "main.workPhase.blockerHeld": "La revisione ha fermato il lavoro dell'incarico {assignment} {rounds} volte di seguito, l'ultima sul candidato {candidate}. Trama non lo rimanda più allo sviluppatore e non rilancia i revisori: decidi tu con settle_review. Con i revisori, lo sviluppatore riprende con i rilievi come tua decisione; con lo sviluppatore, i rilievi sono superati e il lavoro va avanti fino all'unione. Scrivi il motivo e il dubbio, non chiedere alla persona e non assegnare un incarico nuovo uguale.",
   "main.workPhase.blockerSemanticConflict":
     "Il candidato {id} non funziona insieme al lavoro di un altro incarico: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
@@ -1141,6 +1146,11 @@ export const mainIt = {
     "Non è partito: una verifica richiesta non è riuscita per la sandbox o la macchina.",
   "main.gate.environmentFailure":
     "Le verifiche {checks} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.",
+  "main.gate.overruled": "Il Coordinatore ha superato i rilievi dei revisori: {reason}",
+  "main.gate.settledTitle": "Il Coordinatore ha deciso fra {developer} e i revisori sul candidato {candidate}",
+  "main.gate.settledFindings": "Hanno ragione i revisori: {reason}",
+  "main.gate.settledDeveloper": "Ha ragione lo sviluppatore: {reason}",
+  "main.gate.settledDoubt": "Dubbio: {doubt}",
   "main.gate.secretNote":
     "Non è partito: il diff contiene un segreto, e Trama non lo manda ai modelli.",
   "main.gate.secretTitle": "Segreto nel diff: {secret}",
@@ -1441,6 +1451,7 @@ export const mainIt = {
   "main.statusLine.next.assignWork": "assegno il lavoro",
   "main.statusLine.next.verifyTarget": "verifico {target}",
   "main.statusLine.next.verifyWork": "verifico il lavoro",
+  "main.statusLine.next.settleReview": "decido fra lo sviluppatore e i revisori",
   "main.statusLine.next.answerQuestion": "rispondo allo sviluppatore",
   "main.statusLine.next.waitForYou": "aspetto te",
   "main.statusLine.nowThen": "{now}, poi {next}.",
@@ -1524,9 +1535,11 @@ export const mainIt = {
   "main.continuousWork.blockResolved":
     "Blocco risolto dal Coordinatore: {kind}",
   "main.continuousWork.blockOpen": "Blocco ancora aperto: {kind}",
+  "main.continuousWork.stall.unsettled": "Il turno non ha deciso fra lo sviluppatore e i revisori: usa settle_review.",
   "main.continuousWork.block.checkFailed": "verifica rossa",
   "main.continuousWork.block.worktreeConflict": "conflitto tra lavori",
   "main.continuousWork.block.stalledAssignment": "incarico fermo",
+  "main.continuousWork.block.reviewLoop": "disaccordo fra sviluppatore e revisori",
   "main.continuousWork.moveFailed":
     "La mossa automatica non è riuscita: {reason}",
   "main.continuousWork.stall.noPlan":
