@@ -83,6 +83,7 @@ export function AgentName({
   size = 24,
   activity,
   className,
+  fit = false,
 }: {
   agent: Agent;
   avatar?: boolean;
@@ -90,12 +91,22 @@ export function AgentName({
   size?: number;
   activity?: AgentActivity;
   className?: string;
+  /**
+   * In a narrow row the tag gives up its room first and both end with an ellipsis, so the tag never runs over what
+   * follows and a few letters of the name always show. The full name and tag stay on hover.
+   */
+  fit?: boolean;
 }) {
+  const t = useT();
+  const tag = agentTag(t, agent);
+  const full = tag.toLocaleLowerCase("it") === agent.name.trim().toLocaleLowerCase("it") ? agent.name : `${agent.name} [${tag}]`;
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1.5 align-middle", className)}>
+    <span className={cn("inline-flex min-w-0 items-center gap-1.5 align-middle", className)} title={fit ? full : undefined}>
       {avatar ? <AgentAvatar agent={agent} activity={activity} size={size} /> : null}
-      <span className="min-w-0 truncate">{agent.name}</span>
-      <AgentTag agent={agent} className="shrink-0" />
+      <span className={cn("min-w-0 truncate", fit && "min-w-[4ch]")} data-testid="agent-name">
+        {agent.name}
+      </span>
+      <AgentTag agent={agent} className={fit ? "min-w-0 shrink-[4] truncate" : "shrink-0"} />
     </span>
   );
 }
