@@ -361,7 +361,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "run_readonly_check",
-    description: `Run a check on the project checkout without writing to it: ${ALL_CHECKS.map((c) => `${c} (${CHECKS[c].summary})`).join(", ")}. Allowed without a mandate; the output is Trama's evidence, not yours.`,
+    description: `Run a check on the project checkout without writing to it: ${ALL_CHECKS.map((c) => `${c} (${CHECKS[c].summary})`).join(", ")}. Allowed without a mandate; the output is Trama's evidence, not yours. A long check goes on in the background: the result then says status running, Trama shows the result to the person when it ends and your next turn receives it.`,
     properties: { check: { type: "string", enum: ALL_CHECKS } },
     required: ["check"],
     readOnly: true,
@@ -592,7 +592,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "verify_candidate",
-    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. candidate is the candidateID declare_candidate returned (C-…); an assignment id (A-…) stands for the latest candidate declared from it, and an assignment that ended without one must be declared first with declare_candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. Checks: ${ALL_CHECKS.join(", ")}.`,
+    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. candidate is the candidateID declare_candidate returned (C-…); an assignment id (A-…) stands for the latest candidate declared from it, and an assignment that ended without one must be declared first with declare_candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. A long check goes on in the background: the result then says status running, Trama records the evidence when it ends and starts your next move; end the turn with one line for the person meanwhile. Checks: ${ALL_CHECKS.join(", ")}.`,
     properties: { candidate: text, check: { type: "string", enum: ALL_CHECKS } },
     required: ["candidate", "check"],
     readOnly: true,
@@ -824,14 +824,21 @@ export interface ToolContext {
   decisionChanged(decisionId: string): string[];
   /** Interrupts the running turn of an assignment, or confirms the stop when none runs. */
   stopAssignment(id: string): void;
-  runCheck(check: ReadOnlyCheck): Promise<CheckResult>;
+  /**
+   * Runs a check on the checkout. Null when it still runs after the wait the turn allows (ADR 0023): it goes on in the
+   * background, its result reaches the chat at its end and the Coordinator's next turn.
+   */
+  runCheck(check: ReadOnlyCheck): Promise<CheckResult | null>;
   availableChecks: ReadOnlyCheck[];
   /** Captures what an assignment's worktree changed, as Trama sees it now. */
   reviewWorkspace(assignmentId: string): Promise<WorkspaceReview>;
   /** The rules the project declares for commits and branches (Q01); the defaults when absent. */
   conventions?(): Promise<CommitConventions>;
-  /** Runs a required check on a candidate's worktree and records the evidence. */
-  verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
+  /**
+   * Runs a required check on a candidate's worktree and records the evidence. Null when it still runs after the wait the
+   * turn allows (ADR 0023): it goes on in the background, records the evidence at its end and Trama weighs the next move.
+   */
+  verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult | null>;
   /**
    * Runs the candidate's gate. Null when the gate still runs after the wait the turn allows (ADR 0023): it goes on in the
    * background and Trama starts the Coordinator's next move when it ends, so the turn frees the chat for the person.
@@ -1255,6 +1262,14 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (!check || !ALL_CHECKS.includes(check)) return toolFailure("invalid_arguments", `check must be one of: ${ALL_CHECKS.join(", ")}.`);
         if (!context.availableChecks.includes(check)) return toolFailure("check_unavailable", `The check ${check} does not apply to this project.`);
         const result = await context.runCheck(check);
+        if (!result) {
+          // The check goes on in the background (ADR 0023): the turn ends, and its result reaches the person and your next turn.
+          return toolSuccess({
+            check,
+            status: "running",
+            next: "The check is still at work in the background. Tell the person in one line that it runs and that Trama shows the result when it ends, then go on or end the turn; your next turn receives the result. Do not call run_readonly_check again for this check now.",
+          });
+        }
         return toolSuccess({
           check,
           command: result.command.join(" "),
@@ -1845,6 +1860,15 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           return toolFailure("check_not_required", `${String(args.check)} is not one of the required checks of candidate ${candidate.id}.`);
         }
         const result = await context.verifyCandidate(candidate.id, check);
+        if (!result) {
+          // The check goes on in the background (ADR 0023): its evidence lands on the candidate and Trama starts your next move.
+          return toolSuccess({
+            candidateID: candidate.id,
+            check,
+            status: "running",
+            next: "The check is still at work in the background. End this turn now with one line for the person; Trama records the evidence on the candidate and starts your next move when the check ends. Do not call verify_candidate again for this check now.",
+          });
+        }
         const report = candidateReport(document, candidate, await context.headSHA());
         return toolSuccess({
           candidateID: candidate.id,
