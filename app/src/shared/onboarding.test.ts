@@ -446,6 +446,8 @@ describe("project picker", () => {
     priority: 1,
     waitingForCapacity: 0,
     ci: null,
+    coordinator: null,
+    waiting: { count: 0, first: null },
     ...overrides,
   });
 
