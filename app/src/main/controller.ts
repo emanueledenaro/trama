@@ -3228,12 +3228,14 @@ export class TramaController {
   /**
    * A plan or an assignment of the selected project ended, or an event of the whole project arrived (a red check, a
    * conflict between worktrees, a new issue, a commented pull request): the work may go on by itself now, or after the
-   * running turn. `requestId` is null for an event of the whole project.
+   * running turn, or at Riprendi when the person paused the work. `requestId` is null for an event of the whole project.
    */
   private continueWork(project: ActiveProjectState, requestId: string | null, event: WorkEvent): void {
     if (this.quitting || this.state.project !== project) return;
     if (!requestId && !PROJECT_EVENTS.includes(event)) return;
-    if (this.continuationGuards(project).busy) {
+    const guards = this.continuationGuards(project);
+    // In pause the event waits for Riprendi: the round alone would not repeat a move the event calls for again.
+    if (guards.busy || (guards.enabled && guards.paused)) {
       if (!this.deferredWork.some((d) => d.projectId === project.id && d.requestId === requestId && d.event === event)) {
         this.deferredWork.push({ projectId: project.id, requestId, event });
       }
@@ -3247,6 +3249,8 @@ export class TramaController {
    * an error or an interruption nothing goes on, the work that ended meanwhile included: the person decides.
    */
   private continueAfterTurn(project: ActiveProjectState, requestId: string): void {
+    // In pause the work that ended meanwhile waits for Riprendi.
+    if (!this.quitting && this.state.project === project && isPaused(project.document)) return;
     const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
     this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (this.quitting || this.state.project !== project) return;
@@ -3630,14 +3634,14 @@ export class TramaController {
 
   /**
    * The person pauses or resumes the continuous work of the open project (A05). In pause no automatic move, round or
-   * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. Resuming
-   * runs a round at once. The state is saved with the project and holds after a restart.
+   * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. The events of
+   * the work that arrive meanwhile wait: resuming weighs them first, then runs a round at once. The state is saved with
+   * the project and holds after a restart.
    */
   async pauseContinuousWork(paused: boolean): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     if (!setPaused(project.document, paused, new Date().toISOString())) return;
-    this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (paused) {
       const retried = project.providerRetry ? project.document.requests.find((r) => r.id === project.providerRetry!.requestId) : null;
       if (retried?.step?.by === "trama") this.cancelProviderRetry(project);
@@ -3656,6 +3660,12 @@ export class TramaController {
     this.changedIn(project);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
+    // The events of the work that arrived in pause, or during the turn that ran then, come first (no work is lost).
+    if (!paused && !this.continuationGuards(project).busy) {
+      const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
+      this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+      if (deferred.length) this.startAutomaticMove(project, deferred);
+    }
     if (!paused) await this.runRound();
   }
 

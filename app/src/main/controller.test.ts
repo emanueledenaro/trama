@@ -784,6 +784,28 @@ describe("TramaController", () => {
     }
   }, 90_000);
 
+  it("keeps the events of the work that arrive in pause and weighs them at Riprendi, so no work is lost", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document)[0]?.state === "completed" && project.runningRequestId === null, 20_000);
+      await controller!.pauseContinuousWork(true);
+      // A new issue arrives while the person paused the work: nothing starts now.
+      (controller as unknown as { continueWork(project: unknown, requestId: string | null, event: string): void }).continueWork(project, null, "issueOpened");
+      await new Promise((r) => setTimeout(r, 300));
+      expect(automaticRequests(document)).toHaveLength(1);
+      // Riprendi weighs it: the round alone would not repeat the move the latest automatic turn tried.
+      await controller!.pauseContinuousWork(false);
+      await until(() => automaticRequests(document).length === 2, 20_000);
+      expect(automaticRequests(document)[1]!.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "issueOpened" });
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
   it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
