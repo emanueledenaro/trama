@@ -3,6 +3,7 @@ import { fixedBanInfo } from "./fixedBans";
 import { workingGoals } from "./goals";
 import type { Translate } from "./i18n";
 import { workRequests } from "./grilling";
+import { requestedActionName } from "./requestedActions";
 import { blockedReviews, candidateHeld } from "./reviewLoop";
 
 /**
@@ -23,7 +24,8 @@ export type WaitingKind =
   | "route"
   | "candidate"
   | "memory"
-  | "fixedBan";
+  | "fixedBan"
+  | "confirmation";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
@@ -314,6 +316,21 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       goalId: null,
       askedAt: refusal.refusedAt,
       blocks: 1,
+    });
+  }
+
+  // An action the person asked for that deletes something or cannot be undone (issue #422): it runs only after their yes.
+  for (const action of (document.requestedActions ?? []).filter((a) => a.status === "waiting")) {
+    const name = requestedActionName(action, t.language);
+    items.push({
+      key: `confirmation:${action.id}`,
+      kind: "confirmation",
+      targetId: action.id,
+      label: t("requestedAction.waiting.label"),
+      title: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${oneLine(action.summary)}`,
+      goalId: null,
+      askedAt: action.confirmation?.askedAt ?? action.requestedAt,
+      blocks: 0,
     });
   }
 

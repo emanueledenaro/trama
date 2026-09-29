@@ -5,6 +5,7 @@ import {
   IconFileDiff,
   IconHourglass,
   IconListCheck,
+  IconLockOpen,
   IconMessageQuestion,
   IconRoute,
   IconShieldCheck,
@@ -26,6 +27,7 @@ import { CandidateCard, DecisionCard, FixedBanCard, MandateCard, PlanCard, Prese
 import { GoalCard } from "@/components/inspector/GoalsView";
 import { MemoryProposalCard } from "@/components/inspector/MemoryView";
 import { ReferenceText } from "@/components/chat/ReferenceText";
+import { RequestedActionCard } from "@/components/chat/RequestedAction";
 
 /**
  * "Aspetta te" (issue #240): one place for everything that waits for the person, derived from the project's records.
@@ -67,6 +69,7 @@ const KIND_ICONS: Record<WaitingKind, React.ComponentType<{ className?: string; 
   candidate: IconFileDiff,
   memory: IconBrain,
   fixedBan: IconBan,
+  confirmation: IconLockOpen,
 };
 
 /**
@@ -239,6 +242,8 @@ function WaitingCard({ item }: { item: WaitingItem }) {
       return <CandidateCard candidateId={item.targetId} />;
     case "fixedBan":
       return <FixedBanCard refusalId={item.targetId} />;
+    case "confirmation":
+      return <RequestedActionCard actionId={item.targetId} />;
     case "memory":
       return proposal ? (
         <div className="my-3">

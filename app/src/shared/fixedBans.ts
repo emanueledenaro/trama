@@ -79,6 +79,11 @@ export const pathBan = (path: string): FixedBan | null => (isSecretPath(path) ? 
  * `|`, `&`, newlines, backticks, `$(`, parentheses) count only outside quotes, so `grep "a && b"` stays one command.
  */
 function simpleCommands(line: string): string[][] {
+  return rawCommands(line).map(unwrap).filter((words) => words.length > 0);
+}
+
+/** The simple commands of a line as written, wrappers and environment assignments included. */
+function rawCommands(line: string): string[][] {
   const commands: string[][] = [];
   let current: string[] = [];
   let word: string | null = null;
@@ -109,7 +114,7 @@ function simpleCommands(line: string): string[][] {
     else word = (word ?? "") + c;
   }
   endCommand();
-  return commands.map(unwrap).filter((words) => words.length > 0);
+  return commands;
 }
 
 const program = (word: string) => word.split("/").at(-1) ?? word;
@@ -321,6 +326,30 @@ export function commandBan(command: string, mainBranches: string[] = MAIN_BRANCH
     if (cmd.some((word) => !word.startsWith("-") && isSecretPath(word.replace(/^[<>]+/, "")))) return "secrets";
   }
   return null;
+}
+
+// MARK: Actions the person asks for (issue #422)
+
+/**
+ * The bans whose action deletes something or cannot be undone: a force push rewrites the remote's history, a deleted
+ * branch or tag is gone for the others, a secret read or written does not come back. The person's written request is
+ * not enough for them: Trama asks for a confirmation first, every time.
+ */
+export const IRREVERSIBLE_BANS: readonly FixedBan[] = ["forcePush", "deleteRemoteRef", "secrets"];
+
+export const needsConfirmation = (ban: FixedBan): boolean => IRREVERSIBLE_BANS.includes(ban);
+
+/**
+ * The words of a line Trama may run itself for the person: one git or gh command, without a shell, wrappers,
+ * environment assignments or git options before the subcommand (`git -c alias.x=!sh` runs anything). Null otherwise.
+ */
+export function runnableCommand(line: string): string[] | null {
+  const commands = rawCommands(line);
+  if (commands.length !== 1) return null;
+  const words = commands[0]!;
+  if (words[0] !== "git" && words[0] !== "gh") return null;
+  if (!words[1] || words[1].startsWith("-")) return null;
+  return words;
 }
 
 /** The ban on Trama pushing `branch` itself: the main branch never receives a direct push. */

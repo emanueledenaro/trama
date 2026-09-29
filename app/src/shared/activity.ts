@@ -1,6 +1,7 @@
-import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, SquadChange, WorkEvent } from "./domain";
+import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
 import type { MessageKey, Translate } from "./i18n";
 import { problemActivity } from "./problems";
+import { requestedActionEntries } from "./requestedActions";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -21,10 +22,10 @@ export interface ActivityEntry {
   /**
    * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), a person's
    * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), a change of the
-   * person to the squads (A11), or a candidate the Coordinator declared superseded by a newer one of the same work
-   * (issue #421).
+   * person to the squads (A11), a candidate the Coordinator declared superseded by a newer one of the same work
+   * (issue #421), or an action a fixed ban stops that Trama did because the person asked for it (issue #422).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede" | "requested";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round and for the squads the Coordinator formed (A10). */
@@ -46,6 +47,8 @@ export interface ActivityEntry {
   issue?: { number: number; url: string } | null;
   /** The pull request a merge names (issue #247); absent for the other entries. */
   pullRequest?: { number: number; url: string } | null;
+  /** The person's message that asked for the action, with the words quoted (issue #422); absent for the other entries. */
+  personMessage?: { eventId: string; quote: string } | null;
   /** The change to the squads the entry tells (A11), which the view words in the person's language; absent otherwise. */
   squadChange?: SquadChange;
 }
@@ -180,8 +183,9 @@ export const triggerLabel = (t: Translate, trigger: WorkEvent): string => t(`sha
 
 /**
  * The automatic moves, the rounds with an outcome, the steps of the found problems, the person's steps the Coordinator
- * took, Trama's merges and the person's changes to the squads of the project, newest first, from the requests, the
- * move lines Trama recorded, the rounds, the problems, the steps, the candidates and the squad changes. Pure.
+ * took, Trama's merges, the person's changes to the squads and the actions the person asked for, newest first, from
+ * the requests, the move lines Trama recorded, the rounds, the problems, the steps, the candidates, the squad changes and
+ * the requested actions. Pure.
  */
 export function activityLog(
   t: Translate,
@@ -192,6 +196,7 @@ export function activityLog(
   steps: AutonomousStep[] = [],
   candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest" | "supersession">[] = [],
   squadChanges: SquadChange[] = [],
+  requestedActions: RequestedAction[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -253,7 +258,8 @@ export function activityLog(
   const found = problemActivity(t, problems);
   const merged = [...mergeActivityEntries(t, candidates), ...supersessionActivityEntries(t, candidates)];
   const changed = squadChangeEntries(t, squadChanges);
-  if (!done.length && !found.length && !taken.length && !merged.length && !changed.length) return moves;
+  const requested = requestedActionEntries(requestedActions, t.language);
+  if (!done.length && !found.length && !taken.length && !merged.length && !changed.length && !requested.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done, ...found, ...taken, ...merged, ...changed].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found, ...taken, ...merged, ...changed, ...requested].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
