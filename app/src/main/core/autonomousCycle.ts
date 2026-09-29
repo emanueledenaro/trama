@@ -105,8 +105,9 @@ export function delegatedSteps(document: ProjectDocument, guards: ContinuationGu
   }
   for (const requestId of openDialogs(document)) {
     const latest = document.requests.find((r) => r.id === requestId)!;
-    // After an error or an interruption the person decides how to go on, as for the Coordinator's moves (W04).
-    if (latest.state !== "completed") continue;
+    // After an error or an interruption the person decides how to go on, as for the Coordinator's moves (W04), except
+    // after an automatic turn that failed: nobody wrote it, so nobody would come back to it.
+    if (latest.state !== "completed" && !(latest.state === "failed" && latest.step?.by === "trama")) continue;
     const state = workState(document, requestId);
     // A product question of the person holds the work: the Coordinator does not confirm around it.
     if (state.moves.some((m) => m.actor === "person" && m.move === "answerQuestions" && !state.questionsHoldOnlyTheirWork)) continue;

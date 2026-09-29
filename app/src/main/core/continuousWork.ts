@@ -50,6 +50,23 @@ export const ROUND_INTERVAL_MS = 5 * 60_000;
 /** The rounds with an outcome Trama keeps for Activity. */
 export const KEPT_ROUNDS = 50;
 
+/**
+ * The most automatic turns of the same move in a row the round starts in a dialog (A05): past them the move waits for a
+ * new event of the work or a message of the person, so a move that keeps failing does not loop every five minutes.
+ */
+export const ROUND_ATTEMPTS = 3;
+
+/** How many of the dialog's latest requests, from the newest, are Trama's automatic turns of `move`. */
+function attemptsInRow(dialog: ProjectDocument["requests"], move: CoordinatorMove): number {
+  let count = 0;
+  for (let index = dialog.length - 1; index >= 0; index--) {
+    const step = dialog[index]!.step;
+    if (step?.by !== "trama" || step.move !== move) break;
+    count++;
+  }
+  return count;
+}
+
 /** The state of Trama around the work, read by the controller when an event arrives. */
 export interface ContinuationGuards {
   /** The person's setting: continuous work is on unless they turned it off. */
@@ -83,8 +100,9 @@ const mandateGranted = (document: ProjectDocument): boolean => document.mandate?
 /**
  * The one Coordinator move Trama starts after `event` on the work of `requestId` (the request whose turn,
  * plan or assignment ended), or null. Pure: at most one move per event, none after an error or an
- * interruption, none from the end of an automatic turn, none while the work waits for the person, none in pause
- * and none without a granted mandate.
+ * interruption (except the round after an automatic turn that failed), none from the end of an automatic turn, none
+ * while the work waits for the person, none in pause and none without a granted mandate. The round tries the same move
+ * ROUND_ATTEMPTS times in a row at most.
  */
 export function automaticMove(document: ProjectDocument, requestId: string, event: WorkEvent, guards: ContinuationGuards): AutomaticMove | null {
   if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
@@ -95,7 +113,8 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   const dialog = document.requests.filter((r) => (r.goalId ?? null) === goalId);
   const latest = dialog.at(-1)!;
   // After an error or an interruption, including a stop of the automatic turn itself, the person decides how to go on.
-  if (latest.state !== "completed") return null;
+  // The round takes up an automatic turn that failed: nobody wrote it, so nobody would come back to it (no dead end).
+  if (latest.state !== "completed" && !(event === "round" && latest.state === "failed" && latest.step?.by === "trama")) return null;
   // An automatic turn never starts the next move: a move the Coordinator did not make is not retried in a loop.
   if (event === "turnEnded" && latest.step?.by === "trama") return null;
   // Only the current work of the dialog goes on: an older plan or assignment that ends starts nothing.
@@ -107,8 +126,8 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   if (state.phase === "blocked" && !state.block && !RESOLVES_BLOCKS.includes(event)) return null;
   // With the full delegation (issue #423) the Coordinator decides what waits for the person, first: it unblocks the rest.
   if (activeDelegation(document) && delegatedHolds(state)) {
-    // The round does not repeat a decision the latest automatic turn of the dialog already tried: a new event does.
-    if (event === "round" && latest.step?.by === "trama" && latest.step.move === "decideWithDelegation") return null;
+    // The round tries a decision again a few times at most: then a new event of the work does.
+    if (event === "round" && attemptsInRow(dialog, "decideWithDelegation") >= ROUND_ATTEMPTS) return null;
     return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
   }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
@@ -118,8 +137,9 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).
   if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
   const move = option.move as CoordinatorMove;
-  // The round does not repeat the move the latest automatic turn of the dialog already made or tried: a new event does.
-  if (event === "round" && latest.step?.by === "trama" && latest.step.move === move) return null;
+  // The round tries again a move the latest automatic turns of the dialog made or tried, a few times at most: a move
+  // that keeps failing does not loop every five minutes, and one that failed once is not left alone. A new event does.
+  if (event === "round" && attemptsInRow(dialog, move) >= ROUND_ATTEMPTS) return null;
   const block = state.phase === "blocked" && state.block && state.blocker ? { kind: state.block, blocker: state.blocker, why: state.why ?? state.blocker } : null;
   return {
     move,
@@ -213,11 +233,18 @@ export function setPaused(document: ProjectDocument, paused: boolean, at: string
 
 
 /** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. @model-text */
-export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null, document: ProjectDocument | null = null): string {
+export function automaticMoveSection(
+  move: CoordinatorMove,
+  block: RequestStep["block"] = null,
+  document: ProjectDocument | null = null,
+  requestId: string | null = null,
+): string {
+  const retry = document && requestId ? previousAttempt(document, requestId, move) : null;
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
     "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    ...(retry ? [retry] : []),
     ...(block ? [blockSection(block)] : []),
     ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
     ...(move === "takeTicket" ? [TAKE_TICKET] : []),
@@ -228,6 +255,21 @@ export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["
         ]
       : []),
   ].join("\n");
+}
+
+/**
+ * When the dialog's turn before `requestId` was an automatic turn of the same move that did not get there (a stall or an
+ * error), what the new attempt reads: that it is one, and why the one before stopped. Null otherwise. @model-text
+ */
+function previousAttempt(document: ProjectDocument, requestId: string, move: CoordinatorMove): string | null {
+  const index = document.requests.findIndex((r) => r.id === requestId);
+  if (index < 0) return null;
+  const goalId = document.requests[index]!.goalId ?? null;
+  const previous = document.requests.slice(0, index).findLast((r) => (r.goalId ?? null) === goalId);
+  if (previous?.step?.by !== "trama" || previous.step.move !== move) return null;
+  const why = previous.state === "failed" ? previous.failure : previous.step.stalled;
+  if (previous.state === "completed" && !why) return null;
+  return `Tentativo di nuovo: il turno automatico precedente con questa mossa non l'ha portata a termine${why ? ` (${why.replace(/\s+/g, " ").slice(0, 300)})` : ""}. Cerca un'altra strada per sbloccare il lavoro dentro il mandato: non aspettare la persona.`;
 }
 
 /** What deciding with the full delegation means (issue #423): the Coordinator's own recommendation, recorded with its doubt. @model-text */

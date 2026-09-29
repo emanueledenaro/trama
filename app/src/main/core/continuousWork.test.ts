@@ -315,12 +315,47 @@ describe("projectMove: events of the whole project and the round (A05)", () => {
     expect(projectMove(failed, "round", free)?.move.move).toBe("preparePlan");
   });
 
-  it("does not repeat in the round the move the latest automatic turn already made or tried", () => {
+  it("tries again in the round a move the automatic turns did not carry through, three times in a row at most", () => {
     const document = confirmed();
     request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    request(document, "r4", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+    // The new attempt knows the one before did not get there, and why.
+    document.requests.at(-2)!.step!.stalled = "La mossa automatica non è riuscita: il Coordinatore non ha avviato il piano.";
+    expect(automaticMoveSection("preparePlan", null, document, "r4")).toContain("il Coordinatore non ha avviato il piano");
+    expect(automaticMoveSection("preparePlan", null, document, "r3")).not.toContain("Tentativo");
+    request(document, "r5", { step: { move: "preparePlan", by: "trama" } });
     expect(projectMove(document, "round", free)).toBeNull();
     // A new event of the work is not the round: it weighs the move again.
     expect(projectMove(document, "issueOpened", free)?.move.move).toBe("preparePlan");
+    // A message of the person in between starts the count again.
+    request(document, "r6");
+    request(document, "r7", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+  });
+
+  it("prepares the plan again when the plan of the automatic turn failed", () => {
+    const document = confirmed();
+    request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    plan(document, "r3", "failed");
+    expect(moveOf(document, "r3", "planEnded")).toBeNull();
+    expect(projectMove(document, "round", free)?.move.move).toBe("preparePlan");
+  });
+
+  it("takes the work up again in the round after an automatic turn that failed, never after the person's stop", () => {
+    const failed = confirmed();
+    request(failed, "r3", { step: { move: "preparePlan", by: "trama" }, state: "failed" });
+    expect(projectMove(failed, "round", free)?.move.move).toBe("preparePlan");
+    // Only the round: the other events after an error still wait.
+    expect(projectMove(failed, "issueOpened", free)).toBeNull();
+
+    const stopped = confirmed();
+    request(stopped, "r3", { step: { move: "preparePlan", by: "trama" }, state: "interrupted" });
+    expect(projectMove(stopped, "round", free)).toBeNull();
+    const person = confirmed();
+    request(person, "r3", { state: "failed" });
+    expect(projectMove(person, "round", free)).toBeNull();
   });
 
   it("weighs the task in focus first and leaves paused tasks alone", () => {
@@ -656,9 +691,12 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     // The move lists the questions with the ids the tool takes and the Coordinator's own recommendation.
     const section = automaticMoveSection("decideWithDelegation", null, document);
     expect(section).toContain(`- ${question.id}: Chi vede la revisione? (alternative 0: Solo il supporto; 1: Anche il cliente; consigliata 1)`);
-    // A round does not repeat the decision the latest automatic turn already tried.
+    // The round tries the decision again, three automatic turns in a row at most.
     request(document, "r2", { step: { move: "decideWithDelegation", by: "trama" } });
-    expect(moveOf(document, "r2", "round")).toBeNull();
+    expect(moveOf(document, "r2", "round")).toBe("decideWithDelegation");
+    request(document, "r3", { step: { move: "decideWithDelegation", by: "trama" } });
+    request(document, "r4", { step: { move: "decideWithDelegation", by: "trama" } });
+    expect(moveOf(document, "r4", "round")).toBeNull();
   });
 
   it("leaves the questions to the person without the delegation, or once it is withdrawn", () => {
