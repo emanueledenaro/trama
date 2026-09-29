@@ -25,10 +25,12 @@ export function replacedBy(assignment: SpecialistAssignment, later: SpecialistAs
 
 /**
  * A candidate is superseded when a newer candidate of the same assignment exists or when later work replaced its
- * assignment. A merged candidate is done, not superseded.
+ * assignment, and when the Coordinator declared it superseded by a newer candidate of the same work (issue #421). A
+ * merged candidate is done, not superseded.
  */
 export function candidateSuperseded(document: ProjectDocument, candidate: Candidate): boolean {
   if (candidate.pullRequest?.mergedAt) return false;
+  if (candidate.supersession) return true;
   if (document.candidates.filter((c) => c.assignmentId === candidate.assignmentId).at(-1)?.id !== candidate.id) return true;
   const all = assignmentsOf(document);
   const assignment = all.find((a) => a.id === candidate.assignmentId);
