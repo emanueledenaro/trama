@@ -237,15 +237,15 @@ describe("the candidate gate (W10)", () => {
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     const gate = document.gates![0]!;
     const candidate = document.candidates[0]!;
-    // The turn ended while the reviewers are still at work: the chat is free.
-    expect(gate.status).toBe("reviewing");
+    // The turn ended while the gate is still at work, on its checks or with the reviewers: the chat is free.
+    expect(["checking", "reviewing"]).toContain(gate.status);
     expect(document.requests.at(-1)!.state).toBe("completed");
     // The person writes now: the message runs at once, it does not wait in the queue for the gate.
     await controller!.send("Aggiungi anche una nota sugli ordini annullati.", null, null, null);
     expect(document.requests.at(-1)).toMatchObject({ text: "Aggiungi anche una nota sugli ordini annullati.", state: "completed" });
     // The gate ends in the background and records its review on the same candidate.
     await writeFile(hold, "");
-    await until(() => gate.status !== "reviewing");
+    await until(() => gate.status !== "checking" && gate.status !== "reviewing");
     await until(() => candidate.technicalReview?.gateId === gate.id);
     expect(document.gates).toHaveLength(1);
     expect(candidate.technicalReview).toMatchObject({ verdict: "approved", gateId: gate.id });
