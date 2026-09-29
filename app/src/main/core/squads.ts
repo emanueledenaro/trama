@@ -58,7 +58,7 @@ function freeName(document: ProjectDocument, base: string): string {
 }
 
 /** A member Trama adds to a squad: its lead, its QA, or a developer for its area. */
-function addMember(document: ProjectDocument, role: TeamRole, area: SquadArea, now: Date): Specialist {
+export function addMember(document: ProjectDocument, role: TeamRole, area: SquadArea, now: Date): Specialist {
   const profile = roleProfile(role);
   const draft =
     role === "developer"
@@ -144,6 +144,7 @@ export function formSquads(document: ProjectDocument, modules: RepositoryModule[
 /**
  * Places each developer left without a squad: in the squad of its modules with room, otherwise in the squad with the
  * fewest developers and room. A developer no squad has room for stays in the team, outside squads, and loses nothing.
+ * A squad the person renamed, merged or split (A11) stays as the person made it: nobody enters it by itself.
  */
 function placeRemaining(document: ProjectDocument, left: Specialist[]): SquadFormation["placed"] {
   // The squad's size, not the setting of developers at work: a lower setting keeps nobody out of a squad.
@@ -151,7 +152,7 @@ function placeRemaining(document: ProjectDocument, left: Specialist[]): SquadFor
   const size = (squad: Squad) => squad.developerIds.filter((id) => teamMembers(document).some((s) => s.id === id)).length;
   const placed: SquadFormation["placed"] = [];
   for (const developer of left) {
-    const open = teamSquads(document).filter((s) => size(s) < limit);
+    const open = teamSquads(document).filter((s) => !s.touchedAt && size(s) < limit);
     const squad = open.find((s) => knows(developer, s.moduleIds)) ?? [...open].sort((a, b) => size(a) - size(b))[0];
     if (!squad) continue;
     squad.developerIds.push(developer.id);
