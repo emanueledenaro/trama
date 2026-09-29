@@ -51,7 +51,7 @@ Campionati dalle immagini di partenza.
 
 La sfumatura del simbolo va dall'indaco al viola lungo la diagonale, dal basso a sinistra all'alto a destra. Quella della piastrella va dall'indaco scuro in basso a sinistra al viola in alto a destra, con una luce lilla nell'angolo in alto a destra.
 
-Nell'interfaccia il simbolo segue il provider del dialogo (ADR 0011): i token `--trama-mark-*` in `app/src/renderer/index.css` ricavano la sfumatura dall'accento del provider (`--color-text-accent`) e dalla sua luce (`--glow-1`), in chiaro e in scuro. I colori fissi qui sopra valgono per l'icona dell'app, il README e la variante `palette="brand"` del componente.
+Nell'interfaccia il simbolo segue il provider del dialogo (ADR 0011): i token `--trama-mark-*` in `app/src/renderer/index.css` ricavano la sfumatura dall'accento del provider (`--color-text-accent`) e dalla sua luce (`--provider-light`), in chiaro e in scuro. I colori fissi qui sopra valgono per l'icona dell'app, il README e la variante `palette="brand"` del componente.
 
 ## Spazio di rispetto e misure minime
 

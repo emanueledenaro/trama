@@ -9,14 +9,12 @@ const t = translator("it");
 
 const css = readFileSync(join(import.meta.dirname, "../renderer/index.css"), "utf8");
 
-/** Every surface a tag or a bot can sit on: the base theme and each provider theme, light and dark. */
+/** Every surface a tag or a bot can sit on: the neutral surface and each section's tint, light and dark (issue #457). */
 function surfaces(): { light: string[]; dark: string[] } {
   const light: string[] = [];
   const dark: string[] = [];
   for (const block of css.matchAll(/(:root[^{]*)\{([^}]*)\}/g)) {
-    const surface = /--surface:\s*(#[0-9a-f]{6})/i.exec(block[2]!)?.[1];
-    if (!surface) continue;
-    (block[1]!.includes(".dark") ? dark : light).push(surface);
+    for (const surface of block[2]!.matchAll(/--(?:surface|app-[a-z]+-tint):\s*(#[0-9a-f]{6})/gi)) (block[1]!.includes(".dark") ? dark : light).push(surface[1]!);
   }
   return { light, dark };
 }
@@ -41,8 +39,9 @@ function member(color: AgentColor, status: Specialist["status"] = "available"): 
 describe("agent identity (W15)", () => {
   it("keeps every palette color readable as text on every theme, light and dark", () => {
     const { light, dark } = surfaces();
-    expect(light.length).toBeGreaterThanOrEqual(10);
-    expect(dark.length).toBeGreaterThanOrEqual(10);
+    // The surface plus the editor, bottom panel, side bar, activity bar and status bar tints.
+    expect(light.length).toBeGreaterThanOrEqual(6);
+    expect(dark.length).toBeGreaterThanOrEqual(6);
     for (const entry of AGENT_PALETTE) {
       for (const [shade, backgrounds] of [
         [entry.light, light],

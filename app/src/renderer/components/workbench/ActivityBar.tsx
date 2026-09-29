@@ -88,7 +88,7 @@ export function ActivityBar() {
     <nav
       aria-label={t("workbench.views")}
       data-testid="activity-bar"
-      className="app-sidebar-surface flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)]"
+      className="flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)] bg-[var(--app-activitybar-surface)]"
     >
       <ActivityButton label={t("workbench.view.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
         <IconFolders className="size-5" stroke={1.6} />
