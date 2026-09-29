@@ -168,6 +168,19 @@ describe("delegatedSteps: the person's steps the Coordinator takes within the ma
     expect(moves(document)).toEqual([]);
   });
 
+  it("takes the step after an automatic turn the person's message set aside: it is no stop of theirs (ADR 0023)", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    mandate(document, ["plan"]);
+    const automatic = request(document, "r2", { state: "interrupted" });
+    automatic.step = { move: "preparePlan", by: "trama", setAside: "Messa da parte per il tuo messaggio: Trama la riprende dopo." };
+    const seamsPlan = plan(document, "r2", { status: "seams", spec: seams });
+    expect(delegatedSteps(document, free)).toEqual([{ move: "confirmSeams", requestId: "r2", goalId: null, targetId: seamsPlan.id }]);
+    // The same interruption without the set-aside mark is the person's Stop and stays theirs.
+    delete automatic.step.setAside;
+    expect(moves(document)).toEqual([]);
+  });
+
   it("confirms the seams and the slices of a plan in the mandate's modules", () => {
     const document = emptyDocument("p");
     request(document, "r1");
