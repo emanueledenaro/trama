@@ -289,6 +289,31 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     expect(candidateSuperseded(document, next)).toBe(false);
   });
 
+  it("resumes work that a correction replaced without a slice or issue, so the correction's candidate is superseded too", async () => {
+    const document = shop();
+    const first = realignment(document);
+    first.issueNumber = null;
+    blockedCandidate(document, first, 2);
+    stopByTrama(document, first, 3);
+    request(document, "r2", 4);
+    // The correction names only the work it corrects: it shares no slice or issue with it.
+    const correctionWork = assign(
+      document,
+      { specialist: "Bea", kind: "decidedBehaviorCorrection", objective: "Correggere i documenti", issueNumber: null, exercise: null, moduleIds: ["src/app"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Correggi", replaces: [first.id], workspace: first.workspace },
+      document.mandate!.version,
+      "r2",
+      at(5),
+    );
+    const second = blockedCandidate(document, correctionWork, 6);
+    const { context: tools } = context(document);
+
+    const result = parse(await runCoordinatorTool("resume_assignment", { assignment: first.id, instructions: "Riprendi il lavoro nella tua copia.", reason: "Il merge è nella copia" }, tools));
+    const resumed = findSpecialist(document, "Marco")!.assignments.at(-1)!;
+    expect(result).toMatchObject({ assignmentID: resumed.id, status: "resumed", replacesAssignmentID: first.id });
+    expect(resumed.replaces).toEqual([first.id, correctionWork.id]);
+    expect(candidateSuperseded(document, second)).toBe(true);
+  });
+
   it("refuses work at work, work the person stopped, merged work and work without a working copy", async () => {
     const document = shop();
     const marco = realignment(document);

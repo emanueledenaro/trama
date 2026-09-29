@@ -930,6 +930,14 @@ export interface ToolContext {
  * The candidate a tool names. An assignment id stands for the latest candidate declared from it; an assignment
  * that ended without one gets the move to make first, declare_candidate, instead of a bare refusal (issue #204).
  */
+/** The later work of the same line as `assignment`: what replaced it, and what replaced that in turn, oldest first. */
+function laterLine(document: ProjectDocument, assignment: SpecialistAssignment): SpecialistAssignment[] {
+  const all = document.team.specialists.flatMap((s) => s.assignments).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const line: SpecialistAssignment[] = [];
+  for (const later of all) if ([assignment, ...line].some((earlier) => replacedBy(earlier, later))) line.push(later);
+  return line;
+}
+
 function candidateArgument(document: ProjectDocument, value: Json | undefined): { candidate: Candidate } | { failure: ToolResult } {
   const id = typeof value === "string" ? value.trim() : "";
   const candidate = findCandidate(document, id);
@@ -1808,7 +1816,10 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
         if (developer && !other) return toolFailure("unknown_specialist", `Unknown specialist: ${developer}.`);
         // Work that later work replaced, or that you retired, resumes as new work on its working copy: its own next
         // candidates would stay superseded by the later work.
-        const replaced = document.team.specialists.some((s) => s.assignments.some((later) => replacedBy(assignment, later))) || retiredWork(document, assignment.id);
+        // The resumed work replaces every later work of the same line, not only the one named: a correction that
+        // declared its own candidate would stay open, as `replacedBy` follows only what the later work names.
+        const lineage = laterLine(document, assignment);
+        const replaced = lineage.length > 0 || retiredWork(document, assignment.id);
         const target = other ?? findSpecialist(document, assignment.specialistId)!;
         if (target.id === assignment.specialistId && !replaced) {
           resumeWithInstructions(document, assignment.id, { text: instructions, reason });
@@ -1842,7 +1853,7 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
             slice: assignment.slice ?? null,
             commit: assignment.commit ?? null,
             ...(assignment.seams ? { seams: assignment.seams } : {}),
-            replaces: [assignment.id],
+            replaces: [assignment.id, ...lineage.map((a) => a.id)],
             workspace: assignment.workspace,
           },
           document.mandate!.version,
