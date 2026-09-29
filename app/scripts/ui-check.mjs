@@ -3558,11 +3558,10 @@ await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 
 // Issue #204: the work ends, Trama starts the checks by itself and the Coordinator verifies the assignment instead of a
 // candidate, as in the live run. The move comes back under the reply with Trama's reason and its button on the right.
 // Turned back on, continuous work runs a round at once: the work Ada resumed ended without a candidate, so Trama
-// starts its checks by itself. The fake Codex keeps an automatic move running until the check stops it (W04), and a
-// message would wait behind it in the queue: the check stops it from the status line before writing.
+// starts its checks by itself. The fake Codex keeps an automatic move running until it is stopped (W04). The person
+// writes while it runs: the move gives way and the message leaves at once, without a stop (ADR 0023).
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
-await page.getByTestId("status-line").getByRole("button", { name: "Ferma: Esegui le verifiche" }).click({ timeout: 20_000 });
-await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByTestId("status-line").getByRole("button", { name: "Ferma: Esegui le verifiche" }).waitFor({ timeout: 20_000 });
 await send("[assegna] [luna]");
 const lunaCard = assignmentCards.nth(1);
 await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
@@ -3595,6 +3594,8 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 if (await page.getByText(/is an assignment, not a candidate/).count()) throw new Error("A tool error reached the chat");
 await page.getByText(/uno strumento di Trama ha rifiutato la richiesta/).last().waitFor();
 await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+// ADR 0023: the checks the person's message set aside have their row, set aside and not stopped.
+await page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="setAside"]').first().getByText("Messa da parte", { exact: true }).waitFor();
 // Issue #337: the row is one line; its detail, with the tools that failed, opens on click.
 const stalledEntry = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first();
 await stalledEntry.getByTestId("activity-row-toggle").click();
