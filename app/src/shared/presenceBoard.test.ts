@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { GitHubPullRequest, GitHubSnapshot } from "./domain";
 import { presenceFreshness, type PresenceEntry, type PresenceRecord, type PresenceView } from "./presence";
 import { groupBoard } from "./presenceBoard";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const now = new Date("2026-09-26T12:00:00Z");
 const ago = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString();
@@ -67,7 +70,7 @@ describe("Gruppo board (G02)", () => {
         },
       ],
     });
-    const board = groupBoard({ presence: view(ada, [bea]), snapshot: null, github: false, now });
+    const board = groupBoard(t, { presence: view(ada, [bea]), snapshot: null, github: false, now });
     expect(board.rows.map((r) => [r.kind, r.name, r.self])).toEqual([
       ["person", "ada", true],
       ["person", "Bea", false],
@@ -86,7 +89,7 @@ describe("Gruppo board (G02)", () => {
       updatedAt: ago(120),
       agents: [{ id: "lia", name: "Lia", color: "violet", tag: "", branch: null, files: [], task: null, since: ago(200), lastActivityAt: ago(121) }],
     });
-    const agent = groupBoard({ presence: view(null, [closed]), snapshot: null, github: false, now }).rows.find((r) => r.kind === "agent")!;
+    const agent = groupBoard(t, { presence: view(null, [closed]), snapshot: null, github: false, now }).rows.find((r) => r.kind === "agent")!;
     expect(agent.freshness).toBe("offline");
     expect(agent.freshnessLabel).toBe("visto l'ultima volta 2 ore fa");
   });
@@ -96,7 +99,7 @@ describe("Gruppo board (G02)", () => {
       agents: [{ id: "lia", name: "Lia", color: "violet", tag: "", branch: "trama/lia", files: [], task: null, since: ago(5), lastActivityAt: ago(1) }],
     });
     const pulls = [pull(1, "bea", "trama/lia"), pull(2, "someone", "fix/iva"), pull(3, "BEA", "other"), pull(4, "ada", "feature/carrello")];
-    const board = groupBoard({ presence: view(ada, [bea]), snapshot: snapshot(pulls, []), github: true, now });
+    const board = groupBoard(t, { presence: view(ada, [bea]), snapshot: snapshot(pulls, []), github: true, now });
     const numbers = (key: string) => board.rows.find((r) => r.key === key)!.pullRequests.map((p) => p.number);
     expect(numbers("self")).toEqual([4]);
     expect(numbers("person:bea")).toEqual([2, 3]);
@@ -112,7 +115,7 @@ describe("Gruppo board (G02)", () => {
       pull(7, "dora", "feature/spedizioni", { updatedAt: ago(10) }),
       pull(8, "eva", "main", { fromFork: true, updatedAt: ago(500) }),
     ];
-    const board = groupBoard({ presence: view(ada, []), snapshot: snapshot(pulls, ["feature/annullo", "fix/annullo-test", "feature/spedizioni", "feature/carrello", "spike/vecchio"]), github: true, now });
+    const board = groupBoard(t, { presence: view(ada, []), snapshot: snapshot(pulls, ["feature/annullo", "fix/annullo-test", "feature/spedizioni", "feature/carrello", "spike/vecchio"]), github: true, now });
     const github = board.rows.filter((r) => r.kind === "github");
     expect(github.map((r) => r.name)).toEqual(["dora", "carlo", "eva"]);
     expect(github[1]).toMatchObject({ login: "carlo", activeBranch: "feature/annullo", alsoOn: ["fix/annullo-test"], freshness: "github", freshnessLabel: "su GitHub 30 min fa" });
@@ -124,9 +127,9 @@ describe("Gruppo board (G02)", () => {
 
   it("still shows GitHub without any presence, and ignores GitHub when the remote is elsewhere", () => {
     const data = snapshot([pull(9, null, "feature/x")], ["feature/x"]);
-    const board = groupBoard({ presence: null, snapshot: data, github: true, now });
+    const board = groupBoard(t, { presence: null, snapshot: data, github: true, now });
     expect(board.rows).toHaveLength(1);
     expect(board.rows[0]).toMatchObject({ kind: "github", name: "Autore sconosciuto", login: null });
-    expect(groupBoard({ presence: null, snapshot: data, github: false, now }).rows).toEqual([]);
+    expect(groupBoard(t, { presence: null, snapshot: data, github: false, now }).rows).toEqual([]);
   });
 });

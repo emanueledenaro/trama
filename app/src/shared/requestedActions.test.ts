@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activityLog } from "./activity";
+import { translator } from "./i18n";
 import type { RequestedAction } from "./domain";
 import { emptyDocument } from "../main/core/document";
 import { requestedActionEntries, requestedActionLine, requestedActionStatus } from "./requestedActions";
@@ -41,7 +42,7 @@ describe("how an action the person asked for reads (issue #422)", () => {
       personMessage: { eventId: "E1", quote: "sistema tu la situazione al meglio" },
     });
     expect(entry!.detail).toContain("git push --force origin feature/x");
-    const log = activityLog([], [], [], [], [], [], [], "en", [action({ status: "failed", output: "rejected" })]);
+    const log = activityLog(translator("en"), [], [], [], [], [], [], [], [action({ status: "failed", output: "rejected" })]);
     expect(log).toMatchObject([{ kind: "requested", label: "At your request: a force push", outcome: "failed" }]);
     expect(log[0]!.detail).toContain("rejected");
   });
@@ -53,10 +54,10 @@ describe("how an action the person asked for reads (issue #422)", () => {
       action({ id: "RA-D", status: "done" }),
       action({ id: "RA-N", status: "declined" }),
     ];
-    const items = waitingForYou(document).filter((item) => item.kind === "confirmation");
+    const items = waitingForYou(translator("it"), document).filter((item) => item.kind === "confirmation");
     expect(items).toEqual([
       expect.objectContaining({ key: "confirmation:RA-W", label: "Conferma", title: "Un force push: Riscrivo feature/x con la versione pulita", blocks: 0 }),
     ]);
-    expect(waitingForYou(document, { language: "en" }).find((item) => item.kind === "confirmation")?.label).toBe("Confirmation");
+    expect(waitingForYou(translator("en"), document).find((item) => item.kind === "confirmation")?.label).toBe("Confirmation");
   });
 });

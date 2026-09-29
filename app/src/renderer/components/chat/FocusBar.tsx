@@ -57,7 +57,7 @@ function OverlapLine({ items }: { items: OverlapItem[] }) {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <IconUsers className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
         <OverlapBadge level={top.level} />
-        <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground/85">{overlapSummary(top)}</span>
+        <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground/85">{overlapSummary(t, top)}</span>
         <div className="cta-row ml-auto">
           <Button size="xs" variant="ghost" aria-expanded={open} aria-controls="focus-overlaps" onClick={() => setOpen(!open)}>
             {items.length === 1 ? t("focus.details") : t("focus.detailsCount", { count: items.length })}
@@ -107,7 +107,7 @@ function QueueRow({ task }: { task: FocusTask }) {
           // Before the task starts (decision 4): who already works where it is going.
           <span className="flex min-w-0 items-center gap-1.5 text-ui-xs text-muted-foreground" data-testid="queue-overlap">
             <OverlapBadge level={overlap.level} />
-            <span className="min-w-0 truncate">{overlapSummary(overlap)}</span>
+            <span className="min-w-0 truncate">{overlapSummary(t, overlap)}</span>
           </span>
         ) : null}
       </div>

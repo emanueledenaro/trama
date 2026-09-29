@@ -9,6 +9,9 @@ import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
 import { workState } from "./core/workPhase";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -201,7 +204,7 @@ describe("the checks after an ended assignment (issue #204)", () => {
     // The reply pasted the tool's English error: Trama keeps it in Activity and the chat says it in Italian (issue #241).
     const reply = document.events.findLast((e) => e.requestId === move.id && e.content.type === "coordinatorText")!;
     expect(reply.content).toMatchObject({ text: `Non posso eseguire le verifiche: ${TOOL_ERROR_PLACEHOLDER}` });
-    const activity = activityLog(document.requests, document.events).find((e) => e.requestId === move.id)!;
+    const activity = activityLog(t, document.requests, document.events).find((e) => e.requestId === move.id)!;
     expect(activity.toolErrors.some((e) => e.detail?.includes(`First call declare_candidate with assignment ${work.id}`))).toBe(true);
     expect(document.candidates).toEqual([]);
 

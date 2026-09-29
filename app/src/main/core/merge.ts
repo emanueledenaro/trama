@@ -8,6 +8,7 @@ import type { PullRequestStatus } from "./tickets";
 import { DomainError } from "./pact";
 import { t } from "./personLanguage";
 import { authorize } from "./team";
+import { ITALIAN } from "@shared/i18n";
 
 /**
  * The merge of a verified candidate (issue #247, Q1 and Q9). With the Coordinator's green light within the mandate and
@@ -244,7 +245,7 @@ export function mergeActivity(
       return {
         type: "activity",
         title: t("main.merge.banned"),
-        detail: t("main.merge.bannedDetail", { reason: fixedBanInfo(outcome.ban).reason, id: candidate.id }),
+        detail: t("main.merge.bannedDetail", { reason: fixedBanInfo(t, outcome.ban).reason, id: candidate.id }),
         tone: "error",
       };
   }

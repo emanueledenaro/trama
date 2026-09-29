@@ -4,17 +4,18 @@ import {
   ASK_TRAMA_SKILL,
   type AskTramaRoute,
   BOUNDARY_COMMANDS,
-  BOUNDARY_LABELS,
+  boundaryLabel,
   firstRunnableStep,
+  flowLabel,
   PHASE_BOUNDARIES,
   type PhaseBoundary,
-  ROUTE_PATH_LABELS,
   ROUTE_PATHS,
+  routePathLabel,
   type RoutePath,
   routeSteps,
   stepKind,
-  TRAMA_FLOWS,
 } from "@shared/askTrama";
+import { ITALIAN } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import type { NativeSkill } from "./nativeSkills";
@@ -30,7 +31,7 @@ export class RouteError extends Error {}
 
 const SKILL_RULES_ABOVE = "Trama's rules (mandate, Pact, read-only runtime, real checks) stay above the skill: the skill grants no permission.";
 
-/** How the Coordinator starts each skill that has a Trama flow. The labels the person sees are in TRAMA_FLOWS. */
+/** How the Coordinator starts each skill that has a Trama flow. The labels the person sees come from `flowLabel`. */
 const FLOW_STARTS: Readonly<Record<string, string>> = {
   "grill-with-docs": "grill the request with the grill-with-docs, grilling and domain-modeling skills you already have: round 1 with request_decision",
   grilling: "grill the request with the grilling skill you already have: round 1 with request_decision",
@@ -137,7 +138,7 @@ export function routeReport(route: AskTramaRoute): Record<string, string | { ski
     boundary: route.boundary,
     steps: route.steps.map((step) => ({
       skill: step.skill,
-      runs: step.kind === "flow" ? `Trama flow: ${TRAMA_FLOWS[step.skill]}` : step.kind === "skill" ? "the skill's original text, in your session" : "not available in Trama: never simulate it",
+      runs: step.kind === "flow" ? `Trama flow: ${flowLabel(ITALIAN, step.skill)}` : step.kind === "skill" ? "the skill's original text, in your session" : "not available in Trama: never simulate it",
     })),
     note: "Trama starts the route when the person confirms it and writes you the start message.",
   };
@@ -152,9 +153,9 @@ export function answerRoute(route: AskTramaRoute, start: boolean, now = new Date
   route.answeredAt = now.toISOString();
   if (!start) return t("main.askTrama.declined", { id: route.id, steps: routeSteps(route) });
   return [
-    t("main.askTrama.start", { id: route.id, path: ROUTE_PATH_LABELS[route.path].toLowerCase(), steps: routeSteps(route) }),
-    first!.kind === "flow" ? t("main.askTrama.firstStepFlow", { skill: first!.skill, flow: TRAMA_FLOWS[first!.skill]! }) : t("main.askTrama.firstStep", { skill: first!.skill }),
-    t("main.askTrama.boundary", { boundary: BOUNDARY_LABELS[route.boundary].label.toLowerCase() }),
+    t("main.askTrama.start", { id: route.id, path: routePathLabel(t, route.path).toLowerCase(), steps: routeSteps(route) }),
+    first!.kind === "flow" ? t("main.askTrama.firstStepFlow", { skill: first!.skill, flow: flowLabel(t, first!.skill)! }) : t("main.askTrama.firstStep", { skill: first!.skill }),
+    t("main.askTrama.boundary", { boundary: boundaryLabel(t, route.boundary).label.toLowerCase() }),
   ].join(" ");
 }
 

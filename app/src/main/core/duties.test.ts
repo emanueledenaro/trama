@@ -31,6 +31,9 @@ import { loadNativeSkill } from "./nativeSkills";
 import { setPersonLanguage } from "./personLanguage";
 import { answerDecisionRequest, decide, grantMandate, withdrawDecisionRequest } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, recordWorkspace } from "./team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
 const runner = { provider: "codex" as const, model: "gpt-5.6-luna", modelReason: "Il modello più leggero del catalogo." };
@@ -730,7 +733,7 @@ describe("automatic work started on request (issue #231)", () => {
     expect(roleOf(document, review)).toBe("cleanCode");
     expect(review).toMatchObject({ tools: ["commands"], model: "gpt-5.6-luna", status: "preparing" });
     expect(review.duty).toMatchObject({ skill: "improve-codebase-architecture", requestedBy: "person", trigger: { kind: "idleTeam", headSHA: HEAD } });
-    expect(dutyTriggerText(document, review.duty!)).toBe(`Su richiesta tua: revisione al commit ${HEAD.slice(0, 7)}`);
+    expect(dutyTriggerText(t, document, review.duty!)).toBe(`Su richiesta tua: revisione al commit ${HEAD.slice(0, 7)}`);
     const session = dutySession({
       projectName: "p",
       document,
@@ -758,7 +761,7 @@ describe("automatic work started on request (issue #231)", () => {
     const triage = startDutyOnRequest(document, { kind: "triage", issueNumber: 187 }, context({ issues: [issue(187)] }), "coordinator");
     expect(triage).toMatchObject({ issueNumber: 187 });
     expect(triage.duty).toMatchObject({ skill: "triage", requestedBy: "coordinator" });
-    expect(dutyTriggerText(document, triage.duty!)).toContain("Su richiesta del Coordinatore");
+    expect(dutyTriggerText(t, document, triage.duty!)).toContain("Su richiesta del Coordinatore");
     finish(document, triage);
     const refuse = (issues: GitHubIssue[] | null, number: number) => {
       try {

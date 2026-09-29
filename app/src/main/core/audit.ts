@@ -214,7 +214,7 @@ export function openScopedAudit(
 ): FocusAudit {
   const running = latestAuditOn(document, target);
   if (running && isAuditRunning(running)) {
-    throw new AuditError("audit_running", translate(language, "focus.error.running", { target: focusTargetOf(target, null, translator(language)) }));
+    throw new AuditError("audit_running", translate(language, "focus.error.running", { target: focusTargetOf(translator(language), target) }));
   }
   const audit: FocusAudit = {
     id: shortId("F", randomUUID()),

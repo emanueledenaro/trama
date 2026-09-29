@@ -1,7 +1,7 @@
 // The first-run guide (C12) and the exercises on the example project (C13, C14).
 // Every step state is derived from AppState or from the project document: nothing is marked done
 // by a timer, by the renderer or by a model's claim.
-import { type Language, translator } from "./i18n";
+import { type MessageKey, type Translate, translator } from "./i18n";
 import { readableFailure } from "./providerFailure";
 import { isUsableAccount, type ProviderId } from "./codex";
 import type { AppState, Candidate, ConflictAssessment, ProjectDocument, ProjectOverview, SpecialistAssignment } from "./domain";
@@ -136,7 +136,7 @@ function providerStep(app: AppState): StepState {
     codex?.kind === "unsupported"
       ? t("guide.provider.unsupported", { type: codex.type })
       : codex?.kind === "unavailable" || codex?.kind === "blocked"
-        ? t("guide.provider.failure", { reason: readableFailure(codex.message) })
+        ? t("guide.provider.failure", { reason: readableFailure(t, codex.message) })
         : t("guide.provider.none");
   return { ...base, status: "pending", detail };
 }
@@ -200,7 +200,7 @@ function exerciseStep(app: AppState): StepState {
   if (done) return { ...base, status: "done", detail: t("guide.exercise.done") };
   const project = app.project?.isDemo ? app.project : null;
   if (project) {
-    const steps = exerciseSteps("first", project.document, { providerReady: hasUsableProvider(app) });
+    const steps = exerciseSteps(t, "first", project.document, { providerReady: hasUsableProvider(app) });
     const count = steps.filter((s) => s.status === "done").length;
     return { ...base, status: "pending", detail: t("guide.exercise.progress", { done: count, total: steps.length }) };
   }
@@ -316,43 +316,31 @@ export interface ExerciseDescriptor {
   prompt: string | null;
 }
 
-export const EXERCISES: ExerciseDescriptor[] = [
-  {
-    id: "first",
-    title: "Conosci il progetto",
-    intro:
-      "Il Coordinatore studia la copia locale del Negozio di esempio. Leggi lo studio, chiedi una spiegazione con i file citati, apri la mappa e un modulo, poi rispondi a una decisione. Niente viene modificato o pubblicato.",
-    prompt:
-      "Esercizio: spiegami come funziona l'annullamento di un ordine pagato in questo progetto, citando i file che hai letto. Non avviare squadre e non modificare nulla.",
-  },
-  {
-    id: "change",
-    title: "Una modifica verificata",
-    intro:
-      "Concedi un mandato che autorizza il lavoro in un worktree sul modulo Orders della copia di esempio. Il Coordinatore assegna a uno specialista una modifica marcata come esercizio: prima una verifica fallisce, poi la correzione produce un nuovo candidato con verifiche superate e una revisione tecnica. Niente viene pubblicato.",
-    prompt:
-      "Esercizio di modifica sulla copia di esempio. Chiedimi prima il mandato necessario, poi assegna a uno specialista, nel suo worktree e con il campo exercise impostato a \"Esercizio di modifica\", una piccola modifica al modulo Orders con una verifica richiesta. Dichiara un candidato che fa fallire la verifica, poi correggilo, dichiara il nuovo candidato, verificalo e fai la revisione tecnica. Non pubblicare nulla.",
-  },
-  {
-    id: "revision",
-    title: "Rivedere una decisione",
-    intro:
-      "Un incarico dipende da una decisione del Patto, un altro no. Quando il Coordinatore ti chiede di rivedere quella decisione, Trama ferma solo il lavoro che dipende da lei; il lavoro indipendente continua.",
-    prompt:
-      "Esercizio di decisione sulla copia di esempio. Assegna due incarichi marcati come esercizio: uno nel modulo Orders che dipende da una decisione del Patto (indicala in decisionIDs) e una ricerca indipendente nel modulo Catalog senza decisioni. Poi chiedimi di rivedere quella decisione con request_decision, con alternative concrete.",
-  },
-  {
-    id: "conflict",
-    title: "Un confronto controllato",
-    intro:
-      "Trama crea due modifiche simulate in una copia locale separata, marcate come esercizio: nessun collaboratore reale e nessuna rete. La prima non tocca i file del candidato, la seconda cambia gli stessi file. Le confronta con il candidato tramite una fusione temporanea.",
-    prompt: null,
-  },
-];
+/**
+ * The messages that begin an exercise. i18n-exempt: written for the Coordinator, with the names of its tools; the
+ * Coordinator answers in the person's language.
+ */
+const EXERCISE_PROMPTS: Record<ExerciseId, string | null> = {
+  first:
+    "Esercizio: spiegami come funziona l'annullamento di un ordine pagato in questo progetto, citando i file che hai letto. Non avviare squadre e non modificare nulla.",
+  change:
+    "Esercizio di modifica sulla copia di esempio. Chiedimi prima il mandato necessario, poi assegna a uno specialista, nel suo worktree e con il campo exercise impostato a \"Esercizio di modifica\", una piccola modifica al modulo Orders con una verifica richiesta. Dichiara un candidato che fa fallire la verifica, poi correggilo, dichiara il nuovo candidato, verificalo e fai la revisione tecnica. Non pubblicare nulla.",
+  revision:
+    "Esercizio di decisione sulla copia di esempio. Assegna due incarichi marcati come esercizio: uno nel modulo Orders che dipende da una decisione del Patto (indicala in decisionIDs) e una ricerca indipendente nel modulo Catalog senza decisioni. Poi chiedimi di rivedere quella decisione con request_decision, con alternative concrete.",
+  conflict: null,
+};
 
-export const exerciseDescriptor = (id: ExerciseId): ExerciseDescriptor => EXERCISES.find((e) => e.id === id)!;
+export const exerciseDescriptor = (t: Translate, id: ExerciseId): ExerciseDescriptor => ({
+  id,
+  title: t(`shared.exercise.${id}`),
+  intro: t(`shared.exercise.${id}.intro`),
+  prompt: EXERCISE_PROMPTS[id],
+});
 
-/** Remote revisions created by the conflict exercise carry this label in their references. */
+/**
+ * Remote revisions created by the conflict exercise carry this label in their references. i18n-exempt: a marker Trama
+ * reads back from its records.
+ */
 export const EXERCISE_REFERENCE_PREFIX = "Esercizio";
 export const isExerciseAssessment = (assessment: ConflictAssessment): boolean =>
   assessment.references.some((r) => r.startsWith(EXERCISE_REFERENCE_PREFIX));
@@ -365,9 +353,13 @@ const step = (id: string, title: string, done: boolean, detail: string, optional
   optional,
 });
 
+/** A step whose title and pending detail come from the catalog, with its own detail once done. */
+const exerciseTaskStep = (t: Translate, id: string, done: boolean, detail: string | null) =>
+  step(id, t(`shared.exercise.${id}` as MessageKey), done, done && detail !== null ? detail : t(`shared.exercise.${id}.pending` as MessageKey));
+
 const allAssignments = (document: ProjectDocument): SpecialistAssignment[] => document.team.specialists.flatMap((s) => s.assignments);
 
-function firstExerciseSteps(document: ProjectDocument, providerReady: boolean): StepState[] {
+function firstExerciseSteps(t: Translate, document: ProjectDocument, providerReady: boolean): StepState[] {
   const observed = document.exercises?.observed ?? {};
   const studied = document.events.some((e) => e.content.type === "card" && e.content.kind === "study" && !!e.content.detail);
   const completed = new Set(document.requests.filter((r) => r.state === "completed").map((r) => r.id));
@@ -375,14 +367,14 @@ function firstExerciseSteps(document: ProjectDocument, providerReady: boolean): 
     (e) => e.origin === "coordinator" && e.content.type === "coordinatorText" && e.requestId !== null && completed.has(e.requestId) && e.content.references.length > 0,
   );
   const answered = document.decisionRequests.some((r) => r.outcome);
-  const noProvider = "Serve un provider collegato. Senza accesso puoi esplorare mappa e moduli; la spiegazione AI non è disponibile.";
+  const noProvider = t("shared.exercise.noProvider");
   const steps = [
-    step("study", "Il Coordinatore studia il progetto", studied, studied ? "La scheda di studio è nella conversazione." : "Lo studio parte quando il Coordinatore si collega alla copia di esempio."),
-    step("read", "Leggi la scheda di studio", !!observed.studyRead, observed.studyRead ? "Hai aperto la scheda di studio." : "Apri la scheda di studio dalla guida."),
-    step("ask", "Chiedi una spiegazione", explained, explained ? "Il Coordinatore ha risposto citando i file letti." : "Chiedi al Coordinatore di spiegarti una parte del progetto."),
-    step("map", "Apri la mappa", !!observed.mapOpened, observed.mapOpened ? "Hai aperto la mappa dei moduli." : "Apri la mappa dall'intestazione."),
-    step("module", "Apri un modulo", !!observed.moduleOpened, observed.moduleOpened ? "Hai aperto un modulo dalla mappa." : "Scegli un modulo nella mappa, per esempio Orders."),
-    step("decision", "Rispondi a una decisione", answered, answered ? "La tua risposta è nel Patto." : "Chiedi al Coordinatore una domanda di prodotto e rispondi dalla scheda."),
+    exerciseTaskStep(t, "study", studied, t("shared.exercise.study.done")),
+    exerciseTaskStep(t, "read", !!observed.studyRead, t("shared.exercise.read.done")),
+    exerciseTaskStep(t, "ask", explained, t("shared.exercise.ask.done")),
+    exerciseTaskStep(t, "map", !!observed.mapOpened, t("shared.exercise.map.done")),
+    exerciseTaskStep(t, "module", !!observed.moduleOpened, t("shared.exercise.module.done")),
+    exerciseTaskStep(t, "decision", answered, t("shared.exercise.decision.done")),
   ];
   if (!providerReady) {
     for (const s of steps) if (s.status === "pending" && ["study", "ask", "decision"].includes(s.id)) Object.assign(s, { status: "blocked", detail: noProvider });
@@ -396,7 +388,7 @@ const candidatesOf = (document: ProjectDocument, assignmentId: string): Candidat
 const passesAll = (candidate: Candidate) =>
   candidate.requiredChecks.length > 0 && candidate.requiredChecks.every((check) => candidate.evidence[check]?.result === "pass");
 
-function changeExerciseSteps(document: ProjectDocument): StepState[] {
+function changeExerciseSteps(t: Translate, document: ProjectDocument): StepState[] {
   const mandate = document.mandate?.status === "granted" && document.mandate.authorizedActions.includes("executeInWorktree");
   const exercises = allAssignments(document).filter((a) => a.exercise && a.workspace);
   // Prefer the exercise assignment that went furthest.
@@ -406,30 +398,15 @@ function changeExerciseSteps(document: ProjectDocument): StepState[] {
   const fixed = failedIndex >= 0 ? candidates.slice(failedIndex + 1).filter(passesAll).at(-1) ?? null : null;
   const reviewed = fixed?.technicalReview?.verdict === "approved";
   return [
-    step("mandate", "Concedi il mandato", mandate, mandate ? `Mandato v${document.mandate!.version} con lavoro nel worktree.` : "Il mandato deve autorizzare il lavoro in un worktree."),
-    step(
-      "assignment",
-      "Incarico di esercizio in un worktree",
-      !!assignment,
-      assignment ? `${assignment.id}: ${assignment.objective} (${assignment.workspace!.branch}).` : "Un incarico con il campo esercizio e un worktree proprio.",
-    ),
-    step(
-      "failing",
-      "Una verifica fallisce",
-      failedIndex >= 0,
-      failedIndex >= 0 ? `Il candidato ${candidates[failedIndex]!.id} ha una verifica fallita registrata da Trama.` : "Trama registra una verifica fallita su un candidato dell'esercizio.",
-    ),
-    step(
-      "passing",
-      "La correzione supera le verifiche",
-      !!fixed,
-      fixed ? `Il nuovo candidato ${fixed.id} supera ${fixed.requiredChecks.join(", ")}.` : "Un candidato successivo supera tutte le verifiche richieste.",
-    ),
-    step("review", "Revisione tecnica", reviewed, reviewed ? "Un revisore distinto ha approvato il candidato corretto." : "La revisione tecnica approva il candidato corretto."),
+    exerciseTaskStep(t, "mandate", mandate, mandate ? t("shared.exercise.mandate.done", { version: String(document.mandate!.version) }) : null),
+    exerciseTaskStep(t, "assignment", !!assignment, assignment ? `${assignment.id}: ${assignment.objective} (${assignment.workspace!.branch}).` : null),
+    exerciseTaskStep(t, "failing", failedIndex >= 0, failedIndex >= 0 ? t("shared.exercise.failing.done", { id: candidates[failedIndex]!.id }) : null),
+    exerciseTaskStep(t, "passing", !!fixed, fixed ? t("shared.exercise.passing.done", { id: fixed.id, checks: fixed.requiredChecks.join(", ") }) : null),
+    exerciseTaskStep(t, "review", reviewed, t("shared.exercise.review.done")),
   ];
 }
 
-function revisionExerciseSteps(document: ProjectDocument): StepState[] {
+function revisionExerciseSteps(t: Translate, document: ProjectDocument): StepState[] {
   const assignments = allAssignments(document);
   const dependsOn = (a: SpecialistAssignment, id: string) => a.decisionVersions?.[id] !== undefined;
   const dependent = assignments.filter((a) => Object.keys(a.decisionVersions ?? {}).length > 0);
@@ -441,39 +418,50 @@ function revisionExerciseSteps(document: ProjectDocument): StepState[] {
   const independent = decisionId ? assignments.filter((a) => !dependsOn(a, decisionId)) : [];
   const stopped = target.find(stoppedBy) ?? null;
   const kept = revision ? independent.filter((a) => a.createdAt <= revision.askedAt && !stoppedBy(a)) : [];
+  const decision = decisionId ?? "";
   return [
-    step("dependent", "Un incarico dipende da una decisione", target.length > 0, target[0] ? `${target[0].id} usa ${decisionId} v${target[0].decisionVersions![decisionId!]}.` : "Il Coordinatore assegna un incarico con la decisione in decisionIDs."),
-    step("independent", "Un incarico indipendente", independent.length > 0, independent[0] ? `${independent[0].id} non usa ${decisionId}.` : "Un secondo incarico che non dipende da quella decisione."),
-    step("asked", "Il Coordinatore chiede una revisione", !!revision, revision ? `Domanda: ${revision.question}` : "Una domanda che rivede la decisione, con alternative e risposta libera."),
-    step("stopped", "Il lavoro dipendente si ferma", !!stopped, stopped ? `Trama ha fermato ${stopped.id}.` : "Trama ferma gli incarichi che usano la decisione in revisione."),
-    step("answered", "Rispondi alla revisione", !!revision?.outcome, revision?.outcome ? `${decisionId} è ora alla versione ${revision.outcome.version}.` : "La risposta crea una nuova versione della decisione."),
-    step("kept", "Il lavoro indipendente continua", !!revision?.outcome && kept.length > 0, kept[0] && revision?.outcome ? `${kept[0].id} non è stato fermato dalla revisione.` : "L'incarico indipendente non viene fermato."),
+    exerciseTaskStep(
+      t,
+      "dependent",
+      target.length > 0,
+      target[0] ? t("shared.exercise.dependent.done", { id: target[0].id, decision, version: String(target[0].decisionVersions![decisionId!]) }) : null,
+    ),
+    exerciseTaskStep(t, "independent", independent.length > 0, independent[0] ? t("shared.exercise.independent.done", { id: independent[0].id, decision }) : null),
+    exerciseTaskStep(t, "asked", !!revision, revision ? t("shared.exercise.asked.done", { question: revision.question }) : null),
+    exerciseTaskStep(t, "stopped", !!stopped, stopped ? t("shared.exercise.stopped.done", { id: stopped.id }) : null),
+    exerciseTaskStep(
+      t,
+      "answered",
+      !!revision?.outcome,
+      revision?.outcome ? t("shared.exercise.answered.done", { decision, version: String(revision.outcome.version) }) : null,
+    ),
+    exerciseTaskStep(t, "kept", !!revision?.outcome && kept.length > 0, kept[0] && revision?.outcome ? t("shared.exercise.kept.done", { id: kept[0].id }) : null),
   ];
 }
 
-function conflictExerciseSteps(document: ProjectDocument): StepState[] {
+function conflictExerciseSteps(t: Translate, document: ProjectDocument): StepState[] {
   const candidates = document.candidates.filter((c) => !c.pullRequest);
   const assessments = (document.conflicts ?? []).filter(isExerciseAssessment);
   const compatible = assessments.find((a) => a.classification === "clean") ?? null;
   const incompatible = assessments.find((a) => a.classification === "conflict") ?? null;
   const card = !!incompatible && document.events.some((e) => e.content.type === "card" && e.content.kind === "conflict" && e.content.referenceId === incompatible.id);
   return [
-    step("candidate", "Un candidato locale", candidates.length > 0, candidates.length ? `Candidato ${candidates.at(-1)!.id} in un worktree.` : "Serve un candidato non pubblicato: completa prima l'esercizio di modifica."),
-    step("compatible", "Una modifica compatibile", !!compatible, compatible ? compatible.detail : "Trama confronta il candidato con una modifica simulata su altri file."),
-    step("incompatible", "Una modifica incompatibile", !!incompatible && card, incompatible ? `Conflitto su ${incompatible.conflictingFiles.join(", ")}.` : "Trama confronta il candidato con una modifica simulata sugli stessi file."),
+    exerciseTaskStep(t, "candidate", candidates.length > 0, candidates.length ? t("shared.exercise.candidate.done", { id: candidates.at(-1)!.id }) : null),
+    exerciseTaskStep(t, "compatible", !!compatible, compatible ? compatible.detail : null),
+    exerciseTaskStep(t, "incompatible", !!incompatible && card, incompatible ? t("shared.exercise.incompatible.done", { files: incompatible.conflictingFiles.join(", ") }) : null),
   ];
 }
 
-export function exerciseSteps(id: ExerciseId, document: ProjectDocument, context: { providerReady: boolean }): StepState[] {
+export function exerciseSteps(t: Translate, id: ExerciseId, document: ProjectDocument, context: { providerReady: boolean }): StepState[] {
   switch (id) {
     case "first":
-      return firstExerciseSteps(document, context.providerReady);
+      return firstExerciseSteps(t, document, context.providerReady);
     case "change":
-      return changeExerciseSteps(document);
+      return changeExerciseSteps(t, document);
     case "revision":
-      return revisionExerciseSteps(document);
+      return revisionExerciseSteps(t, document);
     case "conflict":
-      return conflictExerciseSteps(document);
+      return conflictExerciseSteps(t, document);
   }
 }
 
@@ -503,17 +491,17 @@ export function parseRepositoryInput(input: string): string | null {
  * What a recent project's row says about it in the Benvenuto, from the overview's records only: the work and the
  * colleagues. Nothing is inferred when a record is missing.
  */
-export function recentProjectStatus(entry: ProjectOverview | null, language: Language = "it"): { work: string[]; colleagues: string | null } {
+export function recentProjectStatus(t: Translate, entry: ProjectOverview | null): { work: string[]; colleagues: string | null } {
   if (!entry) return { work: [], colleagues: null };
-  const t = translator(language);
-  if (entry.source === "unreadable") return { work: [t("recent.unreadable")], colleagues: null };
-  if (entry.source === "notSaved") return { work: [t("recent.notStudied")], colleagues: null };
+  if (entry.source === "unreadable") return { work: [t("shared.recent.unreadable")], colleagues: null };
+  if (entry.source === "notSaved") return { work: [t("shared.recent.notSaved")], colleagues: null };
   const work: string[] = [];
-  if (entry.runningWork) work.push(t("recent.running", { count: entry.runningWork }));
-  if (entry.pendingDecisions) work.push(t("recent.decisions", { count: entry.pendingDecisions }));
-  if (entry.blockedWork) work.push(t("recent.blocked", { count: entry.blockedWork }));
-  if (entry.toApprove) work.push(t("recent.toApprove", { count: entry.toApprove }));
-  if (!work.length) work.push(t("recent.nothingWaiting"));
-  const colleagues = entry.colleagues === null ? null : entry.colleagues === 0 ? t("recent.noColleagues") : t("recent.colleagues", { count: entry.colleagues });
+  if (entry.runningWork) work.push(t("shared.recent.running", { count: entry.runningWork }));
+  if (entry.pendingDecisions) work.push(t("shared.recent.decisions", { count: entry.pendingDecisions }));
+  if (entry.blockedWork) work.push(t("shared.recent.blocked", { count: entry.blockedWork }));
+  if (entry.toApprove) work.push(t("main.overview.toApprove", { count: entry.toApprove }));
+  if (!work.length) work.push(t("shared.recent.nothing"));
+  const colleagues =
+    entry.colleagues === null ? null : entry.colleagues === 0 ? t("shared.recent.noColleagues") : t("shared.recent.colleagues", { count: entry.colleagues });
   return { work, colleagues };
 }

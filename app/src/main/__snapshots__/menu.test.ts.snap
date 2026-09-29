@@ -1,0 +1,351 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`application menu (issue #345) > prints the template on darwin in en 1`] = `
+"Trama
+  About Trama role=about
+  ---
+  Settings… [CmdOrCtrl+,] -> send:settings
+  ---
+  Services role=services
+  ---
+  Hide Trama role=hide
+  Hide Others role=hideOthers
+  Show All role=unhide
+  ---
+  Quit Trama role=quit
+File
+  Open Project… [CmdOrCtrl+O] -> openProject
+  Open Example Project -> openDemo
+  Create Project… -> send:createProject
+  ---
+  Refresh Project [CmdOrCtrl+R] -> send:refreshProject
+  ---
+  Close Window role=close
+Edit
+  Undo role=undo
+  Redo role=redo
+  ---
+  Cut role=cut
+  Copy role=copy
+  Paste role=paste
+  Paste and Match Style role=pasteAndMatchStyle
+  Delete role=delete
+  ---
+  Select All role=selectAll
+View
+  Coordinator [CmdOrCtrl+1] -> send:view:conversation
+  Waiting for you [CmdOrCtrl+2] -> send:view:waiting
+  Work [CmdOrCtrl+3] -> send:view:work
+  Squads [CmdOrCtrl+4] -> send:view:teams
+  Rules [CmdOrCtrl+5] -> send:view:rules
+  Memory [CmdOrCtrl+6] -> send:view:memory
+  Projects -> send:view:projects
+  ---
+  Show or Hide the Side Bar [CmdOrCtrl+B] -> send:toggleSidebar
+  Show or Hide the Activity Panel [CmdOrCtrl+J] -> send:togglePanel
+  Show the Details Beside or Over the Conversation [CmdOrCtrl+\\] -> send:toggleSplitEditor
+  Write to the Coordinator [CmdOrCtrl+L] -> send:focusComposer
+  ---
+  Actual Size role=resetZoom
+  Zoom In role=zoomIn
+  Zoom Out role=zoomOut
+  ---
+  Full Screen role=togglefullscreen
+Window role=window
+  Minimize role=minimize
+  Zoom role=zoom
+  ---
+  Bring All to Front role=front
+Help role=help
+  Welcome -> send:welcome
+  Exercises on the Example Project -> send:exercises
+  ---
+  Documentation -> open:https://github.com/emanueledenaro/trama#readme
+  Report an Issue on GitHub -> open:https://github.com/emanueledenaro/trama/issues/new/choose
+  Third-Party Notices -> openNotices"
+`;
+
+exports[`application menu (issue #345) > prints the template on darwin in it 1`] = `
+"Trama
+  Informazioni su Trama role=about
+  ---
+  Impostazioni… [CmdOrCtrl+,] -> send:settings
+  ---
+  Servizi role=services
+  ---
+  Nascondi Trama role=hide
+  Nascondi altre role=hideOthers
+  Mostra tutte role=unhide
+  ---
+  Esci da Trama role=quit
+Archivio
+  Apri progetto… [CmdOrCtrl+O] -> openProject
+  Apri progetto di esempio -> openDemo
+  Crea un progetto… -> send:createProject
+  ---
+  Aggiorna progetto [CmdOrCtrl+R] -> send:refreshProject
+  ---
+  Chiudi finestra role=close
+Composizione
+  Annulla role=undo
+  Ripeti role=redo
+  ---
+  Taglia role=cut
+  Copia role=copy
+  Incolla role=paste
+  Incolla e mantieni stile role=pasteAndMatchStyle
+  Elimina role=delete
+  ---
+  Seleziona tutto role=selectAll
+Vista
+  Coordinatore [CmdOrCtrl+1] -> send:view:conversation
+  Aspetta te [CmdOrCtrl+2] -> send:view:waiting
+  Lavoro [CmdOrCtrl+3] -> send:view:work
+  Squadre [CmdOrCtrl+4] -> send:view:teams
+  Regole [CmdOrCtrl+5] -> send:view:rules
+  Memoria [CmdOrCtrl+6] -> send:view:memory
+  Progetti -> send:view:projects
+  ---
+  Mostra o nascondi la barra laterale [CmdOrCtrl+B] -> send:toggleSidebar
+  Mostra o nascondi il pannello Attività [CmdOrCtrl+J] -> send:togglePanel
+  Affianca o sovrapponi i dettagli alla conversazione [CmdOrCtrl+\\] -> send:toggleSplitEditor
+  Scrivi al Coordinatore [CmdOrCtrl+L] -> send:focusComposer
+  ---
+  Dimensione reale role=resetZoom
+  Ingrandisci role=zoomIn
+  Riduci role=zoomOut
+  ---
+  Schermo intero role=togglefullscreen
+Finestra role=window
+  Contrai role=minimize
+  Zoom role=zoom
+  ---
+  Porta tutto in primo piano role=front
+Aiuto role=help
+  Benvenuto -> send:welcome
+  Esercizi sul progetto di esempio -> send:exercises
+  ---
+  Documentazione -> open:https://github.com/emanueledenaro/trama#readme
+  Segnala un problema su GitHub -> open:https://github.com/emanueledenaro/trama/issues/new/choose
+  Avvisi di terze parti -> openNotices"
+`;
+
+exports[`application menu (issue #345) > prints the template on linux in en 1`] = `
+"&File
+  Open Project… [CmdOrCtrl+O] -> openProject
+  Open Example Project -> openDemo
+  Create Project… -> send:createProject
+  ---
+  Refresh Project [CmdOrCtrl+R] -> send:refreshProject
+  ---
+  Preferences
+    Settings… [CmdOrCtrl+,] -> send:settings
+  ---
+  Exit role=quit
+&Edit
+  Undo role=undo
+  Redo role=redo
+  ---
+  Cut role=cut
+  Copy role=copy
+  Paste role=paste
+  Delete role=delete
+  ---
+  Select All role=selectAll
+&View
+  Coordinator [CmdOrCtrl+1] -> send:view:conversation
+  Waiting for you [CmdOrCtrl+2] -> send:view:waiting
+  Work [CmdOrCtrl+3] -> send:view:work
+  Squads [CmdOrCtrl+4] -> send:view:teams
+  Rules [CmdOrCtrl+5] -> send:view:rules
+  Memory [CmdOrCtrl+6] -> send:view:memory
+  Projects -> send:view:projects
+  ---
+  Show or Hide the Side Bar [CmdOrCtrl+B] -> send:toggleSidebar
+  Show or Hide the Activity Panel [CmdOrCtrl+J] -> send:togglePanel
+  Show the Details Beside or Over the Conversation [CmdOrCtrl+\\] -> send:toggleSplitEditor
+  Write to the Coordinator [CmdOrCtrl+L] -> send:focusComposer
+  ---
+  Actual Size role=resetZoom
+  Zoom In role=zoomIn
+  Zoom Out role=zoomOut
+  ---
+  Full Screen role=togglefullscreen
+&Window
+  Minimize role=minimize
+  Close Window role=close
+&Help role=help
+  Welcome -> send:welcome
+  Exercises on the Example Project -> send:exercises
+  ---
+  Documentation -> open:https://github.com/emanueledenaro/trama#readme
+  Report an Issue on GitHub -> open:https://github.com/emanueledenaro/trama/issues/new/choose
+  Third-Party Notices -> openNotices
+  ---
+  About Trama -> send:about"
+`;
+
+exports[`application menu (issue #345) > prints the template on linux in it 1`] = `
+"&File
+  Apri progetto… [CmdOrCtrl+O] -> openProject
+  Apri progetto di esempio -> openDemo
+  Crea un progetto… -> send:createProject
+  ---
+  Aggiorna progetto [CmdOrCtrl+R] -> send:refreshProject
+  ---
+  Preferenze
+    Impostazioni… [CmdOrCtrl+,] -> send:settings
+  ---
+  Esci role=quit
+&Modifica
+  Annulla role=undo
+  Ripeti role=redo
+  ---
+  Taglia role=cut
+  Copia role=copy
+  Incolla role=paste
+  Elimina role=delete
+  ---
+  Seleziona tutto role=selectAll
+&Visualizza
+  Coordinatore [CmdOrCtrl+1] -> send:view:conversation
+  Aspetta te [CmdOrCtrl+2] -> send:view:waiting
+  Lavoro [CmdOrCtrl+3] -> send:view:work
+  Squadre [CmdOrCtrl+4] -> send:view:teams
+  Regole [CmdOrCtrl+5] -> send:view:rules
+  Memoria [CmdOrCtrl+6] -> send:view:memory
+  Progetti -> send:view:projects
+  ---
+  Mostra o nascondi la barra laterale [CmdOrCtrl+B] -> send:toggleSidebar
+  Mostra o nascondi il pannello Attività [CmdOrCtrl+J] -> send:togglePanel
+  Affianca o sovrapponi i dettagli alla conversazione [CmdOrCtrl+\\] -> send:toggleSplitEditor
+  Scrivi al Coordinatore [CmdOrCtrl+L] -> send:focusComposer
+  ---
+  Dimensione reale role=resetZoom
+  Ingrandisci role=zoomIn
+  Riduci role=zoomOut
+  ---
+  Schermo intero role=togglefullscreen
+F&inestra
+  Riduci a icona role=minimize
+  Chiudi finestra role=close
+&Guida role=help
+  Benvenuto -> send:welcome
+  Esercizi sul progetto di esempio -> send:exercises
+  ---
+  Documentazione -> open:https://github.com/emanueledenaro/trama#readme
+  Segnala un problema su GitHub -> open:https://github.com/emanueledenaro/trama/issues/new/choose
+  Avvisi di terze parti -> openNotices
+  ---
+  Informazioni su Trama -> send:about"
+`;
+
+exports[`application menu (issue #345) > prints the template on win32 in en 1`] = `
+"&File
+  Open Project… [CmdOrCtrl+O] -> openProject
+  Open Example Project -> openDemo
+  Create Project… -> send:createProject
+  ---
+  Refresh Project [CmdOrCtrl+R] -> send:refreshProject
+  ---
+  Preferences
+    Settings… [CmdOrCtrl+,] -> send:settings
+  ---
+  Exit role=quit
+&Edit
+  Undo role=undo
+  Redo role=redo
+  ---
+  Cut role=cut
+  Copy role=copy
+  Paste role=paste
+  Delete role=delete
+  ---
+  Select All role=selectAll
+&View
+  Coordinator [CmdOrCtrl+1] -> send:view:conversation
+  Waiting for you [CmdOrCtrl+2] -> send:view:waiting
+  Work [CmdOrCtrl+3] -> send:view:work
+  Squads [CmdOrCtrl+4] -> send:view:teams
+  Rules [CmdOrCtrl+5] -> send:view:rules
+  Memory [CmdOrCtrl+6] -> send:view:memory
+  Projects -> send:view:projects
+  ---
+  Show or Hide the Side Bar [CmdOrCtrl+B] -> send:toggleSidebar
+  Show or Hide the Activity Panel [CmdOrCtrl+J] -> send:togglePanel
+  Show the Details Beside or Over the Conversation [CmdOrCtrl+\\] -> send:toggleSplitEditor
+  Write to the Coordinator [CmdOrCtrl+L] -> send:focusComposer
+  ---
+  Actual Size role=resetZoom
+  Zoom In role=zoomIn
+  Zoom Out role=zoomOut
+  ---
+  Full Screen role=togglefullscreen
+&Window
+  Minimize role=minimize
+  Close Window role=close
+&Help role=help
+  Welcome -> send:welcome
+  Exercises on the Example Project -> send:exercises
+  ---
+  Documentation -> open:https://github.com/emanueledenaro/trama#readme
+  Report an Issue on GitHub -> open:https://github.com/emanueledenaro/trama/issues/new/choose
+  Third-Party Notices -> openNotices
+  ---
+  About Trama -> send:about"
+`;
+
+exports[`application menu (issue #345) > prints the template on win32 in it 1`] = `
+"&File
+  Apri progetto… [CmdOrCtrl+O] -> openProject
+  Apri progetto di esempio -> openDemo
+  Crea un progetto… -> send:createProject
+  ---
+  Aggiorna progetto [CmdOrCtrl+R] -> send:refreshProject
+  ---
+  Preferenze
+    Impostazioni… [CmdOrCtrl+,] -> send:settings
+  ---
+  Esci role=quit
+&Modifica
+  Annulla role=undo
+  Ripeti role=redo
+  ---
+  Taglia role=cut
+  Copia role=copy
+  Incolla role=paste
+  Elimina role=delete
+  ---
+  Seleziona tutto role=selectAll
+&Visualizza
+  Coordinatore [CmdOrCtrl+1] -> send:view:conversation
+  Aspetta te [CmdOrCtrl+2] -> send:view:waiting
+  Lavoro [CmdOrCtrl+3] -> send:view:work
+  Squadre [CmdOrCtrl+4] -> send:view:teams
+  Regole [CmdOrCtrl+5] -> send:view:rules
+  Memoria [CmdOrCtrl+6] -> send:view:memory
+  Progetti -> send:view:projects
+  ---
+  Mostra o nascondi la barra laterale [CmdOrCtrl+B] -> send:toggleSidebar
+  Mostra o nascondi il pannello Attività [CmdOrCtrl+J] -> send:togglePanel
+  Affianca o sovrapponi i dettagli alla conversazione [CmdOrCtrl+\\] -> send:toggleSplitEditor
+  Scrivi al Coordinatore [CmdOrCtrl+L] -> send:focusComposer
+  ---
+  Dimensione reale role=resetZoom
+  Ingrandisci role=zoomIn
+  Riduci role=zoomOut
+  ---
+  Schermo intero role=togglefullscreen
+F&inestra
+  Riduci a icona role=minimize
+  Chiudi finestra role=close
+&Guida role=help
+  Benvenuto -> send:welcome
+  Esercizi sul progetto di esempio -> send:exercises
+  ---
+  Documentazione -> open:https://github.com/emanueledenaro/trama#readme
+  Segnala un problema su GitHub -> open:https://github.com/emanueledenaro/trama/issues/new/choose
+  Avvisi di terze parti -> openNotices
+  ---
+  Informazioni su Trama -> send:about"
+`;

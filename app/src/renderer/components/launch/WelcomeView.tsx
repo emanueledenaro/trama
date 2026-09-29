@@ -126,7 +126,7 @@ function StartBlock({ onClone }: { onClone: () => void }) {
 function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOverview | null }) {
   const t = useT();
   const language = useLanguage();
-  const status = recentProjectStatus(entry, language);
+  const status = recentProjectStatus(t, entry);
   const busy = (entry?.runningWork ?? 0) > 0;
   const name = recent.isDemo ? t("welcome.start.example") : recent.name;
   return (

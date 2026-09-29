@@ -9,6 +9,8 @@ import { projectFileLink } from "@/lib/chatLinks";
 import { openReference, useReferenceIndex } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
 import { ChatBlockquote, ChatTable } from "./ChatBlocks";
+import { translator } from "@shared/i18n";
+import { useLanguage } from "@/lib/i18n";
 
 /** Links to Trama's own records (issue #277) pass; every other URL goes through react-markdown's safe filter. */
 const urlTransform = (url: string) => (url.startsWith("trama:ref/") ? url : defaultUrlTransform(url));
@@ -67,9 +69,10 @@ const COMPONENTS: Components = {
  */
 export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, plain = false, className }: { text: string; user?: boolean; plain?: boolean; className?: string }) {
   const index = useReferenceIndex();
+  const language = useLanguage();
   const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
-    () => [remarkGfm, remarkCallouts, ...(plain ? [remarkPlainText] : []), [remarkReferences, { index }]],
-    [index, plain],
+    () => [remarkGfm, remarkCallouts, ...(plain ? [[remarkPlainText, { t: translator(language) }] satisfies NonNullable<Options["remarkPlugins"]>[number]] : []), [remarkReferences, { index }]],
+    [index, plain, language],
   );
   return (
     <div className={cn("chat-markdown w-full min-w-0 text-foreground", user && "chat-markdown--user", className)}>

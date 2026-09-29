@@ -1,4 +1,5 @@
 import type { ProviderId } from "./codex";
+import type { Translate } from "./i18n";
 
 /**
  * What Trama does with a provider through its adapter (issue #71), not everything the provider's own CLI offers.
@@ -49,24 +50,30 @@ export const PROVIDERS: readonly ProviderDescriptor[] = [
   { id: "pi", name: "Pi", available: true, signInCommand: "pi login", capabilities: { sessionModelSwitch: "inSession", conversationRollback: null, supportsSkillMentions: true, supportsSkillDiscovery: false, supportsNativeSlashCommandDiscovery: false, supportsPluginMentions: false, supportsPluginDiscovery: false, supportsRuntimeModelList: true, supportsTurnSteering: false, supportsLiveTurnDiffPatch: false, supportsPersistentThread: true, supportsResume: true, supportsHostTools: true, supportsPerTurnOverride: true, reportsTokenUsage: true, supportsThreadCompaction: false, supportsThreadImport: false } },
 ];
 
-const yesNo = (value: boolean) => (value ? "Sì" : "No");
-
-export function capabilityLines(c: ProviderCapabilities): { label: string; value: string }[] {
+export function capabilityLines(t: Translate, c: ProviderCapabilities): { label: string; value: string }[] {
+  const yesNo = (value: boolean) => t(value ? "shared.capability.yes" : "shared.capability.no");
+  const unsupported = t("shared.capability.unsupported");
   return [
-    { label: "Cambio modello", value: c.sessionModelSwitch === "inSession" ? "In sessione" : c.sessionModelSwitch === "restartSession" ? "Con riavvio" : "Non supportato" },
-    { label: "Rollback", value: c.conversationRollback === "native" ? "Nativo" : c.conversationRollback === "restartSession" ? "Con riavvio" : "Non supportato" },
-    { label: "Compattazione", value: yesNo(c.supportsThreadCompaction) },
-    { label: "Import del thread", value: yesNo(c.supportsThreadImport) },
-    { label: "Steering", value: yesNo(c.supportsTurnSteering) },
-    { label: "Catalogo modelli", value: yesNo(c.supportsRuntimeModelList) },
-    { label: "Scoperta skill", value: yesNo(c.supportsSkillDiscovery) },
-    { label: "Scoperta comandi", value: yesNo(c.supportsNativeSlashCommandDiscovery) },
-    { label: "Scoperta plugin", value: yesNo(c.supportsPluginDiscovery) },
-    { label: "Thread persistente", value: yesNo(c.supportsPersistentThread) },
-    { label: "Ripresa", value: yesNo(c.supportsResume) },
-    { label: "Strumenti di Trama", value: yesNo(c.supportsHostTools) },
-    { label: "Override per turno", value: yesNo(c.supportsPerTurnOverride) },
-    { label: "Uso token", value: yesNo(c.reportsTokenUsage) },
+    {
+      label: t("shared.capability.modelSwitch"),
+      value: c.sessionModelSwitch === "inSession" ? t("shared.capability.inSession") : c.sessionModelSwitch === "restartSession" ? t("shared.capability.restart") : unsupported,
+    },
+    {
+      label: t("shared.capability.rollback"),
+      value: c.conversationRollback === "native" ? t("shared.capability.native") : c.conversationRollback === "restartSession" ? t("shared.capability.restart") : unsupported,
+    },
+    { label: t("shared.capability.compaction"), value: yesNo(c.supportsThreadCompaction) },
+    { label: t("shared.capability.threadImport"), value: yesNo(c.supportsThreadImport) },
+    { label: t("shared.capability.steering"), value: yesNo(c.supportsTurnSteering) },
+    { label: t("shared.capability.modelCatalog"), value: yesNo(c.supportsRuntimeModelList) },
+    { label: t("shared.capability.skillDiscovery"), value: yesNo(c.supportsSkillDiscovery) },
+    { label: t("shared.capability.commandDiscovery"), value: yesNo(c.supportsNativeSlashCommandDiscovery) },
+    { label: t("shared.capability.pluginDiscovery"), value: yesNo(c.supportsPluginDiscovery) },
+    { label: t("shared.capability.persistentThread"), value: yesNo(c.supportsPersistentThread) },
+    { label: t("shared.capability.resume"), value: yesNo(c.supportsResume) },
+    { label: t("shared.capability.hostTools"), value: yesNo(c.supportsHostTools) },
+    { label: t("shared.capability.perTurnOverride"), value: yesNo(c.supportsPerTurnOverride) },
+    { label: t("shared.capability.tokenUsage"), value: yesNo(c.reportsTokenUsage) },
   ];
 }
 
@@ -77,17 +84,17 @@ export const supportsReadOnly = (id: string): boolean => PROVIDERS.find((p) => p
  * Why the provider cannot be the Coordinator, or null when it can: the Coordinator needs read-only sessions and
  * Trama's tools (read_issues and the others), because the provider's own GitHub and web tools stay blocked (issue #228).
  */
-export function coordinatorUnavailableReason(id: string): string | null {
-  const provider = PROVIDERS.find((p) => p.id === id);
-  const name = provider?.name ?? id;
-  if (!supportsReadOnly(id)) return `${name} lavora solo con un worktree e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
-  if (provider?.capabilities.supportsHostTools === false) {
-    return `${name} non riceve gli strumenti di Trama e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
-  }
-  return null;
+function coordinatorUnavailable(id: string): "worktreeOnly" | "noHostTools" | null {
+  if (!supportsReadOnly(id)) return "worktreeOnly";
+  return PROVIDERS.find((p) => p.id === id)?.capabilities.supportsHostTools === false ? "noHostTools" : null;
 }
 
-export const canCoordinate = (id: string): boolean => coordinatorUnavailableReason(id) === null;
+export function coordinatorUnavailableReason(t: Translate, id: string): string | null {
+  const reason = coordinatorUnavailable(id);
+  return reason ? t(`shared.provider.${reason}`, { name: PROVIDERS.find((p) => p.id === id)?.name ?? id }) : null;
+}
+
+export const canCoordinate = (id: string): boolean => coordinatorUnavailable(id) === null;
 
 /**
  * The catalogue name and level of a model. Antigravity lists a model once and names each level in

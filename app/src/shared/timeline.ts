@@ -2,6 +2,7 @@ import { isAutomaticMove } from "./activity";
 import type { ProviderId } from "./codex";
 import type { CardKind, ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
 import { classifyProviderFailure, type ProviderFailure } from "./providerFailure";
+import { formatNumber, type Translate } from "./i18n";
 
 export type TimelineRow =
   | { kind: "person"; id: string; event: ConversationEvent; text: string; moduleName: string | null; imageCount: number }
@@ -189,14 +190,14 @@ export function rowAnchors(row: TimelineRow): string[] {
   return [];
 }
 
-/** Durations as the Swift app formats them: "450 ms", "2,5 s", "12 s", "1m 5s". */
-export function formatDuration(ms: number): string {
-  if (ms < 1_000) return `${Math.round(ms)} ms`;
+/** Durations as the Swift app formats them: "450 ms", "2,5 s" ("2.5 s" in English), "12 s", "1m 5s". */
+export function formatDuration(t: Translate, ms: number): string {
+  if (ms < 1_000) return t("shared.duration.ms", { value: Math.round(ms) });
   const seconds = ms / 1_000;
-  if (seconds < 10) return `${seconds.toFixed(1).replace(".", ",")} s`;
-  if (seconds < 60) return `${Math.round(seconds)} s`;
+  if (seconds < 10) return t("shared.duration.s", { value: formatNumber(t.language, seconds, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
+  if (seconds < 60) return t("shared.duration.s", { value: Math.round(seconds) });
   const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${Math.round(seconds - minutes * 60)}s`;
+  return t("shared.duration.ms_minutes", { minutes, seconds: Math.round(seconds - minutes * 60) });
 }
 
 export { isUnsupportedModelError } from "./providerFailure";
@@ -205,7 +206,7 @@ export { isUnsupportedModelError } from "./providerFailure";
  * A turn failure in the person's words (P10): the title and the explanation of its class, never the provider's
  * JSON. The provider's sentence and the raw text stay in `failure` for the technical detail.
  */
-export function turnFailureText(raw: string, provider?: string | null): { title: string; detail: string | null; failure: ProviderFailure } {
-  const failure = classifyProviderFailure(raw, { provider });
+export function turnFailureText(t: Translate, raw: string, provider?: string | null): { title: string; detail: string | null; failure: ProviderFailure } {
+  const failure = classifyProviderFailure(t, raw, { provider });
   return { title: failure.title, detail: failure.explanation || null, failure };
 }

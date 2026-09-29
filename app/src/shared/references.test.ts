@@ -12,6 +12,9 @@ import {
   splitReferences,
   unknownReferences,
 } from "./references";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const assignment = { id: "A-11111111", objective: "Mostrare gli ordini in revisione al supporto", slice: { planId: "P-22222222", sliceId: "S2" }, workspace: { branch: "feature/support-review-trama-1a2b3c4d" } } as SpecialistAssignment;
 const luca = { id: "S-33333333", name: "Luca", origin: "coordinator", competence: "Swift", assignments: [assignment] } as unknown as Specialist;
@@ -57,7 +60,7 @@ function index(ready = true) {
   document.plans = [plan];
   document.decisions = [{ id: "D-1", value: "Un ordine pagato annullato va in revisione", acceptedExample: "Ordine 42", rationale: "r", version: 1, decidedAt: "" }];
   document.goals = [{ id: "G-66666666", title: "Annullo sicuro", outcome: "Nessun rimborso automatico" } as never];
-  return buildReferenceIndex({ document, modules, github: { ...github, status: ready ? "ready" : "loading" } });
+  return buildReferenceIndex(t, { document, modules, github: { ...github, status: ready ? "ready" : "loading" } });
 }
 
 const links = (text: string, ready = true) =>
@@ -117,7 +120,7 @@ describe("references in messages (issue #277)", () => {
     const second = { id: "A-00000002", objective: "Seconda" } as SpecialistAssignment;
     document.team.specialists = [{ ...luca, assignments: [first, second] } as Specialist];
     document.candidates = [{ ...candidate, id: "C-00000001", assignmentId: "A-00000001" }, { ...candidate, id: "C-00000002", assignmentId: "A-00000002" }];
-    const refs = buildReferenceIndex({ document, modules: [], github });
+    const refs = buildReferenceIndex(t, { document, modules: [], github });
     expect(lookupReference("C-00000001", refs)!.label).toBe("candidato di Luca, n. 1");
     expect(lookupReference("C-00000002", refs)!.label).toBe("candidato di Luca, n. 2");
     expect(lookupReference("A-00000002", refs)!.label).toBe("incarico di Luca, n. 2");
@@ -163,7 +166,7 @@ describe("references in messages (issue #277)", () => {
     expect(listing).toContain("- D-1: decisione «Un ordine pagato annullato va in revisione»");
     const empty = emptyDocument("p");
     empty.team.specialists = [];
-    expect(referenceListing(buildReferenceIndex({ document: empty, modules: [], github }))).toBeNull();
+    expect(referenceListing(buildReferenceIndex(t, { document: empty, modules: [], github }))).toBeNull();
   });
 });
 
@@ -171,7 +174,7 @@ describe("routes of Ask Trama (issue #270)", () => {
   it("names a route by its situation in the message that starts it, with the id on hover", () => {
     const document = emptyDocument("p");
     document.routes = [{ id: "AT-66666666", situation: "Voglio capire chi vede gli ordini", reason: "Serve un chiarimento" } as never];
-    const index = buildReferenceIndex({ document, modules: [], github: { ...github, issues: [], pullRequestLinks: [], status: "idle" } as GitHubState });
+    const index = buildReferenceIndex(t, { document, modules: [], github: { ...github, issues: [], pullRequestLinks: [], status: "idle" } as GitHubState });
     const text = "Avvia il percorso AT-66666666 di Ask Trama: chiarire.";
     const [before, part] = splitReferences(text, index);
     expect(part).toMatchObject({ text: "AT-66666666", reference: { target: { kind: "route", id: "AT-66666666" } } });

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { fileScore, mentionCandidates, mentionContextBlock, mentionPaths, mentionToken, resolveMentions } from "./mentions";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const sources = {
   modules: [
@@ -26,7 +29,7 @@ describe("composer mentions", () => {
 
   it("resolves only real objects and builds the context block", () => {
     const text = "Vedi @module:Sources/Orders, @issue:12 @decision:d-1 @Sources/Orders/CancelPaidOrder.swift @nulla";
-    expect(resolveMentions(text, sources).map((m) => m.label)).toEqual([
+    expect(resolveMentions(t, text, sources).map((m) => m.label)).toEqual([
       "modulo Orders",
       "issue #12",
       "decisione D-1",
@@ -41,7 +44,7 @@ describe("composer mentions", () => {
   it("ranks candidates by match quality", () => {
     expect(fileScore("Sources/Orders/CancelPaidOrder.swift", "cancel")).toBe(2);
     expect(fileScore("Sources/Orders/CancelPaidOrder.swift", "cpo")).toBeGreaterThan(100);
-    expect(mentionCandidates("ord", sources)[0]!.title).toBe("Orders");
-    expect(mentionCandidates("issue:12", sources).map((c) => c.title)).toEqual(["#12 Annullo ordini"]);
+    expect(mentionCandidates(t, "ord", sources)[0]!.title).toBe("Orders");
+    expect(mentionCandidates(t, "issue:12", sources).map((c) => c.title)).toEqual(["#12 Annullo ordini"]);
   });
 });

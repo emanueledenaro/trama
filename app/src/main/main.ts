@@ -1,11 +1,12 @@
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from "electron";
 import type { AppSettings } from "@shared/domain";
-import { DEFAULT_LANGUAGE, type Language, type MessageKey, translate } from "@shared/i18n";
+import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
 import { t } from "./core/personLanguage";
+import { type MenuCommand, menuTemplate } from "./menu";
 
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -19,6 +20,8 @@ let window: BrowserWindow | null = null;
 // would show Electron's icon in the Dock and Windows and Linux would show none on the window and in the taskbar.
 const iconDirectory = app.isPackaged ? join(process.resourcesPath, "icons") : join(app.getAppPath(), "resources", "icons");
 const windowIcon = process.platform === "win32" ? join(iconDirectory, "icon.ico") : join(iconDirectory, "png", "512x512.png");
+// The third-party notices ship next to the app (electron-builder extraResources); unpackaged they are at the repository's root.
+const noticesPath = app.isPackaged ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.md") : join(app.getAppPath(), "..", "THIRD_PARTY_NOTICES.md");
 
 function surfaceColor(): string {
   return nativeTheme.shouldUseDarkColors ? "#111111" : "#ffffff";
@@ -34,7 +37,7 @@ const RETURN_AFTER_MS = Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000)
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
     window?.webContents.send("trama:state", state);
-    // The menu follows the interface language: it is built again only when the language changes.
+    // The menu speaks the language Trama speaks, and is built again when the person changes it (issue #345).
     if (app.isReady() && state.language !== menuLanguage) buildMenu(state.language);
   },
   openExternal: (url) => shell.openExternal(url),
@@ -279,7 +282,7 @@ ipcMain.handle("trama:action", async (_event, action: ActionName, payload: unkno
   return handler(payload as never);
 });
 
-function sendMenu(command: string): void {
+function sendMenu(command: MenuCommand): void {
   window?.webContents.send("trama:menu", command);
 }
 
@@ -287,88 +290,18 @@ let menuLanguage: Language | null = null;
 
 function buildMenu(language: Language): void {
   menuLanguage = language;
-  const about = translate(language, "menu.about");
-  const label = (key: MessageKey): string => translate(language, key);
-  const template: MenuItemConstructorOptions[] = [
-    ...(isMac
-      ? [
-          {
-            label: "Trama",
-            submenu: [
-              { role: "about" as const, label: about },
-              { type: "separator" as const },
-              { label: label("main.menu.settings"), accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
-              { type: "separator" as const },
-              { role: "hide" as const, label: label("main.menu.hide") },
-              { role: "hideOthers" as const, label: label("main.menu.hideOthers") },
-              { role: "unhide" as const, label: label("main.menu.showAll") },
-              { type: "separator" as const },
-              { role: "quit" as const, label: label("main.menu.quitTrama") },
-            ],
-          },
-        ]
-      : []),
-    {
-      label: label("main.menu.file"),
-      submenu: [
-        { label: label("main.menu.openProject"), accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
-        { label: label("main.menu.openDemo"), click: () => void controller.openDemo().catch(() => undefined) },
-        { label: label("main.menu.createProject"), click: () => sendMenu("createProject") },
-        { type: "separator" },
-        // Through the window, so the menu item confirms the rescan like the header button does (W12).
-        { label: label("main.menu.refreshProject"), accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
-        ...(isMac ? [] : [{ type: "separator" as const }, { label: label("main.menu.settings"), accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
-        ...(isMac ? [{ role: "close" as const, label: label("main.menu.closeWindow") }] : [{ role: "quit" as const, label: label("main.menu.quit") }]),
-      ],
+  const template = menuTemplate({
+    platform: process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
+    language,
+    packaged: app.isPackaged,
+    actions: {
+      send: sendMenu,
+      openProject: () => void Promise.resolve(handlers["project:openDialog"]()).catch(() => undefined),
+      openDemo: () => void controller.openDemo().catch(() => undefined),
+      openExternal: (url) => void shell.openExternal(url),
+      openNotices: () => void shell.openPath(noticesPath),
     },
-    {
-      label: label("main.menu.edit"),
-      submenu: [
-        { role: "undo", label: label("main.menu.undo") },
-        { role: "redo", label: label("main.menu.redo") },
-        { type: "separator" },
-        { role: "cut", label: label("main.menu.cut") },
-        { role: "copy", label: label("main.menu.copy") },
-        { role: "paste", label: label("main.menu.paste") },
-        { role: "selectAll", label: label("main.menu.selectAll") },
-      ],
-    },
-    {
-      label: label("main.menu.view"),
-      submenu: [
-        { label: label("main.menu.focusComposer"), accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
-        { label: label("main.menu.toggleSidebar"), accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
-        { label: label("main.menu.toggleInspector"), accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
-        { type: "separator" },
-        { label: label("main.menu.map"), accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
-        { label: label("main.menu.pact"), accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
-        { label: label("main.menu.mandate"), accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
-        { label: label("main.menu.issues"), accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
-        { label: label("main.menu.team"), accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
-        { label: label("main.menu.work"), accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
-        { label: label("main.menu.group"), accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
-        { label: label("main.menu.memory"), accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
-        { type: "separator" },
-        { role: "resetZoom", label: label("main.menu.resetZoom") },
-        { role: "zoomIn", label: label("main.menu.zoomIn") },
-        { role: "zoomOut", label: label("main.menu.zoomOut") },
-        { type: "separator" },
-        { role: "togglefullscreen", label: label("main.menu.fullScreen") },
-        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: label("main.menu.devTools") }]),
-      ],
-    },
-    { role: "windowMenu", label: label("main.menu.window") },
-    {
-      role: "help",
-      label: label("main.menu.help"),
-      submenu: [
-        { label: label("main.menu.welcome"), click: () => sendMenu("welcome") },
-        { label: label("main.menu.exercises"), click: () => sendMenu("exercises") },
-        // Windows and Linux have no application menu: Informazioni su Trama opens the section of Impostazioni.
-        ...(isMac ? [] : [{ type: "separator" as const }, { label: about, click: () => sendMenu("about") }]),
-      ],
-    },
-  ];
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -391,7 +324,7 @@ app.whenReady().then(async () => {
     applicationVersion: app.getVersion(),
     ...(__TRAMA_COMMIT__ ? { version: __TRAMA_COMMIT__ } : {}),
   });
-  buildMenu(menuLanguage ?? DEFAULT_LANGUAGE);
+  buildMenu(menuLanguage ?? controller.snapshot.language);
   if (!startedHidden) createWindow();
   await controller.start();
   // After sleep the monitor's timer and the providers' state are stale: check again at once.

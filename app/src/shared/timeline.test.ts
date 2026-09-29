@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
 import { deriveTimelineRows, rowAnchors, turnFailureText } from "./timeline";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = "2026-09-24T12:00:00.000Z";
 
@@ -111,7 +114,7 @@ describe("deriveTimelineRows", () => {
 
 describe("turnFailureText", () => {
   it("says in plain words that the model is not available for the account, and keeps the provider's message apart", () => {
-    const text = turnFailureText(error, "ChatGPT");
+    const text = turnFailureText(t, error, "ChatGPT");
     expect(text).toMatchObject({
       title: "Il modello scelto non è disponibile",
       detail: "ChatGPT non offre questo modello con l'account collegato. Scegli un altro modello o un altro provider, poi riprova.",
@@ -121,8 +124,8 @@ describe("turnFailureText", () => {
   });
 
   it("keeps an unknown provider message, out of its JSON envelope", () => {
-    expect(turnFailureText('{"error":{"message":"Tool schema rejected"}}')).toMatchObject({ title: "Il Coordinatore non ha potuto rispondere", detail: "Tool schema rejected" });
-    expect(turnFailureText("socket closed")).toMatchObject({ title: "Il Coordinatore non ha potuto rispondere", detail: "socket closed" });
+    expect(turnFailureText(t, '{"error":{"message":"Tool schema rejected"}}')).toMatchObject({ title: "Il Coordinatore non ha potuto rispondere", detail: "Tool schema rejected" });
+    expect(turnFailureText(t, "socket closed")).toMatchObject({ title: "Il Coordinatore non ha potuto rispondere", detail: "socket closed" });
   });
 });
 

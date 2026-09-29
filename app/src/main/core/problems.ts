@@ -10,7 +10,8 @@ import type {
   TriageCategory,
   TriageState,
 } from "@shared/domain";
-import { TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
+import { TRIAGE_STATES, triageStateLabel } from "@shared/duties";
+import { ITALIAN } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { CHECKS } from "./checks";
@@ -104,7 +105,7 @@ function findings(document: ProjectDocument): Finding[] {
       if (review.status !== "done") continue;
       review.findings.forEach((finding, index) => {
         if (finding.severity !== "advisory" || !finding.file || changed.has(fileOf(finding.file))) return;
-        const name = roleProfile(review.role).name;
+        const name = roleProfile(ITALIAN, review.role).name;
         found.push({
           source: `gate:${gate.id}:finding:${review.role}:${index}`,
           key: `finding:${review.role}:${fileOf(finding.file)}:${normalize(finding.title)}`,
@@ -303,7 +304,7 @@ export function workingAssignment(document: ProjectDocument, problem: FoundProbl
 
 function triageNote(assignment: SpecialistAssignment | null): string {
   const outcome = assignment?.duty?.outcome;
-  if (outcome?.kind === "triage") return t("main.problems.triageOutcome", { state: outcome.state, label: TRIAGE_STATE_LABEL[outcome.state] });
+  if (outcome?.kind === "triage") return t("main.problems.triageOutcome", { state: outcome.state, label: triageStateLabel(t, outcome.state) });
   return assignment ? t("main.problems.triageUnreadable", { id: assignment.id }) : t("main.problems.issueAlreadyOpen");
 }
 

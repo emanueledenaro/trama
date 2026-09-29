@@ -16,6 +16,9 @@ import { TramaController } from "./controller";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
 import { assign, confirmTeam, developers, proposeTeam } from "./core/team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -694,7 +697,7 @@ describe("TramaController", () => {
       // The move is not a row of the chat (issue #241): Activity lists it as stopped, and the status line has no stop left.
       const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
       expect(rows.some((r) => ("requestId" in r && r.requestId === move.id) || ("event" in r && r.event.requestId === move.id))).toBe(false);
-      expect(activityLog(document.requests, document.events)).toEqual([expect.objectContaining({ requestId: move.id, label: "Prepara il piano", outcome: "stopped" })]);
+      expect(activityLog(t, document.requests, document.events)).toEqual([expect.objectContaining({ requestId: move.id, label: "Prepara il piano", outcome: "stopped" })]);
       expect(controller!.snapshot.project!.statusLine?.runningMove).toBeNull();
     } finally {
       delete process.env.FAKE_CODEX_AUTOMATIC;
@@ -768,7 +771,7 @@ describe("TramaController", () => {
       expect(automaticRequests(reopened.document)[0]!.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "round" });
       const rounds = reopened.document.continuousWork!.rounds;
       expect(rounds.at(-1)!.detail).toBe('Avviata la mossa "Prepara il piano".');
-      expect(activityLog(reopened.document.requests, reopened.document.events, rounds).map((e) => e.kind)).toEqual(["move", "round"]);
+      expect(activityLog(t, reopened.document.requests, reopened.document.events, rounds).map((e) => e.kind)).toEqual(["move", "round"]);
 
       // The move was not made: the next round does not repeat it and opens no provider turn.
       const requests = reopened.document.requests.length;
@@ -1318,7 +1321,7 @@ describe("TramaController", () => {
       expect.objectContaining({ ban: "forcePush", action: "git push --force origin main", by: { kind: "coordinator" }, acknowledgedAt: null }),
     ]);
     // The goal the study proposed waits as well (issue #292): only the refusals are counted here.
-    const refusals = () => waitingForYou(document).filter((i) => i.kind === "fixedBan");
+    const refusals = () => waitingForYou(t, document).filter((i) => i.kind === "fixedBan");
     expect(refusals()).toHaveLength(1);
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Azione fermata da un divieto fisso"))).toBe(true);
     // The same command tried again is a second refusal, not folded into the first.
@@ -1396,7 +1399,7 @@ describe("TramaController", () => {
     // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
     await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
     expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
-    expect(activityLog(project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
+    expect(activityLog(t, project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
 
     // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
     const plan = project.document.plans[0]!;
@@ -1883,7 +1886,7 @@ describe("TramaController", () => {
     await controller!.send("[richiesta:git push origin --delete feature/old|cancella il branch remoto feature/old|Cancello feature/old] Cancella il branch remoto feature/old", null, null, null);
     const deletion = document.requestedActions!.at(-1)!;
     expect(deletion).toMatchObject({ ban: "deleteRemoteRef", status: "waiting" });
-    expect(waitingForYou(document).map((item) => item.key)).toContain(`confirmation:${deletion.id}`);
+    expect(waitingForYou(translator("it"), document).map((item) => item.key)).toContain(`confirmation:${deletion.id}`);
     expect(run(["branch", "--list", "feature/old"], remote).trim()).toBe("feature/old");
 
     await controller!.confirmRequestedAction(deletion.id);
@@ -1893,7 +1896,7 @@ describe("TramaController", () => {
     const choice = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
     expect(choice).toMatchObject({ text: "Confermo: Cancello feature/old" });
     expect(choice).not.toHaveProperty("composer");
-    expect(activityLog(document.requests, document.events, [], [], [], [], [], "it", document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
+    expect(activityLog(translator("it"), document.requests, document.events, [], [], [], [], [], document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
   });
 
 

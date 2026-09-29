@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ProviderId } from "@shared/codex";
 import { chatComposer } from "@shared/goals";
+import { translator } from "@shared/i18n";
 import { isFirstLaunch, welcomeLaunchDecision } from "@shared/onboarding";
 import { Dialogs } from "@/components/Dialogs";
 import { FocusModeView } from "@/components/focus/FocusModeView";
@@ -16,7 +17,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
-import { PANEL_MIN_HEIGHT, SIDE_BAR_MIN_WIDTH, panelDefaultHeight, panelMaxHeight, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
+import { CONVERSATION_TAB, PANEL_MIN_HEIGHT, SIDE_BAR_MIN_WIDTH, SIDE_BAR_VIEWS, SPLIT_EDITOR_MIN_VIEWPORT, type SideBarView, panelDefaultHeight, panelMaxHeight, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -42,6 +43,11 @@ function useProviderTheme() {
     if (provider) document.documentElement.dataset.provider = provider;
     else delete document.documentElement.dataset.provider;
   }, [project]);
+}
+
+/** A view from the View menu opens in the side bar as from the activity bar, but stays open when it already shows (issue #345). */
+function openMenuView(ui: ReturnType<typeof useUi.getState>, view: SideBarView) {
+  if (!(ui.sidebarOpen && ui.sideBarView === view)) ui.openView(view);
 }
 
 export function App() {
@@ -85,13 +91,26 @@ export function App() {
         });
       }
       else if (command === "toggleSidebar") ui.toggleSidebar();
+      else if (command === "view:projects") openMenuView(ui, "projects");
       // The items below act on the open project; without one they say so instead of doing nothing (W12).
-      else if (!ui.app?.project) ui.setToast("Apri o crea un progetto per usare questa voce.", "info");
+      else if (!ui.app?.project) ui.setToast(translator(ui.app?.language)("menu.needsProject"), "info");
       else if (command === "focusComposer") ui.focusComposer();
       else if (command === "refreshProject") void refreshProject();
-      else if (command === "toggleInspector") ui.setInspector(ui.sidebarOpen && ui.mainView === "dialog" ? null : { kind: "map" });
-      else if (command.startsWith("inspector:")) {
-        ui.setInspector({ kind: command.slice("inspector:".length) as "map" | "pact" | "mandate" | "issues" | "team" | "work" | "group" | "memory" });
+      // The conversation's tab comes forward with the composer, as its icon in the activity bar does (issue #336).
+      else if (command === "view:conversation") {
+        ui.focusTab(CONVERSATION_TAB);
+        ui.focusComposer();
+      }
+      // Activity in the bottom panel, as the title bar's toggle (issue #337).
+      else if (command === "togglePanel") ui.togglePanel();
+      // The split editor needs a wide window, as the title bar's toggle that only shows there (issue #336).
+      else if (command === "toggleSplitEditor") {
+        if (window.innerWidth >= SPLIT_EDITOR_MIN_VIEWPORT) ui.toggleSplitEditor();
+        else ui.setToast(translator(ui.app?.language)("menu.splitNeedsWidth"), "info");
+      }
+      else if (command.startsWith("view:")) {
+        const view = command.slice("view:".length) as SideBarView;
+        if (SIDE_BAR_VIEWS.includes(view)) openMenuView(ui, view);
       }
     });
     return () => {
