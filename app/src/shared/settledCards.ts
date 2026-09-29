@@ -38,7 +38,7 @@ const MANDATE_OUTCOME: Record<"granted" | "corrected" | "rejected" | "revoked" |
   corrected: (version) => ({ label: `Corretto, v${version}`, tone: "success" }),
   rejected: () => ({ label: "Rifiutata", tone: "secondary" }),
   revoked: () => ({ label: "Non concesso", tone: "secondary" }),
-  superseded: () => ({ label: "Superata", tone: "secondary" }),
+  superseded: () => ({ label: "Sostituita", tone: "secondary" }),
 };
 
 const TEAM_OUTCOME: Record<"confirmed" | "corrected" | "superseded", Label> = {
@@ -114,7 +114,7 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (explainedByDivergence(document, assessment)) return { title, subject, answer: null, outcome: { label: "Nell'avviso del progetto", tone: "secondary" } };
       const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
       if ((candidate && candidateSuperseded(document, candidate)) || otherSideSuperseded(document, assessment)) {
-        return { title, subject, answer: null, outcome: { label: "Superato", tone: "secondary" } };
+        return { title, subject, answer: null, outcome: { label: "Sostituito", tone: "secondary" } };
       }
       return null;
     }

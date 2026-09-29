@@ -21,7 +21,7 @@ import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
-import { SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
+import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
@@ -73,6 +73,7 @@ import { answerDecisionRequest } from "./pact";
 import { updateGoal } from "./goals";
 import type { FullDelegation } from "@shared/domain";
 import type { RequestedAction } from "@shared/domain";
+import { t } from "./personLanguage";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -113,6 +114,7 @@ const TAG = {
 export const TOOL_SERVER_INSTRUCTIONS =
   "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, read who works on what (presence), keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step. Use them instead of your provider's own GitHub, web and command tools, which Trama blocks.";
 
+/** @model-text */
 const SKILL_MANAGE_DESCRIPTION =
   "Create, update, or delete skills — your procedural memory for recurring task types. The call is an operations array (a single edit is a list of one); it applies atomically — any failure rolls every touched skill back. Ops: create (full SKILL.md; lands in this project's skill library in Trama's folder, never in the repository; must precede that skill's other ops), patch (targeted old_string/new_string fix — preferred; content alone REPLACES the whole file, read it via skill_view() first), write_file/remove_file (supporting files), delete (sole op only). Keep the description's first 57 chars a self-contained trigger: 'Use when <trigger>. <one-line behavior>.' Write lessons, not logs: imperative rule + why, no PR numbers/dates/incident narration, one rule per lesson, references/ named by topic (extend before adding). skill_view() shows format conventions.";
 
@@ -236,6 +238,7 @@ export function learningTools(memoryEnabled: boolean, userEnabled: boolean): Too
 
 const WORK_KINDS: WorkKind[] = ["agreedTicket", "decidedBehaviorCorrection", "newFeature", "tradeOff"];
 
+/** @model-text: the tools' descriptions, for the Coordinator. */
 export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_study",
@@ -646,6 +649,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
  * How the Coordinator carries the work on and closes a turn with the one next step (W01, W04); a late rule,
  * so open threads receive it too.
  */
+// @model-text
 export const NEXT_STEP_RULES = [
   "Each message from Trama gives the phase of the work and the moves allowed now, under \"Fase del lavoro\": Trama computes them from the records, you choose among them.",
   "Within the mandate you carry the work on by yourself. When the next move is yours (prepare the plan once the person confirmed the shared understanding, assign the slices of a ready plan, run the checks and the technical review of finished work), make it in the same turn with your tools, without asking. When a turn ends and your own move is still the next one, Trama starts it by itself as a new turn with the section \"Mossa automatica di Trama\": make that move then; the person can stop it.",
@@ -656,7 +660,7 @@ export const NEXT_STEP_RULES = [
   "Never end a message with a generic confirmation question such as \"Vuoi che...?\", \"Procedo?\" or \"Fammi sapere se...\": within the mandate you go on by yourself, and what belongs to the person is a card or the next step's button, never a question at the end of your text.",
 ].join("\n");
 
-/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. */
+/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. @model-text */
 const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
   coordinator: "Trama publishes the candidate as a pull request and merges it by itself with this green light; Activity and the recap tell the person.",
   interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
@@ -792,7 +796,7 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
       return toolSuccess(
         new SessionSearch({
           document: context.document,
-          currentSessionId: context.sessionSearch?.currentSessionId ?? "progetto",
+          currentSessionId: context.sessionSearch?.currentSessionId ?? PROJECT_DIALOG_ID,
           liveFromSequence: context.sessionSearch?.liveFromSequence ?? 0,
         }).run(args as Record<string, unknown>) as JsonObject,
       );
@@ -996,7 +1000,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           authorizedActions: strings(args.authorizedActions) as MandateAction[],
           limits: strings(args.limits),
         });
-        context.addCard("mandate", "Mandato", request.id);
+        context.addCard("mandate", t("main.coordinatorTools.card.mandate"), request.id);
         context.changed();
         // A pending request is superseded by this one (W14): the person can grant only the latest.
         return toolSuccess({ requestID: request.id, status: "shown_to_person", supersededRequestIDs: pending });
@@ -1038,7 +1042,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           grilling,
         });
         const blocked = blocksQuestion ? blockOnPerson(document, blocksQuestion, request) : null;
-        context.addCard("decision", "Decisione", request.id);
+        context.addCard("decision", t("main.coordinatorTools.card.decision"), request.id);
         const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
         context.changed();
         return toolSuccess({
@@ -1161,7 +1165,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           summary: typeof args.summary === "string" ? args.summary : null,
           members,
         });
-        context.addCard("teamProposal", "Proposta del team", proposal.id);
+        context.addCard("teamProposal", t("main.coordinatorTools.card.teamProposal"), proposal.id);
         context.changed();
         return toolSuccess({ proposalID: proposal.id, status: "shown_to_person" });
       }
@@ -1338,7 +1342,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           document.mandate!.version,
           context.runningRequestId,
         );
-        context.addCard("assignment", "Incarico", assignment.id);
+        context.addCard("assignment", t("main.coordinatorTools.card.assignment"), assignment.id);
         context.changed();
         context.startAssignment(assignment.id);
         return toolSuccess({
@@ -1369,7 +1373,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             goalId: requestGoalId(document, context.runningRequestId) ?? null,
             ...catalog,
           });
-          context.addCard("route", "Percorso di Ask Trama", route.id);
+          context.addCard("route", t("main.coordinatorTools.card.route"), route.id);
           context.changed();
           return toolSuccess(routeReport(route));
         } catch (error) {
@@ -1389,7 +1393,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             adrs: args.adrs,
             projectModuleIds: context.snapshot.modules.map((m) => m.id),
           });
-          context.addCard("domainProposal", "Glossario e ADR", proposal.id);
+          context.addCard("domainProposal", t("main.coordinatorTools.card.domainProposal"), proposal.id);
           const assignmentId = context.startDomainWriting(proposal.id);
           context.changed();
           return toolSuccess({
@@ -1418,7 +1422,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           updateGoal(document, goal.id, { status: "open" });
           recordChoice(document, { kind: "goal", subject: goal.title, choice: goal.outcome, targetId: goal.id });
         }
-        context.addCard("goal", "Obiettivo proposto", goal.id);
+        context.addCard("goal", t("main.coordinatorTools.card.goal"), goal.id);
         context.changed();
         // Presence (G04, decision 11): warn when someone already works on something like it.
         const busy = goalOverlaps(context.presence, { title: goal.title, outcome: goal.outcome }).map((o) => ({
@@ -1552,7 +1556,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
         candidate.whitespaceErrors = review.whitespaceErrors;
         candidate.commit = candidateCommit(document, candidate, (await context.conventions?.()) ?? DEFAULT_CONVENTIONS);
-        if (!rebound) context.addCard("candidate", "Candidato", candidate.id);
+        if (!rebound) context.addCard("candidate", t("main.coordinatorTools.card.candidate"), candidate.id);
         context.changed();
         return toolSuccess({
           candidateID: candidate.id,
@@ -1688,6 +1692,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if ((document.requestedActions?.length ?? 0) > recorded) context.addCard("requestedAction", action.summary, action.id);
         context.changed();
         if (action.status === "waiting") {
+          // @model-text
           return toolSuccess({
             actionID: action.id,
             status: "waiting_for_confirmation",
@@ -1743,7 +1748,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           return toolFailure("screenshots_pending", "Trama is still taking the screenshots before and after of this version: look at them first, then approve.");
         }
         const reason = typeof args.reason === "string" ? args.reason.trim() : "";
-        recordChoice(document, { kind: "interfaceCandidate", subject: `Candidato ${candidate.id}`, choice: reason || "Approvato dopo le schermate", doubt: typeof args.doubt === "string" ? args.doubt : null, targetId: candidate.id });
+        recordChoice(document, { kind: "interfaceCandidate", subject: t("main.delegation.candidateSubject", { id: candidate.id }), choice: reason || t("main.delegation.approvedAfterShots"), doubt: typeof args.doubt === "string" ? args.doubt : null, targetId: candidate.id });
         context.changed();
         await context.approveWithDelegation(candidate.id);
         return toolSuccess({ candidateID: candidate.id, status: "approved", screenshots: (shots?.snapshotId === candidate.snapshotId ? shots.shots : []).map((shot) => shot.path) });
@@ -1858,6 +1863,7 @@ export const COORDINATOR_SKILLS: { name: string; binding: string }[] = [
 /**
  * `learningGuidance`: the memory, session search and skills guidance, verbatim.
  * `skills`: native AI Hero skills with their binding (nativeSkills.ts), when they belong in the session instructions.
+ * @model-text
  */
 export function developerInstructions(
   projectName: string,

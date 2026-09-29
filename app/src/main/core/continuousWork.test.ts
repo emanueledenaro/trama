@@ -20,6 +20,7 @@ import {
   ticketMove,
 } from "./continuousWork";
 import { grantDelegation, revokeDelegation } from "./fullDelegation";
+import { setPersonLanguage } from "./personLanguage";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
@@ -414,6 +415,13 @@ describe("closingConfirmation: the generic question at the end of a reply (W04)"
     expect(closingConfirmation("Il test fallisce su Orders. Perché il pagamento resta aperto?")).toBeNull();
     expect(closingConfirmation("")).toBeNull();
   });
+
+  it("finds the same question in an English reply", () => {
+    expect(closingConfirmation("I read the Orders module.\n\nDo you want me to prepare the plan?")).toBe("Do you want me to prepare the plan?");
+    expect(closingConfirmation("The plan is ready. Shall I proceed with the assignment?")).toBe("Shall I proceed with the assignment?");
+    expect(closingConfirmation("Here is the recap. Let me know if it works.")).toBe("Let me know if it works.");
+    expect(closingConfirmation("The test fails on Orders. Why does the payment stay open?")).toBeNull();
+  });
 });
 
 describe("confirmationFeedback: Trama tells the Coordinator about its closing question (W04)", () => {
@@ -447,6 +455,16 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
     move.createdAt = new Date(Date.UTC(2026, 8, 25, 10, 5)).toISOString();
     return { document, assignment, move };
   }
+
+  it("gives the reason in the person's language (issue #301)", () => {
+    setPersonLanguage("en");
+    try {
+      const { document, assignment } = ended();
+      expect(stalledMove(document, "r5")?.reason).toBe(`The automatic move did not succeed: assignment ${assignment.id} is finished but its candidate was not declared.`);
+    } finally {
+      setPersonLanguage("it");
+    }
+  });
 
   it("says the candidate was not declared when the checks were never run", () => {
     const { document, assignment } = ended();

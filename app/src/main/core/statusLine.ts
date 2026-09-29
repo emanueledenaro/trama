@@ -1,8 +1,9 @@
-import { DEFAULT_LANGUAGE, translate } from "@shared/i18n";
 import type { CoordinatorRequest, NextMove, ProjectDocument, SpecialistAssignment, StatusLineAction, StatusLineView } from "@shared/domain";
 import { focusView } from "./focus";
 import { BLOCK_LABELS, BLOCK_PHRASES, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, nextStepViews, workRequests, workState } from "./workPhase";
 import { isActive } from "./team";
+import { translate } from "@shared/i18n";
+import { t } from "./personLanguage";
 import { type ProviderWait, providerWaitLine } from "./resumeWork";
 
 /**
@@ -12,19 +13,23 @@ import { type ProviderWait, providerWaitLine } from "./resumeWork";
  */
 
 /** The line when nothing is going on: no turn runs, nobody works, and the task in focus has no next move. */
-export const NOTHING_GOING_ON = "Niente in corso.";
+export const nothingGoingOn = (): string => t("main.statusLine.nothingGoingOn");
 
 /** The sentence of a paused project (A05): what runs ends, and nothing new starts until the person resumes. */
-export const PAUSED_SENTENCE = "Coordinatore in pausa: i turni in corso finiscono, poi non parte niente finché non lo riprendi.";
+export const pausedSentence = (): string => t("main.statusLine.paused");
+
+/** The Italian texts of the two lines above, as the tests read them; Trama writes them in the person's language. */
+export const NOTHING_GOING_ON = translate("it", "main.statusLine.nothingGoingOn");
+export const PAUSED_SENTENCE = translate("it", "main.statusLine.paused");
 
 const isCoordinatorMove = (move: NextMove | undefined): move is CoordinatorMove => move !== undefined && move in COORDINATOR_MOVES;
 
 const allAssignments = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
 
-/** A list in Italian: "S2", "S2 e S3", "S2, S3 e S4". */
+/** A list in the person's language: "S2", "S2 e S3", "S2, S3 e S4". */
 function joined(items: string[]): string {
   if (items.length < 2) return items.join("");
-  return `${items.slice(0, -1).join(", ")} e ${items.at(-1)}`;
+  return t("main.statusLine.list", { items: items.slice(0, -1).join(", "), last: items.at(-1)! });
 }
 
 /** The slice an assignment delivers, or null for work outside a breakdown. */
@@ -60,17 +65,17 @@ function moveTarget(document: ProjectDocument, move: CoordinatorMove, state: Wor
 function runningPhrase(move: CoordinatorMove, target: string | null): string {
   switch (move) {
     case "preparePlan":
-      return "Sto preparando il piano";
+      return t("main.statusLine.running.preparePlan");
     case "assignWork":
-      return target ? `Sto assegnando ${target}` : "Sto assegnando il lavoro";
+      return target ? t("main.statusLine.running.assignTarget", { target }) : t("main.statusLine.running.assignWork");
     case "verifyCandidate":
-      return target ? `Sto verificando ${target}` : "Sto verificando il lavoro";
+      return target ? t("main.statusLine.running.verifyTarget", { target }) : t("main.statusLine.running.verifyWork");
     case "answerQuestion":
-      return "Sto rispondendo a uno sviluppatore";
+      return t("main.statusLine.running.answerQuestion");
     case "decideWithDelegation":
-      return translate(DEFAULT_LANGUAGE, "delegation.move.decide.running");
+      return t("delegation.move.decide.running");
     case "takeTicket":
-      return translate(DEFAULT_LANGUAGE, "delegation.move.ticket.running");
+      return t("delegation.move.ticket.running");
   }
 }
 
@@ -78,17 +83,17 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
 function nextPhrase(move: CoordinatorMove, target: string | null): string {
   switch (move) {
     case "preparePlan":
-      return "preparo il piano";
+      return t("main.statusLine.next.preparePlan");
     case "assignWork":
-      return target ? `assegno ${target}` : "assegno il lavoro";
+      return target ? t("main.statusLine.next.assignTarget", { target }) : t("main.statusLine.next.assignWork");
     case "verifyCandidate":
-      return target ? `verifico ${target}` : "verifico il lavoro";
+      return target ? t("main.statusLine.next.verifyTarget", { target }) : t("main.statusLine.next.verifyWork");
     case "answerQuestion":
-      return "rispondo allo sviluppatore";
+      return t("main.statusLine.next.answerQuestion");
     case "decideWithDelegation":
-      return translate(DEFAULT_LANGUAGE, "delegation.move.decide.next");
+      return t("delegation.move.decide.next");
     case "takeTicket":
-      return translate(DEFAULT_LANGUAGE, "delegation.move.ticket.next");
+      return t("delegation.move.ticket.next");
   }
 }
 
@@ -101,15 +106,15 @@ function runningTurn(document: ProjectDocument, request: CoordinatorRequest): { 
   // A move that resolves a technical block says so (A06): "Sto risolvendo il conflitto".
   if (isCoordinatorMove(move) && request.step?.block) return { phrase: BLOCK_PHRASES[request.step.block.kind], move };
   if (isCoordinatorMove(move)) return { phrase: runningPhrase(move, moveTarget(document, move, workState(document, request.id))), move };
-  return { phrase: "Sto rispondendo al tuo messaggio", move: null };
+  return { phrase: t("main.statusLine.running.answerMessage"), move: null };
 }
 
 /** The plan of the work in writing or in slicing, which runs without a Coordinator turn. */
 function planPhrase(document: ProjectDocument, requestId: string): string | null {
   const scope = workRequests(document, requestId);
   const plan = scope ? document.plans.filter((p) => p.requestId !== null && scope.has(p.requestId)).at(-1) : null;
-  if (plan?.status === "planning") return "Sto scrivendo il piano";
-  if (plan?.slicing?.status === "drafting") return "Sto dividendo il piano in fette";
+  if (plan?.status === "planning") return t("main.statusLine.running.writingPlan");
+  if (plan?.slicing?.status === "drafting") return t("main.statusLine.running.slicingPlan");
   return null;
 }
 
@@ -120,10 +125,12 @@ function workersPhrase(document: ProjectDocument): string | null {
   );
   if (!working.length) return null;
   const names = [...new Set(working.map((w) => w.name))];
-  if (names.length > 3) return `${names.length} agenti sono al lavoro`;
+  if (names.length > 3) return t("main.statusLine.manyAgents", { count: names.length });
   const slices = [...new Set(working.map((w) => w.slice).filter((s): s is string => s !== null))];
-  const verb = names.length === 1 ? "lavora" : "lavorano";
-  return slices.length && slices.length === working.length ? `${joined(names)} ${verb} su ${joined(slices)}` : `${joined(names)} ${verb}`;
+  const count = names.length;
+  return slices.length && slices.length === working.length
+    ? t("main.statusLine.workingOn", { names: joined(names), slices: joined(slices), count })
+    : t("main.statusLine.working", { names: joined(names), count });
 }
 
 /**
@@ -137,7 +144,9 @@ function slicesHeld(state: WorkState): string | null {
   if (!blocked.length) return null;
   const waitedFor = [...new Set(blocked.flatMap((v) => v.waitingFor))];
   const which = blocked.map((v) => v.id);
-  return `${which.length === 1 ? `La fetta ${which[0]} aspetta` : `Le fette ${joined(which.slice(0, 4))}${which.length > 4 ? " e altre" : ""} aspettano`} ${joined(waitedFor)}.`;
+  if (which.length === 1) return t("main.statusLine.sliceWaits", { slice: which[0]!, waitedFor: joined(waitedFor) });
+  const key = which.length > 4 ? "main.statusLine.slicesAndOthersWait" : "main.statusLine.slicesWait";
+  return t(key, { slices: joined(which.slice(0, 4)), waitedFor: joined(waitedFor) });
 }
 
 /**
@@ -160,7 +169,7 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const personMove = state?.moves.find((m) => m.actor === "person") ?? null;
   const coordinatorMove = state?.moves.find((m) => m.actor === "coordinator" && m.move !== turn?.move) ?? null;
   const next = personMove
-    ? "aspetto te"
+    ? t("main.statusLine.next.waitForYou")
     : coordinatorMove && isCoordinatorMove(coordinatorMove.move)
       ? nextPhrase(coordinatorMove.move, moveTarget(document, coordinatorMove.move, state!))
       : null;
@@ -186,7 +195,7 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
 
   // In pause nothing automatic starts (A05): the line says what still ends and how the work goes on again.
   if (document.continuousWork?.paused === true) {
-    const paused = [now ? `${now}.` : null, workers ? `${workers}.` : null, PAUSED_SENTENCE].filter((s): s is string => s !== null);
+    const paused = [now ? `${now}.` : null, workers ? `${workers}.` : null, pausedSentence()].filter((s): s is string => s !== null);
     return { state: now || workers ? "working" : "waiting", text: paused.join(" "), reason, action, runningMove, paused: true, providerWait: null };
   }
 
@@ -205,16 +214,16 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   }
 
   const sentences: string[] = [];
-  if (now) sentences.push(`${now}${next ? `, poi ${next}` : ""}.`);
+  if (now) sentences.push(next ? t("main.statusLine.nowThen", { now, next }) : `${now}.`);
   if (workers) sentences.push(`${workers}.`);
-  if (!now && next) sentences.push(personMove ? "Aspetto te per andare avanti." : `Il prossimo passo è mio: ${next}.`);
-  if (!sentences.length && blocked) sentences.push("Il lavoro è fermo.");
+  if (!now && next) sentences.push(personMove ? t("main.statusLine.waitingForYou") : t("main.statusLine.nextIsMine", { next }));
+  if (!sentences.length && blocked) sentences.push(t("main.statusLine.workStopped"));
 
   const lineState: StatusLineView["state"] =
     now || workers ? "working" : blocked || held ? "blocked" : personMove || stalled ? "waiting" : next ? "next" : action ? "waiting" : "idle";
   return {
     state: lineState,
-    text: sentences.length ? sentences.join(" ") : NOTHING_GOING_ON,
+    text: sentences.length ? sentences.join(" ") : nothingGoingOn(),
     reason,
     action,
     runningMove,

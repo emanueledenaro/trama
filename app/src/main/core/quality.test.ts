@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { WorkPlan } from "@shared/domain";
 import { candidateReport, declareCandidate, recordEvidence } from "./candidates";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { emptyDocument } from "./document";
 import { createDecisionRequest, decide, grantMandate, revokeMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { pullRequestBody } from "./publication";
 import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./quality";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
@@ -207,5 +208,20 @@ describe("the pull request body (Q01)", () => {
       expect(body).toContain(expected);
     }
     expect(body).not.toMatch(/[–—]/);
+  });
+});
+
+describe("the quality standard in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("says what is missing in English", () => {
+    const { candidate, gate } = setup({ whitespaceErrors: ["src/Orders/cancel.ts:1: trailing whitespace."] });
+    setPersonLanguage("en");
+    candidate.evidence = {};
+    const missing = qualityMissing(gate());
+    expect(missing[0]!.detail).toMatch(/^Not verified: .*a check was not run/);
+    expect(missing[0]!.fix).toBe("Ask the Coordinator to fix the work and verify a new candidate.");
+    expect(gate().find((i) => i.code === "NO_SECRETS")!.detail).toBe("No secrets or sensitive files in the changes.");
+    expect(secretFindings({ diff: "+++ b/NOTE.md\n+key = sk-abcdefghijklmnopqrstuvwxyz", changedFiles: ["NOTE.md"] })).toEqual(["API key in NOTE.md"]);
   });
 });

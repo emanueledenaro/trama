@@ -2124,3 +2124,51 @@ describe("initializeRepository", () => {
     expect((await git(["log", "--format=%s"], project)).trim()).toBe("chore: start the project");
   });
 });
+
+describe("the controller's texts in English (issue #301)", () => {
+  afterEach(async () => {
+    const { setPersonLanguage } = await import("./core/personLanguage");
+    setPersonLanguage("it");
+  });
+
+  it("explains an unavailable provider in the person's language", async () => {
+    const { providerUnavailableReason } = await import("./controller");
+    const { setPersonLanguage } = await import("./core/personLanguage");
+    const until = "2026-09-28T15:30:00.000Z";
+    const blocked = { kind: "blocked" as const, message: "You've hit your usage limit.", until };
+    expect(providerUnavailableReason("codex", blocked)).toContain(
+      ` Si sblocca il ${new Date(until).toLocaleString("it-IT")}. Puoi aspettare o scegliere un altro provider.`,
+    );
+    setPersonLanguage("en");
+    expect(providerUnavailableReason("codex", blocked)).toMatch(/^ChatGPT is blocked: it has (a temporary limit|used up the plan's quota)\. /);
+    expect(providerUnavailableReason("codex", blocked)).toContain(
+      `It unlocks on ${new Date(until).toLocaleString("en-US")}. You can wait or choose another provider.`,
+    );
+    expect(providerUnavailableReason("codex", { kind: "signedOut" })).toBe("Connect ChatGPT from Connections to talk with the Coordinator.");
+    expect(providerUnavailableReason("codex", { kind: "unsupported", type: "apiKey" })).toBe(
+      "Trama accepts only a ChatGPT account; Codex uses an account of type apiKey.",
+    );
+  });
+
+  it("names a network failure in English", async () => {
+    const { describeFailure } = await import("./controller");
+    const { setPersonLanguage } = await import("./core/personLanguage");
+    setPersonLanguage("en");
+    expect(describeFailure("getaddrinfo ENOTFOUND api.example.com")).toBe(
+      "Network unreachable: getaddrinfo ENOTFOUND api.example.com. Trama tries again when the network is back and the person resumes the work.",
+    );
+  });
+
+  it("writes errors and Activity rows in English once the person chooses it", async () => {
+    await setup();
+    await controller!.updateSettings({ language: "en" });
+    await expect(controller!.retryRequest("missing")).rejects.toThrow("This turn can no longer be repeated.");
+    expect(() => controller!.deleteQueuedMessage("missing")).toThrow("The message has already left or is no longer in the queue.");
+    await controller!.pauseContinuousWork(true);
+    expect(controller!.snapshot.project!.document.events.at(-1)!.content).toMatchObject({
+      type: "activity",
+      title: "Coordinator paused",
+      detail: "No automatic move, Round or automatic work starts until you resume the Coordinator.",
+    });
+  });
+});

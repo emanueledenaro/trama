@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DelegatedChoice, FullDelegation, GitHubIssue, ProjectDocument } from "@shared/domain";
 import { activeDelegation } from "@shared/delegation";
 import { shortId } from "@shared/ids";
+import { t } from "./personLanguage";
 import { DELEGABLE_ACTIONS } from "@shared/labels";
 import { findPersonRequest, PersonRequestError } from "./personRequest";
 
@@ -143,7 +144,7 @@ export function mandateForDelegation(document: ProjectDocument, moduleIds: strin
     DELEGABLE_ACTIONS.every((a) => mandate.authorizedActions.includes(a));
   if (covers || !moduleIds.length) return null;
   return {
-    objectives: mandate?.status === "granted" && mandate.objectives.length ? mandate.objectives : ["Portare avanti tutto il lavoro del progetto con la delega piena"],
+    objectives: mandate?.status === "granted" && mandate.objectives.length ? mandate.objectives : [t("main.delegation.mandateObjective")],
     priorities: mandate?.status === "granted" ? mandate.priorities : [],
     scopeModuleIds: [...new Set([...(mandate?.status === "granted" ? mandate.scopeModuleIds : []), ...moduleIds])],
     authorizedActions: [...DELEGABLE_ACTIONS],
