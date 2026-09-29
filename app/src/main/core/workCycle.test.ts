@@ -18,7 +18,9 @@ import {
   rememberOverruled,
   reviewerTurn,
   settleGate,
+  stopAtSecrets,
 } from "./gate";
+import { setPersonLanguage } from "./personLanguage";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
 import { assign, confirmTeam, endTurn, findSpecialist, mergedWorktrees, proposeTeam, recordWorkspace, requestStop } from "./team";
@@ -525,6 +527,27 @@ describe("the reviewers read the Pact as rules and the findings the Coordinator 
     expect(() => overruleFinding(document, candidate, { ...input, role: "specReviewer", title: "Dati aziendali in config.json", decisionIds: ["D-NESSUNA"] }, at(3))).toThrow(/Pact decision/);
     expect(document.overruledFindings ?? []).toEqual([]);
     expect(latestGate(document.gates, candidate.id)!.status).toBe("blocked");
+  });
+
+  it("never overrules a secret in the diff, even when the person switched language after the gate", () => {
+    const document = shop();
+    const marco = realignment(document);
+    endTurn(document, marco.id, null, { kind: "completed", text: "Fatto" }, at(2));
+    const candidate = nextCandidate(document, marco, 2);
+    const gate = openGate(document, candidate, at(2));
+    stopAtSecrets(gate, ["chiave API in src/app/page.tsx"], at(2));
+    finishReview(gate, "regressionGuardian", { report: "", findings: [] }, at(2));
+    closeGate(gate, at(2));
+    expect(gate.status).toBe("blocked");
+    setPersonLanguage("en");
+    try {
+      expect(() => settleGate(gate, candidate, { side: "developer", reason: "Va bene" }, at(3))).toThrow(/cannot be overruled/);
+      expect(() => rememberOverruled(document, gate, { reason: "Va bene", decisionIds: [] }, at(3))).not.toThrow();
+      expect(document.overruledFindings ?? []).toEqual([]);
+    } finally {
+      setPersonLanguage("it");
+    }
+    expect(gate.status).toBe("blocked");
   });
 
   it("lets the Coordinator overrule one finding with overrule_finding and keeps the gate blocked by the others", async () => {

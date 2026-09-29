@@ -527,7 +527,8 @@ export function settleGate(
     const evidence =
       gate.checksFailed.length > 0 ||
       gate.reviews.some((r) => r.role === "regressionGuardian" && blockingFindings(r).length > 0) ||
-      gate.reviews.some((r) => r.report === secretNote());
+      // The note is in the language the gate ran in, which the person may have changed since.
+      gate.reviews.some((r) => isNote(r.report, "main.gate.secretNote"));
     if (evidence) {
       throw new GateSettlementError(
         "evidence",
