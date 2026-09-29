@@ -22,7 +22,7 @@
 </div>
 
 > [!WARNING]
-> Trama is in **alpha**. The base path has run with real Claude and Pi accounts. The first live run with real Codex (26 September, `gpt-6-luna`) went from a request to a developer's finished worktree, then stopped short of a verified candidate on a known bug ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204)). Read [Status and known limits](#status-and-known-limits) before relying on it.
+> Trama is in **alpha**. Read [Status and known limits](#status-and-known-limits) before relying on it.
 
 ## Why Trama
 
@@ -37,15 +37,15 @@ Trama puts one **Coordinator** between you and the agents:
 ## Features
 
 - **The AI Hero method, run natively.** A request is clarified in numbered rounds with `grilling`; `domain-modeling` proposes glossary terms and ADRs from the decisions taken; `to-spec` turns the plan into a spec with the seams you confirm; `to-tickets` splits it into vertical slices with their acceptance criteria. Each developer ships a slice with `implement` and `tdd`. Bug triage, failed-check diagnosis and Clean Code's architecture review start on their own within the mandate. Every skill keeps Matt Pocock's original text, with a thin Trama binding.
-- **A focused work loop.** The chat leads with the task in focus, its phase and the one next step allowed right now; the rest wait in a queue, started ones first. Inside the mandate the Coordinator takes its own next moves - preparing the plan, assigning work, running checks - and stops only for the person: product decisions, confirming the shared understanding, the mandate, the team, the seams and the slices proposed in the plan, and any merge that needs your ok.
+- **A focused work loop.** The chat leads with the task in focus, its phase and the one next step allowed right now; the rest wait in a queue, started ones first. Inside the mandate the Coordinator takes its own next moves (preparing the plan, assigning work, running checks) and stops only for the person: product decisions, confirming the shared understanding, the mandate, the team, the seams and the slices proposed in the plan, and any merge that needs your ok.
 - **A compact history.** Each work turn is one line in the chat, who worked, for how long, how many tools and errors; it opens on the spot into Activity's own "Passi tecnici" list, with repeated steps and empty notes grouped and counted instead of listed one by one. A resolved card, a decision answered, a mandate granted, a slice closed, collapses to a single outcome line; anything still waiting on you, or still actionable, stays open ([verification log](docs/verifiche/u06-cronologia-compatta-2026-09-28.md)).
 - **Plain language, real names.** Cards, the inspector and Activity call a decision, a task or a candidate by its name, with the technical id only on hover; comparisons, cross-references and internal codes are written as short sentences instead of ids and constants ([verification log](docs/verifiche/u05-linguaggio-umano-2026-09-28.md)).
 - **Merges the clear-cut candidates itself.** A verified candidate that already has the Coordinator's green light, has a GitHub remote and has the mandate to integrate its modules, is published and merged on its own once its checks are green; Activity and the summary record it. A candidate that touches the interface, lacks a remote or falls outside the mandate never merges itself: it waits for you in Aspetta te, with before-and-after screenshots, light and dark, when the project's own `screenshots` script can produce them, or a note explaining why it could not, to approve or reject ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)).
-- **An assignment contract and a developer's report.** Every task carries its goal, the seams to test, the Pact decisions it depends on and the checks required; Trama refuses an incomplete one. Each developer closes with a structured report of files touched, tests written and seams covered - a claim, never evidence.
+- **An assignment contract and a developer's report.** Every task carries its goal, the seams to test, the Pact decisions it depends on and the checks required; Trama refuses an incomplete one. Each developer closes with a structured report of files touched, tests written and seams covered: a claim, never evidence.
 - **Developers can ask, and pause.** A developer with a doubt asks the Coordinator through a tool; the slice pauses and the developer is freed while dependent slices wait. The Coordinator answers from facts, or opens a Pact decision when the answer blocks the work, and the assignment resumes in the same worktree once it is answered ([#202](https://github.com/emanueledenaro/trama/pull/202)).
 - **A Clean Code standard, measured by Trama.** Work in a worktree gets Trama's own Clean Code standard, after a project's own rules and the native skills. Trama measures the argument count and length of every function the candidate adds or touches, and duplicated blocks on the added lines, as evidence for the technical review; a finding on naming, hidden side effects or duplication always blocks. Rules are configurable per project in Settings ([#201](https://github.com/emanueledenaro/trama/pull/201)).
-- **Every candidate reviewer, in parallel.** Before a candidate reaches you, Trama runs the checks still missing, then the whole candidate team reviews the diff at once: spec reviewer, Clean Code with the technical review, regression guardian, security, performance, UX, DevOps and documentation. The guardian runs the candidate's build and tests on its base commit and compares them; a test that passed and now fails blocks the candidate. A reviewer with nothing to say signs "Niente da segnalare"; a blocking finding goes back to the developer, who resumes in the same worktree.
-- **Presence and collaboration.** The Group view's "Who works on what" board, the map and the focus bar show who, person or agent, is working on which branch and files, shared over dedicated git refs with your consent. Overlaps are flagged at three levels, same module, same file, real conflict, and the Coordinator itself steers new assignments away from files a colleague already has open.
+- **Every candidate reviewer, in parallel.** Before a candidate reaches you, Trama runs the checks still missing, then the whole candidate team reviews the diff at once: spec reviewer, Clean Code with the technical review, regression guardian, security, performance, UX, DevOps and documentation. The guardian runs the candidate's build and tests on its base commit and compares them; a test that passed and now fails blocks the candidate. A reviewer with nothing to say signs "Nothing to report"; a blocking finding goes back to the developer, who resumes in the same worktree.
+- **Presence and collaboration.** The Squads view's "Who works on what" board, the map and the focus bar show who, person or agent, is working on which branch and files, shared over dedicated git refs with your consent. Overlaps are flagged at three levels, same module, same file, real conflict, and the Coordinator itself steers new assignments away from files a colleague already has open.
 - **Focus mode with native code review.** Open a candidate and Trama runs its real checks first, then two read-only passes of the `code-review` skill in parallel, Standards and Spec, against the candidate's base commit. Each finding carries a proof: Trama rechecks the ones it can run, a stronger model confirms serious ones Trama cannot, and the rest are shown as hypotheses. Next to the two axes, three lenses of Trama's own (security, test quality, documents against code) run as read-only sessions too. They are not part of the AI Hero skills, the interface marks them as Trama's additions, and their findings go through the same verification. With one click a finding becomes a GitHub issue (or a backlog item without GitHub), a fix assigned to a developer within the mandate, or a Pact card when it is a trade-off. Publishing the report on GitHub is optional.
 - **Nine providers, every role.** Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi behind one runtime interface. Antigravity now works in every role, not only for developers: read-only for the Coordinator, planners, reviewers and checks, edits only inside a developer's own worktree. Each adapter reads context usage the way its provider actually reports it; a reading outside the provider's real window shows as unavailable instead of a wrong number ([#318](https://github.com/emanueledenaro/trama/pull/318)).
 - **Understandable provider and GitHub errors.** A rate limit, an expired quota, a missing login or an unreachable provider get a plain explanation and the matching action, retry, change model or provider, add your key, log in again, never a raw error payload. On a temporary limit the Coordinator and specialists wait with a growing backoff and resume the work themselves.
@@ -74,6 +74,12 @@ The app interface follows the language you choose, Italian or English: the choic
 
 ## Quick start
 
+**Requirements**
+
+- macOS, Linux or Windows, with Git.
+- At least one provider you are already signed in to from its CLI. For Codex this means a **ChatGPT account**: Trama refuses API keys and non-OpenAI providers for Codex, so it never moves you to API billing silently.
+- Optional: [GitHub CLI](https://cli.github.com/) (`gh auth login`) for issues, pull requests and presence.
+
 **Download**
 
 The latest release is on the [Releases page](https://github.com/emanueledenaro/trama/releases/latest).
@@ -91,14 +97,7 @@ Check what you downloaded against the release's `SHA256SUMS.txt`: `sha256sum -c 
 
 **Or run from source**
 
-**Requirements**
-
-- macOS, Linux or Windows, with Git and Node.js 22.
-- At least one provider you are already signed in to from its CLI. For Codex this means a **ChatGPT account**: Trama refuses API keys and non-OpenAI providers for Codex, so it never moves you to API billing silently.
-- Optional: [GitHub CLI](https://cli.github.com/) (`gh auth login`) for issues, pull requests and presence.
-- Optional: `bubblewrap` on Linux, so Node tests that open a local server can run in Trama's sandbox. macOS uses the built-in `sandbox-exec`.
-
-**Run it**
+Also needs Node.js 22, and on Linux, optionally `bubblewrap` so Node tests that open a local server can run in Trama's sandbox (macOS uses the built-in `sandbox-exec`).
 
 ```bash
 git clone https://github.com/emanueledenaro/trama.git
@@ -146,7 +145,7 @@ The vocabulary (Coordinator, Pact, mandate, candidate, moment, presence, focus m
 
 | Provider | Adapter | Tested with a real account |
 | --- | --- | --- |
-| Codex (ChatGPT) | yes | Live in the Electron app on 26 September with real `gpt-6-luna`: study, team, mandate, assignment contract and a developer's finished worktree. Stopped before a verified candidate, on a bug in `verify_candidate` ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204)) |
+| Codex (ChatGPT) | yes | Live in the Electron app on 26 September with real `gpt-6-luna`: study, team, mandate, assignment contract and a developer's finished worktree. Stopped before a verified candidate, on a bug in `verify_candidate` since fixed ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204), [#211](https://github.com/emanueledenaro/trama/pull/211)); `docs/verifiche` does not yet record a new live run |
 | Claude | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Pi | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Cursor, Grok, Devin, OpenCode | yes | No, fake CLIs and servers only |
@@ -208,14 +207,14 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 
 ## Status and known limits
 
-- **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204)).
+- **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` since fixed ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204), [#211](https://github.com/emanueledenaro/trama/pull/211)); `docs/verifiche` does not yet record a new live run confirming the fix end to end.
 - **Candidate gate.** Verified with the fake Codex only, not yet with a real model ([verification log](docs/verifiche/w10-cancello-candidato-2026-09-27.md)). The regression guardian compares the build and test checks the candidate requires, not a suite the assignment did not name. The messages between reviewers and developers are recorded in the developer's work; their own threads come with [#144](https://github.com/emanueledenaro/trama/issues/144).
 - **Pull requests and merges.** Publishing and the merge of a clear-cut candidate are both tested with a fake `gh` only; no real pull request has been opened or merged from the app on GitHub ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)). Recognizing an interface change relies on file paths, so a UI file with an unusual name or path could be missed.
 - **Language.** English now covers the Coordinator's own process, the shared logic and the chat ([#303](https://github.com/emanueledenaro/trama/pull/303), [#375](https://github.com/emanueledenaro/trama/pull/375), [#365](https://github.com/emanueledenaro/trama/pull/365), [#361](https://github.com/emanueledenaro/trama/pull/361)); the sidebar, the project dialogs, the search palette, the onboarding exercises panel and a few inspector fields, the Pact's reason field, the goal card's own buttons and the "Aspetta te" title among them, still show Italian regardless of the language chosen.
 - **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox. The Linux `bubblewrap` path is coded but not tested on a real Linux machine.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
 - **Presence.** Verified against a local bare remote and, once, directly against GitHub. A remote other than GitHub or a local folder, and a repository whose CI triggers on any push, are not verified.
-- **Distribution.** No signed or notarized package has been produced yet.
+- **Distribution.** Starting with v0.2.0, Trama ships packages for macOS, Windows and Linux, but none is signed or notarized yet.
 - **Planning docs.** Some documents in `docs/` still describe the SwiftUI version.
 
 The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron.md), in [GitHub Issues](https://github.com/emanueledenaro/trama/issues) and on the [roadmap](https://github.com/emanueledenaro/trama/issues/193). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
