@@ -658,8 +658,11 @@ await shot("02-demo-study");
   await page.getByTestId("bottom-panel").waitFor();
   await clickMenu("togglePanel");
   await page.getByTestId("bottom-panel").waitFor({ state: "detached" });
+  // The side bar stays open on Memoria beside the panel and the conversation: the menu closes it and opens it again.
   await clickMenu("toggleSidebar");
-  await sideBar.waitFor();
+  await sideBar.waitFor({ state: "detached" });
+  await clickMenu("toggleSidebar");
+  await page.locator('[data-testid="side-bar"][data-view="memory"]').waitFor();
   await clickMenu("toggleSidebar");
   await sideBar.waitFor({ state: "detached" });
   await clickMenu("focusComposer");
