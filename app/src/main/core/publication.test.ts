@@ -7,7 +7,8 @@ import { DEFAULT_CONVENTIONS } from "./conventions";
 import { git } from "./process";
 import { publishCandidate, pullRequestBody } from "./publication";
 import { type PushRecord, PushRefusedError } from "./push";
-import { prepareWorktree, reviewWorktree } from "./workspace";
+import { secretFindings } from "./quality";
+import { concludeMerge, mergeCommitMessage, mergeState, prepareWorktree, reviewWorktree } from "./workspace";
 
 const mandate = (authorizedActions: ProjectMandate["authorizedActions"], status: ProjectMandate["status"] = "granted") =>
   ({ version: 1, objectives: [], priorities: [], scopeModuleIds: [], authorizedActions, limits: [], grantedAt: "", status, revocation: null, history: [] }) as ProjectMandate;
@@ -265,5 +266,42 @@ describe("publication of a realignment left as a merge in progress", () => {
     expect((await git(["rev-list", "--first-parent", `${workspace.baseSHA}..HEAD`], root)).trim()).toBe("");
     // The merge is still in progress: nothing was reset.
     await git(["rev-parse", "--verify", "MERGE_HEAD"], root);
+  });
+
+  it("lets the Coordinator conclude the merge, and publishing then pushes it without a second commit", async () => {
+    const { remote, workspace, mainSHA, input } = await realignment();
+    const root = workspace.worktreeRoot;
+    const message = await mergeCommitMessage(workspace, DEFAULT_CONVENTIONS);
+    expect(message).toBe(`chore: merge ${mainSHA.slice(0, 7)} into ${workspace.branch}`);
+    const done = await concludeMerge(workspace, message, secretFindings);
+    expect(done).toEqual({ commit: expect.any(String), mergedHead: mainSHA });
+    expect((await git(["rev-list", "--parents", "-n", "1", "HEAD"], root)).trim().split(" ")).toEqual([done.commit, workspace.baseSHA, mainSHA]);
+    expect((await mergeState(root)).mergeHead).toBeNull();
+    // Committing changed no file: the candidate still describes the working copy.
+    expect((await reviewWorktree(workspace)).snapshotId).toBe(input.candidate.snapshotId);
+    await expect(publishCandidate(input)).rejects.toThrow();
+    expect((await git(["rev-list", "--first-parent", `${workspace.baseSHA}..HEAD`], root)).trim()).toBe(done.commit);
+    expect(await git(["branch", "--list"], remote)).toContain(workspace.branch);
+  });
+
+  it("refuses to conclude a merge with files in conflict, conflict markers or a secret of its own", async () => {
+    const { workspace } = await realignment();
+    const root = workspace.worktreeRoot;
+    const message = "chore: merge main";
+    // The conflict comes back, as if the developer never resolved it.
+    await git(["checkout", "-m", "--", "a.txt"], root, false);
+    await expect(concludeMerge(workspace, message, secretFindings)).rejects.toThrow(/still in conflict: a\.txt/);
+    await writeFile(join(root, "a.txt"), "<<<<<<< HEAD\npre-apertura\n=======\nmain\n>>>>>>> main\n");
+    await git(["add", "a.txt"], root, false);
+    await expect(concludeMerge(workspace, message, secretFindings)).rejects.toThrow(/conflict markers.*a\.txt/);
+    await writeFile(join(root, "a.txt"), 'API_KEY = "abcdefghijklmnopqrstuvwx"\n');
+    await git(["add", "a.txt"], root, false);
+    await expect(concludeMerge(workspace, message, secretFindings)).rejects.toThrow(/a\.txt/);
+    // Nothing was committed and the merge is still there to fix.
+    expect((await git(["rev-list", "--first-parent", `${workspace.baseSHA}..HEAD`], root)).trim()).toBe("");
+    expect((await mergeState(root)).mergeHead).not.toBeNull();
+    // A working copy without a merge has nothing to conclude.
+    const plain = await prepareWorktree(workspace.sourceRoot, "Altro", await mkdtemp(join(tmpdir(), "trama-wt-")));
+    await expect(concludeMerge(plain, message, secretFindings)).rejects.toThrow(/no merge in progress/);
   });
 });

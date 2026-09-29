@@ -318,6 +318,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.worktreeInUse":
     "Another assignment is working in this working copy: wait for it to finish.",
   "main.controller.worktreeRemovedTitle": "Working copy removed",
+  "main.controller.mergeConcludedTitle": "Merge recorded in the working copy {branch}",
   "main.controller.worktreeRemovedBranchDeleted":
     "Branch {branch} was deleted too: it had no commits.",
   "main.controller.worktreeRemovedBranchKept": "Branch {branch} stays.",

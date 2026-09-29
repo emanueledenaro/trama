@@ -326,6 +326,7 @@ export const mainIt = {
   "main.controller.worktreeInUse":
     "Un altro incarico sta lavorando in questo worktree: aspetta che finisca.",
   "main.controller.worktreeRemovedTitle": "Worktree rimosso",
+  "main.controller.mergeConcludedTitle": "Merge registrato nella copia di lavoro {branch}",
   "main.controller.worktreeRemovedBranchDeleted":
     "Anche il branch {branch} è stato eliminato: non aveva commit.",
   "main.controller.worktreeRemovedBranchKept": "Il branch {branch} resta.",

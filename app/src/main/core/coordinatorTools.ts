@@ -15,11 +15,11 @@ import type {
   TechnicalReview,
   WorkKind,
 } from "@shared/domain";
-import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
+import { CommitMessageError, DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
 import { mergeRoute } from "./merge";
 import { messageStyle } from "./messageStyle";
-import type { WorkspaceReview } from "./workspace";
+import { MergeError, type WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
 import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
@@ -633,6 +633,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "commit_merge",
+    description:
+      "Within the mandate (executeInWorktree), record the merge a developer resolved and left without a commit in its working copy, as a realignment of a branch with main: Trama writes the merge commit with both parents and a valid Conventional Commits message, and pushes nothing. assignment is the assignment (A-…) or its candidate (C-…); message is optional, Trama writes one otherwise. Trama refuses work still at work, a merge with files still in conflict or conflict markers, and a resolution that adds a secret or a sensitive file. The candidate stays valid: committing changes no file. Use it instead of opening new work when the merge is done and only the commit is missing.",
+    properties: { assignment: text, message: text },
+    required: ["assignment"],
+    readOnly: false,
+  },
+  {
     name: "clear_candidate",
     description:
       "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. With the green light and the candidate gate passed, Trama publishes the candidate as a pull request and merges it by itself; a candidate that changes the interface waits for the person's ok in Aspetta te instead. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
@@ -841,6 +849,11 @@ export interface ToolContext {
   reviewWorkspace(assignmentId: string): Promise<WorkspaceReview>;
   /** The rules the project declares for commits and branches (Q01); the defaults when absent. */
   conventions?(): Promise<CommitConventions>;
+  /**
+   * Concludes the resolved merge left in progress in an assignment's working copy with a merge commit, the project's
+   * message rules and no push; throws MergeError, or CommitMessageError for a message Trama refuses. Absent where Trama writes none.
+   */
+  concludeMerge?(assignmentId: string, message: string | null): Promise<{ commit: string; mergedHead: string; message: string }>;
   /** Runs a required check on a candidate's worktree and records the evidence. */
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
   /**
@@ -1680,6 +1693,32 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.changed();
         context.startAssignment(handed.id);
         return toolSuccess({ assignmentID: handed.id, specialistID: other.id, status: "handedOver", replacesAssignmentID: assignment.id, branch: handed.workspace!.branch });
+      }
+      case "commit_merge": {
+        const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
+        const assignment = findAssignment(document, named) ?? findAssignment(document, findCandidate(document, named)?.assignmentId ?? "");
+        if (!assignment) return toolFailure("unknown_assignment", `There is no assignment or candidate ${named}.`);
+        if (!assignment.workspace || assignment.workspaceRemovedAt) return toolFailure("no_worktree", `${assignment.id} has no working copy.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        if (isActive(assignment)) return toolFailure("assignment_running", `${assignment.id} is at work: its developer may still be resolving the merge. Conclude it when the work ends.`);
+        if (!context.concludeMerge) return toolFailure("unavailable", "Trama cannot write in the working copies here.");
+        const message = typeof args.message === "string" && args.message.trim() ? args.message.trim() : null;
+        try {
+          const done = await context.concludeMerge(assignment.id, message);
+          context.changed();
+          return toolSuccess({
+            assignmentID: assignment.id,
+            commit: done.commit,
+            mergedHead: done.mergedHead,
+            message: done.message,
+            note: "The merge is recorded in the working copy and nothing was pushed. The candidate still describes the working copy: committing changed no file.",
+          });
+        } catch (error) {
+          if (error instanceof MergeError) return toolFailure(error.code, error.message);
+          if (error instanceof CommitMessageError) return toolFailure("invalid_commit_message", error.message);
+          throw error;
+        }
       }
       case "read_goals":
         return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });

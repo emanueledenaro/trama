@@ -302,7 +302,17 @@ import {
   recordTurnContext,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { adoptRemoteBranch, branchCommitMessages, checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  adoptRemoteBranch,
+  branchCommitMessages,
+  checkoutCommit,
+  concludeMerge,
+  mergeCommitMessage,
+  prepareWorktree,
+  removeWorktree,
+  reviewWorktree,
+  validateWorktree,
+} from "./core/workspace";
 import {
   claudeCloudTransport,
   cloudBranchName,
@@ -419,7 +429,7 @@ import { type ReviewCall, runReviewSession } from "./core/learning/reviewRunner"
 import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git, runProcess } from "./core/process";
 import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
-import { redactSensitiveData } from "./core/redaction";
+import { redactSensitiveData, repositoryLocator } from "./core/redaction";
 import { runnableCommand } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, nextTicket, READY_LABEL, recordChoice, revokeDelegation } from "./core/fullDelegation";
@@ -2325,6 +2335,7 @@ export class TramaController {
             return reviewWorktree(assignment.workspace);
           },
           conventions: () => readProjectConventions(current.rootPath),
+          concludeMerge: (assignmentId, message) => this.concludeAssignmentMerge(current, assignmentId, message, current.runningRequestId),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
@@ -5794,6 +5805,36 @@ export class TramaController {
     requestStop(project.document, assignment.specialistId, t("main.controller.personActor"), t("main.controller.stoppedByPerson"));
     this.changed();
     await this.stopAssignmentRuntime(assignmentId);
+  }
+
+  /**
+   * The Coordinator concludes the resolved merge a developer left in progress in the working copy (commit_merge): Trama
+   * writes the merge commit with both parents and a valid message, and pushes nothing. Told in the work's Activity.
+   */
+  private async concludeAssignmentMerge(
+    project: ActiveProjectState,
+    assignmentId: string,
+    message: string | null,
+    requestId: string | null,
+  ): Promise<{ commit: string; mergedHead: string; message: string }> {
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(`Assignment ${assignmentId} has no working copy.`);
+    await validateWorktree(assignment.workspace, this.worktreesRoot);
+    const conventions = await readProjectConventions(project.rootPath);
+    const written = message?.trim() || (await mergeCommitMessage(assignment.workspace, conventions));
+    const redacted = await redactSensitiveData(written, repositoryLocator(assignment.workspace.worktreeRoot));
+    requireValidCommitMessage(redacted, conventions);
+    const done = await concludeMerge(assignment.workspace, redacted, secretFindings);
+    appendEvent(
+      project.document,
+      "trama",
+      { type: "activity", title: t("main.controller.mergeConcludedTitle", { branch: assignment.workspace.branch }), detail: commitHeader(redacted), tone: "tool" },
+      requestId,
+      new Date(),
+      { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
+    );
+    this.changedIn(project);
+    return { ...done, message: redacted };
   }
 
   /** The person removes the worktree of finished work; refused when it would lose work (T08). */

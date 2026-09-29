@@ -10,6 +10,7 @@ import { beginReviews, closeGate, finishReview, openGate } from "./gate";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
 import { assign, confirmTeam, endTurn, findSpecialist, proposeTeam, recordWorkspace, requestStop } from "./team";
+import { MergeError } from "./workspace";
 
 /**
  * The cycle of the work on the shop's realignment (29 September): the Coordinator opened new assignments in new, empty
@@ -255,6 +256,31 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
       expect(text).toContain("stessa copia di lavoro");
       expect(text).not.toMatch(/riassegnalo con assign_task|la correzione con assign_task|con assign_task il riallineamento/);
     }
+    expect(automaticMoveSection("assignWork", { kind: "worktreeConflict", blocker: "Conflitto con main", why: "Conflitto" })).toContain("commit_merge");
+  });
+
+  it("lets the Coordinator record the resolved merge in the working copy (commit_merge), never while the developer works", async () => {
+    const document = shop();
+    const marco = realignment(document);
+    const { context: tools } = context(document);
+    const calls: [string, string | null][] = [];
+    tools.concludeMerge = async (id, message) => {
+      calls.push([id, message]);
+      if (calls.length === 2) throw new MergeError("unmerged_files", "The merge has files still in conflict: src/app/page.tsx.");
+      return { commit: "c0ffee", mergedHead: "4df3c14", message: "chore: merge origin/main into chore/issue-24" };
+    };
+    const running = await runCoordinatorTool("commit_merge", { assignment: marco.id }, tools);
+    expect(running.isError).toBe(true);
+    expect(running.content[0]!.text).toContain("assignment_running");
+
+    const candidate = blockedCandidate(document, marco, 2);
+    const done = parse(await runCoordinatorTool("commit_merge", { assignment: candidate.id }, tools));
+    expect(done).toMatchObject({ assignmentID: marco.id, commit: "c0ffee", mergedHead: "4df3c14", message: "chore: merge origin/main into chore/issue-24" });
+    expect(calls).toEqual([[marco.id, null]]);
+    const refused = await runCoordinatorTool("commit_merge", { assignment: marco.id, message: "chore: merge main" }, tools);
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("unmerged_files");
+    expect(calls.at(-1)).toEqual([marco.id, "chore: merge main"]);
   });
 
   it("stays within the mandate", async () => {
@@ -266,5 +292,10 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain("not_in_mandate");
     expect(started).toEqual([]);
+    tools.concludeMerge = async () => {
+      throw new Error("must not run");
+    };
+    const merge = await runCoordinatorTool("commit_merge", { assignment: marco.id }, tools);
+    expect(merge.content[0]!.text).toContain("not_in_mandate");
   });
 });
