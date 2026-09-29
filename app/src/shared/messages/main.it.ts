@@ -1532,6 +1532,7 @@ export const mainIt = {
   "main.recap.stepCorrected": "{label} (corretto da te): {detail}",
   "main.recap.moreMoves": "Altre {count} mosse sono in Attività",
   "main.recap.moreMoves.one": "Un'altra mossa è in Attività",
+  "main.recap.settled": "Ho deciso fra {developer} e i revisori sul candidato {candidate}.",
 
   // Continuous work
   "main.continuousWork.unblocked":

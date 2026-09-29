@@ -31,8 +31,6 @@ function surfaceColor(): string {
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
 /** The power save blocker the full delegation holds (issue #423), or null. */
 let keepAwakeId: number | null = null;
-/** How long the person stays away before Trama tells them what it did with the delegation; TRAMA_RETURN_AFTER_MS for checks. */
-const RETURN_AFTER_MS = Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000);
 
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
@@ -119,7 +117,7 @@ function createWindow(): void {
   });
   window.on("focus", () => {
     void controller.refreshCodex();
-    controller.personReturned(RETURN_AFTER_MS);
+    controller.personReturned();
   });
   window.on("blur", () => controller.personAway());
   window.webContents.setWindowOpenHandler(({ url }) => {

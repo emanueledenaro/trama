@@ -1480,6 +1480,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.recap.stepCorrected": "{label} (corrected by you): {detail}",
   "main.recap.moreMoves": "{count} more moves are in Activity",
   "main.recap.moreMoves.one": "One more move is in Activity",
+  "main.recap.settled": "I decided between {developer} and the reviewers on candidate {candidate}.",
 
   // Continuous work
   "main.continuousWork.unblocked":

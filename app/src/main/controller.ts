@@ -254,7 +254,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, type CheckResult, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
-import { asksForRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
+import { asksForRecap, decidedSinceLastRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
 import { moveBacklogItem, releaseBacklogItem } from "@shared/backlog";
 import { squadBacklogs } from "./core/backlog";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
@@ -539,6 +539,11 @@ const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
  * ends. TRAMA_GATE_TURN_WAIT_MS for checks.
  */
 const gateTurnWaitMs = (): number => Number(process.env.TRAMA_GATE_TURN_WAIT_MS ?? 45_000);
+/**
+ * How long the person stays away, from the window or from the project, before Trama tells them what it decided meanwhile
+ * (issue #423). TRAMA_RETURN_AFTER_MS for checks.
+ */
+const returnAfterMs = (): number => Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000);
 /** Automatic retries of a Coordinator turn after a temporary provider limit (P10). */
 const PROVIDER_RETRY_ATTEMPTS = 5;
 /** The first wait before a retry; it doubles at each attempt. TRAMA_PROVIDER_RETRY_MS shortens it for the UI check. */
@@ -1034,6 +1039,8 @@ export class TramaController {
     this.learningReviews.clear();
     this.unwatchProject();
     await this.stopPresence();
+    // The person leaves the project with Trama: at the next opening Trama tells what it decided meanwhile (issue #423).
+    if (this.state.project) this.markPersonLeft(this.state.project);
     await this.flushSave();
     this.stopRuntime();
     for (const [, parked] of this.parkedProjects) {
@@ -1372,6 +1379,7 @@ export class TramaController {
         this.state.project = parked;
         this.state.loadingProject = null;
         this.lastProjectId = id;
+        this.welcomeBack(parked);
         this.state.recentProjects = [
           { ...(existing ?? { id, name: snapshot.name, path: root, isDemo }), path: root, lastOpenedAt: new Date().toISOString() },
           ...this.state.recentProjects.filter((p) => p.id !== id),
@@ -1453,6 +1461,8 @@ export class TramaController {
       this.state.project = project;
       this.state.loadingProject = null;
       if (loaded.error) this.state.error = loaded.error;
+      // Back after a night away: what the Coordinator decided meanwhile comes first, in its recap (issue #423).
+      this.welcomeBack(project);
       const recent: RecentProject = {
         id,
         name: isDemo ? t("main.controller.demoProjectName") : snapshot.name,
@@ -2233,7 +2243,9 @@ export class TramaController {
       project.document.composerDraft = [project.document.composerDraft, ...queued.map((q) => q.text)].filter(Boolean).join("\n\n");
       this.queue = this.queue.filter((q) => q.projectId !== project.id);
     }
-    if ((queued.length || closeLeft) && project.stateWritable) {
+    // The person leaves the project for another: coming back later, they are told what was decided meanwhile (issue #423).
+    this.markPersonLeft(project);
+    if ((queued.length || closeLeft || project.document.personLeftAt) && project.stateWritable) {
       void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     }
     if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
@@ -5013,20 +5025,46 @@ export class TramaController {
   }
 
   /**
-   * The person is back after at least `absence` milliseconds away (issue #423): when the Coordinator made choices with
-   * the delegation meanwhile, Trama writes the recap of what it did and decided, with the doubts, without a model turn.
+   * The person is back in the window after at least `absence` milliseconds away (issue #423): when the Coordinator
+   * decided something meanwhile, with the delegation or settling a review, Trama writes the recap of what it did and
+   * decided, with the doubts, without a model turn.
    */
-  personReturned(absence: number, now = Date.now()): void {
+  personReturned(absence = returnAfterMs(), now = Date.now()): void {
     const away = this.awaySince;
     this.awaySince = null;
     const project = this.state.project;
-    if (away === null || now - away < absence || !project?.stateWritable || project.isDemo) return;
-    const since = project.document.recap?.recaps.at(-1)?.at ?? null;
-    const untold = (project.document.delegatedChoices ?? []).some((c) => since === null || c.at > since);
-    if (!untold) return;
+    if (away === null || !project) return;
+    this.tellReturn(project, away, absence, now);
+  }
+
+  /**
+   * The person leaves the project, as Trama closes or they open another one: when they left is kept with it, the time
+   * they left the window if earlier, for the recap of their return (issue #423).
+   */
+  private markPersonLeft(project: ActiveProjectState): void {
+    if (!project.stateWritable || project.isDemo) return;
+    project.document.personLeftAt ??= new Date(this.awaySince ?? Date.now()).toISOString();
+  }
+
+  /**
+   * The person opens the project again (issue #423): after a long absence, what the Coordinator decided meanwhile gets
+   * the recap "Mentre non c'eri", as when they come back to the window. A document written before the time was kept, or
+   * left by a Trama that did not close, counts from its latest event.
+   */
+  private welcomeBack(project: ActiveProjectState): void {
+    const document = project.document;
+    const left = Date.parse(document.personLeftAt ?? document.events.at(-1)?.createdAt ?? "");
+    if (document.personLeftAt !== undefined) delete document.personLeftAt;
+    if (Number.isFinite(left)) this.tellReturn(project, left);
+  }
+
+  /** Writes the recap of the person's return when they were away long enough and something was decided meanwhile. */
+  private tellReturn(project: ActiveProjectState, leftAt: number, absence = returnAfterMs(), now = Date.now()): boolean {
+    if (now - leftAt < absence || !project.stateWritable || project.isDemo || !decidedSinceLastRecap(project.document)) return false;
     const sources = this.waitingSources(project);
     this.appendRecap(project, "return", newMilestones(project.document, sources.sliceViews ?? {}), sources);
     this.changed();
+    return true;
   }
 
   /**

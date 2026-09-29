@@ -13,6 +13,7 @@ import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
 import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
+import { recordChoice } from "./core/fullDelegation";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
 import { assign, confirmTeam, developers, proposeTeam } from "./core/team";
@@ -2029,6 +2030,45 @@ describe("TramaController", () => {
     // The Coordinator's turn already reads a mandate that covers it, as a new version told in Activity.
     expect(document.mandate).toMatchObject({ status: "granted", version: granted + 1, scopeModuleIds: expect.arrayContaining(["Sources/Orders", "Sources/Shipping"]) });
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Mandato v${granted + 1} con la delega piena`)).toBe(true);
+  });
+
+  it("tells the person what it decided while Trama was closed, when they open it again after a long absence (issue #423)", async () => {
+    const { data } = await setup();
+    const restart = async () => {
+      await controller!.stop();
+      controller = new TramaController(data, {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: "",
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => controller!.snapshot.project?.phase.kind === "ready");
+      return controller.snapshot.project!.document;
+    };
+    const before = controller!.snapshot.project!.document;
+    await controller!.send("[delega:fai tutto tu] Stanotte fai tutto tu", null, null, null);
+    recordChoice(before, { kind: "decision", subject: "Chi vede la revisione?", choice: "Anche il cliente", targetId: null, doubt: "Non so se vale per i buoni" });
+
+    // Closed and opened again at once: the person has just been here, no recap.
+    let document = await restart();
+    expect(document.recap?.recaps.some((r) => r.reason === "return") ?? false).toBe(false);
+
+    // The person left the window in the evening, then Trama closed; in the morning it opens again.
+    controller!.personAway(Date.now() - 8 * 3_600_000);
+    document = await restart();
+    const recap = document.recap?.recaps.at(-1);
+    expect(recap).toMatchObject({ reason: "return", delegated: [{ kind: "decision", doubt: "Non so se vale per i buoni" }] });
+    expect(document.events.findLast((e) => e.content.type === "card" && e.content.kind === "recap")?.content).toMatchObject({ title: "Mentre non c'eri" });
+
+    // Told once: nothing new since, no second recap at the next opening.
+    controller!.personAway(Date.now() - 8 * 3_600_000);
+    document = await restart();
+    expect(document.recap?.recaps.filter((r) => r.reason === "return")).toHaveLength(1);
   });
 
   it("does not leave the person a mandate request that the full delegation's mandate already covers (issue #423)", async () => {

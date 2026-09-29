@@ -1745,6 +1745,12 @@ export interface ProjectDocument {
   delegations?: FullDelegation[];
   /** The choices the Coordinator made with the full delegation (issue #423); absent in documents written before. */
   delegatedChoices?: DelegatedChoice[];
+  /**
+   * When the person left this project: Trama closed, or they switched to another project, or earlier when they had
+   * already left the window (issue #423). Read and cleared when the project opens again, for the recap of their return.
+   * Absent while they are in it, and in documents written before.
+   */
+  personLeftAt?: string | null;
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
