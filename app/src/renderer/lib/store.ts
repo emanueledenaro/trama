@@ -3,7 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
 import type { ExerciseId, GuideStepId } from "@shared/onboarding";
-import { SIDE_BAR_VIEWS, type SideBarView, homeOf, viewOf } from "@/lib/workbench";
+import { CONVERSATION_TAB, type EditorTab, SIDE_BAR_VIEWS, type SideBarView, detailKey, homeOf, opensInEditor, tabKey, viewOf } from "@/lib/workbench";
 
 export type InspectorTarget =
   | { kind: "map" }
@@ -23,8 +23,9 @@ export type InspectorTarget =
   | { kind: "specialist"; id: string }
   /** A conversation between agents (W07). */
   | { kind: "agentThread"; id: string }
-  | { kind: "candidate"; id: string }
-  /** Focus mode on a candidate (F01): the report of one examination. */
+  /** `audit` brings one examination of the candidate into view (issue #336: the examination is a section of the candidate). */
+  | { kind: "candidate"; id: string; audit?: string; diff?: boolean }
+  /** Focus mode on a candidate (F01): the report of one examination. It opens in its candidate's tab. */
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
@@ -38,7 +39,10 @@ export type InspectorTarget =
   | { kind: "goals"; create?: boolean }
   | { kind: "goal"; id: string; edit?: boolean };
 
-/** The main pane: a dialog with the Coordinator, the projects overview (UX03), or the settings page. */
+/**
+ * The main tab of the editor area: the conversation with the Coordinator, the projects overview (UX03), or the settings
+ * page. Since issue #336 Progetti and Impostazioni are tabs next to the conversation; the details are tabs too.
+ */
 export type MainView = "dialog" | "overview" | "settings";
 
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
@@ -85,6 +89,20 @@ interface UiState {
   /** A question another view prepared for the composer; the composer takes it once and clears it (W12). */
   composerPrefill: string | null;
   mainView: MainView;
+  /** The editor's tabs after the conversation, in the order they opened (issue #336). */
+  editorTabs: EditorTab[];
+  /** The key of the detail tab shown in the detail group, null when no detail is open. */
+  activeDetail: string | null;
+  /** Which group the person looks at: the main tabs (conversation, Progetti, Impostazioni) or the details. */
+  editorFocus: "main" | "detail";
+  /** The switch of the title bar: in a wide window the details sit beside the conversation. */
+  splitEditor: boolean;
+  toggleSplitEditor(): void;
+  /** Opens a detail in its editor tab, or brings back the tab it already has. */
+  openDetail(target: InspectorTarget): void;
+  /** Shows a tab of the editor area; `conversation` is the conversation. */
+  focusTab(key: string): void;
+  closeTab(key: string): void;
   /** The goal the one chat is filtered on; null shows the whole chat (UX02, U01). */
   dialogGoalId: string | null;
   /** A goal to open once its project is the selected one, after a switch from the overview. */
@@ -147,6 +165,14 @@ const readSideBarView = (): SideBarView => {
   }
 };
 
+const readSplitEditor = () => {
+  try {
+    return localStorage.getItem("trama.splitEditor") !== "false";
+  } catch {
+    return true;
+  }
+};
+
 const readPanel = () => {
   try {
     return localStorage.getItem("trama.panelOpen") === "true";
@@ -170,6 +196,16 @@ const sideBarFor = (target: InspectorTarget | null, view: SideBarView) => {
   remember("trama.sideBarView", sideBarView);
   return { sidebarOpen: Boolean(target), sideBarView };
 };
+
+/** An examination opens in its candidate's tab, with the examination in view (issue #336). */
+const editorTarget = (target: InspectorTarget, app: AppState | null): InspectorTarget => {
+  if (target.kind !== "audit") return target;
+  const audit = app?.project?.document.audits?.find((a) => a.id === target.id);
+  return audit ? { kind: "candidate", id: audit.target.candidateId, audit: audit.id } : target;
+};
+
+/** The main tab a main view needs in the tab list; the conversation has none. */
+const mainTab = (view: MainView): EditorTab | null => (view === "overview" ? { kind: "projects" } : view === "settings" ? { kind: "settings" } : null);
 
 export const useUi = create<UiState>((set, get) => ({
   app: null,
@@ -201,39 +237,104 @@ export const useUi = create<UiState>((set, get) => ({
   composerModuleId: null,
   composerPrefill: null,
   mainView: "dialog",
+  editorTabs: [],
+  activeDetail: null,
+  editorFocus: "main",
+  splitEditor: readSplitEditor(),
+  toggleSplitEditor: () => {
+    const splitEditor = !get().splitEditor;
+    remember("trama.splitEditor", String(splitEditor));
+    set({ splitEditor });
+  },
+  openDetail: (raw) => {
+    const target = editorTarget(raw, get().app);
+    const key = `detail:${detailKey(target)}`;
+    const tabs = get().editorTabs;
+    const index = tabs.findIndex((tab) => tabKey(tab) === key);
+    // The same record keeps its tab and its place; what the target adds (the examination in view, the goal in edit) applies.
+    const next = index >= 0 ? tabs.map((tab, i) => (i === index ? { kind: "detail" as const, target } : tab)) : [...tabs, { kind: "detail" as const, target }];
+    set({ editorTabs: next, activeDetail: key, editorFocus: "detail" });
+  },
+  focusTab: (key) => {
+    if (key === CONVERSATION_TAB) return set({ mainView: "dialog", editorFocus: "main" });
+    if (key === "projects") return set({ mainView: "overview", editorFocus: "main" });
+    if (key === "settings") return set({ mainView: "settings", editorFocus: "main" });
+    if (get().editorTabs.some((tab) => tabKey(tab) === key)) set({ activeDetail: key, editorFocus: "detail" });
+  },
+  closeTab: (key) => {
+    if (key === CONVERSATION_TAB) return;
+    if (key === "settings") return get().closeSettings();
+    const tabs = get().editorTabs;
+    const index = tabs.findIndex((tab) => tabKey(tab) === key);
+    if (index < 0) return;
+    const editorTabs = tabs.filter((_, i) => i !== index);
+    if (key === "projects") {
+      set({ editorTabs, ...(get().mainView === "overview" ? { mainView: "dialog" as const, editorFocus: "main" as const } : {}) });
+      return;
+    }
+    const details = editorTabs.filter((tab) => tab.kind === "detail");
+    if (get().activeDetail !== key) return set({ editorTabs });
+    // As in VS Code, the neighbour takes the closed tab's place; with no detail left the main tabs show.
+    const before = tabs.slice(0, index).filter((tab) => tab.kind === "detail").at(-1);
+    const neighbour = before ?? details[0] ?? null;
+    set({
+      editorTabs,
+      activeDetail: neighbour ? tabKey(neighbour) : null,
+      editorFocus: neighbour ? get().editorFocus : "main",
+    });
+  },
   dialogGoalId: null,
   pendingGoal: null,
-  setMainView: (mainView) => set({ mainView }),
+  setMainView: (mainView) => {
+    const tab = mainTab(mainView);
+    const tabs = get().editorTabs;
+    const editorTabs = tab && !tabs.some((t) => t.kind === tab.kind) ? [...tabs, tab] : tabs;
+    set({ mainView, editorTabs, editorFocus: "main" });
+  },
   settingsSection: "general",
   settingsReturn: "dialog",
   openSettings: (section) => {
     const current = get().mainView;
+    const tabs = get().editorTabs;
     set({
       mainView: "settings",
+      editorFocus: "main",
+      editorTabs: tabs.some((t) => t.kind === "settings") ? tabs : [...tabs, { kind: "settings" }],
       settingsSection: section ?? get().settingsSection,
       settingsReturn: current === "settings" ? get().settingsReturn : current,
     });
   },
-  closeSettings: () => set({ mainView: get().settingsReturn }),
-  openDialog: (dialogGoalId) => set({ dialogGoalId, mainView: "dialog" }),
+  closeSettings: () => {
+    const editorTabs = get().editorTabs.filter((t) => t.kind !== "settings");
+    const back = get().settingsReturn;
+    // The page the settings came from, if its tab is still open; else the conversation.
+    const mainView = back === "overview" && !editorTabs.some((t) => t.kind === "projects") ? "dialog" : back;
+    set({ editorTabs, ...(get().mainView === "settings" ? { mainView, editorFocus: "main" as const } : {}) });
+  },
+  openDialog: (dialogGoalId) => set({ dialogGoalId, mainView: "dialog", editorFocus: "main" }),
   openGoalOf: (projectId, goalId) => {
-    if (get().app?.project?.id === projectId) set({ dialogGoalId: goalId, mainView: "dialog", pendingGoal: null });
-    else set({ pendingGoal: { projectId, goalId }, mainView: "dialog" });
+    if (get().app?.project?.id === projectId) set({ dialogGoalId: goalId, mainView: "dialog", editorFocus: "main", pendingGoal: null });
+    else set({ pendingGoal: { projectId, goalId }, mainView: "dialog", editorFocus: "main" });
   },
   history: [null],
   historyIndex: 0,
   goBack: () => {
     const { history, historyIndex } = get();
     if (historyIndex > 0) {
-      const inspector = history[historyIndex - 1] ?? null;
-      set({ historyIndex: historyIndex - 1, inspector, ...sideBarFor(inspector, get().sideBarView) });
+      const target = history[historyIndex - 1] ?? null;
+      set({ historyIndex: historyIndex - 1 });
+      // A detail comes back in its editor tab; a panel of the side bar in the side bar (issue #336).
+      if (target && opensInEditor(target)) get().openDetail(target);
+      else set({ inspector: target, ...sideBarFor(target, get().sideBarView) });
     }
   },
   goForward: () => {
     const { history, historyIndex } = get();
     if (historyIndex < history.length - 1) {
-      const inspector = history[historyIndex + 1] ?? null;
-      set({ historyIndex: historyIndex + 1, inspector, ...sideBarFor(inspector, get().sideBarView) });
+      const target = history[historyIndex + 1] ?? null;
+      set({ historyIndex: historyIndex + 1 });
+      if (target && opensInEditor(target)) get().openDetail(target);
+      else set({ inspector: target, ...sideBarFor(target, get().sideBarView) });
     }
   },
   setApp: (app) => {
@@ -242,7 +343,21 @@ export const useUi = create<UiState>((set, get) => ({
     if (previous?.project?.id !== app.project?.id) {
       const pending = get().pendingGoal;
       const goal = pending && pending.projectId === app.project?.id ? pending.goalId : null;
-      set({ inspector: null, panelFocus: null, composerModuleId: null, composerPrefill: null, history: [null], historyIndex: 0, dialogGoalId: goal, pendingGoal: goal ? null : pending });
+      // The detail tabs point into the old project and close; Progetti and Impostazioni stay (issue #336).
+      const editorTabs = get().editorTabs.filter((tab) => tab.kind !== "detail");
+      set({
+        inspector: null,
+        panelFocus: null,
+        composerModuleId: null,
+        composerPrefill: null,
+        history: [null],
+        historyIndex: 0,
+        dialogGoalId: goal,
+        pendingGoal: goal ? null : pending,
+        editorTabs,
+        activeDetail: null,
+        editorFocus: "main",
+      });
       // A project opened from the settings, the overview or the menu shows its dialog, not the page left behind (W12).
       if (app.project && previous) set({ mainView: "dialog" });
     }
@@ -270,6 +385,15 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setInspector: (inspector) => {
     const { history, historyIndex, inspector: current, sideBarView } = get();
+    // A detail opens in its editor tab next to the conversation; the side bar keeps its view (issue #336).
+    if (inspector && opensInEditor(inspector)) {
+      get().openDetail(inspector);
+      const last = history[historyIndex] ?? null;
+      if (JSON.stringify(last) === JSON.stringify(inspector)) return;
+      const next = [...history.slice(0, historyIndex + 1), inspector].slice(-50);
+      set({ history: next, historyIndex: next.length - 1 });
+      return;
+    }
     // Details belong to a project dialog: opening one leaves the overview.
     if (inspector) set({ mainView: "dialog" });
     // Every panel of today opens in the side bar, under its view (issue #330); null closes the side bar.
@@ -295,6 +419,7 @@ export const useUi = create<UiState>((set, get) => ({
       composerFocusRequest: state.composerFocusRequest + 1,
       composerModuleId: moduleId === undefined ? state.composerModuleId : moduleId,
       mainView: state.app?.project ? "dialog" : state.mainView,
+      editorFocus: state.app?.project ? "main" : state.editorFocus,
     })),
   askCoordinator: (text, options = {}) =>
     set((state) => ({
@@ -303,6 +428,7 @@ export const useUi = create<UiState>((set, get) => ({
       composerModuleId: options.moduleId === undefined ? state.composerModuleId : options.moduleId,
       dialogGoalId: options.goalId === undefined ? state.dialogGoalId : options.goalId,
       mainView: "dialog",
+      editorFocus: "main",
     })),
   takeComposerPrefill: () => {
     const text = get().composerPrefill;
@@ -312,7 +438,7 @@ export const useUi = create<UiState>((set, get) => ({
   setComposerModule: (composerModuleId) => set({ composerModuleId }),
   pickerRequest: null,
   openModelPicker: (provider = null) =>
-    set((state) => ({ pickerRequest: { provider, nonce: (state.pickerRequest?.nonce ?? 0) + 1 }, mainView: "dialog" })),
+    set((state) => ({ pickerRequest: { provider, nonce: (state.pickerRequest?.nonce ?? 0) + 1 }, mainView: "dialog", editorFocus: "main" })),
 }));
 
 /** The main process's error without Electron's IPC prefix. */

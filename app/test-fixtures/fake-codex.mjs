@@ -142,7 +142,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return send({ id, error: { code: -32000, message: "thread not found" } });
     case "thread/start": {
       // FAKE_CODEX_FAIL_THREAD_START names a file: while it exists, one new thread fails to open and the file goes away,
-      // so a test can make the Coordinator's new session fail once (ADR 0018).
+      // so a test can make the Coordinator's new session fail once (ADR 0019).
       const failStart = process.env.FAKE_CODEX_FAIL_THREAD_START;
       if (failStart) {
         const { existsSync, rmSync } = await import("node:fs");
@@ -156,7 +156,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (server) toolServers.set(threadId, server);
       threadProfiles.set(threadId, { permissions: params.permissions ?? null, config: params.config ?? {} });
       if (String(params.developerInstructions ?? "").includes("[lento:sempre]")) slowThreads.add(threadId);
-      // "[specialista-pieno]": a specialist's thread whose turns use most of the context window (ADR 0018).
+      // "[specialista-pieno]": a specialist's thread whose turns use most of the context window (ADR 0019).
       if (String(params.developerInstructions ?? "").includes("[specialista-pieno]")) fullThreads.add(threadId);
       return send({ id, result: { thread: { id: threadId } } });
     }
@@ -1049,7 +1049,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh-study", type: "commandExecution", command: "gh issue list", exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
       }
       // Like Codex: `total` adds up every request of the thread and keeps growing, `last` is the request that fills the window (issue #305).
-      // A study turn opens a new session: its reading is small even when the summary quotes "[pieno]" (ADR 0018).
+      // A study turn opens a new session: its reading is small even when the summary quotes "[pieno]" (ADR 0019).
       // 13.000 of 258.000 is 5,04%: just past the lowest threshold with the exact share (issue #272).
       const full = text.includes("[pieno]") && !text.startsWith("Studio del progetto scritto da Trama");
       processedTokens += full ? 2_300_000 : 120_000;
