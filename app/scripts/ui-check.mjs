@@ -1063,14 +1063,30 @@ const restFrom = await botFrames();
 await page.waitForTimeout(3_000);
 const restFrames = (await botFrames()).frames - restFrom.frames;
 if (restFrames > 3) throw new Error(`The bot loop ran ${restFrames} frames in 3 s at rest`);
-const cpuMoving = await cpuOver(3_000);
-await page.emulateMedia({ reducedMotion: "reduce" });
-const cpuStill = await cpuOver(3_000);
+// A shared CI runner adds short spikes of CPU that have nothing to do with the bots, and one 3 s reading could land on
+// one. The cost is read as five pairs of short samples, animated and with reduced motion, taken one after the other so
+// the still reading is the baseline of the same moment; the medians of the two series are compared. A spike moves one
+// sample and leaves the medians where they are, while a real cost shows in every animated sample and still fails.
+const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+const animatedSamples = [];
+const stillSamples = [];
+for (let pair = 0; pair < 5; pair++) {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.waitForTimeout(300);
+  animatedSamples.push(await cpuOver(1_500));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.waitForTimeout(300);
+  stillSamples.push(await cpuOver(1_500));
+}
 await page.emulateMedia({ reducedMotion: "no-preference" });
+const cpuMoving = median(animatedSamples);
+const cpuStill = median(stillSamples);
+const cpuReadings = `animated ${animatedSamples.map((v) => v.toFixed(1)).join(", ")}; reduced motion ${stillSamples.map((v) => v.toFixed(1)).join(", ")}`;
+console.log(`bots CPU samples: ${cpuReadings}`);
 if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
 console.log(
   `bots: ${botSizes.length} on screen, ${movingFrames} frames with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
-    `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
+    `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion (medians of 5)`,
 );
 const firstBot = teamPanel.getByTestId("agent-bot").first();
 const outline = () => firstBot.locator('[data-part="blob-0"]').getAttribute("d");
@@ -5534,4 +5550,207 @@ if (!englishLast || !englishBox || englishBox.x + englishBox.width - (englishLas
 await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
 await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
 await page.waitForFunction(() => document.documentElement.lang === "it");
+await app.close();
+
+// A11 (issue #251): the person renames, merges and splits the squads from the Squads view, or asks the Coordinator.
+// Rename keeps the squad's id; a merge beyond three developers shows who the Coordinator proposes to keep; a split
+// moves the chosen areas and developers to a new squad with its own lead and QA. Each change is in Activity and is
+// undone there; a change that cannot be made says why. Narrow and wide, Codex and Claude, light and dark.
+const squadsProject = await mkdtemp(join(tmpdir(), "trama-ui-squadre-"));
+await cp(resolve("resources/DemoProject"), squadsProject, { recursive: true });
+execFileSync("git", ["-C", squadsProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", squadsProject, "add", "."]);
+execFileSync("git", ["-C", squadsProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), squadsProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+{
+  let squadsPath = null;
+  for (const file of await readdir(join(dataDir, "Projects"))) {
+    if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-squadre-")) squadsPath = join(dataDir, "Projects", file);
+  }
+  if (!squadsPath) throw new Error("Squads: the project's state was not saved");
+  const document = JSON.parse(await readFile(squadsPath, "utf8"));
+  const at = "2026-09-28T09:00:00.000Z";
+  const member = (id, name, role, moduleIds, tag) => ({
+    id,
+    name,
+    competence: "Swift",
+    reason: "Negozio",
+    moduleIds,
+    role,
+    origin: role === "developer" ? "teamProposal" : "fixedRole",
+    color: null,
+    tag,
+    createdAt: at,
+    status: "available",
+    model: null,
+    tools: ["commands"],
+    updatedAt: at,
+    lastUpdate: "",
+    assignments: [],
+    removal: null,
+  });
+  // The fixed roles Trama created stay; the squads' own people are the example's.
+  document.team.specialists = document.team.specialists.filter((s) => s.role !== "qa" && s.role !== "squadLead" && s.role !== "developer");
+  document.team.specialists.push(
+    member("S-A1100001", "Capo Ordini", "squadLead", ["Sources/Orders", "Sources/Payments"], "Capo"),
+    member("S-A1100002", "QA Ordini", "qa", ["Sources/Orders", "Sources/Payments"], "QA"),
+    member("S-A1100003", "Luca", "developer", ["Sources/Orders"], "Ordini"),
+    member("S-A1100004", "Marta", "developer", ["Sources/Payments"], "Pagamenti"),
+    member("S-A1100005", "Capo Catalogo", "squadLead", ["Sources/Catalog"], "Capo"),
+    member("S-A1100006", "QA Catalogo", "qa", ["Sources/Catalog"], "QA"),
+    member("S-A1100007", "Nora", "developer", ["Sources/Catalog"], "Catalogo"),
+    member("S-A1100008", "Piero", "developer", ["Sources/Catalog"], "Catalogo"),
+  );
+  document.team.proposals = [];
+  document.team.confirmedAt = at;
+  document.team.squads = [
+    { id: "SQ-A1100001", name: "Ordini", moduleIds: ["Sources/Orders", "Sources/Payments"], leadId: "S-A1100001", qaId: "S-A1100002", developerIds: ["S-A1100003", "S-A1100004"], createdAt: at },
+    { id: "SQ-A1100002", name: "Catalogo", moduleIds: ["Sources/Catalog"], leadId: "S-A1100005", qaId: "S-A1100006", developerIds: ["S-A1100007", "S-A1100008"], createdAt: at },
+  ];
+  await writeFile(squadsPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), squadsProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-squadre" }).waitFor({ timeout: 30_000 });
+await openView("Squadre");
+const squadsSide = page.getByTestId("side-bar");
+const squadNamed = (name) => squadsSide.locator(`[data-testid="squad"][data-squad="${name}"]`);
+await squadNamed("Ordini").waitFor({ timeout: 20_000 });
+await squadNamed("Catalogo").waitFor();
+const squadMenu = async (name, item) => {
+  await squadNamed(name).getByTestId("squad-menu").click();
+  if (item) await page.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();
+};
+// Each squad has its menu of changes, with the reason beside an action that cannot be made.
+{
+  const look = await lookOf();
+  for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    await noHorizontalScroll(`Squads with their menus ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`51a-squads-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+  await setLookTo(look.provider, look.dark);
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
+await squadMenu("Catalogo");
+const splitItem = page.getByRole("menuitem", { name: /^Dividi per aree/ });
+if ((await splitItem.getAttribute("aria-disabled")) !== "true") throw new Error("A squad with one area offers to split");
+await splitItem.getByText("La squadra Catalogo ha una sola area: non si divide.").waitFor();
+await themeShots("51b-squad-menu");
+await page.keyboard.press("Escape");
+// Rename: the id stays, the name is checked before the person confirms, Rinomina is the last call to action.
+const ordersId = await squadNamed("Ordini").getAttribute("data-squad-id");
+await squadMenu("Ordini", "Rinomina");
+const renameSquadForm = squadsSide.getByTestId("rename-squad");
+await renameSquadForm.getByLabel("Nome della squadra").fill("catalogo");
+await renameSquadForm.getByText("C'è già una squadra che si chiama catalogo.").waitFor();
+if (await renameSquadForm.getByRole("button", { name: "Rinomina" }).isEnabled()) throw new Error("A squad can take another squad's name");
+await renameSquadForm.getByLabel("Nome della squadra").fill("Ordini e pagamenti");
+const renameSquadButtons = await renameSquadForm.locator(".cta-row button").allTextContents();
+if (renameSquadButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not the last call to action: ${renameSquadButtons}`);
+await themeShots("51c-squad-rename");
+await renameSquadForm.getByRole("button", { name: "Rinomina" }).click();
+await squadNamed("Ordini e pagamenti").waitFor({ timeout: 20_000 });
+if ((await squadNamed("Ordini e pagamenti").getAttribute("data-squad-id")) !== ordersId) throw new Error("The rename changed the squad's id");
+// Merge beyond three developers: the Coordinator's proposal of who stays, which the person may change.
+await squadMenu("Ordini e pagamenti", "Unisci a un'altra squadra");
+const mergeForm = squadsSide.getByTestId("merge-squad");
+await mergeForm.getByText("Insieme sono 4 sviluppatori e una squadra ne ha al massimo 3.", { exact: false }).waitFor();
+const kept = await mergeForm.getByTestId("squad-keep").locator("input:checked").count();
+if (kept !== 3) throw new Error(`The proposal keeps ${kept} developers, not 3`);
+await mergeForm.scrollIntoViewIfNeeded();
+{
+  const look = await lookOf();
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await shot(`51d-squad-merge-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLookTo(look.provider, look.dark);
+}
+await mergeForm.getByRole("button", { name: "Unisci", exact: true }).click();
+await squadNamed("Catalogo").waitFor({ state: "detached", timeout: 20_000 });
+await squadsSide.getByText("Sviluppatori fuori dalle squadre").waitFor();
+if ((await squadNamed("Ordini e pagamenti").getByTestId("team-developer").count()) !== 3) throw new Error("The merged squad does not have three developers");
+await themeShots("51e-squads-merged");
+// Activity tells both changes; the merge is undone there and the two squads come back as they were.
+if (!(await page.getByTestId("bottom-panel").count())) await page.getByTestId("status-bar").getByRole("button", { name: "Attività", exact: true }).click();
+const squadRows = page.getByTestId("bottom-panel").getByTestId("activity-squad");
+await squadRows.filter({ hasText: "Squadre unite" }).waitFor({ timeout: 20_000 });
+await squadRows.filter({ hasText: "Squadra rinominata" }).waitFor();
+// The rename is older than the merge of the same squad: it is undone only after the merge.
+if (await squadRows.filter({ hasText: "Squadra rinominata" }).getByTestId("squad-undo").isEnabled()) throw new Error("An older change undoes before the newer one");
+await squadRows.filter({ hasText: "Squadre unite" }).getByTestId("activity-row-toggle").click();
+await squadRows.filter({ hasText: "Squadre unite" }).getByTestId("activity-row-detail").getByText("Dalla vista Squadre").waitFor();
+await themeShots("51f-activity-squads");
+await squadRows.filter({ hasText: "Squadre unite" }).getByTestId("squad-undo").click();
+await page.getByTestId("bottom-panel").locator('[data-testid="activity-squad"][data-outcome="undone"]').filter({ hasText: "Squadre unite" }).waitFor({ timeout: 20_000 });
+await squadNamed("Catalogo").waitFor({ timeout: 20_000 });
+if ((await squadNamed("Catalogo").getByTestId("team-developer").count()) !== 2) throw new Error("The undone merge did not bring Catalogo back with its developers");
+if (await squadsSide.getByText("Sviluppatori fuori dalle squadre").count()) throw new Error("The undone merge left a developer outside squads");
+await squadRows.filter({ hasText: "Squadra rinominata" }).getByTestId("squad-undo").waitFor();
+if (!(await squadRows.filter({ hasText: "Squadra rinominata" }).getByTestId("squad-undo").isEnabled())) throw new Error("The rename cannot be undone after the merge was");
+await themeShots("51g-activity-squad-undone");
+await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+// Through the Coordinator: a merge of more than three developers waits for the person in the Squads view, who sets
+// it aside here.
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await composer().click();
+await composer().pressSequentially("[unisci-squadre:Catalogo:Ordini e pagamenti]");
+await page.keyboard.press("Enter");
+await page.getByText("scegli chi resta nella vista Squadre").first().waitFor({ timeout: 20_000 });
+await openView("Squadre");
+const mergeProposalCard = squadsSide.getByTestId("squad-merge-proposal");
+await mergeProposalCard.getByText("Hai chiesto al Coordinatore di unire Catalogo a Ordini e pagamenti.", { exact: false }).waitFor({ timeout: 20_000 });
+const squadProposalButtons = await mergeProposalCard.locator(".cta-row button").allTextContents();
+if (squadProposalButtons.at(-1)?.trim() !== "Unisci") throw new Error(`Merge is not the last call to action: ${squadProposalButtons}`);
+await themeShots("51j-squad-merge-proposal");
+await mergeProposalCard.getByRole("button", { name: "Lascia com'è" }).click();
+await mergeProposalCard.waitFor({ state: "detached", timeout: 20_000 });
+await squadNamed("Catalogo").waitFor();
+// Split by areas: Payments goes to a new squad with Marta, who knows it; the new squad has its own lead and QA.
+await squadMenu("Ordini e pagamenti", "Dividi per aree");
+const splitForm = squadsSide.getByTestId("split-squad");
+await splitForm.getByTestId("split-areas").getByRole("checkbox", { name: "Payments" }).check();
+if (!(await splitForm.getByTestId("split-developers").getByRole("checkbox", { name: "Marta" }).isChecked())) throw new Error("The split does not propose the developer who knows the area");
+await splitForm.getByLabel("Nome della squadra nuova").fill("Pagamenti");
+const splitButtons = await splitForm.locator(".cta-row button").allTextContents();
+if (splitButtons.at(-1)?.trim() !== "Dividi") throw new Error(`Split is not the last call to action: ${splitButtons}`);
+await splitForm.scrollIntoViewIfNeeded();
+{
+  const look = await lookOf();
+  for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    await noHorizontalScroll(`Split of a squad ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`51h-squad-split-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+  await setLookTo(look.provider, look.dark);
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
+await splitForm.getByRole("button", { name: "Dividi", exact: true }).click();
+const paymentsSquad = squadNamed("Pagamenti");
+await paymentsSquad.waitFor({ timeout: 20_000 });
+await paymentsSquad.getByRole("button", { name: /^Marta/ }).waitFor();
+await paymentsSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').waitFor();
+await paymentsSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
+await expectNoRawIds(squadsSide.getByTestId("squad").first(), "The squads after the split");
+await themeShots("51i-squads-split");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
