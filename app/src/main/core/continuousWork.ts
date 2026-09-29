@@ -387,7 +387,9 @@ export function stalledMove(document: ProjectDocument, requestId: string): Stall
   const move = request.step.move as CoordinatorMove;
   if (!(move in COORDINATOR_MOVES)) return null;
   const state = workState(document, request.id);
-  if (!state.moves.some((m) => m.actor === "coordinator" && m.move === move)) return null;
+  // The moves of the full delegation are Trama's own reading, never among the work's moves: their reason says it.
+  const delegation = move === "decideWithDelegation" || move === "takeTicket";
+  if (!delegation && !state.moves.some((m) => m.actor === "coordinator" && m.move === move)) return null;
   const reason = stallReason(document, request.id, request.createdAt, move, state);
   return reason ? { move, reason: t("main.continuousWork.moveFailed", { reason }).slice(0, 240) } : null;
 }

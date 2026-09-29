@@ -699,6 +699,20 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     expect(moveOf(document, "r4", "round")).toBeNull();
   });
 
+  it("says the decision stalled when the turn left the question open, and not once it decided", () => {
+    const document = delegated();
+    request(document, "r1");
+    const question = grill(document, "r1");
+    mandate(document, ["plan"]);
+    request(document, "r2", { step: { move: "decideWithDelegation", by: "trama" } });
+    expect(stalledMove(document, "r2")).toEqual({
+      move: "decideWithDelegation",
+      reason: "La mossa automatica non è riuscita: il Coordinatore non ha deciso quello che aspettava la persona.",
+    });
+    answerDecisionRequest(document, question.id, { alternativeIndex: 1, freeText: null });
+    expect(stalledMove(document, "r2")).toBeNull();
+  });
+
   it("leaves the questions to the person without the delegation, or once it is withdrawn", () => {
     const document = delegated();
     request(document, "r1");
