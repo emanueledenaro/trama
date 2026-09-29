@@ -1628,6 +1628,84 @@ await shot("04k-domain-proposal-written");
 }
 await openModules();
 await shot("05-map");
+// Issue #457: one neutral glass surface for every provider, the provider sets only the accents. The computed background
+// of the page and of every section (title bar, activity bar, side bar, editor, bottom panel, status bar) is the same
+// with each of the nine providers, white in light and dark in dark; the sections differ slightly from each other; the
+// accent, the primary button and the side bar selection change with the provider. Screens for Codex and Claude.
+{
+  const surfaceLook = await lookOf();
+  const panelWasOpen = (await page.getByTestId("bottom-panel").count()) > 0;
+  if (!panelWasOpen) await clickMenu("togglePanel");
+  await page.getByTestId("bottom-panel").waitFor();
+  await page.mouse.move(640, 500);
+  const readSurfaces = () =>
+    page.evaluate(() => {
+      const color = (value) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        document.body.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const background = (selector) => {
+        const node = document.querySelector(selector);
+        return node ? getComputedStyle(node).backgroundColor : null;
+      };
+      return {
+        sections: {
+          page: getComputedStyle(document.body).backgroundColor,
+          titleBar: background('[data-testid="title-bar"]'),
+          activityBar: background('[data-testid="activity-bar"]'),
+          sideBar: background('[data-testid="side-bar"]'),
+          editor: background('[data-testid="editor-area"], [data-testid="editor-main"]'),
+          panel: background('[data-testid="bottom-panel"]'),
+          statusBar: background('[data-testid="status-bar"]'),
+          surface: color("var(--surface)"),
+          ink: color("var(--ink)"),
+        },
+        accents: {
+          text: color("var(--color-text-accent)"),
+          primary: color("var(--primary)"),
+          ring: color("var(--ring)"),
+          selection: color("var(--sidebar-selected)"),
+          bubble: color("var(--app-user-message-background)"),
+          sash: color("var(--app-focus-border)"),
+        },
+      };
+    });
+  const providers = ["codex", "claudeAgent", "cursor", "antigravity", "grok", "droid", "devin", "opencode", "pi"];
+  for (const mode of ["light", "dark"]) {
+    const seen = {};
+    for (const provider of providers) {
+      await setLookTo(provider, mode === "dark");
+      // The provider's light fades in 1.4s; the surfaces must not move at all, so they are read at once and again after.
+      const first = await readSurfaces();
+      await page.waitForTimeout(provider === "codex" || provider === "claudeAgent" ? 1_500 : 50);
+      seen[provider] = await readSurfaces();
+      if (JSON.stringify(first.sections) !== JSON.stringify(seen[provider].sections)) throw new Error(`The ${mode} surfaces move when ${provider} is chosen: ${JSON.stringify([first.sections, seen[provider].sections])}`);
+      if (provider === "codex" || provider === "claudeAgent") await shot(`22b-surface-${provider === "codex" ? "codex" : "claude"}-${mode}`);
+    }
+    const codex = seen.codex;
+    for (const provider of providers)
+      if (JSON.stringify(seen[provider].sections) !== JSON.stringify(codex.sections))
+        throw new Error(`The ${mode} background with ${provider} differs from Codex: ${JSON.stringify({ codex: codex.sections, [provider]: seen[provider].sections })}`);
+    const expected = mode === "light" ? "rgb(255, 255, 255)" : "rgb(33, 33, 33)";
+    if (codex.sections.surface !== expected || codex.sections.editor !== expected) throw new Error(`The ${mode} surface is not ${expected}: ${JSON.stringify(codex.sections)}`);
+    const tints = ["titleBar", "sideBar", "editor", "panel", "statusBar"].map((key) => codex.sections[key]);
+    if (tints.some((tint) => !tint) || new Set(tints).size !== tints.length) throw new Error(`The ${mode} sections do not have their own tint: ${JSON.stringify(codex.sections)}`);
+    if (codex.sections.activityBar !== codex.sections.titleBar) throw new Error(`The ${mode} activity bar and title bar differ: ${JSON.stringify(codex.sections)}`);
+    for (const key of ["text", "ring", "selection", "bubble", "sash"])
+      if (codex.accents[key] === seen.claudeAgent.accents[key]) throw new Error(`The ${mode} ${key} accent is the same with Codex and Claude: ${codex.accents[key]}`);
+    if (codex.accents.primary === seen.claudeAgent.accents.primary) throw new Error(`The ${mode} primary button is the same with Codex and Claude`);
+    console.log(`[surface] ${mode}: ${JSON.stringify(codex.sections)}; accent codex ${codex.accents.text}, claude ${seen.claudeAgent.accents.text}`);
+  }
+  await setLookTo(surfaceLook.provider, surfaceLook.dark);
+  if (!panelWasOpen) {
+    await clickMenu("togglePanel");
+    await page.getByTestId("bottom-panel").waitFor({ state: "detached" });
+  }
+}
 // #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
 // the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
 // focusBorder, and while dragged it stays lit. Double-click and the arrow keys change the width. The panels meet edge
@@ -1742,14 +1820,32 @@ await shot("05-map");
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
   const hovered = await settledLook(sidebarSash);
   if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After the hover delay the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
-  // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
-  for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
-    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
-    const lit = (await settledLook(sidebarSash)).strip;
-    if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
-    await shot(`22-sash-hover-${mode}`);
+  // Issue #457: the lit sash is an accent, the provider's text accent in light and dark (Codex: #0A6FD6 and #5AAEFF,
+  // close to VS Code's focusBorder #005FB8 and #0078D4). Two providers light it in two different colors.
+  const sashLook = await lookOf();
+  const litBy = {};
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const mode of ["light", "dark"]) {
+      await setLookTo(provider, mode === "dark");
+      const reading = await settledLook(sidebarSash);
+      const accent = await sidebarSash.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--color-text-accent)";
+        element.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      });
+      if (reading.strip !== accent || reading.strip !== reading.accent) throw new Error(`The ${provider} ${mode} hovered sash is ${reading.strip}, not the provider's accent ${accent}`);
+      litBy[`${provider}-${mode}`] = reading.strip;
+      if (provider === "codex") await shot(`22-sash-hover-${mode}`);
+      else await shot(`22-sash-hover-claude-${mode}`);
+    }
   }
-  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  for (const mode of ["light", "dark"])
+    if (litBy[`codex-${mode}`] === litBy[`claudeAgent-${mode}`]) throw new Error(`The ${mode} sash has the same color with Codex and Claude: ${litBy[`codex-${mode}`]}`);
+  if (litBy["codex-light"] !== "rgb(10, 111, 214)" || litBy["codex-dark"] !== "rgb(90, 174, 255)") throw new Error(`The Codex sash is not its accent: ${JSON.stringify(litBy)}`);
+  await setLookTo(sashLook.provider, false);
   const dragBox = await sidebarSash.boundingBox();
   const startWidth = Number(await sidebarSash.getAttribute("aria-valuenow"));
   await page.mouse.move(dragBox.x + dragBox.width / 2, 300);

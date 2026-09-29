@@ -150,7 +150,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
   return (
     <header
       className={cn(
-        "@container/title drag-region relative flex h-[46px] shrink-0 items-center gap-2 border-b border-[color:var(--app-panel-border)] bg-[var(--app-sidebar-surface)] pr-2 pl-3 font-system-ui",
+        "@container/title drag-region relative flex h-[46px] shrink-0 items-center gap-2 border-b border-[color:var(--app-panel-border)] bg-[var(--app-activitybar-surface)] pr-2 pl-3 font-system-ui",
         isMac && "desktop-top-bar-traffic-light-gutter",
       )}
       data-testid="title-bar"

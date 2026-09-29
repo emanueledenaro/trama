@@ -581,7 +581,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       aria-label={t("panel.label")}
       data-testid="bottom-panel"
       className={cn(
-        "chat-content-card relative flex shrink-0 flex-col border-t border-[color:var(--app-panel-border)] font-system-ui",
+        "chat-content-card app-panel-surface relative flex shrink-0 flex-col border-t border-[color:var(--app-panel-border)] font-system-ui",
         !size.resizing && "transition-[height] duration-200 ease-out",
       )}
       style={{ height: size.height }}
