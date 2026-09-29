@@ -1538,6 +1538,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.askTrama.firstStep": "First step: {skill}.",
   "main.askTrama.firstStepFlow": "First step: {skill} ({flow}).",
   "main.askTrama.boundary": "Phase boundary: {boundary}.",
+  "main.askTrama.startLabel": "Start the Ask Trama route",
+  "main.askTrama.startedByDelegation": "Trama started Ask Trama route {id} with your delegation",
+  "main.askTrama.startedByMandate": "Trama started Ask Trama route {id} within the mandate",
+  "main.askTrama.startedChoice": "Started without waiting for your answer: {steps}.",
 
   // Agent chat
   "main.agentThreads.sliceSubject": "slice {slice}",

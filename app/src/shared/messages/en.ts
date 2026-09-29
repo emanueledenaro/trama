@@ -1555,6 +1555,7 @@ export const en: Record<keyof typeof it, string> = {
   "delegation.kind.interfaceCandidate": "Interface candidate approved",
   "delegation.kind.goal": "New work for the goal",
   "delegation.kind.ticket": "Issue taken",
+  "delegation.kind.route": "Ask Trama route started",
   "delegation.kind.doubt": "Doubt",
   "delegation.view.title": "Full delegation",
   "delegation.view.active": "The Coordinator does everything on its own since {date}, even at night. It only asks you to confirm deletions.",

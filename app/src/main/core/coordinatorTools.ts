@@ -70,7 +70,7 @@ import { sliceAssignmentProblem } from "./slices";
 import { agreedSeams, contractSeams, seamNumber } from "./implementation";
 import { answerFromFacts, blockOnPerson, QuestionError, requireAskedQuestion } from "./developerQuestions";
 import { NEXT_MOVES, workRequests, workState } from "./workPhase";
-import { ASK_TRAMA_BINDING, proposeRoute, RouteError, routeReport } from "./askTrama";
+import { ASK_TRAMA_BINDING, proposeRoute, RouteError, routeCovered, routeReport } from "./askTrama";
 import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
@@ -1625,7 +1625,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           });
           context.addCard("route", t("main.coordinatorTools.card.route"), route.id);
           context.changed();
-          return toolSuccess(routeReport(route));
+          return toolSuccess(routeReport(route, routeCovered(document, route)));
         } catch (error) {
           if (error instanceof RouteError) return toolFailure("invalid_arguments", error.message);
           throw error;

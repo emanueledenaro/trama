@@ -1593,6 +1593,10 @@ export const mainIt = {
   "main.askTrama.firstStep": "Primo passo: {skill}.",
   "main.askTrama.firstStepFlow": "Primo passo: {skill} ({flow}).",
   "main.askTrama.boundary": "Confine di fase: {boundary}.",
+  "main.askTrama.startLabel": "Avvia il percorso di Ask Trama",
+  "main.askTrama.startedByDelegation": "Percorso {id} di Ask Trama avviato da Trama con la tua delega",
+  "main.askTrama.startedByMandate": "Percorso {id} di Ask Trama avviato da Trama dentro il mandato",
+  "main.askTrama.startedChoice": "Avviato senza aspettare la tua risposta: {steps}.",
 
   // Agent chat
   "main.agentThreads.sliceSubject": "fetta {slice}",

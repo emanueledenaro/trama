@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { ProjectDocument } from "@shared/domain";
+import type { MandateAction, ProjectDocument } from "@shared/domain";
+import { activeDelegation } from "@shared/delegation";
 import {
   ASK_TRAMA_SKILL,
   type AskTramaRoute,
@@ -20,6 +21,7 @@ import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import type { NativeSkill } from "./nativeSkills";
 import { t } from "./personLanguage";
+import { authorize } from "./team";
 
 /**
  * Ask Trama (M07, issue #130). The Coordinator runs AI Hero's ask-trama skill (upstream ask-matt) with its original
@@ -50,7 +52,7 @@ const FLOW_STARTS: Readonly<Record<string, string>> = {
 export const ASK_TRAMA_BINDING = [
   `Trama runs the ask-trama skill above with its own text, its reference file PHASE-BOUNDARIES.md included. These lines only map its words to Trama's tools; they do not change its method. ${SKILL_RULES_ABOVE}`,
   "When Trama uses it: when the person writes /ask-trama, or opens Ask Trama from its button, and describes their situation. Also without the command (a Trama addition): when a request of the person is about to become work, choose its route with this skill before you grill or plan it.",
-  "\"You\" and \"the user\" are the person. In Trama the skills it names are not commands the person types: never tell the person to run /name. Choose the route and propose it with propose_route, once per situation: path is the section of the skill the route comes from, steps are its skill names in order without the slash, boundary is the option PHASE-BOUNDARIES.md's tree gives for the move from this conversation to the route's first phase, reason is one or two lines for the person. Trama shows it as a card; the person starts it or declines it and Trama writes the answer to you as the person's message. Your text only says in one or two lines which route you propose and why.",
+  "\"You\" and \"the user\" are the person. In Trama the skills it names are not commands the person types: never tell the person to run /name. Choose the route and propose it with propose_route, once per situation: path is the section of the skill the route comes from, steps are its skill names in order without the slash, boundary is the option PHASE-BOUNDARIES.md's tree gives for the move from this conversation to the route's first phase, reason is one or two lines for the person. Trama shows it as a card; the person starts it or declines it and Trama writes the answer to you as the person's message. With the person's full delegation, or when the mandate covers its steps, Trama starts it by itself when your turn ends. Your text only says in one or two lines which route you propose and why.",
   `Each skill with a Trama flow starts this way: ${Object.entries(FLOW_STARTS)
     .map(([skill, start]) => `"/${skill}": ${start}.`)
     .join(" ")}`,
@@ -130,18 +132,49 @@ export function proposeRoute(document: ProjectDocument, input: RouteInput, now =
   return route;
 }
 
-/** What propose_route returns to the Coordinator: how Trama will run each step. */
-export function routeReport(route: AskTramaRoute): Record<string, string | { skill: string; runs: string }[]> {
+/**
+ * What propose_route returns to the Coordinator: how Trama will run each step, and whether the route waits for the
+ * person or starts by itself when the turn ends (issue #423).
+ */
+export function routeReport(route: AskTramaRoute, startsByItself = false): Record<string, string | { skill: string; runs: string }[]> {
   return {
     routeID: route.id,
-    status: "shown_to_person",
+    status: startsByItself ? "starts_by_itself" : "shown_to_person",
     boundary: route.boundary,
     steps: route.steps.map((step) => ({
       skill: step.skill,
       runs: step.kind === "flow" ? `Trama flow: ${flowLabel(ITALIAN, step.skill)}` : step.kind === "skill" ? "the skill's original text, in your session" : "not available in Trama: never simulate it",
     })),
-    note: "Trama starts the route when the person confirms it and writes you the start message.",
+    note: startsByItself
+      ? "The person's full delegation or the mandate covers this route: Trama starts it by itself when this turn ends and writes you the start message. End the turn with one line for the person; do not wait for their answer."
+      : "Trama starts the route when the person confirms it and writes you the start message.",
   };
+}
+
+/** The steps that write in a worktree; every other step plans, reads or runs in the Coordinator's session. */
+const WORKTREE_STEPS = ["implement", "tdd", "code-review"];
+
+/**
+ * Whether the route needs no answer of the person (issue #423): the full delegation is in force, or the mandate covers
+ * every step Trama can run of it. Pure.
+ */
+export function routeCovered(document: ProjectDocument, route: AskTramaRoute): boolean {
+  if (activeDelegation(document)) return true;
+  const actions = route.steps.filter((s) => s.kind !== "unavailable").map((s): MandateAction => (WORKTREE_STEPS.includes(s.skill) ? "executeInWorktree" : "plan"));
+  return actions.every((action) => authorize(document.mandate, action) === "authorized");
+}
+
+/**
+ * The proposed route Trama starts by itself, without the person's answer: one the delegation or the mandate covers
+ * (routeCovered). The dialog's latest turn must have ended well: after an error or an interruption the person decides,
+ * as for the Coordinator's moves. Null otherwise. Pure.
+ */
+export function routeToStart(document: ProjectDocument): AskTramaRoute | null {
+  const route = (document.routes ?? []).findLast((r) => r.status === "proposed");
+  if (!route || !firstRunnableStep(route)) return null;
+  const latest = document.requests.findLast((r) => (r.goalId ?? null) === (route.goalId ?? null));
+  if (latest && latest.state !== "completed") return null;
+  return routeCovered(document, route) ? route : null;
 }
 
 /** The person's answer to a proposed route; returns the message Trama writes to the Coordinator. */

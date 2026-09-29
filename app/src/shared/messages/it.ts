@@ -1557,6 +1557,7 @@ export const it = {
   "delegation.kind.interfaceCandidate": "Candidato di interfaccia approvato",
   "delegation.kind.goal": "Lavoro nuovo per l'obiettivo",
   "delegation.kind.ticket": "Issue presa",
+  "delegation.kind.route": "Percorso di Ask Trama avviato",
   "delegation.kind.doubt": "Dubbio",
   "delegation.view.title": "Delega piena",
   "delegation.view.active": "Il Coordinatore fa tutto da solo dal {date}, anche di notte. Ti chiede solo le conferme di cancellazione.",

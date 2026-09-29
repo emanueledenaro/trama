@@ -519,8 +519,8 @@ export interface FullDelegation {
 export interface DelegatedChoice {
   id: string;
   delegationId: string;
-  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, or another doubt. */
-  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "doubt";
+  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, an Ask Trama route started, or another doubt. */
+  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "route" | "doubt";
   /** What was to decide, in the person's words. */
   subject: string;
   /** What the Coordinator chose. */

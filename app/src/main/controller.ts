@@ -454,7 +454,7 @@ import { confirmSquadMerge, dismissSquadMerge, mergeSquads, renameSquad, splitSq
 import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
-import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
+import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, routeToStart, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, boundaryLabel, findRoute } from "@shared/askTrama";
 import {
   automaticWorkStatus,
@@ -3372,6 +3372,8 @@ export class TramaController {
   private startAutomaticMove(project: ActiveProjectState, events: { requestId: string | null; event: WorkEvent }[]): string | null {
     this.takeDelegatedSteps(project);
     const guards = this.continuationGuards(project);
+    const route = this.startRouteByItself(project, guards);
+    if (route) return route;
     for (const { requestId, event } of events) {
       const move = requestId && !PROJECT_EVENTS.includes(event)
         ? automaticMove(project.document, requestId, event, guards)
@@ -3392,6 +3394,35 @@ export class TramaController {
       return move.label;
     }
     return null;
+  }
+
+  /**
+   * Starts the proposed Ask Trama route that needs no answer of the person (issue #423): with the full delegation, or
+   * when the mandate covers its steps. Told in Activity and, with the delegation, among the choices to review. Returns
+   * its name, or null.
+   */
+  private startRouteByItself(project: ActiveProjectState, guards: ContinuationGuards): string | null {
+    if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+    const document = project.document;
+    const route = routeToStart(document);
+    if (!route) return null;
+    const steps = route.steps.map((step) => step.skill).join(" → ");
+    const delegated = activeDelegation(document) !== null;
+    if (delegated) recordChoice(document, { kind: "route", subject: route.situation, choice: t("main.askTrama.startedChoice", { steps }), targetId: route.id });
+    appendEvent(
+      document,
+      "trama",
+      { type: "activity", title: t(delegated ? "main.askTrama.startedByDelegation" : "main.askTrama.startedByMandate", { id: route.id }), detail: `${route.reason} (${steps})`, tone: "info" },
+      route.requestId,
+    );
+    const starting = { projectId: project.id };
+    this.automaticStarting = starting;
+    void this.answerRoute(route.id, true)
+      .catch((error) => this.fail(error))
+      .finally(() => {
+        if (this.automaticStarting === starting) this.automaticStarting = null;
+      });
+    return t("main.askTrama.startLabel");
   }
 
   /**
