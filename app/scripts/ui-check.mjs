@@ -149,11 +149,13 @@ const waitInCard = async (card, find, what, timeout = 20_000) => {
   throw new Error(`Not found in the card: ${what}`);
 };
 // Issue #240: a card that waits for the person sits in Aspetta te; the chat keeps a reference that opens it there.
+// Issue #331: the whole reference is the button, and the item it opens is the open one of the view, with its card.
 const waitingItem = async (reference, timeout = 20_000) => {
   await reference.waitFor({ timeout });
   const key = await reference.getAttribute("data-waiting-key");
-  await reference.getByRole("button", { name: "Apri in Aspetta te" }).click();
-  const item = page.getByTestId("side-bar").locator(`[data-testid="waiting-item"][data-waiting-key="${key}"]`);
+  if ((await reference.getAttribute("title")) !== "Apri in Aspetta te") throw new Error("The reference to Aspetta te does not say where it opens");
+  await reference.click();
+  const item = page.getByTestId("side-bar").locator(`[data-testid="waiting-item"][data-waiting-key="${key}"][data-open="true"]`);
   await item.waitFor();
   return item;
 };
@@ -165,7 +167,7 @@ const openWaiting = (kind, text, timeout) => {
 // Issue #292: a verified candidate waits for the person in Aspetta te, where its card is. Opens the list if closed.
 const showWaiting = async () => {
   if (await page.getByTestId("side-bar").locator('[data-testid="waiting-item"]').count()) return;
-  await page.getByTestId("waiting-summary").getByRole("button").click();
+  await page.getByTestId("waiting-summary").getByRole("button", { name: "Decidi" }).click();
   await page.getByTestId("side-bar").locator('[data-testid="waiting-item"]').first().waitFor();
 };
 // W12: "Chiedi al Coordinatore" leaves a question in the composer, ready to edit or send, with the cursor in it.
@@ -662,24 +664,34 @@ if (await page.getByTestId("next-step").count()) throw new Error("A next step ap
 if (await page.getByRole("button", { name: "Prepara un piano" }).count()) throw new Error("The fixed plan button is back");
 await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] [passo:answerQuestions] Gli ordini pagati annullati vanno in revisione");
 await page.keyboard.press("Enter");
-const nextStep = page.getByTestId("next-step").getByRole("button", { name: "Rispondi alle 2 domande" });
+// Issue #331: the step answers items of Aspetta te, so the chat shows the reference to the first one, all of it a
+// button, and the decision buttons stay in the view.
+const nextStep = page.getByTestId("next-step").getByTestId("waiting-reference").filter({ hasText: "Rispondi alle 2 domande" });
 await nextStep.waitFor({ timeout: 20_000 });
+if (await page.getByTestId("next-step").getByRole("button", { name: "Rispondi alle 2 domande", exact: true }).count()) throw new Error("The next step still repeats the decision as a button");
 const stepBox = await nextStep.boundingBox();
 const replyBox = await page.getByTestId("next-step").boundingBox();
 if (!stepBox || !replyBox || replyBox.x + replyBox.width - (stepBox.x + stepBox.width) > 2) throw new Error("The next step is not on the right");
 await shot("03a-next-step");
 await nextStep.click();
+await page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-open="true"][data-waiting-kind="question"]').waitFor();
 await page.waitForTimeout(600);
 await shot("03a2-next-step-questions");
 await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-decisione]");
 await page.keyboard.press("Enter");
 await page.getByRole("main").getByText("Cosa succede a un ordine pagato annullato?").first().waitFor({ timeout: 20_000 });
 await shot("03b-decision-card");
-const firstDecision = await openWaiting("question", "Cosa succede a un ordine pagato annullato?");
+let firstDecision = await openWaiting("question", "Cosa succede a un ordine pagato annullato?");
 await shot("03b2-decision-waiting");
+// Issue #331: the line above the composer hides while Aspetta te is open, where the item's own buttons are.
+if (await page.getByTestId("waiting-summary").count()) throw new Error("The line above the composer shows with Aspetta te open");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 // The summary sits above the composer with its button on the right; one click opens the list. Light and dark.
 const waitingBar = page.getByTestId("waiting-summary");
-const waitingButton = waitingBar.getByRole("button", { name: /cose aspettano te$/ });
+await waitingBar.waitFor();
+// Issue #331: the line names the first item and the count, and its one button is the filled Decidi.
+const waitingButton = waitingBar.getByRole("button", { name: "Decidi" });
+if (!(await waitingBar.getByTestId("waiting-summary-count").innerText()).match(/cose aspettano te$/)) throw new Error("The line above the composer does not count the items");
 const waitingBarBox = await waitingBar.boundingBox();
 const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
@@ -693,6 +705,83 @@ for (const [label, theme] of themes) {
   await shot(`03b3-waiting-${label}`);
 }
 await setTheme("system");
+// Issue #331: Aspetta te in the side bar, following the prototype B of issue #314. The questions and the proposed goal
+// wait: the first item, which holds the most work, open with its buttons at the top, the others as compact rows. In
+// the whole window one filled button: Decidi above the composer, or the open item's primary with the view open.
+// Narrow and wide, light and dark.
+{
+  const look = await lookOf();
+  const viewport = page.viewportSize();
+  const filledButtons = () =>
+    page.locator('button[data-variant="default"]').evaluateAll((buttons) => buttons.filter((b) => b.getBoundingClientRect().width > 0).map((b) => b.textContent.trim()));
+  for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    const closedFilled = await filledButtons();
+    if (closedFilled.join("|") !== "Decidi") throw new Error(`Filled buttons with Aspetta te closed at ${size}: ${closedFilled.join(", ")}`);
+    const count = Number((await activityBar().getByTestId("activity-badge").innerText()).trim());
+    if (count < 2) throw new Error(`Aspetta te counts ${count} items, the check wants at least two`);
+    if ((await waitingBar.getByTestId("waiting-summary-count").innerText()).trim() !== `${count} cose aspettano te`) throw new Error("The line above the composer and the badge count differently");
+    await waitingBar.getByRole("button", { name: "Decidi" }).click();
+    const view = page.getByTestId("waiting-view");
+    await view.waitFor();
+    await waitingBar.waitFor({ state: "detached" });
+    const items = page.getByTestId("side-bar").getByTestId("waiting-item");
+    const states = await items.evaluateAll((list) => list.map((item) => `${item.dataset.waitingKind}:${item.dataset.open}`));
+    // One list, one count (issue #292): the badge, the header, the summary and the items say the same number.
+    if (states.length !== count || !states[0].endsWith(":true") || states.slice(1).some((state) => !state.endsWith(":false")) || !states.includes("goal:false")) {
+      throw new Error(`Aspetta te at ${size}: ${states.join(", ")}`);
+    }
+    if ((await page.getByTestId("side-bar").getByTestId("side-bar-count").innerText()).trim() !== String(count)) throw new Error("The header of Aspetta te counts differently");
+    if (!(await view.getByTestId("waiting-view-summary").innerText()).includes(`${count} cose aspettano te`)) throw new Error("The summary of Aspetta te counts differently");
+    const openFilled = await filledButtons();
+    if (openFilled.length !== 1) throw new Error(`Filled buttons with Aspetta te open at ${size}: ${openFilled.join(", ")}`);
+    if (await page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-open="false"] button[data-variant="default"]').count()) throw new Error("A compact row of Aspetta te has a filled button");
+    // The decision buttons of the open item are in view without scrolling, the primary last on the right.
+    const decision = items.first().locator(".cta-row").filter({ has: page.locator('button[data-variant="default"]') }).first();
+    const inView = await decision.evaluate((row) => {
+      const box = row.getBoundingClientRect();
+      const bar = document.querySelector('[data-testid="status-bar"]').getBoundingClientRect();
+      return box.top >= 0 && box.bottom <= bar.top;
+    });
+    if (!inView) throw new Error(`The decision buttons of the first item need a scroll at ${size}`);
+    await primaryLast(decision, `Aspetta te at ${size}`);
+    await noHorizontalScroll(`Aspetta te ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`31-waiting-view-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(look.provider, look.dark);
+    // A compact row opens its item; the one open before becomes a row.
+    await page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-waiting-kind="goal"]').getByRole("button", { name: /^Apri: / }).click();
+    await page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-waiting-kind="goal"][data-open="true"]').waitFor();
+    if ((await items.first().getAttribute("data-open")) !== "false") throw new Error("Two items of Aspetta te are open");
+    await activityBar().getByRole("button", { name: "Aspetta te", exact: true }).click();
+    await page.getByTestId("side-bar").waitFor({ state: "detached" });
+    await waitingBar.waitFor();
+  }
+  await page.setViewportSize(viewport);
+}
+// Issue #331: the questions have one home, Aspetta te. Patto keeps one line per question that opens it there, with no
+// button to answer; the open project in Progetti carries the same count as the icon of Aspetta te.
+{
+  const count = Number((await activityBar().getByTestId("activity-badge").innerText()).trim());
+  await openView("Progetti");
+  const projectCount = page.getByTestId("side-bar").getByTestId("project-waiting-count");
+  await projectCount.waitFor();
+  if (Number((await projectCount.innerText()).trim()) !== count) throw new Error("Progetti counts what waits differently from the icon of Aspetta te");
+  await openView("Regole", "Patto");
+  const pactPointer = page.getByTestId("side-bar").getByTestId("waiting-pointer").filter({ hasText: "La domanda aspetta te" }).first();
+  await pactPointer.waitFor();
+  if (await page.getByTestId("side-bar").getByRole("button", { name: "Registra la decisione" }).count()) throw new Error("Patto still answers the question");
+  await themeShots("31c-waiting-pointer-pact");
+  await pactPointer.click();
+  await page.locator('[data-testid="side-bar"][data-view="waiting"] [data-testid="waiting-item"][data-waiting-kind="question"][data-open="true"]').waitFor();
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
+firstDecision = await openWaiting("question", "Cosa succede a un ordine pagato annullato?");
 await firstDecision.getByRole("button", { name: /Va in revisione/ }).click();
 await firstDecision.getByRole("button", { name: "Registra la decisione" }).click();
 // Issue #271: an answered card is one line with the choice; the line opens the whole card.
@@ -1151,6 +1240,21 @@ await closePanels();
 await shot("04e8-bots-chat-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await shot("04e9-bots-chat-light");
+// Issue #331: what the person decided today stays closed at the end of Aspetta te; opened, it names the answer. It is
+// read after the bots' cost at rest, so its screenshots do not fall in that measure.
+{
+  await openView("Aspetta te");
+  const decided = page.getByTestId("side-bar").getByTestId("waiting-decided");
+  await decided.waitFor();
+  const toggle = decided.getByRole("button", { name: /^Decise oggi/ });
+  if ((await toggle.getAttribute("aria-expanded")) !== "false" || (await decided.getByTestId("waiting-decided-item").count())) throw new Error("Decise oggi is open before the person opens it");
+  await toggle.click();
+  await decided.getByTestId("waiting-decided-item").filter({ hasText: "Cosa succede a un ordine pagato annullato?" }).filter({ hasText: "Risposta data" }).waitFor();
+  await decided.scrollIntoViewIfNeeded();
+  await themeShots("31d-waiting-decided-today");
+  await toggle.click();
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
 
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
 await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
@@ -1300,8 +1404,9 @@ await page.keyboard.press("Enter");
 const demoCandidate = await openWaiting("candidate", undefined, 30_000);
 await demoCandidate.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_000 });
 // Issue #270: Aspetta te opened on the candidate names it in its title, with the id on hover; the card names its work.
+// Issue #331: the count of the view comes first, as on the icon of the activity bar.
 const waitingTitle = page.getByTestId("side-bar-title");
-if (!/^Aspetta te\s*Candidato di /.test(await waitingTitle.innerText())) throw new Error(`Aspetta te does not name the candidate: ${await waitingTitle.innerText()}`);
+if (!/^Aspetta te\s*(\d+\s*)?Candidato di /.test(await waitingTitle.innerText())) throw new Error(`Aspetta te does not name the candidate: ${await waitingTitle.innerText()}`);
 if (!/^C-[0-9A-F]{8}$/.test((await waitingTitle.getAttribute("title")) ?? "")) throw new Error("The candidate's id is not on the title's hover");
 if (/(Candidato|incarico) [AC]-[0-9A-F]{8}/.test(await demoCandidate.innerText())) throw new Error(`The candidate card shows raw ids: ${await demoCandidate.innerText()}`);
 await page.waitForTimeout(500);
@@ -1770,7 +1875,7 @@ await shot("04c1-plan-seams");
 await closePanels();
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmSeams] A che punto è il piano?");
 await page.keyboard.press("Enter");
-const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i punti di prova" }).last();
+const seamsStep = page.getByTestId("next-step").getByTestId("waiting-reference").filter({ hasText: "Conferma i punti di prova" }).last();
 await seamsStep.waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await seamsStep.click();
@@ -2176,6 +2281,44 @@ if ((await page.getByTestId("side-bar").getByTestId("waiting-item").filter({ has
 }
 await supersededCard.scrollIntoViewIfNeeded();
 await shot("15-mandate-superseded");
+// Issue #331: in Aspetta te the proposal opens with its decision first: the reason, then Rifiuta la proposta, Correggi
+// and Concedi, in view without scrolling at 1280x800; what changes from the mandate in force follows, and the full
+// proposal stays closed below. With the view open the window's one filled button is Concedi.
+{
+  const viewport = page.viewportSize();
+  const look = await lookOf();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await pendingCard.scrollIntoViewIfNeeded();
+  await page.getByTestId("side-bar").evaluate((bar) => bar.querySelector(".overflow-y-auto")?.scrollTo(0, 0));
+  const grant = pendingCard.getByRole("button", { name: "Concedi", exact: true });
+  const grantInView = await grant.evaluate((button) => {
+    const box = button.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= document.querySelector('[data-testid="status-bar"]').getBoundingClientRect().top;
+  });
+  if (!grantInView) throw new Error("Concedi needs a scroll in Aspetta te at 1280x800");
+  const filled = await page.locator('button[data-variant="default"]').evaluateAll((buttons) => buttons.filter((b) => b.getBoundingClientRect().width > 0).map((b) => b.textContent.trim()));
+  if (filled.join("|") !== "Concedi") throw new Error(`Filled buttons with the mandate proposal open: ${filled.join(", ")}`);
+  const order = await pendingCard.evaluate((item) => {
+    const at = (node) => (node ? node.getBoundingClientRect().top : -1);
+    return [at(item.querySelector(".cta-row")), at(item.querySelector('[data-testid="mandate-diff"]')), at(item.querySelector('[data-testid="mandate-full-toggle"]'))];
+  });
+  if (!(order[0] >= 0 && order[0] < order[1] && order[1] < order[2])) throw new Error(`The proposal in Aspetta te is not in the order buttons, changes, full proposal: ${order.join(", ")}`);
+  if (await pendingCard.getByTestId("mandate-full").count()) throw new Error("The full proposal is open in Aspetta te before the person opens it");
+  // One copy of Concedi: neither the status bar nor the chat repeats it.
+  if (await page.getByTestId("status-bar").getByRole("button", { name: /Concedi/ }).count()) throw new Error("The status bar repeats Concedi");
+  if (await page.getByRole("main").getByRole("button", { name: /^Concedi/ }).count()) throw new Error("The chat repeats Concedi");
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await shot(`31b-waiting-mandate-1280x800-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLookTo(look.provider, look.dark);
+  await pendingCard.getByTestId("mandate-full-toggle").click();
+  await pendingCard.getByTestId("mandate-full").getByTestId("fixed-bans").waitFor();
+  await pendingCard.getByTestId("mandate-full-toggle").click();
+  await page.setViewportSize(viewport);
+}
 
 // U03: a proposal shows what it changes in the mandate in force and which work would stop. Its buttons are
 // Rifiuta la proposta, Correggi and Concedi, primary last; revoking the mandate in force lives only in the
@@ -2201,6 +2344,8 @@ const mandateInspector = page.getByTestId("side-bar");
 const proposalReference = mandateInspector.getByTestId("mandate-proposal-reference");
 await proposalReference.waitFor();
 if (await mandateInspector.getByTestId("mandate-diff").count()) throw new Error("Mandato shows the proposal's card a second time");
+// Issue #331: no button answers it in Mandato.
+if (await mandateInspector.getByRole("button", { name: "Concedi", exact: true }).count()) throw new Error("Mandato still answers the proposal");
 const mandateState = async () => (await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().textContent()).trim();
 const stateBefore = await mandateState();
 for (const theme of ["light", "dark"]) {
@@ -4766,7 +4911,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[vietato:git push --for
 await page.keyboard.press("Enter");
 // The refusal is not a card of the chat: the summary above the composer opens it in Aspetta te.
 await page.getByTestId("waiting-summary").getByText("Azione vietata").waitFor({ timeout: 20_000 });
-await page.getByTestId("waiting-summary").getByRole("button", { name: /aspett(a|ano) te$/ }).click();
+await page.getByTestId("waiting-summary").getByRole("button", { name: "Decidi" }).click();
 const bannedItem = page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-waiting-kind="fixedBan"]');
 await bannedItem.waitFor();
 const bannedCard = bannedItem.getByTestId("fixed-ban-card");
