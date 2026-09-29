@@ -383,6 +383,67 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
   return candidate;
 }
 
+/**
+ * Whether two candidates are versions of the same work (issue #421): the same slice or, outside slices, work on one of
+ * the same modules; work that names no module is the same when it names the same issue. A candidate of a slice and
+ * one outside it are different work.
+ */
+export function sameWork(document: ProjectDocument, older: Candidate, newer: Candidate): boolean {
+  const olderWork = findAssignment(document, older.assignmentId);
+  const newerWork = findAssignment(document, newer.assignmentId);
+  const olderSlice = olderWork?.slice ?? null;
+  const newerSlice = newerWork?.slice ?? null;
+  if (olderSlice || newerSlice) return olderSlice?.planId === newerSlice?.planId && olderSlice?.sliceId === newerSlice?.sliceId;
+  if (!older.touchedModules.length && !newer.touchedModules.length) {
+    return olderWork?.issueNumber != null && olderWork.issueNumber === newerWork?.issueNumber;
+  }
+  return older.touchedModules.some((m) => newer.touchedModules.includes(m));
+}
+
+/**
+ * The Coordinator declares an older candidate superseded by a newer candidate of the same work (issue #421), with the
+ * reason in plain words: the older one is no longer merged nor compared with other work, and stays in the history. It
+ * refuses a merged candidate, a candidate of other work and the newer candidate itself. `waiting` is the "Aspetta te"
+ * item the older candidate had, kept so the reason says what left the list.
+ */
+export function supersedeCandidate(
+  document: ProjectDocument,
+  input: { candidateId: string; byCandidateId: string; reason: string; actor: string; waiting: { label: string; title: string } | null },
+  now = new Date(),
+): Candidate {
+  const candidate = findCandidate(document, input.candidateId);
+  if (!candidate) throw new CandidateError("unknown_candidate", `Unknown candidate: ${input.candidateId}.`);
+  const newer = findCandidate(document, input.byCandidateId);
+  if (!newer) throw new CandidateError("unknown_candidate", `Unknown candidate: ${input.byCandidateId}.`);
+  // One line; the texts that cite it add their own full stop.
+  const reason = (input.reason.trim().split("\n")[0] ?? "").trim().replace(/[.;:!\s]+$/, "");
+  if (!reason) throw new CandidateError("missing_reason", "reason is required: one line for the person, in their language.");
+  if (candidate.pullRequest?.mergedAt) {
+    throw new CandidateError("candidate_merged", `Candidate ${candidate.id} is already merged (pull request #${candidate.pullRequest.number}): merged work cannot be superseded.`);
+  }
+  if (candidate.id === newer.id || !(candidate.declaredAt < newer.declaredAt)) {
+    throw new CandidateError(
+      "candidate_is_newest",
+      `Candidate ${candidate.id} is not older than ${newer.id}: only an older version of the work is superseded, never the newer candidate itself.`,
+    );
+  }
+  if (!sameWork(document, candidate, newer)) {
+    throw new CandidateError(
+      "other_work",
+      `Candidates ${candidate.id} and ${newer.id} belong to different work (different slice or modules): other work is compared with the worktree probe, not superseded.`,
+    );
+  }
+  if (candidateSuperseded(document, newer)) {
+    throw new CandidateError("newer_superseded", `Candidate ${newer.id} is itself superseded: name the latest candidate of the work.`);
+  }
+  if (candidate.supersession || candidateSuperseded(document, candidate)) {
+    throw new CandidateError("already_superseded", `Candidate ${candidate.id} is already superseded: nothing to do.`);
+  }
+  candidate.supersession = { byCandidateId: newer.id, reason: reason.slice(0, 240), actor: input.actor, at: now.toISOString(), waiting: input.waiting };
+  candidate.updatedAt = now.toISOString();
+  return candidate;
+}
+
 /** The person's review of this exact candidate; it is required before publishing a pull request. */
 export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);

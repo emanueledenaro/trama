@@ -134,12 +134,20 @@ export function settledCard(t: Translate, document: ProjectDocument, row: Timeli
       if (!candidate || (state !== "superseded" && !merged && !refused)) return null;
       const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
       const files = t("shared.settled.files", { count: candidate.changedFiles.length });
+      // The Coordinator declared it superseded by a newer candidate of the same work (issue #421): "Superato", with why.
+      const declared = state === "superseded" && !merged ? candidate.supersession : undefined;
       const outcome: Label = merged
         ? { label: t("shared.settled.merged", { number: String(candidate.pullRequest!.number) }), tone: "success" }
-        : state === "superseded"
-          ? candidateState(t, state)
-          : { label: t("shared.settled.refused"), tone: "warning" };
-      const what = refused && state !== "superseded" ? t("shared.settled.refusedReason", { files, reason: candidate.humanRejection!.note }) : files;
+        : declared
+          ? { label: t("supersession.outcome"), tone: "secondary" }
+          : state === "superseded"
+            ? candidateState(t, state)
+            : { label: t("shared.settled.refused"), tone: "warning" };
+      const what = declared
+        ? t("supersession.subject", { files, reason: declared.reason })
+        : refused && state !== "superseded"
+          ? t("shared.settled.refusedReason", { files, reason: candidate.humanRejection!.note })
+          : files;
       return { title: t("shared.settled.candidate", { id: candidate.id }), subject: specialist ? `${specialist.name}: ${what}` : what, answer: null, outcome };
     }
     default:

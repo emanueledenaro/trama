@@ -85,6 +85,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   step: "activity-step",
   merge: "activity-merge",
   squad: "activity-squad",
+  supersede: "activity-supersede",
 };
 
 const ICON_BUTTON = "sidebar-icon-button size-6 shrink-0 rounded-md";
@@ -263,7 +264,7 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
               </button>
             </Tooltip>
           ) : null}
-          {entry.kind === "move" || entry.kind === "step" ? (
+          {entry.kind === "move" || entry.kind === "step" || entry.kind === "supersede" ? (
             <RowIcon label={t("activity.openDialog")} onClick={() => openDialog(entry.goalId)}>
               <IconMessageCircle className="size-3.5" stroke={1.8} />
             </RowIcon>
@@ -521,6 +522,7 @@ export interface PanelHeight {
  */
 export function ActivityPanel({ size }: { size: PanelHeight }) {
   const t = useT();
+  const language = useLanguage();
   const document = useUi((s) => s.app?.project?.document);
   const running = useUi((s) => s.app?.project?.runningWork);
   const focus = useUi((s) => s.panelFocus);

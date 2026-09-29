@@ -15,6 +15,7 @@ import type { TimelineRow } from "@shared/timeline";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { REVEAL_EVENT } from "@/lib/nextStep";
+import { useLanguage } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
 import { DisclosureChevron } from "./WorkSteps";
@@ -50,6 +51,7 @@ function useSettled(row: TimelineRow): SettledCard | null {
   const document = project?.document;
   const reports = project?.candidateReports;
   const others = project?.presence?.others;
+  const language = useLanguage();
   return useMemo(() => {
     if (!document) return null;
     const candidateStates: Record<string, CandidateState> = {};
