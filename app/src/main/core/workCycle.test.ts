@@ -682,6 +682,31 @@ describe("the reviewers read the Pact as rules and the findings the Coordinator 
     expect(other.reviews.flatMap((r) => r.findings).filter((f) => f.severity === "blocking")).toHaveLength(2);
   });
 
+  it("tells Security's findings apart by their title: a decision on one does not silence a new one in the same file", () => {
+    const document = shop();
+    const marco = realignment(document);
+    endTurn(document, marco.id, null, { kind: "completed", text: "Fatto" }, at(2));
+    const decision = document.decisions[0]!;
+    const pixel: GateFinding = { severity: "blocking", title: "Pixel di tracciamento in src/api/orders.ts", detail: "Invia dati a un terzo", file: "src/api/orders.ts:12" };
+    const first = nextCandidate(document, marco, 2);
+    closeGate(gateWith(document, first, [["security", pixel]], 2), at(2));
+    overruleFinding(document, first, { role: "security", title: pixel.title, reason: "Il Patto vuole il tracciamento", decisionIds: [decision.id] }, at(3));
+
+    // The same finding, now on another line, no longer blocks.
+    const same = gateWith(document, nextCandidate(document, marco, 4), [["security", { ...pixel, file: "src/api/orders.ts:14" }]], 4);
+    applyOverruled(document, same);
+    closeGate(same, at(4));
+    expect(same.status).toBe("passed");
+
+    // A different weakness in the same file still blocks, and keeps its own words.
+    const injection: GateFinding = { severity: "blocking", title: "SQL injection in src/api/orders.ts", detail: "La query concatena l'input", file: "src/api/orders.ts:88" };
+    const other = gateWith(document, nextCandidate(document, marco, 5), [["security", injection]], 5);
+    expect(applyOverruled(document, other)).toBe(0);
+    closeGate(other, at(5));
+    expect(other.status).toBe("blocked");
+    expect(other.reviews.find((r) => r.role === "security")!.findings[0]).toMatchObject({ severity: "blocking", title: injection.title });
+  });
+
   it("remembers the findings of a gate the Coordinator settled with the developer", () => {
     const document = shop();
     const marco = realignment(document);
