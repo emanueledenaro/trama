@@ -1,7 +1,9 @@
-import type { NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
+import type { Candidate, NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
 import { activeDelegation } from "@shared/delegation";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { touchesInterface } from "@shared/interfaceChange";
+import { PERSON_BLOCKERS } from "@shared/waitingForYou";
+import { contentFingerprint, inspectCandidate } from "./candidates";
 import { focusView } from "./focus";
 import { isActive } from "./team";
 import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
@@ -28,14 +30,30 @@ export type { WorkEvent } from "@shared/domain";
 const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"];
 
 /**
- * The person's moves the Coordinator takes with the full delegation (issue #423): a product decision, and a candidate
- * that waits for the person's ok (the interface, or a choice it leaves open). The mandate and the team are covered by
- * the full mandate the delegation brings.
+ * Whether the candidate waits for the person's ok, which the full delegation lets the Coordinator give (issue #423): an
+ * interface candidate without a valid ok or a refusal, or one stopped on a blocker only the person settles (issue #390).
+ * A verified candidate on the Coordinator's route waits for its green light, not for the person.
  */
-const DELEGATION_DECIDES: NextMove[] = ["answerQuestions", "reviewCandidate"];
+function awaitsPersonsOk(document: ProjectDocument, candidate: Candidate): boolean {
+  if (candidate.pullRequest?.mergedAt || candidateSuperseded(document, candidate)) return false;
+  if (inspectCandidate(document, candidate, null).some((b) => PERSON_BLOCKERS.includes(b.code))) return true;
+  const approved = candidate.humanApproval !== null && candidate.humanApproval.fingerprint === contentFingerprint(document, candidate);
+  return touchesInterface(candidate.changedFiles) && !approved && !candidate.humanRejection;
+}
 
-/** Whether the work waits for a choice of the person the full delegation lets the Coordinator make. */
-const delegatedHolds = (state: Pick<WorkState, "moves">): boolean => state.moves.some((m) => m.actor === "person" && DELEGATION_DECIDES.includes(m.move));
+/**
+ * Whether the work waits for a choice of the person the full delegation lets the Coordinator make (issue #423): a
+ * product decision, or a candidate that waits for the person's ok. The mandate and the team are covered by the full
+ * mandate the delegation brings.
+ */
+function delegatedHolds(document: ProjectDocument, state: Pick<WorkState, "moves">): boolean {
+  return state.moves.some((m) => {
+    if (m.actor !== "person") return false;
+    if (m.move === "answerQuestions") return true;
+    const candidate = m.move === "reviewCandidate" ? document.candidates.find((c) => c.id === m.targetId) : undefined;
+    return candidate !== undefined && awaitsPersonsOk(document, candidate);
+  });
+}
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
 /** A gate that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
@@ -125,7 +143,7 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // whatever event brought it: a red check, a conflict between worktrees, an assignment that stopped.
   if (state.phase === "blocked" && !state.block && !RESOLVES_BLOCKS.includes(event)) return null;
   // With the full delegation (issue #423) the Coordinator decides what waits for the person, first: it unblocks the rest.
-  if (activeDelegation(document) && delegatedHolds(state)) {
+  if (activeDelegation(document) && delegatedHolds(document, state)) {
     // The round tries a decision again a few times at most: then a new event of the work does.
     if (event === "round" && attemptsInRow(dialog, "decideWithDelegation") >= ROUND_ATTEMPTS) return null;
     return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
@@ -290,8 +308,13 @@ function waitingChoices(document: ProjectDocument): string[] {
       return `- ${q.id}: ${q.question} (alternative ${options}${recommended !== null ? `; consigliata ${recommended}` : ""})`;
     });
   const candidates = document.candidates
-    .filter((c) => touchesInterface(c.changedFiles) && !c.humanApproval && !c.humanRejection && !c.pullRequest?.mergedAt && !candidateSuperseded(document, c))
-    .map((c) => `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`);
+    .filter((c) => awaitsPersonsOk(document, c))
+    .map((c) => {
+      const blocker = inspectCandidate(document, c, null).find((b) => PERSON_BLOCKERS.includes(b.code));
+      return blocker
+        ? `- ${c.id}: fermo su ${blocker.code} (${blocker.detail}). Decidi tu con la delega e fai correggere il lavoro con assign_task, o dichiara un candidato nuovo.`
+        : `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`;
+    });
   return [
     ...(questions.length ? ["Domande di prodotto aperte:", ...questions] : []),
     ...(candidates.length ? ["Candidati che aspettano l'ok della persona:", ...candidates] : []),
@@ -440,7 +463,7 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     }
     case "decideWithDelegation":
       // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
-      return delegatedHolds(state) ? t("main.delegation.stalled") : null;
+      return delegatedHolds(document, state) ? t("main.delegation.stalled") : null;
     case "takeTicket":
       return null;
   }

@@ -21,7 +21,7 @@ import {
 } from "./continuousWork";
 import { grantDelegation, revokeDelegation } from "./fullDelegation";
 import { setPersonLanguage } from "./personLanguage";
-import { clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { approveCandidate, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -697,6 +697,39 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     request(document, "r3", { step: { move: "decideWithDelegation", by: "trama" } });
     request(document, "r4", { step: { move: "decideWithDelegation", by: "trama" } });
     expect(moveOf(document, "r4", "round")).toBeNull();
+  });
+
+  it("decides with the delegation only a candidate that waits for the person's ok, and gives the others the green light", () => {
+    /** A verified candidate of the work, with the gate passed, that touches `file`. */
+    function verified(file: string) {
+      const document = delegated();
+      request(document, "r1");
+      answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+      mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+      request(document, "r2", { step: { move: "confirmUnderstanding", by: "person" } });
+      request(document, "r3");
+      plan(document, "r3");
+      team(document);
+      request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+      const assignment = work(document, "r4");
+      endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+      request(document, "r5", { step: { move: "verifyCandidate", by: "trama" } });
+      const candidate = declareCandidate(
+        document,
+        { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+        { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: [file], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      );
+      recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+      recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Cancello superato" });
+      return { document, candidate };
+    }
+    // Nothing waits for the person: no empty decision turn, the green light goes first.
+    expect(projectMove(verified("Sources/Orders/Review.swift").document, "round", free)?.move.move).toBe("clearCandidate");
+    // An interface candidate waits for the person's ok: the delegation gives it, then the green light follows.
+    const screen = verified("Sources/Orders/ReviewView.swift");
+    expect(projectMove(screen.document, "round", free)?.move.move).toBe("decideWithDelegation");
+    approveCandidate(screen.document, screen.candidate.id, "Coordinatore con la delega", null);
+    expect(projectMove(screen.document, "round", free)?.move.move).toBe("clearCandidate");
   });
 
   it("says the decision stalled when the turn left the question open, and not once it decided", () => {
