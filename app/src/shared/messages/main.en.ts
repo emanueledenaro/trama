@@ -318,6 +318,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.worktreeInUse":
     "Another assignment is working in this working copy: wait for it to finish.",
   "main.controller.worktreeRemovedTitle": "Working copy removed",
+  "main.controller.mergeConcludedTitle": "Merge recorded in the working copy {branch}",
   "main.controller.worktreeRemovedBranchDeleted":
     "Branch {branch} was deleted too: it had no commits.",
   "main.controller.worktreeRemovedBranchKept": "Branch {branch} stays.",
@@ -778,6 +779,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} conflicts with the work on GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
+  "main.workPhase.blockerDisputed": "After the findings on candidate {candidate}, the developer of assignment {assignment} ended without changing the working copy: they disagree with the reviewers. Another round of the reviewers on the same content would give the same findings: decide now with settle_review, or overrule with overrule_finding the findings that go against the Pact. Do not declare the candidate again and do not assign the same work again.",
   "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and does not restart the reviewers: you decide with settle_review. With the reviewers, the developer resumes with the findings as your decision; with the developer, the findings are overruled and the work goes on to the merge. Write the reason and the doubt, do not ask the person and do not assign the same work again.",
   "main.workPhase.blockerSemanticConflict":
     "Candidate {id} does not work together with the work of another assignment: {detail}",
@@ -1106,6 +1108,9 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The checks {checks} could not run because of the sandbox or the machine: start the review again when they run.",
   "main.gate.overruled": "The Coordinator overruled the reviewers' findings: {reason}",
   "main.gate.settledTitle": "The Coordinator decided between {developer} and the reviewers on candidate {candidate}",
+  "main.gate.againstPact": "It goes against the Pact decision {decision} ({value}): it is a suggestion and does not stop the work.",
+  "main.gate.overruledTitle": "The Coordinator overruled a finding of {reviewer} on candidate {candidate}",
+  "main.gate.overruledDetail": "Finding overruled: {finding}. Reason: {reason}. Pact decisions: {decisions}.",
   "main.gate.settledFindings": "The reviewers are right: {reason}",
   "main.gate.settledDeveloper": "The developer is right: {reason}",
   "main.gate.settledDoubt": "Doubt: {doubt}",
@@ -1155,6 +1160,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The assignment's working copy is gone: a new assignment is needed.",
   "main.gate.waiting.specialistRemoved":
     "The developer is no longer in the team: a new assignment is needed.",
+  "main.gate.waiting.stopped":
+    "The work was stopped on request: the Coordinator resumes it in its working copy when it is time.",
+  "main.gate.waiting.decisionUnderReview":
+    "A Pact decision the work relies on is under review: the work resumes with the answer.",
   "main.gate.unreadableAnswer":
     "The reviewer did not return a readable report.",
   "main.gate.malformedFinding":
@@ -1845,6 +1854,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The commit message does not carry the candidate marker ({marker}).",
   "main.publication.extraFiles":
     "The index contains files outside the candidate: {files}.",
+  "main.publication.unmergedFiles":
+    "The merge in the working copy still has files in conflict: {files}. Resolve them before the commit.",
   "main.publication.pullRequestClosed":
     "Pull request #{number} of this branch is already closed: the new candidate needs a new assignment.",
   "main.publication.createFailed":

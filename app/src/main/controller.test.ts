@@ -791,6 +791,56 @@ describe("TramaController", () => {
     }
   }, 90_000);
 
+  it("never starts an automatic move beside the person's message while Trama still prepares it: the move waits for the turn", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document)[0]?.state === "completed" && project.runningRequestId === null, 20_000);
+      const before = document.requests.length;
+      // The person sends a screenshot: Trama saves it before the turn starts.
+      const image = { name: "schermata.png", mimeType: "image/png", dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" };
+      const sent = controller!.send("Guarda questa schermata del checkout", null, null, null, [image]);
+      // Meanwhile an event of the work arrives: its move must not run beside the person's turn.
+      (controller as unknown as { continueWork(project: unknown, requestId: string | null, event: string): void }).continueWork(project, null, "issueOpened");
+      await sent;
+      await until(() => document.requests.length > before + 1 && project.runningRequestId === null, 20_000);
+      await new Promise((r) => setTimeout(r, 300));
+      // The person's message runs first, and one move follows it once its turn ended, weighing the event too.
+      const [person, move, ...rest] = document.requests.slice(before);
+      expect(person).toMatchObject({ text: "Guarda questa schermata del checkout", state: "completed" });
+      expect(move!.step).toMatchObject({ move: "preparePlan", by: "trama" });
+      expect(move!.createdAt >= person!.completedAt!).toBe(true);
+      expect(rest).toEqual([]);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
+  it("keeps the events of the work that arrive in pause and weighs them at Riprendi, so no work is lost", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document)[0]?.state === "completed" && project.runningRequestId === null, 20_000);
+      await controller!.pauseContinuousWork(true);
+      // A new issue arrives while the person paused the work: nothing starts now.
+      (controller as unknown as { continueWork(project: unknown, requestId: string | null, event: string): void }).continueWork(project, null, "issueOpened");
+      await new Promise((r) => setTimeout(r, 300));
+      expect(automaticRequests(document)).toHaveLength(1);
+      // Riprendi weighs it before the round, which only retries the move the latest automatic turn tried.
+      await controller!.pauseContinuousWork(false);
+      await until(() => automaticRequests(document).length === 2, 20_000);
+      expect(automaticRequests(document)[1]!.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "issueOpened" });
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
   it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
@@ -807,6 +857,26 @@ describe("TramaController", () => {
     // A longer message is the Coordinator's, as any other.
     await controller!.send("Fammi un riepilogo delle scelte sul checkout e poi prepara il piano", null, null, null);
     expect(document.requests).toHaveLength(requests + 1);
+  }, 60_000);
+
+  it("answers a question on the state at once while a turn runs, and queues a question that also asks for work", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const running = controller!.send("[attesa] Prepara il riepilogo degli ordini", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    const turn = project.runningRequestId!;
+    // The state comes from Trama's records: the person does not wait for the turn that runs.
+    await controller!.send("Come va il lavoro?", null, null, null);
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "recap")).toHaveLength(1);
+    expect(controller!.snapshot.project!.queuedMessages).toEqual([]);
+    // A question that also asks for work is the Coordinator's: it waits for the turn and leaves then, never lost.
+    await controller!.send("Come va il lavoro? E poi aggiungi i test", null, null, null);
+    expect(controller!.snapshot.project!.queuedMessages.map((q) => q.text)).toEqual(["Come va il lavoro? E poi aggiungi i test"]);
+    await interruptOnceSent(document, turn);
+    await running;
+    await until(() => document.requests.at(-1)!.text === "Come va il lavoro? E poi aggiungi i test" && document.requests.at(-1)!.state === "completed");
+    expect(controller!.snapshot.project!.queuedMessages).toEqual([]);
   }, 60_000);
 
   it("writes one recap for a milestone, and tells it once (A03)", async () => {

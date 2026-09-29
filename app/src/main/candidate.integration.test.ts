@@ -93,10 +93,12 @@ describe("verified candidate in the chat (V05)", () => {
     expect(document.events.some((e) => e.content.type === "coordinatorText" && e.content.text.includes("candidate_not_verified"))).toBe(true);
     expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "candidate" && e.content.referenceId === failed.id)).toBe(true);
 
-    // The correction is new work: a new candidate with new evidence; the failed one keeps its evidence.
+    // The correction is new work: a new candidate with new evidence; the failed one keeps its evidence. It goes on in
+    // the working copy of the work it corrects, where the work done so far is.
     await controller.send("[assegna] [correggi-spazi]", null, null, null);
     const fix = specialist.assignments[1]!;
     await until(() => fix.status === "completed");
+    expect(fix.workspace!.worktreeRoot).toBe(work.workspace!.worktreeRoot);
     await controller.send(`[candidato:${fix.id}:${decision.id}:tutte]`, null, null, null);
     const corrected = document.candidates[1]!;
     expect(corrected.id).not.toBe(failed.id);

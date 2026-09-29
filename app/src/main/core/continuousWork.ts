@@ -77,8 +77,8 @@ export const holdsWork = (state: Pick<WorkState, "questionsHoldOnlyTheirWork">, 
   WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
-/** A gate that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
-export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "round"];
+/** A gate or a check that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
+export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "checkEnded", "round"];
 
 /** Events whose block the Coordinator resolves by itself (Q3): a red check, a conflict, and the round that unblocks. */
 const RESOLVES_BLOCKS: WorkEvent[] = ["checkFailed", "worktreeConflict", "round"];
@@ -283,7 +283,7 @@ export function automaticMoveSection(
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
-    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se una strada è chiusa, prendi un'altra strada con i tuoi strumenti o con il team. Se resta ferma solo per qualcosa che spetta alla persona, scrivi in una riga cosa manca e cosa fai intanto. La persona può fermare il turno.",
     ...(retry ? [retry] : []),
     ...(block ? [blockSection(block)] : []),
     ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
@@ -354,13 +354,13 @@ const CLEAR_CANDIDATE =
 /** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. @model-text */
 const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
   checkFailed:
-    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi assegna allo stesso sviluppatore, o a un altro libero, la correzione con assign_task: stessa fetta, stessi moduli, le verifiche che devono passare.",
+    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi fai correggere il lavoro nella stessa copia di lavoro con resume_assignment: allo stesso sviluppatore, o con specialist a un altro libero, con le verifiche che devono passare. Non aprire un incarico nuovo per lo stesso lavoro: ripartirebbe da una copia vuota.",
   worktreeConflict:
-    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi assegna con assign_task il riallineamento del lavoro più recente sul più vecchio, o sul branch principale, sugli stessi moduli.",
+    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi fai riallineare il lavoro più recente sul più vecchio, o sul branch principale, nella sua stessa copia di lavoro con resume_assignment. Un merge già risolto e non registrato lo chiudi tu con commit_merge.",
   stalledAssignment:
-    "Leggi con read_team perché l'incarico si è fermato, poi riassegnalo con assign_task, allo stesso sviluppatore o a un altro libero, con le istruzioni per superare il motivo.",
+    "Leggi con read_team perché l'incarico si è fermato, poi riprendilo nella stessa copia di lavoro con resume_assignment, allo stesso sviluppatore o con specialist a un altro libero, con le istruzioni per superare il motivo. Solo un incarico senza copia di lavoro si assegna di nuovo con assign_task.",
   reviewLoop:
-    "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
+    "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Un rilievo che va contro una decisione del Patto lo superi da solo con overrule_finding, citando la decisione in decisionIDs (anche in settle_review): così non torna al giro dopo. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
 };
 
 /** @model-text */

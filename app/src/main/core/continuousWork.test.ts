@@ -584,6 +584,13 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
     expect(automaticMoveSection("verifyCandidate")).toContain("chiama prima declare_candidate, poi verify_candidate con il candidateID");
     expect(automaticMoveSection("preparePlan")).not.toContain("declare_candidate");
   });
+
+  it("asks the Coordinator to find another way instead of giving up on a move", () => {
+    const section = automaticMoveSection("assignWork");
+    expect(section).not.toContain("Se non puoi farla");
+    expect(section).toContain("prendi un'altra strada con i tuoi strumenti");
+    expect(section).toContain("cosa fai intanto");
+  });
 });
 
 describe("the green light after a gate that ended in the background (ADR 0023)", () => {

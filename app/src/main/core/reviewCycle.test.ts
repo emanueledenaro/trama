@@ -5,12 +5,12 @@ import { GATE_ROLES } from "@shared/gate";
 import { ITALIAN, translator } from "@shared/i18n";
 import { REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
 import { waitingForYou } from "@shared/waitingForYou";
-import { candidateReport, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
+import { candidateReport, clearCandidate, declareCandidate, inspectCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
 import { automaticMove, stalledMove } from "./continuousWork";
 import { emptyDocument } from "./document";
 import { beginReviews, closeGate, finishReview, openGate, pendingReturns, settleGate } from "./gate";
-import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
-import { assign, confirmTeam, endTurn, proposeTeam, recordWorkspace, reopenForFindings } from "./team";
+import { answerDecisionRequest, createDecisionRequest, decide, grantMandate } from "./pact";
+import { assign, confirmTeam, endTurn, proposeTeam, recordWorkspace, reopenForFindings, requestStop, TeamError } from "./team";
 import { workState } from "./workPhase";
 
 /**
@@ -239,6 +239,20 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     expect(automaticMove(document, "r2", "round", guards)?.move).toBe("clearCandidate");
   });
 
+  it("takes the candidate the Coordinator settled with the developer to the green light and the merge (ADR 0023)", () => {
+    const document = project();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    const { candidate, gate } = heldWork(document);
+    expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/not verified/);
+    settleGate(gate, candidate, { side: "developer", reason: "Il Patto chiede i dati aziendali nel sito" }, at(40));
+    const cleared = clearCandidate(document, candidate.id, "Coordinatore", "base", at(41));
+    expect(cleared.clearance).toMatchObject({ actor: "Coordinatore" });
+    expect(candidateReport(document, candidate, "base").state).toBe("decided");
+    // Nothing is left for anyone to settle or to assign: the merge goes on by itself.
+    expect(coordinatorMoves(document, "r1")).toEqual([]);
+    expect(pendingReturns(document)).toEqual([]);
+  });
+
   it("starts the count again when the Coordinator sides with the reviewers (ADR 0023)", () => {
     const document = project();
     const { ada, candidate, gate } = heldWork(document);
@@ -260,6 +274,65 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     expect(() => settleGate(gate, candidate, { side: "developer", reason: "Va bene così" })).toThrow(/cannot be overruled/);
     expect(() => settleGate(gate, candidate, { side: "findings", reason: "  " })).toThrow(/reason/);
     expect(gate.settled).toBeUndefined();
+  });
+
+  /**
+   * The shop on 29 September: Marco's realignment resumed with the findings, then a Pact decision changed and Trama
+   * stopped the work. The next gate blocked its candidate and the findings stayed waiting with "Assignment … is not
+   * completed", so the Coordinator opened new work in an empty working copy instead.
+   */
+  function stoppedByTrama(document: ProjectDocument) {
+    const ada = work(document, "Ada", "r1", 1);
+    const decision = document.decisions[0]!;
+    ada.decisionVersions = { [decision.id]: decision.version };
+    const first = deliver(document, ada, 2);
+    const gate = block(document, first, 3);
+    reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: first.id, findings: ["Rilievo"] }, at(4));
+    decide(document, { id: decision.id, value: "Anche il cliente vede la revisione", acceptedExample: "Ordine 42", rationale: "Chiesto dalla persona" }, at(5));
+    requestStop(document, ada.specialistId, "Trama", `Decision ${decision.id} changed or is under review.`, false, at(5));
+    endTurn(document, ada.id, null, { kind: "interrupted" }, at(5));
+    const second = declareCandidate(
+      document,
+      { assignmentId: ada.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-stopped", baseSHA: "base", diff: "+y", changedFiles: ["Sources/Orders/Order.swift"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at(6),
+    );
+    recordEvidence(document, second.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: second.snapshotId }, at(6));
+    return { ada, second, gate: block(document, second, 7), decision };
+  }
+
+  it("sends the findings back to work Trama stopped, in its worktree, with the Pact as it is now", () => {
+    const document = project();
+    const { ada, second, gate, decision } = stoppedByTrama(document);
+    expect(ada.status).toBe("stopped");
+    // Trama retries the return at the next event of the work: the stopped work is not forgotten.
+    gate.returned = { assignmentId: ada.id, at: at(7).toISOString(), waiting: "Lo sviluppatore lavora a un altro incarico." };
+    expect(pendingReturns(document).map((g) => g.id)).toEqual([gate.id]);
+
+    reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8));
+    expect(ada.status).toBe("preparing");
+    expect(ada.gateReturn).toMatchObject({ gateId: gate.id, candidateId: second.id });
+    expect(ada.workspace?.worktreeRoot).toBe(`/tmp/${ada.id}`);
+    expect(ada.decisionVersions).toEqual({ [decision.id]: 2 });
+  });
+
+  it("never resumes by itself work the person stopped, nor work whose decision is under review", () => {
+    const document = project();
+    const { ada, second, gate, decision } = stoppedByTrama(document);
+    ada.stops.at(-1)!.requestedBy = "Persona";
+    gate.returned = { assignmentId: ada.id, at: at(7).toISOString(), waiting: "Fermo" };
+    expect(pendingReturns(document)).toEqual([]);
+    expect(() => reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8))).toThrow(TeamError);
+    expect(ada.status).toBe("stopped");
+
+    ada.stops.at(-1)!.requestedBy = "Trama";
+    const alternatives = [
+      { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
+      { behavior: "Anche il cliente", example: "Il cliente vede lo stato review", consequence: null },
+    ];
+    createDecisionRequest(document, { requestId: null, category: "product", question: "Chi vede la revisione, ora?", concreteCase: "Ordine 42", alternatives, revisesDecisionId: decision.id });
+    expect(pendingReturns(document)).toEqual([]);
+    expect(() => reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8))).toThrow(/under review/);
   });
 
   it("keeps a return Trama held for the person out of the returns it retries", () => {

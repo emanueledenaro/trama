@@ -113,6 +113,9 @@ describe("merge with the green light, interface candidates held for the person (
     const first = document.candidates[0]!;
     expect(first.changedFiles).toEqual(["NOTE.md"]);
     await until(() => Boolean(first.pullRequest?.mergedAt));
+    // Merged work leaves its working copy, so copies do not pile up: the branch is on the remote.
+    await until(() => Boolean(plain.workspaceRemovedAt));
+    expect(existsSync(plain.workspace!.worktreeRoot)).toBe(false);
     expect(first.humanApproval).toBeNull();
     expect(first.pullRequest).toMatchObject({ number: 21, mergedBy: "coordinator", branch: plain.workspace!.branch });
     const pushed = (await git(["rev-parse", `refs/heads/${plain.workspace!.branch}`], remote)).trim();

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { plainConflictReference } from "@shared/plainLanguage";
-import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
+import { candidateSuperseded, explainedByDivergence, replacedBy } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { blockingFindings, latestGate } from "@shared/gate";
 import { workRequests } from "@shared/grilling";
@@ -8,7 +8,7 @@ import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { t } from "./personLanguage";
-import { authorize, findAssignment } from "./team";
+import { authorize, findAssignment, heldByPersonStop } from "./team";
 import type { WorkspaceReview } from "./workspace";
 import { ITALIAN } from "@shared/i18n";
 
@@ -32,11 +32,12 @@ export function latestCandidate(document: ProjectDocument, assignmentId: string)
 }
 
 /**
- * The earlier work that new work in the dialog of `requestId` corrects (issue #389): a completed or failed assignment of
- * the same work, on the same slice or, outside slices, on one of the same modules, whose latest candidate is still
- * open and stopped by a check, the reviewers or a conflict. Its candidate is then superseded by the new work's, so the
- * two versions never collide. Work whose candidate is verified, approved or merged is not corrected: new work on its
- * modules is other work.
+ * The earlier work that new work in the dialog of `requestId` corrects (issue #389): an assignment of the same work,
+ * on the same slice or, outside slices, on one of the same modules, that ended, failed or was stopped, and whose latest
+ * candidate is still open and stopped by a check, the reviewers or a conflict. Work that failed or stopped before its
+ * first candidate is corrected too: the new work is another try at it. The earlier candidate is then superseded by the
+ * new work's, so the two versions never collide, and the new work continues in the earlier working copy. Work whose
+ * candidate is verified, approved or merged is not corrected: new work on its modules is other work.
  */
 export function openCorrections(
   document: ProjectDocument,
@@ -49,19 +50,29 @@ export function openCorrections(
     .flatMap((s) => s.assignments)
     .filter((earlier) => {
       if (earlier.requestId === null || !scope.has(earlier.requestId)) return false;
-      if (earlier.status !== "completed" && earlier.status !== "failed") return false;
+      if (earlier.status !== "completed" && earlier.status !== "failed" && earlier.status !== "stopped") return false;
+      // Work the person stopped waits for their word: new work does not take it over before they write.
+      if (heldByPersonStop(document, earlier)) return false;
       const same = earlier.slice || work.slice
         ? earlier.slice?.planId === work.slice?.planId && earlier.slice?.sliceId === work.slice?.sliceId
         : earlier.moduleIds.some((m) => work.moduleIds.includes(m));
       if (!same) return false;
       const candidate = latestCandidate(document, earlier.id);
-      if (!candidate || candidate.pullRequest || candidateSuperseded(document, candidate)) return false;
+      if (!candidate) return earlier.status !== "completed" && Boolean(earlier.workspace) && !earlier.workspaceRemovedAt && !replacedLater(document, earlier.id);
+      if (candidate.pullRequest || candidateSuperseded(document, candidate)) return false;
       const blockers = inspectCandidate(document, candidate, null);
       if (blockers.some((b) => !STILL_CHECKING.includes(b.code))) return true;
       // A gate that failed to finish asks for the review again, not for new work (as workPhase.ts).
       return candidate.technicalReview?.verdict === "changesRequested" && !blockers.some((b) => b.code === "GATE_FAILED");
     })
     .map((a) => a.id);
+}
+
+/** Whether later work already replaced assignment `id`: another try at it is not a correction of it any more. */
+function replacedLater(document: ProjectDocument, id: string): boolean {
+  const all = document.team.specialists.flatMap((s) => s.assignments);
+  const assignment = all.find((a) => a.id === id);
+  return !!assignment && all.some((later) => replacedBy(assignment, later));
 }
 
 /** Blockers that only wait for Trama's checks or reviewers: nothing to correct yet. */
@@ -150,7 +161,7 @@ export type TurnCandidate =
   | { kind: "none" }
   | { kind: "current"; candidate: Candidate }
   | { kind: "declared"; candidate: Candidate; previous: Candidate }
-  | { kind: "refused"; reason: "emptyWorktree" | "published" | "notAuthorized" | "invalid"; previous: Candidate; message: string };
+  | { kind: "refused"; reason: "emptyWorktree" | "unmerged" | "published" | "notAuthorized" | "invalid"; previous: Candidate; message: string };
 
 /**
  * Records the worktree as it is after a developer's turn and keeps the candidate in step with it (issue #388): when
@@ -168,6 +179,10 @@ export function candidateAfterTurn(document: ProjectDocument, assignmentId: stri
     return { kind: "refused", reason: "published", previous, message: `Candidate ${previous.id} is already pull request #${previous.pullRequest.number}.` };
   }
   if (review.changedFiles.length === 0) return { kind: "refused", reason: "emptyWorktree", previous, message: `The worktree of ${assignment.id} has no changes.` };
+  // A merge left with files in conflict is not the work yet: no reviewer reads conflict markers.
+  if (review.unmergedFiles?.length) {
+    return { kind: "refused", reason: "unmerged", previous, message: `The merge in the worktree of ${assignment.id} has files in conflict: ${review.unmergedFiles.join(", ")}.` };
+  }
   if (authorize(document.mandate, "executeInWorktree", assignment.moduleIds) !== "authorized") {
     return { kind: "refused", reason: "notAuthorized", previous, message: `The mandate does not cover work in the worktree of ${assignment.id}.` };
   }
@@ -215,6 +230,21 @@ export function rebindTramaCandidate(
   latest.externalEffects = cleaned(input.externalEffects);
   latest.updatedAt = now.toISOString();
   return latest;
+}
+
+/**
+ * One work, one candidate while its working copy does not change: the latest candidate of the assignment, still open,
+ * that captured this same snapshot and binds the same Pact decisions at their current versions. Declaring the copy
+ * again returns it instead of a copy of it; null when the work needs a new candidate.
+ */
+export function unchangedCandidate(document: ProjectDocument, input: { assignmentId: string; decisionIds: string[] }, review: WorkspaceReview): Candidate | null {
+  const latest = latestCandidate(document, input.assignmentId);
+  if (!latest || latest.snapshotId !== review.snapshotId || latest.pullRequest || candidateSuperseded(document, latest)) return null;
+  const wanted = cleaned(input.decisionIds).sort();
+  const bound = [...latest.requiredDecisionIds].sort();
+  if (wanted.join("\n") !== bound.join("\n")) return null;
+  const current = bound.every((id) => document.decisions.find((d) => d.id === id)?.version === latest.decisionVersions[id]);
+  return current ? latest : null;
 }
 
 /** Records evidence Trama produced by running a required check; an agent's claim never becomes evidence. */
