@@ -615,9 +615,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           appendFileSync(tracked, "// Nota dello specialista   \n");
         }
         // "[correggi-spazi]" is the correction, in the same working copy: the trailing whitespace goes.
-        if (text.includes("[correggi-spazi]") && existsSync(tracked)) {
+        if (text.includes("[correggi-spazi]")) {
           const { readFileSync: read, writeFileSync: write } = await import("node:fs");
-          write(tracked, read(tracked, "utf8").replace(/[ \t]+$/gm, ""));
+          // Read and write at once, with no check before: a file that is gone has nothing to correct.
+          try {
+            write(tracked, read(tracked, "utf8").replace(/[ \t]+$/gm, ""));
+          } catch {
+            // Nothing to correct.
+          }
         }
         if (fullThreads.has(threadId)) {
           send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: 230_000 }, last: { totalTokens: 230_000 }, modelContextWindow: 258_000 } } });

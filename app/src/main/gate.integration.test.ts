@@ -64,13 +64,17 @@ async function repository(nodeSuite: boolean): Promise<string> {
 /** The example project with a Node suite that runs until the file `hold` exists, then passes; after 20 s it fails. */
 async function slowSuite(hold: string): Promise<string> {
   const repo = await repository(true);
+  // The hold's path travels as data in hold.json, never inside the generated code.
   const suite = [
     `const { existsSync } = require("node:fs");`,
+    `const hold = require("./hold.json").path;`,
     `const started = Date.now();`,
-    `const wait = () => (existsSync(${JSON.stringify(hold)}) ? process.exit(0) : Date.now() - started > 20000 ? process.exit(3) : setTimeout(wait, 50));`,
+    `const wait = () => (existsSync(hold) ? process.exit(0) : Date.now() - started > 20000 ? process.exit(3) : setTimeout(wait, 50));`,
     `wait();`,
   ];
+  await writeFile(join(repo, "hold.json"), `${JSON.stringify({ path: hold })}\n`);
   await writeFile(join(repo, "check.js"), `${suite.join("\n")}\n`);
+  await git(["add", "hold.json"], repo, false);
   await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-am", "slow suite"], repo, false);
   return repo;
 }
