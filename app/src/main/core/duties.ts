@@ -14,7 +14,9 @@ import type {
   GitHubIssue,
   PullRequestLink,
   ProjectDocument,
+  Specialist,
   SpecialistAssignment,
+  SpecialistModelChoice,
   TriageOutcome,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
@@ -54,6 +56,8 @@ export interface DutyRunner {
   provider: ProviderId;
   model: string;
   modelReason: string;
+  /** The person's model for the role when it can run now (issue #455): it wins over the runner's. */
+  chosen?: (specialist: Specialist) => SpecialistModelChoice | null;
 }
 
 export interface DutyContext {
