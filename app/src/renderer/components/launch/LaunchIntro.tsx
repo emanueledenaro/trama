@@ -17,7 +17,7 @@ export function LaunchIntro({ play, size = 64 }: { play: boolean; size?: number 
   const [elapsed, setElapsed] = useState(0);
   const [held, setHeld] = useState(false);
   const [run, setRun] = useState(0);
-  const [playing, setPlaying] = useState(play);
+  const [playing, setPlaying] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => reducedMotionQuery().matches);
 
   useEffect(() => {
@@ -27,13 +27,21 @@ export function LaunchIntro({ play, size = 64 }: { play: boolean; size?: number 
     return () => media.removeEventListener("change", update);
   }, []);
 
-  // The first launch is known only once the state is read: the weave starts from then.
+  // The first launch is known only once the state is read, and the weave starts once the window shows: a hidden window
+  // runs neither its timers nor its animations on time, and the person would not see it.
   useEffect(() => {
     if (!play) return;
-    start.current = performance.now();
-    setElapsed(0);
-    setPlaying(true);
-    setRun((n) => n + 1);
+    const begin = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", begin);
+      start.current = performance.now();
+      setElapsed(0);
+      setPlaying(true);
+      setRun((n) => n + 1);
+    };
+    begin();
+    document.addEventListener("visibilitychange", begin);
+    return () => document.removeEventListener("visibilitychange", begin);
   }, [play]);
 
   useEffect(() => {
