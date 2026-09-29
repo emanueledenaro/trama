@@ -1,6 +1,5 @@
-import { IconHourglass, IconListDetails } from "@tabler/icons-react";
+import { IconChevronRight, IconHourglass, IconListDetails } from "@tabler/icons-react";
 import type { RecapFact, RecapNeed } from "@shared/domain";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { useWaiting } from "@/components/WaitingView";
@@ -47,24 +46,38 @@ function FactLine({ fact }: { fact: RecapFact }) {
 function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
   const t = useT();
   const setInspector = useUi((s) => s.setInspector);
-  return (
-    <li className="cta-row py-1" data-testid="recap-need" data-waiting={waiting ? "true" : "false"}>
-      <span className="mr-auto flex min-w-0 flex-1 items-start gap-2">
-        <IconHourglass className="mt-0.5 size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
-        <span className="min-w-0 break-words">
-          <span className="text-foreground">{need.label}</span>
-          <Sep />
-          <span className="text-muted-foreground">
-            <ReferenceText text={need.title} />
-          </span>
-        </span>
+  const text = (
+    <span className="min-w-0 flex-1 break-words">
+      <span className="text-foreground">{need.label}</span>
+      <Sep />
+      <span className="text-muted-foreground">
+        <ReferenceText text={need.title} links={!waiting} />
       </span>
+    </span>
+  );
+  return (
+    <li className="py-1" data-testid="recap-need" data-waiting={waiting ? "true" : "false"}>
       {waiting ? (
-        <Button size="xs" variant="outline" onClick={() => setInspector({ kind: "waiting", key: need.key })}>
-          {t("chat.recap.openWaiting")}
-        </Button>
+        // The whole line opens the item in Aspetta te (issue #338).
+        <button
+          type="button"
+          title={t("waiting.reference.open")}
+          className="group flex w-full items-start gap-2 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+          onClick={() => setInspector({ kind: "waiting", key: need.key })}
+        >
+          <IconHourglass className="mt-0.5 size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
+          <span className="sr-only">{t("waiting.reference.open")}: </span>
+          {text}
+          <IconChevronRight aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" stroke={1.8} />
+        </button>
       ) : (
-        <Badge tone="secondary">{t("chat.recap.notWaiting")}</Badge>
+        <div className="cta-row">
+          <span className="mr-auto flex min-w-0 flex-1 items-start gap-2">
+            <IconHourglass className="mt-0.5 size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
+            {text}
+          </span>
+          <Badge tone="secondary">{t("chat.recap.notWaiting")}</Badge>
+        </div>
       )}
     </li>
   );

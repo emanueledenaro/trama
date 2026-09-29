@@ -10,6 +10,7 @@ import {
   IconMoon,
   IconPlugConnected,
   IconRefresh,
+  IconSchool,
   IconSettings,
   IconSun,
   IconTools,
@@ -211,7 +212,7 @@ function GeneralSection() {
           description={t("settings.guide.description")}
           control={
             <Button variant="outline" size="sm" onClick={() => setDialog("guide")}>
-              {t("settings.guide.open")}
+              <IconSchool stroke={1.8} /> {t("settings.guide.open")}
             </Button>
           }
         />
@@ -861,7 +862,7 @@ function MonitorSection() {
             description={t("settings.monitor.openRepository")}
             control={
               <Button size="sm" variant="outline" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
-                {t("settings.monitor.watch")}
+                <IconEye stroke={1.8} /> {t("settings.monitor.watch")}
               </Button>
             }
           />
