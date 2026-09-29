@@ -735,4 +735,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.squad.status.waiting": "{names} are waiting for an answer",
   "shared.squad.status.noDevelopers": "No developer in the squad.",
   "shared.squad.status.free": "Free: it takes the next ready slice of its area.",
+
+  // Squad changes (A11)
+  "shared.activity.outcome.undone": "Undone",
 };

@@ -158,6 +158,7 @@ const FACT_OUTCOMES: Record<ActivityOutcome, MessageKey> = {
   stopped: "main.recap.outcome.stopped",
   failed: "main.recap.outcome.failed",
   corrected: "main.recap.outcome.corrected",
+  undone: "main.recap.outcome.undone",
 };
 
 /** The opening of a stalled move's reason, in every language: a record keeps the language it was written in. */

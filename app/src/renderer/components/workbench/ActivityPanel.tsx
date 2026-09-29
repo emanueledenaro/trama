@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/activity";
 import { projectGoals } from "@shared/goals";
+import { undoProblem } from "@shared/squadChanges";
 import { formatDate, formatTime } from "@shared/i18n";
 import type { MessageKey } from "@shared/i18n";
 import { compactSteps, workTurns, type WorkRow } from "@shared/technicalSteps";
@@ -55,6 +56,7 @@ const OUTCOME_TONES: Record<ActivityOutcome, "info" | "success" | "warning" | "d
   stopped: "secondary",
   failed: "destructive",
   corrected: "secondary",
+  undone: "secondary",
 };
 
 const OUTCOME_LABELS: Record<ActivityOutcome, MessageKey> = {
@@ -64,6 +66,7 @@ const OUTCOME_LABELS: Record<ActivityOutcome, MessageKey> = {
   stopped: "activity.outcome.stopped",
   failed: "activity.outcome.failed",
   corrected: "activity.outcome.corrected",
+  undone: "activity.outcome.undone",
 };
 
 const TYPE_LABELS: Record<ActivityType, MessageKey> = {
@@ -72,6 +75,7 @@ const TYPE_LABELS: Record<ActivityType, MessageKey> = {
   problems: "activity.type.problems",
   steps: "activity.type.steps",
   merges: "activity.type.merges",
+  squads: "activity.type.squads",
 };
 
 const TEST_IDS: Record<ActivityEntry["kind"], string> = {
@@ -80,6 +84,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   problem: "activity-problem",
   step: "activity-step",
   merge: "activity-merge",
+  squad: "activity-squad",
 };
 
 const ICON_BUTTON = "sidebar-icon-button size-6 shrink-0 rounded-md";
@@ -155,20 +160,52 @@ function Correction({ entry, onDone }: { entry: ActivityEntry; onDone: () => voi
   );
 }
 
-/** A move, a round, a problem's step, a step taken for the person or a merge, in one line with its detail below. */
+/** A change to the squads (A11) in the person's language: its name, what changed, and who left the squads. */
+function useSquadWords(entry: ActivityEntry): ActivityEntry {
+  const t = useT();
+  const specialists = useUi((s) => s.app?.project?.document.team.specialists);
+  const change = entry.squadChange;
+  if (!change) return entry;
+  const params = { from: change.names.from, to: change.names.to, other: change.names.other ?? "" };
+  const left = change.names.leftIds.map((id) => specialists?.find((s) => s.id === id)?.name ?? id);
+  const detail = [t(`activity.squad.${change.kind}Detail`, params), left.length ? t("activity.squad.mergeLeft", { names: left.join(", ") }) : null].filter(Boolean).join(" ");
+  return { ...entry, label: t(`activity.squad.${change.kind}`), detail };
+}
+
+/** Undoes a change to the squads (A11); when it cannot be undone the button says why on hover and stays off. */
+function UndoSquadChange({ changeId }: { changeId: string }) {
+  const t = useT();
+  const document = useUi((s) => s.app?.project?.document);
+  const blocked = document ? undoProblem(document, changeId) : null;
+  const reason = blocked ? t(blocked.key, blocked.params) : t("activity.undo.label");
+  return (
+    <Tooltip label={reason}>
+      {/* A disabled button gets no hover: the wrapper carries the reason. */}
+      <span className="inline-flex" data-testid="squad-undo-wrap">
+        <Button size="xs" variant="outline" aria-label={reason} disabled={Boolean(blocked)} data-testid="squad-undo" onClick={() => void act("squad:undo", { changeId })}>
+          {t("activity.undo")}
+        </Button>
+      </span>
+    </Tooltip>
+  );
+}
+
+/** A move, a round, a problem's step, a step taken for the person, a merge or a change to the squads, in one line with its detail below. */
 function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityItem, { type: "entry" }>; focused: boolean; open: boolean; onToggle: () => void }) {
   const t = useT();
   const language = useLanguage();
   const openDialog = useUi((s) => s.openDialog);
   const dialogName = useDialogName();
   const [correcting, setCorrecting] = useState(false);
-  const entry = item.entry;
-  const duration = entry.endedAt ? Math.max(0, Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) : null;
+  const entry = useSquadWords(item.entry);
+  // A change undone later is not a duration: the row keeps its own moment only.
+  const duration = entry.endedAt && entry.kind !== "squad" ? Math.max(0, Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) : null;
   const summary = entry.detail ?? entry.trigger;
   const meta = [
     formatDate(language, entry.startedAt),
     duration !== null ? formatDuration(t, duration) : null,
-    entry.kind === "round" || entry.kind === "problem" ? null : dialogName(entry.goalId),
+    entry.squadChange ? t(entry.squadChange.by === "person" ? "activity.squad.byPerson" : "activity.squad.byCoordinator") : null,
+    entry.kind === "round" || entry.kind === "problem" || entry.kind === "squad" ? null : dialogName(entry.goalId),
     entry.kind === "move" || entry.kind === "problem" ? entry.trigger : null,
     // The squads come after the study (A10); the other steps the Coordinator takes within the mandate (A06).
     entry.kind === "step" ? t(entry.move === null ? "activity.afterStudy" : "activity.withinMandate") : null,
@@ -236,6 +273,7 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
               {t("activity.correct")}
             </Button>
           ) : null}
+          {entry.squadChange && entry.outcome === "done" ? <UndoSquadChange changeId={entry.squadChange.id} /> : null}
           {entry.kind === "move" && entry.outcome === "running" ? (
             <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
               {t("activity.stop")}
@@ -499,6 +537,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       document.problems?.items ?? [],
       document.autonomousSteps ?? [],
       document.candidates,
+      document.squadChanges ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);

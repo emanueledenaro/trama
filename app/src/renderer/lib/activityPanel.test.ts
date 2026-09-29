@@ -108,5 +108,6 @@ describe("Activity in the bottom panel (issue #337)", () => {
     expect(typeOfEntry({ kind: "problem" })).toBe("problems");
     expect(typeOfEntry({ kind: "step" })).toBe("steps");
     expect(typeOfEntry({ kind: "merge" })).toBe("merges");
+    expect(typeOfEntry({ kind: "squad" })).toBe("squads");
   });
 });

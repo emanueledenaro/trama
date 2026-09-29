@@ -7,7 +7,7 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { DisclosureChevron } from "./WorkSteps";
 
 /**
- * Trama reordered the Coordinator's context (ADR 0018): one line of the chat that opens the person's view of the
+ * Trama reordered the Coordinator's context (ADR 0019): one line of the chat that opens the person's view of the
  * context summary, the Activity event the card points to. The brief written for the model never reaches this card.
  */
 export function ContextRolloverCard({ summaryEventId }: { summaryEventId: string | null }) {

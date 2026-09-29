@@ -68,7 +68,7 @@ async function setup() {
 const cards = (project: { document: { events: { content: { type: string; title?: string } }[] } }, title: string) =>
   project.document.events.filter((e) => e.content.type === "card" && e.content.title === title);
 
-describe("the context managed by Trama (ADR 0018)", () => {
+describe("the context managed by Trama (ADR 0019)", () => {
   it("reorders the context at the end of the turn past the threshold and sends the queued message to the new session", async () => {
     const { project, requests, turnText } = await setup();
     const document = project.document;

@@ -1437,6 +1437,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.recap.outcome.stopped": "stopped",
   "main.recap.outcome.failed": "ended with an error",
   "main.recap.outcome.corrected": "corrected by you",
+  "main.recap.outcome.undone": "undone",
   "main.recap.stepCorrected": "{label} (corrected by you): {detail}",
   "main.recap.moreMoves": "{count} more moves are in Activity",
   "main.recap.moreMoves.one": "One more move is in Activity",

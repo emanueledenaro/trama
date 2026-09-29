@@ -1,5 +1,5 @@
 /**
- * The Coordinator's context, managed by Trama the same way on every provider (ADR 0018). Past the project's threshold,
+ * The Coordinator's context, managed by Trama the same way on every provider (ADR 0019). Past the project's threshold,
  * at the end of a turn, Trama writes a context summary from its records and the Coordinator goes on in a new session.
  * The person's texts live in the catalogs under `context.` and never name a provider. Pure.
  */

@@ -734,4 +734,7 @@ export const sharedIt = {
   "shared.squad.status.waiting": "{names} aspettano una risposta",
   "shared.squad.status.noDevelopers": "Nessuno sviluppatore nella squadra.",
   "shared.squad.status.free": "Libera: prende la prossima fetta pronta della sua area.",
+
+  // Squad changes (A11)
+  "shared.activity.outcome.undone": "Annullata",
 } satisfies Record<string, string>;

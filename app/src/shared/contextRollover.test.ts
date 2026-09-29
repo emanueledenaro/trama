@@ -3,7 +3,7 @@ import { autoCompactTokenLimit, contextPercent, passesThreshold } from "./contex
 import { CATALOGS } from "./i18n";
 import { PROVIDERS } from "./providers";
 
-describe("the context managed by Trama (ADR 0018)", () => {
+describe("the context managed by Trama (ADR 0019)", () => {
   it("reads the share of the window within 0-100, and nothing without a window", () => {
     expect(contextPercent({ usedTokens: 160_000, contextWindow: 258_000 })).toBe(62);
     // A reading past the window is not a context reading (issue #305).
