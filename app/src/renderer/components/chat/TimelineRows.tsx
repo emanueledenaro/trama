@@ -37,6 +37,7 @@ import { DisclosureChevron, WorkLabel } from "./WorkSteps";
 import { useWaiting, WaitingOr, WaitingReference } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
 import { RequestedActionLine } from "./RequestedAction";
+import { DelegationLine } from "./Delegation";
 import { ContextRolloverCard } from "./ContextRolloverCard";
 import { Sep } from "@/components/ui/sep";
 
@@ -429,6 +430,7 @@ function RowContent({ row, streaming = false, latest = false }: { row: TimelineR
           </WaitingOr>
         );
       if (row.cardKind === "contextRollover") return <ContextRolloverCard summaryEventId={content.referenceId} />;
+      if (row.cardKind === "delegation") return <DelegationLine delegationId={content.referenceId} phase={content.title} />;
       if (row.cardKind === "requestedAction" && content.referenceId)
         return (
           <WaitingOr kind="confirmation" targetId={content.referenceId}>

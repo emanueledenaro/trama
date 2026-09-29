@@ -74,6 +74,10 @@ import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 import { confirmByMessage, PersonRequestError, requestAction } from "./personRequest";
+import { activeDelegation, DelegationError, grantDelegation, recordChoice, requireDelegation, revokeDelegation } from "./fullDelegation";
+import { answerDecisionRequest } from "./pact";
+import { updateGoal } from "./goals";
+import type { FullDelegation } from "@shared/domain";
 import type { RequestedAction } from "@shared/domain";
 import { t } from "./personLanguage";
 
@@ -674,6 +678,45 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "grant_full_delegation",
+    description:
+      "Record the full delegation the person gave you in the composer: \"fai tutto tu\", or words with the same sense. quote is the person's own words, from a message they typed in this project's chat; Trama refuses words that are not theirs. With tickets true the person also asked you to do the project's open tickets (\"fai tutti i ticket\"). From then on you take by yourself also the choices that wait for the person: product decisions (decide_with_delegation), candidates that wait for their ok after the screenshots (approve_with_delegation) and new work for the goal; you never stop on a doubt (note_doubt) and you never close a turn blocked while another move exists. Trama widens the mandate to every module and action when it is narrower, keeps the Mac awake while there is open work, and tells the person your choices in the recap. Deletions and what cannot be undone still wait for their confirmation (run_requested_action).",
+    properties: { quote: text, tickets: { type: "boolean" } },
+    required: ["quote"],
+    readOnly: false,
+  },
+  {
+    name: "revoke_full_delegation",
+    description: "Withdraw the full delegation when the person writes it in the chat. quote is their own words, typed after they gave it. From then on the choices wait for the person again; the choices already made stay for them to review.",
+    properties: { quote: text },
+    required: ["quote"],
+    readOnly: false,
+  },
+  {
+    name: "decide_with_delegation",
+    description:
+      "With the full delegation, answer an open product question (a Pact card) yourself: alternative is the index of the answer you would recommend, reason one line on why, doubt what you are not sure about (empty when nothing). Trama records it in the Pact as decided by you with the person's delegation, and the person reviews it in the recap. Without the delegation Trama refuses it.",
+    properties: { question: text, alternative: { type: "integer", minimum: 0 }, reason: text, doubt: text },
+    required: ["question", "alternative", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "approve_with_delegation",
+    description:
+      "With the full delegation, give the ok the person would give to a candidate that waits for them (an interface candidate, after the screenshots before and after): Trama records the ok as yours with the delegation and merges it with the green light. Trama refuses it while the screenshots of that version are still being taken. reason says what you saw; doubt what you are not sure about.",
+    properties: { candidate: text, reason: text, doubt: text },
+    required: ["candidate", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "note_doubt",
+    description:
+      "With the full delegation, write down a doubt that did not stop you: subject is what was unclear, choice the way you took and would recommend, doubt what you are not sure about. The person reads it in the recap when they come back and can review it.",
+    properties: { subject: text, choice: text, doubt: text },
+    required: ["subject", "choice", "doubt"],
+    readOnly: false,
+  },
+  {
     name: "declare_next_step",
     description:
       "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows the person's move as one button under your reply; your own move you make now with your tools, and Trama starts it by itself when the turn ends without it. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
@@ -731,7 +774,7 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route" | "conflict" | "requestedAction", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route" | "conflict" | "requestedAction" | "delegation", title: string, referenceId: string): void;
   /** Runs the scenarios of the semantic hypotheses not tried yet (issue #40), in the background. */
   runSemanticScenarios?(): void;
   /** The skills ask-trama names and the skills of Trama's bundled package, for propose_route (M07). */
@@ -792,6 +835,12 @@ export interface ToolContext {
   runRequestedAction?(id: string): Promise<RequestedAction>;
   mainBranches?: string[];
   checkedOutBranch?(): string | null;
+  /** The person gave or withdrew the full delegation (issue #423): Trama widens the mandate and puts the line in the chat. */
+  delegationChanged?(delegation: FullDelegation): void;
+  /** A question the Coordinator answered with the delegation: the same effects as the person's answer (issue #423). */
+  questionDecided?(questionId: string, decisionId: string): void;
+  /** The Coordinator's ok with the delegation on a candidate that waited for the person: Trama merges it (issue #423). */
+  approveWithDelegation?(candidateId: string): Promise<void>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
 }
@@ -1581,6 +1630,11 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           outcome: typeof args.outcome === "string" ? args.outcome : "",
           examples: [...examples("accepted", args.acceptedExamples), ...examples("refused", args.refusedExamples)],
         });
+        // With the full delegation (issue #423) new work for the goal does not wait: the goal opens and the choice is recorded.
+        if (activeDelegation(document)) {
+          updateGoal(document, goal.id, { status: "open" });
+          recordChoice(document, { kind: "goal", subject: goal.title, choice: goal.outcome, targetId: goal.id });
+        }
         context.addCard("goal", t("main.coordinatorTools.card.goal"), goal.id);
         context.changed();
         // Presence (G04, decision 11): warn when someone already works on something like it.
@@ -1592,8 +1646,11 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         }));
         return toolSuccess({
           goalID: goal.id,
-          status: "proposed",
-          note: "The person confirms, edits or discards it. Do not assign work for it before it is open.",
+          status: goal.status,
+          note:
+            goal.status === "open"
+              ? "The goal is open with the person's full delegation: work on it; the person reviews the choice in the recap."
+              : "The person confirms, edits or discards it. Do not assign work for it before it is open.",
           ...(busy.length
             ? {
                 alreadyInProgress: busy,
@@ -1860,6 +1917,66 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const result = toolSuccess({ actionID: ran.id, status: ran.status, output: ran.output });
         return ran.status === "failed" ? { ...result, isError: true } : result;
       }
+      case "grant_full_delegation": {
+        const before = activeDelegation(document);
+        const delegation = grantDelegation(document, { quote: typeof args.quote === "string" ? args.quote : "", tickets: args.tickets === true });
+        if (delegation !== before || delegation.tickets !== (before?.tickets ?? false)) context.delegationChanged?.(delegation);
+        context.changed();
+        return toolSuccess({ delegationID: delegation.id, tickets: delegation.tickets, status: "in_force" });
+      }
+      case "revoke_full_delegation": {
+        const delegation = revokeDelegation(document, { kind: "message", quote: typeof args.quote === "string" ? args.quote : "" });
+        context.delegationChanged?.(delegation);
+        context.changed();
+        return toolSuccess({ delegationID: delegation.id, status: "withdrawn" });
+      }
+      case "decide_with_delegation": {
+        requireDelegation(document);
+        const question = document.decisionRequests.find((r) => r.id === (typeof args.question === "string" ? args.question.trim() : ""));
+        if (!question) return toolFailure("unknown_question", `There is no question ${String(args.question)}.`);
+        const index = typeof args.alternative === "number" ? args.alternative : -1;
+        const alternative = question.alternatives[index];
+        if (!alternative) return toolFailure("invalid_arguments", `alternative must be between 0 and ${question.alternatives.length - 1}.`);
+        const { request, decision } = answerDecisionRequest(document, question.id, { alternativeIndex: index, freeText: null });
+        const choice = recordChoice(document, {
+          kind: "decision",
+          subject: question.question,
+          choice: `${alternative.behavior}${typeof args.reason === "string" && args.reason.trim() ? `. ${args.reason.trim()}` : ""}`,
+          doubt: typeof args.doubt === "string" ? args.doubt : null,
+          targetId: question.id,
+        });
+        request.outcome!.byDelegation = { choiceId: choice.id };
+        context.questionDecided?.(question.id, decision.id);
+        context.changed();
+        return toolSuccess({ decisionID: decision.id, version: decision.version, choiceID: choice.id });
+      }
+      case "approve_with_delegation": {
+        requireDelegation(document);
+        if (!context.approveWithDelegation) return toolFailure("unavailable", "Trama cannot merge candidates here.");
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
+        const shots = candidate.interfaceShots;
+        if (shots && shots.snapshotId === candidate.snapshotId && shots.status === "capturing") {
+          return toolFailure("screenshots_pending", "Trama is still taking the screenshots before and after of this version: look at them first, then approve.");
+        }
+        const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+        recordChoice(document, { kind: "interfaceCandidate", subject: t("main.delegation.candidateSubject", { id: candidate.id }), choice: reason || t("main.delegation.approvedAfterShots"), doubt: typeof args.doubt === "string" ? args.doubt : null, targetId: candidate.id });
+        context.changed();
+        await context.approveWithDelegation(candidate.id);
+        return toolSuccess({ candidateID: candidate.id, status: "approved", screenshots: (shots?.snapshotId === candidate.snapshotId ? shots.shots : []).map((shot) => shot.path) });
+      }
+      case "note_doubt": {
+        const choice = recordChoice(document, {
+          kind: "doubt",
+          subject: typeof args.subject === "string" ? args.subject : "",
+          choice: typeof args.choice === "string" ? args.choice : "",
+          doubt: typeof args.doubt === "string" ? args.doubt : null,
+          targetId: null,
+        });
+        context.changed();
+        return toolSuccess({ choiceID: choice.id, status: "recorded" });
+      }
       case "supersede_candidate": {
         // Only candidate ids: an assignment id could stand for its newest candidate and supersede the wrong version.
         const older = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
@@ -1925,6 +2042,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
     if (error instanceof QuestionError) return toolFailure(error.code, error.message);
     if (error instanceof DiscussionError) return toolFailure(error.code, error.message);
     if (error instanceof PersonRequestError) return toolFailure(error.code, error.message);
+    if (error instanceof DelegationError) return toolFailure(error.code, error.message);
     throw error;
   }
 }

@@ -194,9 +194,16 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
     }
   }
   for (const audit of document.audits ?? []) {
-    const candidate = index.ids.get(audit.target.candidateId);
-    const reference = make({ kind: "audit", id: audit.id }, audit.id, "esame del candidato", candidate?.short ?? audit.target.candidateId);
-    index.ids.set(audit.id, candidate?.owner ? { ...reference, owner: candidate.owner } : reference);
+    const target = audit.target;
+    if (target.kind === "candidate") {
+      const candidate = index.ids.get(target.candidateId);
+      const reference = make({ kind: "audit", id: audit.id }, audit.id, "esame del candidato", candidate?.short ?? target.candidateId);
+      index.ids.set(audit.id, candidate?.owner ? { ...reference, owner: candidate.owner } : reference);
+    } else {
+      // A module or the project (F03): the reference names what was examined, never the examination's id.
+      const reference = target.kind === "module" ? make({ kind: "audit", id: audit.id }, audit.id, "esame del modulo", target.moduleName) : make({ kind: "audit", id: audit.id }, audit.id, "", "esame del progetto");
+      index.ids.set(audit.id, reference);
+    }
   }
   for (const decision of [...document.decisionHistory, ...document.decisions]) {
     index.ids.set(decision.id, make({ kind: "decision", id: decision.id }, decision.id, "decisione", `«${clip(decision.value, 48)}»`, clip(decision.value, 160)));

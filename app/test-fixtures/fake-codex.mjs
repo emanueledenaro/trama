@@ -746,6 +746,21 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               instructions: "Scrivi una nota",
             });
             done.push(assigned.isError ? `Rifiutato: ${assigned.content[0].text}` : "Ho assegnato la fetta ad Ada.");
+          } else if (automatic[1] === "decideWithDelegation") {
+            // Issue #423: with the full delegation the Coordinator answers the person's questions with its recommendation
+            // and gives the ok to the candidates that wait for the person, writing its doubt.
+            for (const [, question, recommended] of text.matchAll(/^- (Q-[0-9A-F]{8}): .*?(?:consigliata (\d+))?\)$/gm)) {
+              const decided = await call("decide_with_delegation", { question, alternative: Number(recommended ?? 0), reason: "È la risposta che consiglio", doubt: "Non so se vale anche per gli ordini pagati con un buono" });
+              done.push(decided.isError ? `Rifiutato: ${decided.content[0].text}` : `Ho deciso ${question} con la tua delega.`);
+            }
+            for (const [, candidate] of text.matchAll(/^- (C-[0-9A-F]{8}): candidato di interfaccia/gm)) {
+              const approved = await call("approve_with_delegation", { candidate, reason: "Le schermate prima e dopo sono coerenti" });
+              done.push(approved.isError ? `Rifiutato: ${approved.content[0].text}` : `Ho approvato ${candidate} con la tua delega.`);
+            }
+          } else if (automatic[1] === "takeTicket") {
+            const issue = text.match(/issue #(\d+)/)?.[1];
+            const noted = await call("note_doubt", { subject: `Issue #${issue}`, choice: "Parto dal caso più semplice descritto nella issue", doubt: "La issue non dice cosa fare con gli ordini vecchi" });
+            done.push(noted.isError ? `Rifiutato: ${noted.content[0].text}` : `Ho preso la issue #${issue}.`);
           } else if (automatic[1] === "answerQuestion") {
             done.push(await answerDeveloper(process.env.FAKE_CODEX_QUESTION === "block"));
           } else if (automatic[1] === "verifyCandidate") {
@@ -800,6 +815,17 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const search = await callTool(threadId, "session_search", { query: "annullamento" });
           toolDone("session_search", search);
           finish(`Salvato. ${search.content[0].text}`);
+        });
+        return;
+      }
+      const delegation = text.match(/\[(delega|delega-ticket|ritira-delega):([^\]]+)\]/);
+      if (delegation) {
+        // [delega:<quote>], [delega-ticket:<quote>]: the person gave the full delegation (issue #423); [ritira-delega:<quote>] withdraws it.
+        const [, kind, quote] = delegation;
+        const tool = kind === "ritira-delega" ? "revoke_full_delegation" : "grant_full_delegation";
+        callTool(threadId, tool, kind === "ritira-delega" ? { quote } : { quote, tickets: kind === "delega-ticket" }).then((result) => {
+          toolDone(tool, result);
+          finish(result.isError ? `Non posso: ${result.content[0].text}` : kind === "ritira-delega" ? "Ho ritirato la delega." : "Da ora faccio tutto io.");
         });
         return;
       }

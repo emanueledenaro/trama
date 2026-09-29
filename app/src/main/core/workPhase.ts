@@ -168,7 +168,7 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
 });
 
 /** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion";
+export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion" | "decideWithDelegation" | "takeTicket";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -186,6 +186,9 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   assignWork: moveWords("main.workPhase.assignWork", "main.workPhase.assignWorkMessage"),
   verifyCandidate: moveWords("main.workPhase.verifyCandidate", "main.workPhase.verifyCandidateMessage"),
   answerQuestion: moveWords("main.workPhase.answerQuestion", "main.workPhase.answerQuestionMessage"),
+  // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
+  decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
+  takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
 };
 
 /** The name of the move that resolves a technical block (A06), as the status line, Activity and the recap show it. */
