@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
 import { ProjectLearning } from "./learning/projectLearning";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
-import { emptyDocument } from "./document";
+import { appendEvent, emptyDocument } from "./document";
 import { proposeGoal, updateGoal } from "./goals";
 import { DutyRequestError } from "./duties";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
@@ -358,7 +358,8 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     expect(team).toMatchObject({ page: 1, pages: 3, specialistCount: 41 });
     expect(team.specialists).toHaveLength(20);
     expect(team.specialists[0]).not.toHaveProperty("moments");
-    expect(team.providers).toEqual([{ id: "codex", models: [{ model: "gpt-5.5", efforts: ["low", "high"] }] }]);
+    expect(team.providers).toEqual([{ id: "codex", models: 1 }]);
+    expect(parse(await runCoordinatorTool("read_team", { section: "providers" }, context)).providers).toEqual([{ id: "codex", models: [{ model: "gpt-5.5", efforts: ["low", "high"] }] }]);
     expect(team.automaticWork).toEqual([
       { work: "architectureReview", role: "cleanCode", state: "waiting", assignmentID: null, detail: "Aspetta che il team sia libero: 2 incarichi sono al lavoro.", startNow: "allowed" },
     ]);
@@ -392,6 +393,19 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
   });
 });
 
+describe("the size of the reading tools", () => {
+  it("caps what a reading tool returns and says how to ask for the rest", async () => {
+    const document = emptyDocument("p");
+    for (let i = 0; i < 100; i++) appendEvent(document, "trama", { type: "activity", title: `Verifica ${i}`, detail: "riga di output\n".repeat(400), tone: "tool" }, null);
+    const result = await runCoordinatorTool("read_history", { limit: 100 }, teamContext(document));
+    expect(result.content[0]!.text.length).toBeLessThan(30_000);
+    const history = parse(result);
+    // The latest events stay; the older ones are one call away.
+    expect(history.events.at(-1).content.title).toBe("Verifica 99");
+    expect(history.note).toContain(`beforeSequence ${history.events[0].sequence}`);
+  });
+});
+
 describe("Coordinator tools for the agents' identity (W13, W15)", () => {
   it("rename_specialist renames a developer at the person's request, without a mandate, and keeps its id", async () => {
     const document = emptyDocument("p");
@@ -415,7 +429,8 @@ describe("Coordinator tools for the agents' identity (W13, W15)", () => {
     expect(refused.isError).toBe(true);
     expect(refused.content[0]!.text).toContain("fixed_role");
     const team = parse(await runCoordinatorTool("read_team", {}, context));
-    expect(team.specialists.find((s: { id: string }) => s.id === ada.id)).toMatchObject({ name: "Giulia", tag: "Interfaccia", color: ada.color });
+    expect(team.specialists.find((s: { id: string }) => s.id === ada.id)).toMatchObject({ name: "Giulia", tag: "Interfaccia" });
+    expect(parse(await runCoordinatorTool("read_team", { specialistID: ada.id }, context))).toMatchObject({ name: "Giulia", color: ada.color });
     expect(COORDINATOR_TOOLS.find((t) => t.name === "rename_specialist")!.description).toMatch(/without a mandate/);
     expect(developerInstructions("Demo")).toMatch(/rename_specialist/);
   });
@@ -704,6 +719,42 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     expect(refused).toContain("dependency_outside_mandate");
     expect(refused).toContain(base.id);
     expect(started).toEqual([]);
+  });
+
+  it("read_team answers in short: a line per figure with its work, candidate and block, and the detail and full lists on request", async () => {
+    const document = emptyDocument("p");
+    const decision = decide(document, { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "r" });
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    grant(document, ["executeInWorktree"]);
+    const assignment = assign(document, { ...order, objective: "Documenta l'annullamento degli ordini pagati. ".repeat(20), moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    recordWorkspace(document, assignment.id, WORKTREE as never);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+    endTurn(document, assignment.id, "t1", { kind: "completed", text: "Risultato lungo. ".repeat(2_000) });
+    // Nine connected providers with large catalogues, as on the shop project.
+    const catalog = Array.from({ length: 80 }, (_, i) => ({ model: `modello-${i}`, displayName: `Modello ${i}`, description: "d".repeat(400), supportedReasoningEfforts: ["low", "medium", "high"] }));
+    const providers = ["codex", "claude", "gemini", "openrouter", "opencode", "cursor", "copilot", "kimi", "qwen"].map((id) => ({ id, models: catalog.map((m) => m.model), catalog }));
+    const context = { ...mandateContext(document).context, providers, models: catalog.map((m) => m.model) } as unknown as ToolContext;
+    await runCoordinatorTool("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] }, context);
+    const candidate = document.candidates[0]!;
+
+    const summary = await runCoordinatorTool("read_team", {}, context);
+    expect(summary.content[0]!.text.length).toBeLessThan(8_000);
+    const team = parse(summary);
+    const ada = team.specialists.find((s: { name: string }) => s.name === "Ada");
+    expect(ada).toMatchObject({ assignment: { id: assignment.id, status: "completed" }, candidate: { id: candidate.id, state: "building", blocker: expect.stringContaining("EVIDENCE_MISSING") } });
+    expect(ada.assignment.objective.length).toBeLessThanOrEqual(121);
+    expect(team.providers).toHaveLength(9);
+    expect(team.providers[0]).toEqual({ id: "codex", models: 80 });
+    expect(team.note).toMatch(/assignmentID/);
+
+    // The detail stays one call away: the providers with every model, and one assignment in full.
+    const full = parse(await runCoordinatorTool("read_team", { section: "providers" }, context));
+    expect(full.providers[0].models).toHaveLength(80);
+    expect(full.providers[0].models[0]).toEqual({ model: "modello-0", efforts: ["low", "medium", "high"] });
+    const work = parse(await runCoordinatorTool("read_team", { assignmentID: assignment.id }, context));
+    expect(work).toMatchObject({ id: assignment.id, specialist: "Ada", status: "completed", candidate: { id: candidate.id, state: "building" } });
+    expect(work.result).toContain("Risultato lungo.");
+    expect((await runCoordinatorTool("read_team", { assignmentID: "A-NESSUNO" }, context)).isError).toBe(true);
   });
 
   it("declare_candidate answers to the mandate and binds the candidate to base, decisions and required checks; clear_candidate needs integrateCandidate", async () => {

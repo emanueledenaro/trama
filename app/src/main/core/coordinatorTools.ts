@@ -11,6 +11,7 @@ import type {
   MandateAction,
   ProjectDocument,
   Specialist,
+  SpecialistAssignment,
   SpecialistTool,
   TechnicalReview,
   WorkKind,
@@ -266,8 +267,8 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "read_issues",
-    description: "Read GitHub issues and open pull requests; pass number to read one issue with its body.",
-    properties: { number: { type: "integer", minimum: 1 }, state: { type: "string", enum: ["open", "closed", "all"] } },
+    description: "Read GitHub issues and open pull requests, a page of 50 issues at a time (page); pass number to read one issue with its body.",
+    properties: { number: { type: "integer", minimum: 1 }, state: { type: "string", enum: ["open", "closed", "all"] }, page: { type: "integer", minimum: 1 } },
     required: [],
     readOnly: true,
   },
@@ -369,10 +370,16 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_team",
     description:
-      "Read the project team. Without arguments: a summary that fits any team, one line per specialist (id, name, role, whether it is a fixed role, status, last update and current assignment), a page of at most " +
-      "20 specialists (page), the automatic work of the fixed roles (automaticWork: for each, running, due, waiting or idle, why it has not started and whether start_automatic_work may start it now), the pending team proposal, what composeTeam and executeInWorktree would get now, and the connected providers with their models. " +
-      "Pass specialistID (id or name) for one specialist in full: competence, reason, modules, the moments of the flow it works at with the AI Hero skills it relies on there, its current assignment with result, report and questions, and its latest assignments. Always read the team state with it before saying what the team is doing.",
-    properties: { specialistID: text, page: { type: "integer", minimum: 1 } },
+      "Read the project team. Without arguments, short on purpose: one line per figure (id, name, role, status, current assignment, its candidate and what blocks it), a page of at most " +
+      "20 figures (page), the squads with the top of each backlog, the automatic work of the fixed roles (automaticWork: for each, running, due, waiting or idle, why it has not started and whether start_automatic_work may start it now), the pending team proposal, what composeTeam and executeInWorktree would get now, and how many models each connected provider offers. " +
+      "Pass specialistID (id or name) for one figure in full: competence, reason, modules, the moments of the flow it works at with the AI Hero skills it relies on there, its current assignment with result, report and questions, and its latest assignments. Pass assignmentID for one assignment in full with its candidate and what blocks it. Pass section providers for every connected provider with its models and efforts, section backlog for every item of the squads' backlogs (squad for one squad). Always read the team state with it before saying what the team is doing.",
+    properties: {
+      specialistID: text,
+      assignmentID: text,
+      section: { type: "string", enum: ["providers", "backlog"] },
+      squad: text,
+      page: { type: "integer", minimum: 1 },
+    },
     required: [],
     readOnly: true,
   },
@@ -448,7 +455,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "order_backlog",
     description:
-      "Order a squad's backlog (A13): the slices and the found problems of its area not taken yet, as read_team lists them under each squad's backlog. Give the item keys from the top, each with a reason in one line in the person's language; the items you leave out follow Trama's rule after yours. The person's order wins: the items they placed keep their place, and your order fills the others. Take work from the top of the backlog, skipping blocked and paused slices. Leave squadID out for the backlog of the work no squad owns (unownedBacklog).",
+      "Order a squad's backlog (A13): the slices and the found problems of its area not taken yet, as read_team with section backlog lists them under each squad. Give the item keys from the top, each with a reason in one line in the person's language; the items you leave out follow Trama's rule after yours. The person's order wins: the items they placed keep their place, and your order fills the others. Take work from the top of the backlog, skipping blocked and paused slices. Leave squadID out for the backlog of the work no squad owns (unownedBacklog).",
     properties: {
       squadID: text,
       items: { type: "array", items: { type: "object", properties: { key: text, reason: text }, required: ["key", "reason"] } },
@@ -968,36 +975,120 @@ const TEAM_PAGE = 20;
 
 const clip = (value: string, limit: number) => (value.length > limit ? `${value.slice(0, limit)}…` : value);
 
-/** One line of read_team: enough to know who is doing what, whatever the size of the team. */
-function specialistSummary(specialist: Specialist): JsonObject {
+/** About how many characters a reading tool returns at most: a longer answer costs the Coordinator time and context. */
+const READ_LIMIT = 24_000;
+
+/** The issues read_issues lists at a time. */
+const ISSUES_PAGE = 50;
+
+/** A copy of `value` with each string field clipped to `limit` characters, for a reading tool. */
+function clippedTexts(value: JsonObject, limit: number): JsonObject {
+  return Object.fromEntries(Object.entries(value).map(([key, field]) => [key, typeof field === "string" ? clip(field, limit) : field])) as JsonObject;
+}
+
+/** How to ask a reading tool for less, when its answer is too long anyway. */
+const NARROWER_READING: Record<string, string> = {
+  read_team: "pass specialistID, assignmentID, section or page",
+  read_history: "pass a smaller limit or beforeSequence",
+  read_issues: "pass number for one issue, or page",
+  read_presence: "pass terms or moduleIDs",
+  read_discussions: "pass discussionID for one discussion",
+  read_study: "pass part for one part of the study",
+  read_pact: "name the decision you need to the person, or read it in the Pact view",
+  read_goals: "name the goal you need",
+};
+
+/**
+ * A reading tool's answer past twice READ_LIMIT: its start, and how to ask for less. A safety net for the tools
+ * without a shorter form of their own.
+ */
+function cappedReading(name: string, result: ToolResult): ToolResult {
+  const text = result.content[0]?.text ?? "";
+  if (result.isError || !(name in NARROWER_READING) || text.length <= 2 * READ_LIMIT) return result;
+  return toolSuccess({
+    truncated: true,
+    characters: text.length,
+    note: `The answer is too long to read at once: ${NARROWER_READING[name]}. Its start follows.`,
+    start: text.slice(0, READ_LIMIT),
+  });
+}
+
+/** The items of a squad's backlog read_team shows by default; section backlog lists them all. */
+const BACKLOG_TOP = 5;
+
+/** A candidate in one line: its state and the first thing that blocks it, from Trama's records. */
+function candidateLine(document: ProjectDocument, candidate: Candidate): JsonObject {
+  const report = candidateReport(document, candidate, null);
+  const blocker = report.blockers[0];
+  return { id: candidate.id, state: report.state, blocker: blocker ? clip(`${blocker.code}: ${blocker.detail}`, 160) : null };
+}
+
+/**
+ * One line of read_team: who the figure is, what it does now, its candidate and what blocks it, whatever the size of
+ * the team. The rest is one call away (specialistID, assignmentID).
+ */
+function specialistSummary(document: ProjectDocument, specialist: Specialist): JsonObject {
   const current = currentAssignment(specialist);
+  const candidate = current ? latestCandidate(document, current.id) : null;
   return {
     id: specialist.id,
     name: specialist.name,
-    tag: specialist.tag,
-    color: specialist.color,
+    ...(specialist.tag ? { tag: specialist.tag } : {}),
     role: specialist.role,
-    fixedRole: isFixedRole(specialist.role),
+    ...(isFixedRole(specialist.role) ? { fixedRole: true } : {}),
     status: specialist.status,
-    lastUpdate: clip(specialist.lastUpdate, 200),
-    updatedAt: specialist.updatedAt,
     assignment: current
       ? {
           id: current.id,
           status: current.status,
-          objective: clip(current.objective, 200),
-          startedByTrama: current.duty ? current.duty.skill : null,
+          objective: clip(current.objective, 120),
+          ...(current.duty ? { startedByTrama: current.duty.skill } : {}),
           ...(current.duty?.requestedBy ? { requestedBy: current.duty.requestedBy } : {}),
         }
       : null,
+    ...(candidate ? { candidate: candidateLine(document, candidate) } : {}),
   };
 }
 
+/** One assignment in full: objective, result, report, questions, failure and its candidate. */
+function assignmentFields(document: ProjectDocument, assignment: SpecialistAssignment): JsonObject {
+  const candidate = latestCandidate(document, assignment.id);
+  return {
+    id: assignment.id,
+    status: assignment.status,
+    objective: assignment.objective,
+    moduleIDs: assignment.moduleIds,
+    model: assignment.model,
+    modelReason: assignment.modelReason ?? null,
+    goalID: assignment.goalId ?? null,
+    worktreeBranch: assignment.workspace?.branch ?? null,
+    result: assignment.result,
+    // The developer's structured report (W05): its statement, never evidence.
+    report: (assignment.report ?? null) as unknown as Json,
+    // The developer's questions to the Coordinator (W06), with their answers.
+    questions: (assignment.questions ?? []) as unknown as Json,
+    failure: assignment.failure,
+    startedByTrama: assignment.duty
+      ? ({ skill: assignment.duty.skill, trigger: assignment.duty.trigger, ...(assignment.duty.requestedBy ? { requestedBy: assignment.duty.requestedBy } : {}) } as unknown as Json)
+      : null,
+    candidate: candidate ? candidateLine(document, candidate) : null,
+  };
+}
+
+/** read_team with assignmentID: one assignment in full, with who has it. */
+function assignmentDetail(document: ProjectDocument, assignment: SpecialistAssignment): JsonObject {
+  const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId);
+  return { ...assignmentFields(document, assignment), specialist: specialist?.name ?? assignment.specialistId, specialistID: assignment.specialistId };
+}
+
 /** read_team with specialistID: one specialist in full. */
-function specialistDetail(specialist: Specialist): JsonObject {
+function specialistDetail(document: ProjectDocument, specialist: Specialist): JsonObject {
   const current = currentAssignment(specialist);
   return {
-    ...specialistSummary(specialist),
+    ...specialistSummary(document, specialist),
+    color: specialist.color,
+    lastUpdate: specialist.lastUpdate,
+    updatedAt: specialist.updatedAt,
     competence: specialist.competence,
     reason: specialist.reason,
     moments: roleDuties(ITALIAN, specialist.role) as unknown as Json,
@@ -1007,27 +1098,7 @@ function specialistDetail(specialist: Specialist): JsonObject {
     ...(specialist.chosenModel
       ? { modelChosenByPerson: { provider: specialist.chosenModel.provider, model: specialist.chosenModel.model, effort: specialist.chosenModel.effort } }
       : {}),
-    assignment: current
-      ? {
-          id: current.id,
-          status: current.status,
-          objective: current.objective,
-          moduleIDs: current.moduleIds,
-          model: current.model,
-          modelReason: current.modelReason ?? null,
-          goalID: current.goalId ?? null,
-          worktreeBranch: current.workspace?.branch ?? null,
-          result: current.result,
-          // The developer's structured report (W05): its statement, never evidence.
-          report: (current.report ?? null) as unknown as Json,
-          // The developer's questions to the Coordinator (W06), with their answers.
-          questions: (current.questions ?? []) as unknown as Json,
-          failure: current.failure,
-          startedByTrama: current.duty
-            ? ({ skill: current.duty.skill, trigger: current.duty.trigger, ...(current.duty.requestedBy ? { requestedBy: current.duty.requestedBy } : {}) } as unknown as Json)
-            : null,
-        }
-      : null,
+    assignment: current ? assignmentFields(document, current) : null,
     latestAssignments: specialist.assignments
       .slice(-6, -1)
       .reverse()
@@ -1036,6 +1107,10 @@ function specialistDetail(specialist: Specialist): JsonObject {
 }
 
 export async function runCoordinatorTool(name: string, args: JsonObject, context: ToolContext): Promise<ToolResult> {
+  return cappedReading(name, await runTool(name, args, context));
+}
+
+async function runTool(name: string, args: JsonObject, context: ToolContext): Promise<ToolResult> {
   const { document } = context;
   try {
     switch (name) {
@@ -1083,9 +1158,13 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           return toolSuccess({ ...issue, body: issue.body.slice(0, 16_000) });
         }
         const state = typeof args.state === "string" ? args.state : "open";
-        const issues = context.github.issues
-          .filter((i) => state === "all" || i.state === state)
-          .map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels, updatedAt: i.updatedAt }));
+        const matching = context.github.issues.filter((i) => state === "all" || i.state === state);
+        // A page of issues at a time: a repository with hundreds of them stays readable.
+        const pages = Math.max(1, Math.ceil(matching.length / ISSUES_PAGE));
+        const page = typeof args.page === "number" ? Math.min(pages, Math.max(1, Math.floor(args.page))) : 1;
+        const issues = matching
+          .slice((page - 1) * ISSUES_PAGE, page * ISSUES_PAGE)
+          .map((i) => ({ number: i.number, title: clip(i.title, 160), state: i.state, labels: i.labels, updatedAt: i.updatedAt }));
         const pullRequests = (context.github.snapshot?.pullRequests ?? []).map((p) => ({
           number: p.number,
           title: p.title,
@@ -1094,14 +1173,25 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           base: p.baseRef,
           draft: p.draft,
         }));
-        return toolSuccess({ repository: context.github.repository, issues, openPullRequests: pullRequests });
+        return toolSuccess({ repository: context.github.repository, issues, ...(pages > 1 ? { page, pages, note: `Page ${page} of ${pages} of ${matching.length} issues: pass page for the others, number for one issue.` } : {}), openPullRequests: pullRequests });
       }
       case "read_history": {
         const limit = typeof args.limit === "number" ? Math.min(100, Math.max(1, args.limit)) : 30;
         const before = typeof args.beforeSequence === "number" ? args.beforeSequence : Number.POSITIVE_INFINITY;
         const events = document.events.filter((e) => e.sequence < before).slice(-limit);
+        // The latest events first, each long text clipped, until the answer reaches READ_LIMIT: the rest is one call away.
+        const kept: JsonObject[] = [];
+        let size = 0;
+        for (const e of [...events].reverse()) {
+          const item = { sequence: e.sequence, origin: e.origin, createdAt: e.createdAt, content: clippedTexts(e.content as unknown as JsonObject, 1_500) };
+          size += JSON.stringify(item).length;
+          if (kept.length && size > READ_LIMIT) break;
+          kept.unshift(item);
+        }
+        const left = events.length - kept.length;
         return toolSuccess({
-          events: events.map((e) => ({ sequence: e.sequence, origin: e.origin, createdAt: e.createdAt, content: e.content as unknown as Json })),
+          events: kept,
+          ...(left > 0 ? { note: `${left} older events left out to keep the answer short: pass beforeSequence ${kept[0]!.sequence} for them.` } : {}),
         });
       }
       case "memory":
@@ -1284,21 +1374,51 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (typeof args.specialistID === "string" && args.specialistID.trim()) {
           const specialist = findSpecialist(document, args.specialistID);
           if (!specialist) return toolFailure("unknown_specialist", `Unknown specialist: ${args.specialistID}. read_team without arguments lists them.`);
-          return toolSuccess(specialistDetail(specialist));
+          return toolSuccess(specialistDetail(document, specialist));
+        }
+        if (typeof args.assignmentID === "string" && args.assignmentID.trim()) {
+          const assignment = findAssignment(document, args.assignmentID.trim());
+          if (!assignment) return toolFailure("unknown_assignment", `Unknown assignment: ${args.assignmentID}. read_team without arguments lists the current assignment of each figure.`);
+          return toolSuccess(assignmentDetail(document, assignment));
+        }
+        const backlogs = squadBacklogs(document, context.snapshot?.modules ?? []);
+        if (args.section === "providers") {
+          return toolSuccess({
+            providers: context.providers.map((p) => ({
+              id: p.id,
+              models: (p.catalog ?? p.models).map((entry) =>
+                typeof entry === "string" ? entry : { model: entry.model, ...(entry.supportedReasoningEfforts?.length ? { efforts: [...entry.supportedReasoningEfforts] } : {}) },
+              ),
+            })) as unknown as Json,
+            defaultProvider: context.defaultProvider,
+          });
+        }
+        if (args.section === "backlog") {
+          const named = typeof args.squad === "string" && args.squad.trim() ? findSquad(document, args.squad) : null;
+          if (typeof args.squad === "string" && args.squad.trim() && !named) return toolFailure("unknown_squad", `Unknown squad: ${args.squad}. read_team lists the squads.`);
+          return toolSuccess({
+            squads: teamSquads(document)
+              .filter((squad) => !named || squad.id === named.id)
+              .map((squad) => ({ id: squad.id, name: squad.name, backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json })),
+            ...(named ? {} : { unownedBacklog: backlogForTool(backlogs.find((b) => b.squadId === null) ?? { squadId: null, items: [] }) as unknown as Json }),
+          });
         }
         const pages = Math.max(1, Math.ceil(team.specialists.length / TEAM_PAGE));
         const page = typeof args.page === "number" ? Math.min(pages, Math.max(1, Math.floor(args.page))) : 1;
         const pending = team.proposals.find((p) => !p.resolution);
-        const backlogs = squadBacklogs(document, context.snapshot?.modules ?? []);
+        /** The top of a backlog, and how many items the full list has beyond it. */
+        const top = (squadId: string | null) => {
+          const backlog = backlogs.find((b) => b.squadId === squadId) ?? { squadId, items: [] };
+          const more = backlog.items.length - BACKLOG_TOP;
+          return { items: backlogForTool({ ...backlog, items: backlog.items.slice(0, BACKLOG_TOP) }) as unknown as Json, ...(more > 0 ? { more } : {}) };
+        };
         return toolSuccess({
           confirmed: isTeamConfirmed(document),
-          pendingProposal: pending
-            ? { id: pending.id, summary: pending.summary, members: pending.members.map((m) => ({ name: m.name, competence: clip(m.competence, 160) })) }
-            : null,
+          pendingProposal: pending ? { id: pending.id, summary: pending.summary ? clip(pending.summary, 300) : null, members: pending.members.map((m) => m.name) } : null,
           page,
           pages,
           specialistCount: team.specialists.length,
-          specialists: team.specialists.slice((page - 1) * TEAM_PAGE, page * TEAM_PAGE).map(specialistSummary),
+          specialists: team.specialists.slice((page - 1) * TEAM_PAGE, page * TEAM_PAGE).map((s) => specialistSummary(document, s)),
           // The squads by product area (A10), with their status line; the shared roles belong to none.
           squads: teamSquads(document).map((squad) => ({
             id: squad.id,
@@ -1308,12 +1428,12 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             qaID: squad.qaId,
             developerIDs: squad.developerIds,
             status: squadStatusLine(ITALIAN, document, squad),
-            // The squad's backlog (A13), from the top: take work from there, skipping blocked and paused slices.
-            backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json,
+            // The top of the squad's backlog (A13): take work from there, skipping blocked and paused slices.
+            backlog: top(squad.id),
             // The person renamed, merged or split it (A11): leave it as it is.
             changedByPerson: Boolean(squad.touchedAt),
           })),
-          unownedBacklog: backlogForTool(backlogs.find((b) => b.squadId === null) ?? { squadId: null, items: [] }) as unknown as Json,
+          unownedBacklog: top(null),
           squadLimits: squadLimits(document) as unknown as Json,
           automaticWork: (context.automaticWork?.() ?? []).map((w) => ({
             work: w.kind,
@@ -1327,15 +1447,10 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             composeTeam: authorize(document.mandate, "composeTeam"),
             executeInWorktree: authorize(document.mandate, "executeInWorktree"),
           },
-          models: context.models,
-          providers: context.providers.map((p) => ({
-            id: p.id,
-            models: (p.catalog ?? p.models).map((entry) =>
-              typeof entry === "string" ? entry : { model: entry.model, ...(entry.supportedReasoningEfforts?.length ? { efforts: [...entry.supportedReasoningEfforts] } : {}) },
-            ),
-          })) as unknown as Json,
+          // How many models each connected provider offers: section providers lists them.
+          providers: context.providers.map((p) => ({ id: p.id, models: (p.catalog ?? p.models).length })),
           defaultProvider: context.defaultProvider,
-          note: "Pass specialistID for one specialist in full: competence, reason, moments, current assignment with result, report and questions.",
+          note: "Short on purpose. For the detail: specialistID for one figure in full (competence, reason, moments, current assignment with result, report and questions); assignmentID for one assignment in full with its candidate and what blocks it; section providers for every connected provider with its models and efforts; section backlog for every item of the squads' backlogs (squad for one squad); page for the next figures.",
         });
       }
       case "start_automatic_work": {
