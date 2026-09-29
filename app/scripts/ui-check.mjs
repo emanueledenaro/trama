@@ -1133,9 +1133,14 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.getByTestId("specialist-now").waitFor();
     const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
     if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
-    for (const fold of ["Perché è nella squadra", "Quando interviene", "Colore"]) {
+    for (const fold of ["Perché è nella squadra", "Quando interviene"]) {
       if ((await detail.getByRole("button", { name: fold }).getAttribute("aria-expanded")) !== "false") throw new Error(`${fold} is not closed at first`);
     }
+    // Issue #455: the tab opens in the editor, so no way back to Squadre sits on top; the settings are in view, not folded.
+    if ((await detail.getByRole("button", { name: "Squadre", exact: true }).count()) || (await detail.getByText("›", { exact: true }).count())) throw new Error("The person's tab still shows the path to Squadre");
+    await detail.getByTestId("agent-settings").getByRole("button", { name: /^Modello di / }).waitFor();
+    await detail.getByTestId("agent-settings").getByRole("radiogroup", { name: "Colore dell'agente" }).waitFor();
+    if (await detail.getByRole("button", { name: "Colore", exact: true }).count()) throw new Error("The color still waits in a closed section");
     await noHorizontalScroll(`person of the squad ${size}`);
     for (const provider of ["codex", "claudeAgent"]) {
       for (const dark of [false, true]) {
@@ -1144,7 +1149,7 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
       }
     }
     await setLookTo(teamsLook.provider, teamsLook.dark);
-    await detail.getByRole("button", { name: "Squadre", exact: true }).click();
+    // The Squads view stays in the side bar next to the tab (B07).
     await summary.waitFor();
   }
   // The person's tab stays open after going back to the list (issue #336): close it, as the side bar did.
@@ -1208,13 +1213,44 @@ await personTab.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_0
 await personTab.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // The tab takes the new name too.
 await page.locator('[data-testid="editor-tab"][data-selected="true"]').getByText("Giulia", { exact: true }).waitFor();
-// W15: the person picks another color; only the avatar and the tag take it. The color waits in a closed section (issue #333).
-await personTab.getByRole("button", { name: "Colore", exact: true }).click();
-await personTab.getByRole("radio", { name: "Rame" }).click();
+// W15: the person picks another color; only the avatar and the tag take it. The color is in the settings, in view (issue #455).
+await personTab.getByTestId("agent-settings").getByRole("radio", { name: "Rame" }).click();
 await personTab.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
 await shot("04e4-team-color");
 await personTab.getByTestId("specialist-squad").getByText(/^Squadra .+, sviluppatore\.$/).waitFor();
-await personTab.getByRole("button", { name: "Squadre", exact: true }).click();
+// Issue #455: the person chooses the agent's model with the composer's picker; it applies from the next assignments and the
+// Coordinator's choice comes back from an icon with its tooltip.
+{
+  const teamsLookAtStart = await lookOf();
+  const settings = personTab.getByTestId("agent-settings");
+  if ((await settings.getAttribute("data-model-state")) !== "none") throw new Error("A new agent already has a model the person chose");
+  await settings.getByTestId("agent-model-note").getByText("Lo sceglie il Coordinatore per ogni incarico.", { exact: false }).waitFor();
+  await settings.getByRole("button", { name: "Modello di Giulia", exact: true }).click();
+  await page.getByRole("listbox", { name: "Modelli" }).getByRole("option", { name: /^GPT-5\.5 Fast/ }).click();
+  await personTab.locator('[data-testid="agent-settings"][data-model-state="ready"]').waitFor({ timeout: 20_000 });
+  await settings.getByTestId("agent-model").getByText("GPT-5.5 Fast", { exact: true }).waitFor();
+  await settings.getByTestId("agent-model-note").getByText("Vale dai prossimi incarichi", { exact: false }).waitFor();
+  const reset = settings.getByRole("button", { name: "Lascia la scelta al Coordinatore", exact: true });
+  if ((await reset.innerText()).trim()) throw new Error("Leaving the model to the Coordinator is not an icon");
+  await reset.hover();
+  await page.getByRole("tooltip").getByText("Lascia la scelta al Coordinatore").waitFor();
+  await expectNoRawIds(settings, "The agent's settings");
+  await settings.scrollIntoViewIfNeeded();
+  await themeShots("04e6-agent-settings");
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await shot(`04e6b-agent-settings-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLookTo(teamsLookAtStart.provider, teamsLookAtStart.dark);
+  await settings.getByRole("button", { name: "Modello di Giulia", exact: true }).click();
+  await page.getByRole("listbox", { name: "Modelli" }).waitFor();
+  await shot("04e6c-agent-model-picker");
+  await page.keyboard.press("Escape");
+  await reset.click();
+  await personTab.locator('[data-testid="agent-settings"][data-model-state="none"]').waitFor({ timeout: 20_000 });
+}
 await teamPanel.getByTestId("team-developer").filter({ hasText: "Giulia" }).waitFor();
 await openSharedRoles();
 await sharedRoles.scrollIntoViewIfNeeded();
@@ -1249,6 +1285,21 @@ await shot("04e2b-specialist-narrow");
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("04e2c-specialist-narrow-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Issue #455: at the narrowest width the settings keep the model field and the palette inside the tab, light and dark.
+{
+  const settings = personTab.getByTestId("agent-settings");
+  await settings.scrollIntoViewIfNeeded();
+  const fits = await settings.evaluate((el) => {
+    const tab = el.closest('[data-testid="editor-detail"]').getBoundingClientRect();
+    return [...el.querySelectorAll('[data-testid="agent-model"], [role="radio"]')].every((item) => {
+      const box = item.getBoundingClientRect();
+      return box.left >= tab.left - 0.5 && box.right <= tab.right + 0.5;
+    });
+  });
+  if (!fits) throw new Error("The agent's settings overflow the tab at the narrowest width");
+  await noHorizontalScroll("agent settings narrow");
+  await themeShots("04e2d-agent-settings-narrow");
+}
 await page.setViewportSize({ width: 1280, height: 820 });
 if ((await personTab.getByRole("button", { name: "Altre azioni", exact: true }).count()) || (await page.getByRole("menuitem", { name: "Rinomina" }).count())) throw new Error("A fixed role offers a rename");
 await closePanels();

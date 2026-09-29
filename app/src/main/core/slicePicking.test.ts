@@ -8,6 +8,9 @@ import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pa
 import { DEFAULT_SLICE_CHECKS, type PickInput, type PickOutcome, pickSlices, sliceModules } from "./slicePicking";
 import { sliceViews } from "./slices";
 import { activeDevelopers, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 26, 10, minute));
 
@@ -241,6 +244,18 @@ describe("independent movement (W08)", () => {
     expect(waiting(none)).toEqual(["S1: Nessun provider collegato può lavorare ora.", "S2: Nessun provider collegato può lavorare ora."]);
     const [first] = picked(pickSlices(document, input({ providers: [{ id: "claudeAgent", models: ["sonnet"] }], fallback: { provider: "claudeAgent", model: "sonnet" } })));
     expect(first!.assignment).toMatchObject({ provider: "claudeAgent", model: "sonnet" });
+  });
+
+  it("takes the model the person chose for the developer while its provider can run it, else goes on as before (issue #455)", () => {
+    const tickets = [ticket(1, [], "Sources/Orders"), ticket(2, [], "Sources/Payments")];
+    const { document } = project(tickets);
+    for (const developer of document.team.specialists.filter((s) => s.role === "developer")) {
+      developer.chosenModel = { provider: "claudeAgent", model: "opus", effort: "high", chosenAt: "" };
+    }
+    const offline = picked(pickSlices(structuredClone(document), input()));
+    expect(offline[0]!.assignment).toMatchObject({ provider: "codex", model: "gpt-5.6-luna", modelReason: t("main.slicePicking.modelReason") });
+    const [first] = picked(pickSlices(document, input({ providers: [{ id: "codex", models: ["gpt-5.6-luna"] }, { id: "claudeAgent", models: ["opus"] }] })));
+    expect(first!.assignment).toMatchObject({ provider: "claudeAgent", model: "opus", effort: "high", modelReason: t("main.team.personModelReason") });
   });
 
   it("keeps a developer whose work is paused on a question out of the free ones (W06)", () => {

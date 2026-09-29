@@ -18,6 +18,7 @@ import {
   requestStop,
   resumeAssignment,
   setSpecialistColor,
+  setSpecialistModel,
   teamMembers,
   stopOrphanedAssignments,
   teamMessage,
@@ -252,6 +253,21 @@ describe("agent identity (W13, W15)", () => {
     const qa = document.team.specialists.find((s) => s.role === "qa")!;
     expect(setSpecialistColor(document, qa.id, "copper").color).toBe("copper");
     expect(() => setSpecialistColor(document, qa.id, "green" as never)).toThrow(expect.objectContaining({ code: "invalid_color" }));
+  });
+
+  it("keeps the model the person chose for an agent apart from the latest assignment's (issue #455)", () => {
+    const document = emptyDocument("p");
+    const qa = document.team.specialists.find((s) => s.role === "qa")!;
+    const now = new Date("2026-09-29T10:00:00Z");
+    const { specialist, previous } = setSpecialistModel(document, qa.id, { provider: "claudeAgent", model: " opus ", effort: "high" }, now);
+    expect(previous).toBeNull();
+    expect(specialist.chosenModel).toEqual({ provider: "claudeAgent", model: "opus", effort: "high", chosenAt: now.toISOString() });
+    expect(specialist.model).toBeNull();
+    expect(setSpecialistModel(document, qa.id, { provider: "codex", model: "gpt-5.5", effort: " " }).specialist.chosenModel).toMatchObject({ model: "gpt-5.5", effort: null });
+    const cleared = setSpecialistModel(document, qa.id, { provider: "codex", model: null, effort: null });
+    expect(cleared.previous).toMatchObject({ provider: "codex", model: "gpt-5.5" });
+    expect(cleared.specialist.chosenModel).toBeNull();
+    expect(() => setSpecialistModel(document, "S-NOPE", { provider: "codex", model: "gpt-5.5", effort: null })).toThrow(expect.objectContaining({ code: "unknown_specialist" }));
   });
 });
 

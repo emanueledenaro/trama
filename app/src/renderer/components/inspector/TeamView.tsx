@@ -1,6 +1,6 @@
 import { assignmentLine, specialistLine } from "@shared/duties";
 import {
-  IconArrowLeft,
+  IconArrowBackUp,
   IconCheck,
   IconChecklist,
   IconChevronDown,
@@ -31,6 +31,8 @@ import { assignmentStatus, candidateStatus } from "@shared/states";
 import { type MemberSign, memberSign, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
 import { AgentAvatar, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
+import { type ModelPick, ModelPicker } from "@/components/chat/ModelPicker";
+import { agentModelState } from "@shared/agentModel";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -619,14 +621,13 @@ const OPEN_WORK: SpecialistAssignment["status"][] = ["preparing", "running", "st
 
 /**
  * A person of the squad (issue #333, the specialist of W13): the header with the bot, the name, the role and the sign,
- * Ask and the menu with Rename and Remove; then the work now, the last result, the assignments and the conversations
- * between agents as compact rows; and closed at the bottom why it is in the squad, when it steps in, its working copy
- * and its color. Until B07 it opens in the side bar with the way back.
+ * Ask and the menu with Rename and Remove; then the work now, the last result, the settings with its model and its
+ * look (issue #455), the assignments and the conversations between agents as compact rows; and closed at the bottom
+ * why it is in the squad, when it steps in and its working copy.
  */
 export function SpecialistView({ id }: { id: string }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
-  const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -634,7 +635,6 @@ export function SpecialistView({ id }: { id: string }) {
   const [whyOpen, toggleWhy] = useFold();
   const [dutiesOpen, toggleDuties] = useFold();
   const [workspaceOpen, toggleWorkspace] = useFold();
-  const [colorOpen, toggleColor] = useFold();
   const document = project.document;
   const specialist = document.team.specialists.find((s) => s.id === id);
   if (!specialist) return <div className="p-4"><EmptyNote>{t("teams.person.missing")}</EmptyNote></div>;
@@ -642,7 +642,6 @@ export function SpecialistView({ id }: { id: string }) {
   const busy = current && ["preparing", "running", "stopRequested"].includes(current.status);
   const fixed = isFixedRole(specialist.role);
   const sign = memberSign(document, project.candidateReports, specialist);
-  const squad = squadPart(document, specialist).squad;
   const now = current && OPEN_WORK.includes(current.status) ? current : null;
   const lastResult = [...specialist.assignments].reverse().find((a) => a.status === "completed" && a.id !== now?.id) ?? null;
   const others = [...specialist.assignments].reverse().filter((a) => a.id !== now?.id && a.id !== lastResult?.id);
@@ -656,22 +655,10 @@ export function SpecialistView({ id }: { id: string }) {
   return (
     <div data-testid="specialist" data-specialist-id={specialist.id}>
       <div className="border-b border-[color:var(--app-surface-divider)] px-4 pt-3 pb-3">
-        <div className="flex min-w-0 items-center gap-1 text-ui-sm text-muted-foreground">
-          <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setInspector({ kind: "team" })}>
-            <IconArrowLeft className="size-3.5" /> {t("workbench.view.teams")}
-          </button>
-          {squad ? (
-            <>
-              <span aria-hidden className="text-muted-foreground/60">
-                ›
-              </span>
-              <span className="min-w-0 truncate">{squad.name}</span>
-            </>
-          ) : null}
-        </div>
         {/* The bot sits beside the header, so it takes no room from the name and the status; the status never shrinks.
-            The id stays on hover. */}
-        <div className="mt-2 flex items-start gap-3" data-testid="specialist-header" title={specialist.id}>
+            The id stays on hover. The tab opens in the editor (B07), so no way back to Squadre sits on top: the squad
+            is in the line under the name (issue #455). */}
+        <div className="flex items-start gap-3" data-testid="specialist-header" title={specialist.id}>
           <AgentAvatar agent={specialist} size={48} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
@@ -764,6 +751,7 @@ export function SpecialistView({ id }: { id: string }) {
         </InspectorSection>
       ) : null}
       {fixed ? <AutomaticWorkSection role={specialist.role} /> : null}
+      {specialist.status !== "removed" ? <AgentSettings specialist={specialist} /> : null}
       <InspectorSection title={t("teams.person.assignments", { count: specialist.assignments.length })}>
         {specialist.assignments.length === 0 ? <EmptyNote>{t("teams.person.noAssignments")}</EmptyNote> : null}
         {specialist.assignments.length && !others.length ? <EmptyNote>{t("teams.person.noOtherAssignments")}</EmptyNote> : null}
@@ -819,11 +807,6 @@ export function SpecialistView({ id }: { id: string }) {
               {t("teams.person.removeWorkspace")}
             </Button>
           </div>
-        </Fold>
-      ) : null}
-      {specialist.status !== "removed" ? (
-        <Fold open={colorOpen} onToggle={toggleColor} title={t("teams.person.color")}>
-          <AgentColorPicker specialist={specialist} />
         </Fold>
       ) : null}
     </div>
@@ -985,6 +968,81 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
         </Button>
       </div>
     </div>
+  );
+}
+
+/** The trigger of the agent's model, as a field of the settings. */
+const MODEL_FIELD =
+  "inline-flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-[color:var(--color-border-light)] px-2 text-ui-sm text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)]";
+
+/**
+ * The agent's settings, always in view (issue #455): the model of its next assignments, with the composer's picker,
+ * and its look. Without a choice of the person the Coordinator picks the model for each assignment; a choice that
+ * cannot run now says why, and the Coordinator's default runs the work meanwhile.
+ */
+function AgentSettings({ specialist }: { specialist: Specialist }) {
+  const t = useT();
+  const providers = useUi((s) => s.app!.providers);
+  const coordinatorProvider = useUi((s) => s.app?.project?.document.coordinator.threadProvider ?? "codex");
+  const chosen = specialist.chosenModel ?? null;
+  const runnable = PROVIDERS.map((p) => p.id as ProviderId)
+    .filter((id) => isUsableAccount(providers[id]?.account ?? null))
+    .map((id) => ({ id, models: providers[id]?.models ?? [] }));
+  const state = agentModelState(chosen, runnable);
+  const provider = chosen?.provider ?? coordinatorProvider;
+  const info = chosen ? providers[provider]?.models.find((m) => m.model === chosen.model) : undefined;
+  const note =
+    state === "providerOff"
+      ? t("teams.settings.providerOff", { provider: providerLabel(provider) })
+      : state === "modelGone"
+        ? t("teams.settings.modelGone", { provider: providerLabel(provider), model: chosen!.model })
+        : t(state === "ready" ? "teams.settings.byPerson" : "teams.settings.byCoordinator");
+  const pick = (next: ModelPick) => void act("specialist:setModel", { specialistId: specialist.id, provider: next.provider, model: next.model, effort: next.effort });
+  return (
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3" data-testid="agent-settings" data-model-state={state}>
+      <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">{t("teams.settings.title")}</h4>
+      <div className="flex flex-col gap-3">
+        <div data-testid="agent-settings-model">
+          <h5 className="text-ui-xs text-muted-foreground">{t("teams.settings.model")}</h5>
+          <div className="mt-1 flex min-w-0 items-center gap-1">
+            <ModelPicker
+              className={MODEL_FIELD}
+              selectedProvider={provider}
+              selectedModel={chosen?.model ?? null}
+              effort={chosen ? (chosen.effort ?? info?.defaultReasoningEffort ?? null) : null}
+              modelMissing={state === "modelGone"}
+              busy={false}
+              fastMode={false}
+              onPick={pick}
+              label={t("teams.settings.modelLabel", { name: specialist.name })}
+              testId="agent-model"
+            />
+            {chosen ? (
+              <Tooltip label={t("teams.settings.reset")}>
+                <button
+                  type="button"
+                  aria-label={t("teams.settings.reset")}
+                  data-testid="agent-model-reset"
+                  className="sidebar-icon-button inline-flex size-7 shrink-0 items-center justify-center rounded-md"
+                  onClick={() => void act("specialist:setModel", { specialistId: specialist.id, provider: chosen.provider, model: null, effort: null })}
+                >
+                  <IconArrowBackUp className="size-4" stroke={1.8} />
+                </button>
+              </Tooltip>
+            ) : null}
+          </div>
+          <p className={cn("mt-1 text-ui-xs", state === "providerOff" || state === "modelGone" ? "text-warning" : "text-muted-foreground")} data-testid="agent-model-note">
+            {note}
+          </p>
+        </div>
+        <div data-testid="agent-settings-look">
+          <h5 className="text-ui-xs text-muted-foreground">{t("teams.settings.look")}</h5>
+          <div className="mt-1">
+            <AgentColorPicker specialist={specialist} />
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

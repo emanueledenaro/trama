@@ -127,6 +127,8 @@ export interface ActionMap {
   "squad:dismissMerge": [{ proposalId: string }, void];
   "specialist:rename": [{ specialistId: string; name: string }, void];
   "specialist:setColor": [{ specialistId: string; color: AgentColor }, void];
+  /** The person chooses the model of an agent's next assignments, or with a null model leaves it to the Coordinator (issue #455). */
+  "specialist:setModel": [{ specialistId: string; provider: ProviderId; model: string | null; effort: string | null }, void];
   /** The person starts a fixed role's automatic work now (issue #231). */
   "automaticWork:start": [AutomaticWorkRequest, void];
   "plan:cancel": [{ planId: string }, void];

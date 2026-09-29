@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AgentColor,
+  AgentModelChoice,
   AssignmentCommit,
   AssignmentPlace,
   CloudSession,
@@ -357,6 +358,27 @@ export function setSpecialistColor(document: ProjectDocument, id: string, color:
   return specialist;
 }
 
+/**
+ * The person chooses the provider, model and effort of an agent's next assignments (issue #455), or with a null model
+ * leaves them to the Coordinator again. The work in progress keeps its model. The caller checks the provider and its
+ * catalogue.
+ */
+export function setSpecialistModel(
+  document: ProjectDocument,
+  id: string,
+  choice: { provider: ProviderId; model: string | null; effort: string | null },
+  now = new Date(),
+): { specialist: Specialist; previous: AgentModelChoice | null } {
+  const specialist = document.team.specialists.find((s) => s.id === id);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${id} was removed from the team.`);
+  const previous = specialist.chosenModel ?? null;
+  const model = choice.model?.trim();
+  specialist.chosenModel = model ? { provider: choice.provider, model, effort: choice.effort?.trim() || null, chosenAt: now.toISOString() } : null;
+  specialist.updatedAt = now.toISOString();
+  return { specialist, previous };
+}
+
 export function removeSpecialist(document: ProjectDocument, id: string, reason: string, actor: string, now = new Date()): Specialist {
   const specialist = document.team.specialists.find((s) => s.id === id);
   if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
@@ -386,6 +408,8 @@ export interface AssignmentOrder {
   dependencies: string[];
   model: string;
   provider?: ProviderId;
+  /** The reasoning effort, when the person chose one for the agent (issue #455). */
+  effort?: string | null;
   /** The Coordinator's reason for the provider and model (UX05). */
   modelReason?: string | null;
   /** The goal the work serves (UX02). */
@@ -471,6 +495,7 @@ export function assign(
       dependencies,
       model,
       provider,
+      ...(order.effort ? { effort: order.effort } : {}),
       modelReason: order.modelReason?.trim() || null,
       ...(order.goalId ? { goalId: order.goalId } : {}),
       decisionVersions,
@@ -499,6 +524,7 @@ type AssignmentFields = Pick<
   | "moduleIds"
   | "dependencies"
   | "model"
+  | "effort"
   | "provider"
   | "modelReason"
   | "goalId"
@@ -555,6 +581,8 @@ export interface DutyOrder {
   issueNumber: number | null;
   model: string;
   provider: ProviderId;
+  /** The reasoning effort, when the person chose one for the role (issue #455). */
+  effort?: string | null;
   /** Why Trama chose this model, in the person's words. */
   modelReason: string;
   tools: SpecialistTool[];
@@ -590,6 +618,7 @@ export function assignDuty(document: ProjectDocument, order: DutyOrder, mandateV
       dependencies: [],
       model: required(order.model, "model"),
       provider: order.provider,
+      ...(order.effort ? { effort: order.effort } : {}),
       modelReason: order.modelReason,
       decisionVersions: {},
       tools: order.tools,

@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type ContextUsage, contextReading, invalidContextUsage } from "@shared/contextReading";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, readOutsideScopeTitle, toolRefusedTitle, type TurnEvent } from "@shared/codex";
+import { effortLabel } from "@shared/agentModel";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
@@ -284,6 +285,7 @@ import {
   removeSpecialist,
   renameSpecialist,
   setSpecialistColor,
+  setSpecialistModel,
   requestStop,
   assignmentsAffectedByDecision,
   authorize,
@@ -5098,6 +5100,7 @@ export class TramaController {
         prompt,
         cwd,
         model: assignment.model,
+        ...(assignment.effort ? { effort: assignment.effort } : {}),
         writableRoot: needsWorktree(assignment) ? cwd : null,
         ...(duty?.skills.length ? { skills: duty.skills } : developer?.skills.length ? { skills: developer.skills } : {}),
         ...(duty?.outputSchema ? { outputSchema: duty.outputSchema } : {}),
@@ -5372,7 +5375,7 @@ export class TramaController {
     if (!hasAdapter(provider) || !supportsReadOnly(provider)) return null;
     if (providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null)) return null;
     const chosen = dutyModel(this.state.providers[provider]?.models ?? [], document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
-    return chosen ? { provider, model: chosen.model, modelReason: chosen.reason } : null;
+    return chosen ? { provider, model: chosen.model, modelReason: chosen.reason, runnable: this.connectedProviders().map((p) => ({ id: p.id, models: p.catalog })) } : null;
   }
 
   /** What the rules of the fixed roles' automatic work read about the project now. */
@@ -5946,6 +5949,40 @@ export class TramaController {
   async setSpecialistColorByPerson(specialistId: string, color: AgentColor): Promise<void> {
     const project = this.requireProject();
     setSpecialistColor(project.document, specialistId, color);
+    this.changed();
+  }
+
+  /**
+   * The person chooses the provider, model and effort of an agent's next assignments (issue #455), or with a null model
+   * leaves them to the Coordinator. The provider must be one Trama knows and can use now, and its catalogue must offer
+   * the model. The work in progress keeps its model. Told in Activity.
+   */
+  async setSpecialistModelByPerson(specialistId: string, provider: ProviderId, model: string | null, effort: string | null): Promise<void> {
+    const project = this.requireProject();
+    const name = project.document.team.specialists.find((s) => s.id === specialistId)?.name ?? specialistId;
+    if (model?.trim()) {
+      if (!PROVIDERS.some((p) => p.id === provider)) throw new DomainError(t("main.controller.agentModelUnknownProvider", { provider: String(provider) }));
+      const reason = providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null);
+      if (reason) throw new DomainError(reason);
+      const models = this.state.providers[provider]?.models ?? [];
+      if (models.length && !catalogOffers(provider, models, model.trim())) {
+        throw new DomainError(t("main.controller.modelNotInCatalog", { model: model.trim(), provider: providerName(provider) }));
+      }
+    }
+    const { specialist } = setSpecialistModel(project.document, specialistId, { provider, model, effort });
+    const chosen = specialist.chosenModel;
+    appendEvent(project.document, "trama", {
+      type: "activity",
+      title: t(chosen ? "main.controller.agentModelChangedTitle" : "main.controller.agentModelClearedTitle", { name }),
+      detail: chosen
+        ? t(chosen.effort ? "main.controller.agentModelChangedDetailEffort" : "main.controller.agentModelChangedDetail", {
+            provider: providerName(chosen.provider),
+            model: this.state.providers[chosen.provider]?.models.find((m) => m.model === chosen.model)?.displayName ?? chosen.model,
+            effort: chosen.effort ? effortLabel(t, chosen.effort) : "",
+          })
+        : t("main.controller.agentModelClearedDetail"),
+      tone: "info",
+    });
     this.changed();
   }
 

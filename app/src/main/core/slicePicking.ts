@@ -1,4 +1,5 @@
 import { sliceBacklogKey } from "@shared/backlog";
+import { personModel } from "@shared/agentModel";
 import type { ProviderId } from "@shared/codex";
 import type { ProjectDocument, Specialist, SpecialistAssignment } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
@@ -51,8 +52,17 @@ export function coversModules(specialist: Specialist, moduleIds: string[]): bool
 /** When the developer last ended work: a developer free for longer picks first. */
 const freeSince = (specialist: Specialist) => specialist.assignments.at(-1)?.updatedAt ?? specialist.createdAt;
 
-/** The provider and model of the developer's work: its own, the plan's latest slice, or the fallback, while connected. */
-export function providerFor(specialist: Specialist, earlier: SpecialistAssignment[], input: PickInput): { provider: ProviderId; model: string } | null {
+/**
+ * The provider and model of the developer's work, while connected: the one the person chose for it (issue #455), its
+ * own latest, the plan's latest slice, or the fallback.
+ */
+export function providerFor(
+  specialist: Specialist,
+  earlier: SpecialistAssignment[],
+  input: PickInput,
+): { provider: ProviderId; model: string; effort?: string | null; byPerson?: boolean } | null {
+  const chosen = personModel(specialist, input.providers, true);
+  if (chosen) return { provider: chosen.provider, model: chosen.model, effort: chosen.effort, byPerson: true };
   const own = specialist.assignments.at(-1);
   const options = [
     specialist.model ? { provider: specialist.provider ?? own?.provider ?? "codex", model: specialist.model } : null,
@@ -170,7 +180,8 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
           decisionIds,
           model: chosen.model,
           provider: chosen.provider,
-          modelReason: t("main.slicePicking.modelReason"),
+          effort: chosen.effort ?? null,
+          modelReason: t(chosen.byPerson ? "main.team.personModelReason" : "main.slicePicking.modelReason"),
           goalId: requestGoalId(document, plan.requestId),
           tools: previous?.tools.includes("edits") ? previous.tools : ["edits"],
           requiredChecks: previous?.requiredChecks.length ? previous.requiredChecks : DEFAULT_SLICE_CHECKS,

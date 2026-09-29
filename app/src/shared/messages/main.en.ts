@@ -327,6 +327,13 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Assignment provider changed",
   "main.controller.assignmentProviderChangedDetail":
     "{provider} {model}. The assignment and the working copy stay; the next resume opens a new session.",
+  "main.controller.agentModelChangedTitle": "{name}'s model changed",
+  "main.controller.agentModelChangedDetail": "{provider}, {model}. It applies from the next assignments; the one in progress does not change.",
+  "main.controller.agentModelChangedDetailEffort":
+    "{provider}, {model}, effort {effort}. It applies from the next assignments; the one in progress does not change.",
+  "main.controller.agentModelClearedTitle": "{name}'s model goes back to the Coordinator",
+  "main.controller.agentModelClearedDetail": "From the next assignments the Coordinator chooses the model.",
+  "main.controller.agentModelUnknownProvider": "Trama does not know the provider {provider}.",
   "main.controller.currentMandateNoLongerCovers":
     "The current mandate no longer covers this assignment.",
   "main.controller.assignmentWorktreeRemoved":
@@ -1552,6 +1559,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.team.resumedWithFindings":
     "Resumed with the blocking findings on candidate {id}",
   "main.team.providerSet": "Provider set by the person: {provider} {model}",
+  "main.team.personModelReason": "Model the person chose in the agent's tab.",
 
   // MARK: Pact, mandate, goals, plan, slices and candidates
   // pact.ts

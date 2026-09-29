@@ -1,6 +1,7 @@
 import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH, translator } from "@shared/i18n";
 import type { ProviderId } from "@shared/codex";
 import { catalogOffers, supportsReadOnly, type CatalogEntry } from "@shared/providers";
+import { personModel } from "@shared/agentModel";
 import type {
   AssignmentCommit,
   AutomaticWorkRequest,
@@ -481,7 +482,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and work beyond the squads' limits (read_team: developers at work per squad and squads at work together, three and three unless the person changes them; work in a cloud session counts too). A slice belongs to the squad of its area: give it to that squad's developers. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). When the developer has a personModel the person chose (read_team with specialistID), Trama runs the work on it while its provider is connected and ignores provider and model. In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and work beyond the squads' limits (read_team: developers at work per squad and squads at work together, three and three unless the person changes them; work in a cloud session counts too). A slice belongs to the squad of its area: give it to that squad's developers. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
     properties: {
       specialist: text,
       commitType: text,
@@ -978,6 +979,8 @@ function specialistDetail(specialist: Specialist): JsonObject {
     moments: roleDuties(ITALIAN, specialist.role) as unknown as Json,
     moduleIDs: specialist.moduleIds,
     model: specialist.model,
+    // The person's model for the next assignments (issue #455): assign_task runs on it and ignores provider and model.
+    personModel: specialist.chosenModel ? { provider: specialist.chosenModel.provider, model: specialist.chosenModel.model, effort: specialist.chosenModel.effort } : null,
     assignment: current
       ? {
           id: current.id,
@@ -1440,7 +1443,10 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const checks = strings(args.requiredChecks);
         const invalidChecks = checks.filter((c) => !ALL_CHECKS.includes(c as ReadOnlyCheck));
         if (invalidChecks.length) return toolFailure("invalid_arguments", `Unknown checks: ${invalidChecks.join(", ")}.`);
-        const providerId = (typeof args.provider === "string" && args.provider.trim() ? args.provider.trim() : context.defaultProvider) as ProviderId;
+        // The model the person chose for the developer wins over the Coordinator's, while it can run the work (issue #455).
+        const named = typeof args.specialist === "string" ? findSpecialist(document, args.specialist) : null;
+        const chosen = named ? personModel(named, context.providers.map((p) => ({ id: p.id, models: p.catalog ?? p.models })), withEdits) : null;
+        const providerId = (chosen?.provider ?? (typeof args.provider === "string" && args.provider.trim() ? args.provider.trim() : context.defaultProvider)) as ProviderId;
         const provider = context.providers.find((p) => p.id === providerId);
         if (!provider) {
           return toolFailure(
@@ -1451,7 +1457,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (!supportsReadOnly(providerId) && !strings(args.tools).includes("edits")) {
           return toolFailure("provider_needs_worktree", `Provider ${providerId} runs only with edits in a worktree; choose another provider for read-only work.`);
         }
-        const requestedModel = typeof args.model === "string" && args.model.trim() ? args.model.trim() : null;
+        const requestedModel = chosen?.model ?? (typeof args.model === "string" && args.model.trim() ? args.model.trim() : null);
         const model = requestedModel ?? (providerId === context.defaultProvider ? context.defaultModel : provider.models[0] ?? null);
         if (!model) return toolFailure("invalid_arguments", "model is required: no default model is available.");
         if (provider.models.length && !catalogOffers(providerId, provider.catalog ?? provider.models, model)) {
@@ -1542,7 +1548,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             decisionIds: strings(args.decisionIDs),
             model,
             provider: providerId,
-            modelReason: typeof args.modelReason === "string" ? args.modelReason : null,
+            effort: chosen?.effort ?? null,
+            modelReason: chosen ? t("main.team.personModelReason") : typeof args.modelReason === "string" ? args.modelReason : null,
             goalId,
             tools: strings(args.tools) as SpecialistTool[],
             requiredChecks: checks,

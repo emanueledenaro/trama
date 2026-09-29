@@ -335,6 +335,13 @@ export const mainIt = {
     "Provider dell'incarico cambiato",
   "main.controller.assignmentProviderChangedDetail":
     "{provider} {model}. Incarico e worktree restano; la prossima ripresa apre una sessione nuova.",
+  "main.controller.agentModelChangedTitle": "Modello di {name} cambiato",
+  "main.controller.agentModelChangedDetail": "{provider}, {model}. Vale dai prossimi incarichi; quello in corso non cambia.",
+  "main.controller.agentModelChangedDetailEffort":
+    "{provider}, {model}, sforzo {effort}. Vale dai prossimi incarichi; quello in corso non cambia.",
+  "main.controller.agentModelClearedTitle": "Il modello di {name} torna al Coordinatore",
+  "main.controller.agentModelClearedDetail": "Dai prossimi incarichi il modello lo sceglie il Coordinatore.",
+  "main.controller.agentModelUnknownProvider": "Trama non conosce il provider {provider}.",
   "main.controller.currentMandateNoLongerCovers":
     "Il mandato attuale non copre più questo incarico.",
   "main.controller.assignmentWorktreeRemoved":
@@ -1608,6 +1615,7 @@ export const mainIt = {
     "Ripresa con i rilievi bloccanti sul candidato {id}",
   "main.team.providerSet":
     "Provider impostato dalla persona: {provider} {model}",
+  "main.team.personModelReason": "Modello scelto dalla persona nella scheda dell'agente.",
 
   // MARK: Pact, mandate, goals, plan, slices and candidates
   // pact.ts

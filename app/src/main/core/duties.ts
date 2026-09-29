@@ -25,6 +25,7 @@ import { openedForProblem } from "@shared/problems";
 import { activeTerms, coversAssignment, workLeftOut } from "@shared/mandate";
 import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
+import { personModel, type RunnableProvider } from "@shared/agentModel";
 import { findCandidate } from "./candidates";
 import { t } from "./personLanguage";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
@@ -54,6 +55,8 @@ export interface DutyRunner {
   provider: ProviderId;
   model: string;
   modelReason: string;
+  /** The providers Trama can run now, where the model the person chose for a role may run instead (issue #455). */
+  runnable?: readonly RunnableProvider[];
 }
 
 export interface DutyContext {
@@ -264,8 +267,13 @@ function newIssuesToTriage(document: ProjectDocument, issues: GitHubIssue[]): Gi
   return issues.filter((i) => fresh.has(i.number) && i.state === "open" && !triaged.has(i.number)).sort((a, b) => a.number - b.number);
 }
 
-function giveDuty(document: ProjectDocument, order: Parameters<typeof assignDuty>[1], now: Date): SpecialistAssignment {
-  return assignDuty(document, order, document.mandate?.version ?? 0, now);
+/** Gives the role its work, on the model the person chose for it when that can run the work now (issue #455). */
+function giveDuty(document: ProjectDocument, order: Parameters<typeof assignDuty>[1] & { runnable?: readonly RunnableProvider[] }, now: Date): SpecialistAssignment {
+  const { runnable, ...duty } = order;
+  const member = teamMembers(document).find((s) => s.role === duty.role);
+  const chosen = member ? personModel(member, runnable ?? [], duty.tools.includes("edits")) : null;
+  const final = chosen ? { ...duty, provider: chosen.provider, model: chosen.model, effort: chosen.effort, modelReason: t("main.team.personModelReason") } : duty;
+  return assignDuty(document, final, document.mandate?.version ?? 0, now);
 }
 
 function startTriage(document: ProjectDocument, context: DutyContext, runner: DutyRunner, now: Date): SpecialistAssignment | null {

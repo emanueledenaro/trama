@@ -743,6 +743,8 @@ export interface SpecialistAssignment {
   moduleIds: string[];
   dependencies: string[];
   model: string;
+  /** The reasoning effort the work runs with; absent or null keeps the model's default. */
+  effort?: string | null;
   /** Set when the provider hit a usage limit: Trama resumes the work by itself when it unblocks (C11). */
   waitingForProvider?: { provider: ProviderId; until: string | null; since: string } | null;
   /** Pact decisions the work relies on, with the version it was delegated against (C06). */
@@ -1177,6 +1179,15 @@ export type AgentColor = "blue" | "indigo" | "violet" | "fuchsia" | "pink" | "co
 /** The point of the flow where a figure of the team works (W09). */
 export type TeamMoment = "spec" | "slices" | "candidate" | "background";
 
+/** The provider, model and effort the person chose for an agent in its tab (issue #455). */
+export interface AgentModelChoice {
+  provider: ProviderId;
+  model: string;
+  /** Null keeps the model's default effort. */
+  effort: string | null;
+  chosenAt: string;
+}
+
 export interface Specialist {
   id: string;
   name: string;
@@ -1193,8 +1204,11 @@ export interface Specialist {
   tag: string;
   createdAt: string;
   status: SpecialistStatus;
+  /** The model of the latest assignment, whoever chose it. */
   model: string | null;
   provider?: ProviderId | null;
+  /** The model the person chose for the agent's next assignments (issue #455); absent or null leaves it to the Coordinator. */
+  chosenModel?: AgentModelChoice | null;
   tools: SpecialistTool[];
   updatedAt: string;
   lastUpdate: string;

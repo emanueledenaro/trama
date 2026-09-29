@@ -177,6 +177,20 @@ describe("triage of new issues (W11)", () => {
     expect(nextDuty(document, context({ issues: [issue(1), issue(2)] }))?.issueNumber).toBe(2);
   });
 
+  it("runs a role's work on the model the person chose for it while it can run, else on the runner's (issue #455)", () => {
+    const chosen = { provider: "codex" as const, model: "gpt-5.5", effort: "high", chosenAt: "" };
+    const start = (models: string[]) => {
+      const document = project();
+      nextDuty(document, context({ issues: [] }));
+      document.team.specialists.find((s) => s.role === "bugTriage")!.chosenModel = chosen;
+      return nextDuty(document, context({ issues: [issue(1)], runner: { ...runner, runnable: [{ id: "codex", models }] } }))!;
+    };
+    expect(start(["gpt-5.5", "gpt-5.6-luna"])).toMatchObject({ model: "gpt-5.5", effort: "high", modelReason: t("main.team.personModelReason") });
+    const fallback = start(["gpt-5.6-luna"]);
+    expect(fallback).toMatchObject({ model: "gpt-5.6-luna", modelReason: runner.modelReason });
+    expect(fallback.effort).toBeUndefined();
+  });
+
   it("records the skill's recommendation as the outcome, readable for the person", () => {
     const document = project();
     nextDuty(document, context({ issues: [] }));
