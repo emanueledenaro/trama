@@ -7,7 +7,10 @@ const css = readFileSync(join(__dirname, "..", "index.css"), "utf8");
 /** The provider theme blocks of index.css, by selector. */
 const providerBlocks = () => [...css.matchAll(/(:root(?:\.dark)?\[data-provider="([a-zA-Z]+)"\])\s*\{([^}]*)\}/g)].map((match) => ({ selector: match[1]!, provider: match[2]!, body: match[3]! }));
 const declared = (body: string) => [...body.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((match) => match[1]!);
-const rootBlock = (selector: string) => css.match(new RegExp(`^${selector.replace(/[.[\]]/g, "\\$&")} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
+const rootBlock = (selector: string) => {
+  const start = css.indexOf(`\n${selector} {`);
+  return start < 0 ? "" : css.slice(css.indexOf("{", start) + 1, css.indexOf("}", start));
+};
 const hex = (body: string, token: string) => body.match(new RegExp(`${token}:\\s*(#[0-9a-f]{6});`, "i"))?.[1]?.toLowerCase();
 
 // Issue #457: one neutral glass surface for every provider; the provider sets only the accents.
