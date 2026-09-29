@@ -3491,7 +3491,12 @@ await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 
 
 // Issue #204: the work ends, Trama starts the checks by itself and the Coordinator verifies the assignment instead of a
 // candidate, as in the live run. The move comes back under the reply with Trama's reason and its button on the right.
+// Turned back on, continuous work runs a round at once: the work Ada resumed ended without a candidate, so Trama
+// starts its checks by itself. The fake Codex keeps an automatic move running until the check stops it (W04), and a
+// message would wait behind it in the queue: the check stops it from the status line before writing.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await page.getByTestId("status-line").getByRole("button", { name: "Ferma: Esegui le verifiche" }).click({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await send("[assegna] [luna]");
 const lunaCard = assignmentCards.nth(1);
 await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
