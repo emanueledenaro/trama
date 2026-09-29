@@ -60,11 +60,12 @@ function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
         // The whole line opens the item in Aspetta te (issue #338).
         <button
           type="button"
+          title={t("waiting.reference.open")}
           className="group flex w-full items-start gap-2 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={() => setInspector({ kind: "waiting", key: need.key })}
         >
           <IconHourglass className="mt-0.5 size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
-          <span className="sr-only">{t("chat.buttons.openWaiting")}: </span>
+          <span className="sr-only">{t("waiting.reference.open")}: </span>
           {text}
           <IconChevronRight aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" stroke={1.8} />
         </button>

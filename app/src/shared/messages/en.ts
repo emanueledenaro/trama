@@ -1254,7 +1254,6 @@ export const en: Record<keyof typeof it, string> = {
   "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
   // Buttons of the chat and composer (issue #338)
   "chat.buttons.resumeTurn": "Resume",
-  "chat.buttons.openWaiting": "Open in Waiting for you",
   "chat.buttons.askRoute": "Ask the Coordinator for a route",
   "chat.buttons.openDiff": "Open the diff",
   "chat.buttons.examine": "In-depth examination",

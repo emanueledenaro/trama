@@ -1256,7 +1256,6 @@ export const it = {
   "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
   // Buttons of the chat and composer (issue #338)
   "chat.buttons.resumeTurn": "Riprendi",
-  "chat.buttons.openWaiting": "Apri in Aspetta te",
   "chat.buttons.askRoute": "Chiedi un percorso al Coordinatore",
   "chat.buttons.openDiff": "Apri il diff",
   "chat.buttons.examine": "Esame approfondito",
