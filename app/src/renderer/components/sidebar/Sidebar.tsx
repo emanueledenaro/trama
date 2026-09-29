@@ -99,7 +99,8 @@ function SectionHeader({ label, children }: { label: string; children?: React.Re
 export function ProjectsView() {
   const t = useT();
   const app = useUi((s) => s.app)!;
-  const inspector = useUi((s) => s.inspector);
+  // The person of the team shown in the editor (issue #336) is the one marked in the list.
+  const shownDetail = useUi((s) => s.activeDetail);
   const setInspector = useUi((s) => s.setInspector);
   const setDialog = useUi((s) => s.setDialog);
   const project = app.project;
@@ -278,7 +279,7 @@ export function ProjectsView() {
                           type="button"
                           data-testid="sidebar-agent"
                           onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
-                          className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
+                          className={cn(SIDEBAR_ROW, "pl-8", shownDetail === `detail:specialist:${specialist.id}` ? ROW_ACTIVE : ROW_IDLE)}
                         >
                           <AgentAvatar agent={specialist} size={24} className="-my-1 -ml-1" />
                           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui leading-5 text-foreground/95">

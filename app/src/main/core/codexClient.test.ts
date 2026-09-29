@@ -79,7 +79,7 @@ describe("CodexClient", () => {
     await expect(client.listModels()).rejects.toThrow(/solo un account ChatGPT/);
   });
 
-  it("asks Codex to compact a thread only when Trama requests it, as the fallback of a reorder (ADR 0018)", async () => {
+  it("asks Codex to compact a thread only when Trama requests it, as the fallback of a reorder (ADR 0019)", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;
     client = new CodexClient({ executable: fake });

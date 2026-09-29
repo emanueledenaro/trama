@@ -87,19 +87,32 @@ export function InspectorTitle({ target }: { target: InspectorTarget }) {
       </h3>
     );
   }
-  const title =
-    target.kind === "issue"
-      ? `Issue #${target.number}`
-      : target.kind === "pullRequest"
-        ? `Pull request #${target.number}`
-        : record
-            ? asTitle(record.label)
-            : targetTitle(target.kind, t);
+  const title = detailTitle(target, record ? asTitle(record.label) : null, t);
   return (
     <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="side-bar-title">
       {title}
     </h3>
   );
+}
+
+function detailTitle(target: InspectorTarget, recordTitle: string | null, t: Translate): string {
+  if (target.kind === "issue") return `Issue #${target.number}`;
+  if (target.kind === "pullRequest") return `Pull request #${target.number}`;
+  if (target.kind === "commit") return target.sha.slice(0, 7);
+  if (target.kind === "branch") return target.name;
+  if (target.kind === "file") return target.path.split("/").at(-1) ?? target.path;
+  if (target.kind === "module") return target.id;
+  return recordTitle ?? targetTitle(target.kind, t);
+}
+
+/** The name of a detail on its editor tab (issue #336): the record by its name, with its id for the hover. */
+export function useTargetTitle(target: InspectorTarget): { title: string; id: string | undefined } {
+  const t = useT();
+  const recordId = targetId(target) ?? (target.kind === "specialist" || target.kind === "goal" ? target.id : null);
+  const record = useRecord(recordId);
+  // The id stays on the hover of the tab (issue #270).
+  const id = recordId ?? undefined;
+  return { title: detailTitle(target, record ? asTitle(record.label) : null, t), id };
 }
 
 /** The panel of a target, shown in the side bar under its view (issue #330). */
@@ -120,7 +133,7 @@ export function InspectorBody({ target }: { target: InspectorTarget }) {
       {target.kind === "team" ? <SquadsView /> : null}
       {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
       {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
-      {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
+      {target.kind === "candidate" ? <CandidateView id={target.id} audit={target.audit} diff={target.diff} /> : null}
       {target.kind === "audit" ? <AuditView id={target.id} /> : null}
       {/* Lavoro is one view (issue #332): goals, branches and issues are its sections, opened and brought into view. */}
       {target.kind === "work" ? <WorkOverview /> : null}
