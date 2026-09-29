@@ -22,7 +22,7 @@ export const typeOfEntry = (entry: Pick<ActivityEntry, "kind">): ActivityType =>
     ? "moves"
     : entry.kind === "problem"
       ? "problems"
-      : entry.kind === "step"
+      : entry.kind === "step" || entry.kind === "supersede"
         ? "steps"
         : "merges";
 

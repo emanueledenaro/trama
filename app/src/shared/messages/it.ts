@@ -1080,6 +1080,14 @@ export const it = {
   "reviewLoop.label": "Lavoro fermato più volte",
   "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
   "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
+
+  // A candidate the Coordinator declared superseded by a newer one of the same work (issue #421)
+  "supersession.outcome": "Superato",
+  "supersession.subject": "{files}, motivo: {reason}",
+  "supersession.card": "Superato dal candidato {id}: {reason}. Non va unito e non entra nei confronti con altro lavoro; resta nella cronologia.",
+  "supersession.activity.label": "Candidato superato dal Coordinatore",
+  "supersession.activity.detail": "Candidato {id}, superato da {by}: {reason}.",
+  "supersession.activity.waiting": "Tolto da Aspetta te: {item}.",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

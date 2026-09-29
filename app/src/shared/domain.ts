@@ -1208,6 +1208,23 @@ export interface Candidate {
   commit?: CandidateCommit;
   /** What `git diff --check` reported on the candidate's snapshot (Q01); absent in candidates declared before it. */
   whitespaceErrors?: string[];
+  /**
+   * The Coordinator declared the candidate superseded by a newer candidate of the same work (issue #421): it is not
+   * merged and not compared with other work, and it stays in the history. `waiting` is the "Aspetta te" item it had,
+   * which left the list with the reason. Absent for a candidate replaced by rule (conflictScope.ts).
+   */
+  supersession?: CandidateSupersession;
+}
+
+export interface CandidateSupersession {
+  /** The newer candidate of the same work. */
+  byCandidateId: string;
+  /** Why, in the person's words. */
+  reason: string;
+  actor: string;
+  at: string;
+  /** The label and the title of the "Aspetta te" item the candidate had when it was superseded; null when it had none. */
+  waiting: { label: string; title: string } | null;
 }
 
 /**

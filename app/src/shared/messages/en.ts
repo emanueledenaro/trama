@@ -1078,4 +1078,12 @@ export const en: Record<keyof typeof it, string> = {
   "reviewLoop.label": "Work stopped several times",
   "reviewLoop.title": "{objective}: the review stopped it {count} times in a row. Tell the Coordinator how to go on.",
   "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
+
+  // A candidate the Coordinator declared superseded by a newer one of the same work (issue #421)
+  "supersession.outcome": "Superseded",
+  "supersession.subject": "{files}, reason: {reason}",
+  "supersession.card": "Superseded by candidate {id}: {reason}. It is not merged and not compared with other work; it stays in the history.",
+  "supersession.activity.label": "Candidate superseded by the Coordinator",
+  "supersession.activity.detail": "Candidate {id}, superseded by {by}: {reason}.",
+  "supersession.activity.waiting": "Removed from Waiting for you: {item}.",
 };

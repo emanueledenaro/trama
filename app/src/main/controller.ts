@@ -2247,6 +2247,10 @@ export class TramaController {
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
+          waitingFor: (candidateId) => {
+            const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
+            return item ? { label: item.label, title: item.title } : null;
+          },
           headSHA: () => this.headSHA(current.rootPath),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
