@@ -357,6 +357,7 @@ import {
   GateSettlementError,
   settleGate,
   applyOverruled,
+  applyPactRule,
   decidedLines,
   overruledFor,
   rememberOverruled,
@@ -6310,7 +6311,9 @@ export class TramaController {
         await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
       }
       if (!blocked.length) {
-        // A finding the Coordinator already overruled on this work does not stop it again (ADR 0023).
+        // A finding against a Pact decision in force, or one the Coordinator already overruled on this work, does not
+        // stop it (ADR 0023).
+        applyPactRule(document, gate);
         applyOverruled(document, gate);
         closeGate(gate);
       }

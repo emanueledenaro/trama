@@ -8,6 +8,10 @@ import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import {
   applyOverruled,
+  applyPactRule,
+  readReviewerAnswer,
+  REVIEWER_SCHEMA,
+  SEVERITY_RULE,
   beginReviews,
   closeGate,
   finishReview,
@@ -468,6 +472,36 @@ describe("the reviewers read the Pact as rules and the findings the Coordinator 
       expect(turn.prompt).toContain(`${decision.id} v${decision.version}: ${decision.value}`);
       expect(turn.instructions).toContain(PACT_RULE);
     }
+  });
+
+  it("blocks only what breaks the product, goes against the Pact or is Trama's evidence, and Trama holds the reviewers to the Pact", () => {
+    for (const words of ["breaks the product", "Pact decision", "never stops the work"]) expect(SEVERITY_RULE).toContain(words);
+    expect(REVIEWER_SCHEMA.properties.findings.items.required).toContain("against");
+    const document = shop();
+    const marco = realignment(document);
+    endTurn(document, marco.id, null, { kind: "completed", text: "Fatto" }, at(2));
+    const candidate = nextCandidate(document, marco, 2);
+    const decision = document.decisions[0]!;
+    // The spec reviewer says its finding asks to go against the Pact decision: Trama checks the decision is in force.
+    const answer = readReviewerAnswer(
+      JSON.stringify({
+        report: "Dati aziendali",
+        findings: [
+          { severity: "blocking", title: "Dati aziendali in config.json", detail: "Via", file: "src/config/config.json", against: decision.id },
+          { severity: "blocking", title: "Link rotto", detail: "404", file: "src/app/page.tsx", against: "D-INESISTENTE" },
+        ],
+      }),
+    );
+    expect(answer.findings.map((f) => f.against)).toEqual([decision.id, "D-INESISTENTE"]);
+    const gate = gateWith(document, candidate, [], 3);
+    finishReview(gate, "specReviewer", answer, at(3));
+    expect(applyPactRule(document, gate)).toBe(1);
+    closeGate(gate, at(3));
+    const findings = gate.reviews.find((r) => r.role === "specReviewer")!.findings;
+    expect(findings[0]).toMatchObject({ severity: "advisory", overruled: { decisionIds: [decision.id] } });
+    // A decision that does not exist decides nothing: the finding still blocks.
+    expect(findings[1]).toMatchObject({ severity: "blocking" });
+    expect(gate.status).toBe("blocked");
   });
 
   it("remembers a finding overruled with a Pact decision, so the same work is not blocked by it again", () => {

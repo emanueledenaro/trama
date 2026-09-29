@@ -379,8 +379,9 @@ export const REVIEWER_SCHEMA = {
           title: { type: "string" },
           detail: { type: "string" },
           file: { type: "string" },
+          against: { type: "string" },
         },
-        required: ["severity", "title", "detail", "file"],
+        required: ["severity", "title", "detail", "file", "against"],
         additionalProperties: false,
       },
     },
@@ -391,7 +392,7 @@ export const REVIEWER_SCHEMA = {
 
 /** When a finding blocks: the same rule for every figure, so the verdict does not depend on who found it. */
 export const SEVERITY_RULE =
-  "A finding is blocking when the candidate cannot reach the person as it is: it breaks a requirement of the spec or a Pact decision, opens a vulnerability or exposes a secret, breaks the build or the package, or makes documented behavior wrong. Everything else is advisory.";
+  "A finding is blocking only when it breaks the product and the candidate cannot reach the person as it is: it breaks a requirement of the spec or goes against a Pact decision in force, opens a vulnerability or exposes a secret, breaks the build, the tests or the package, or makes documented behavior wrong. Everything else is advisory and never stops the work: style, naming, structure, wording, a missing test of code that works, anything that can be improved later. A finding that asks the work to go against a Pact decision is advisory: name that decision's id in `against` (an empty string otherwise).";
 
 /** The Pact decisions are the person's rules: a reviewer never blocks the work for following them. @model-text */
 export const PACT_RULE =
@@ -405,7 +406,7 @@ export const GATE_BINDING = [
   "The diff command: the working directory is the candidate's worktree, whose changes may not be committed yet. Where the skill writes `git diff <fixed-point>...HEAD`, run `git diff <fixed point>` here and list new files with `git status`; Trama's captured diff is in this turn as data.",
   "The issue tracker, /setup-trama and fetching an issue: this session has no network and runs no setup. Trama already looked for the spec and puts it in this turn when it found one.",
   "Trama's real checks on this candidate ran before this session: their results are in this turn and are evidence. Do not run them again.",
-  `Your final answer follows the JSON schema that comes with the turn: \`report\` is your report in Markdown, in the language your session instructions name; \`findings\` lists each finding with its severity, a title of one line, the detail and the file (an empty string when none). ${SEVERITY_RULE} With no finding, \`findings\` is empty.`,
+  `Your final answer follows the JSON schema that comes with the turn: \`report\` is your report in Markdown, in the language your session instructions name; \`findings\` lists each finding with its severity, a title of one line, the detail, the file (an empty string when none) and \`against\`. ${SEVERITY_RULE} With no finding, \`findings\` is empty.`,
 ].join("\n");
 
 /** The line of the binding, or Trama's own brief, that tells each session which figure it is. */
@@ -503,7 +504,15 @@ export function readReviewerAnswer(raw: string): { report: string; findings: Gat
     const title = typeof f.title === "string" ? f.title.trim() : "";
     const valid = (f.severity === "blocking" || f.severity === "advisory") && title && typeof f.detail === "string" && typeof f.file === "string";
     if (!valid) throw new GateError("malformed_finding", t("main.gate.malformedFinding"));
-    return { severity: f.severity as GateFinding["severity"], title, detail: (f.detail as string).trim() || title, file: (f.file as string).trim() || null };
+    // The Pact decision the finding asks to go against (a provider without the schema may leave it out).
+    const against = typeof f.against === "string" ? f.against.trim() : "";
+    return {
+      severity: f.severity as GateFinding["severity"],
+      title,
+      detail: (f.detail as string).trim() || title,
+      file: (f.file as string).trim() || null,
+      ...(against ? { against } : {}),
+    };
   });
   return { report: answer.report, findings };
 }
@@ -638,6 +647,27 @@ export function applyOverruled(document: ProjectDocument, gate: CandidateGate): 
       const memory = memories.find((m) => overruledMatch(m, review.role, finding));
       if (!memory) continue;
       downgrade(finding, memory);
+      changed++;
+    }
+  }
+  if (changed) gate.updatedAt = new Date().toISOString();
+  return changed;
+}
+
+/**
+ * Before the gate closes, Trama holds the reviewers to the Pact: a blocking finding that its figure says asks the work
+ * to go against a Pact decision in force is advisory, with that decision. An id that names no decision decides nothing,
+ * and Trama's own evidence stays. Returns how many it changed.
+ */
+export function applyPactRule(document: ProjectDocument, gate: CandidateGate): number {
+  let changed = 0;
+  for (const review of gate.reviews) {
+    if (isEvidence(gate, review.role)) continue;
+    for (const finding of blockingFindings(review)) {
+      const decision = finding.against ? document.decisions.find((d) => d.id === finding.against) : undefined;
+      if (!decision) continue;
+      finding.severity = "advisory";
+      finding.overruled = { findingId: "", reason: t("main.gate.againstPact", { decision: decision.id, value: decision.value }), decisionIds: [decision.id] };
       changed++;
     }
   }

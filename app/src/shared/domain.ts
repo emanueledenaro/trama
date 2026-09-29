@@ -2125,6 +2125,8 @@ export interface GateFinding {
    * is advisory now. Absent on a finding nobody overruled.
    */
   overruled?: { findingId: string; reason: string; decisionIds: string[] } | null;
+  /** The Pact decision the figure says the finding asks the work to go against; such a finding is advisory. */
+  against?: string;
 }
 
 /**

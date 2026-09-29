@@ -1103,6 +1103,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The checks {checks} could not run because of the sandbox or the machine: start the review again when they run.",
   "main.gate.overruled": "The Coordinator overruled the reviewers' findings: {reason}",
   "main.gate.settledTitle": "The Coordinator decided between {developer} and the reviewers on candidate {candidate}",
+  "main.gate.againstPact": "It goes against the Pact decision {decision} ({value}): it is a suggestion and does not stop the work.",
   "main.gate.overruledTitle": "The Coordinator overruled a finding of {reviewer} on candidate {candidate}",
   "main.gate.overruledDetail": "Finding overruled: {finding}. Reason: {reason}. Pact decisions: {decisions}.",
   "main.gate.settledFindings": "The reviewers are right: {reason}",
