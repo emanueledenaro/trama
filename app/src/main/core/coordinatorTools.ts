@@ -926,10 +926,6 @@ export interface ToolContext {
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
 }
 
-/**
- * The candidate a tool names. An assignment id stands for the latest candidate declared from it; an assignment
- * that ended without one gets the move to make first, declare_candidate, instead of a bare refusal (issue #204).
- */
 /** The later work of the same line as `assignment`: what replaced it, and what replaced that in turn, oldest first. */
 function laterLine(document: ProjectDocument, assignment: SpecialistAssignment): SpecialistAssignment[] {
   const all = document.team.specialists.flatMap((s) => s.assignments).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -938,6 +934,10 @@ function laterLine(document: ProjectDocument, assignment: SpecialistAssignment):
   return line;
 }
 
+/**
+ * The candidate a tool names. An assignment id stands for the latest candidate declared from it; an assignment
+ * that ended without one gets the move to make first, declare_candidate, instead of a bare refusal (issue #204).
+ */
 function candidateArgument(document: ProjectDocument, value: Json | undefined): { candidate: Candidate } | { failure: ToolResult } {
   const id = typeof value === "string" ? value.trim() : "";
   const candidate = findCandidate(document, id);
