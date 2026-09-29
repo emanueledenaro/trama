@@ -601,6 +601,14 @@ describe("the reviewers read the Pact as rules and the findings the Coordinator 
     closeGate(suggested, at(4));
     expect(suggested.status).toBe("passed");
 
+    // Only some findings go against the Pact: the request for changes may be about the others, so it still blocks.
+    const mixed = gateWith(document, nextCandidate(document, marco, 7), [], 7);
+    const otherSuggestion = { ...finding, severity: "suggestion", file: "src/other.ts", message: "Nome poco chiaro in src/other.ts" };
+    finishReview(mixed, "cleanCode", cleanCodeOutcome(readReviewAnswer(raw([{ ...finding, severity: "suggestion", against: decision.id }, otherSuggestion])), document.decisions), at(7));
+    applyPactRule(document, mixed);
+    closeGate(mixed, at(7));
+    expect(mixed.status).toBe("blocked");
+
     // A decision that does not exist decides nothing, and a request for changes with no finding still blocks.
     const unknown = gateWith(document, nextCandidate(document, marco, 5), [], 5);
     finishReview(unknown, "cleanCode", cleanCodeOutcome(readReviewAnswer(raw([{ ...finding, against: "D-INESISTENTE" }])), document.decisions), at(5));

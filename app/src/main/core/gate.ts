@@ -264,7 +264,7 @@ export function cleanCodeOutcome(
     ...(f.against ? { against: f.against } : {}),
   }));
   // A request for changes whose findings all go against the Pact is the Pact's to settle, not a block of its own.
-  const followsPact = findings.some((f) => f.against && decisions.some((d) => d.id === f.against));
+  const followsPact = findings.length > 0 && findings.every((f) => f.against && decisions.some((d) => d.id === f.against));
   if (review.verdict === "changesRequested" && !followsPact && !findings.some((f) => f.severity === "blocking")) {
     findings.unshift({ severity: "blocking", title: t("main.gate.changesRequested"), detail: review.summary, file: null });
   }
