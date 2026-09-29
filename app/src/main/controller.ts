@@ -1053,6 +1053,8 @@ export class TramaController {
     this.discovery.stop();
     for (const [, runtime] of this.providerDiscovery) runtime.stop();
     this.providerDiscovery.clear();
+    // What still runs in this controller's background (a work ending, a timer) must not save over the next one's file.
+    this.stopped = true;
   }
 
   /**
@@ -1104,7 +1106,11 @@ export class TramaController {
     this.publish();
   }
 
+  /** Set when stop() is done: nothing this controller still has in flight writes the project's file any more. */
+  private stopped = false;
+
   private scheduleSave(): void {
+    if (this.stopped) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => void this.flushSave(), 300);
   }
@@ -1112,6 +1118,7 @@ export class TramaController {
   private async flushSave(): Promise<void> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
+    if (this.stopped) return;
     const project = this.state.project;
     if (!project || !project.stateWritable) return;
     await this.storage.saveDocument(project.document).catch((error) => this.fail(error));
@@ -2263,7 +2270,7 @@ export class TramaController {
     }
     // The person leaves the project for another: coming back later, they are told what was decided meanwhile (issue #423).
     this.markPersonLeft(project);
-    if ((queued.length || closeLeft || project.document.personLeftAt) && project.stateWritable) {
+    if ((queued.length || closeLeft || project.document.personLeftAt) && project.stateWritable && !this.stopped) {
       void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     }
     if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
@@ -2274,7 +2281,7 @@ export class TramaController {
     if (project === this.state.project || this.hasRunningWork(project.id)) return;
     if (this.parkedProjects.get(project.id) !== project) return;
     this.parkedProjects.delete(project.id);
-    if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    if (project.stateWritable && !this.stopped) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     this.publish();
   }
 

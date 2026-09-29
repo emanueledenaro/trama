@@ -2165,6 +2165,45 @@ describe("TramaController", () => {
     expect(document.recap?.recaps.filter((r) => r.reason === "return")).toHaveLength(1);
   });
 
+  it("saves nothing once it was stopped: a late save of the old controller cannot overwrite the file of the next one (issue #423)", async () => {
+    const { data } = await setup();
+    const make = () =>
+      new TramaController(data, {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: "",
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+    const first = controller!;
+    const before = first.snapshot.project!.document;
+    await first.send("[delega:fai tutto tu] Stanotte fai tutto tu", null, null, null);
+    recordChoice(before, { kind: "decision", subject: "Chi vede la revisione?", choice: "Anche il cliente", targetId: null, doubt: "Non so" });
+    await first.stop();
+    const second = make();
+    controller = second;
+    await second.start();
+    await until(() => second.snapshot.project?.phase.kind === "ready");
+    second.personAway(Date.now() - 8 * 3_600_000);
+    await second.stop();
+    // The first controller, stopped long ago, still has a save to run (its work ends and asks for one): on a slow
+    // machine it lands here, after the second one saved that the person left 8 hours ago, and brings back its own time.
+    (first as unknown as { scheduleSave(): void }).scheduleSave();
+    await new Promise((r) => setTimeout(r, 500));
+    const third = make();
+    controller = third;
+    await third.start();
+    await until(() => third.snapshot.project?.phase.kind === "ready");
+    await until(
+      () => third.snapshot.project!.document.recap?.recaps.some((r) => r.reason === "return") ?? false,
+      3_000,
+      () => `recaps=${JSON.stringify(third.snapshot.project!.document.recap?.recaps.map((r) => r.reason) ?? [])}`,
+    );
+  });
+
   it("keeps the computer awake while issues wait to be taken with 'fai tutti i ticket', also between two of them (issue #423)", async () => {
     await setup();
     await until(() => controller!.snapshot.project!.github.status !== "loading");
