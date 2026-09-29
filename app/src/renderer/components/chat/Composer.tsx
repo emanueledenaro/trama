@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { withQuestion } from "@/lib/askCoordinator";
 import { Sep } from "@/components/ui/sep";

@@ -10,7 +10,6 @@ import { compactSteps, failedSteps } from "@shared/technicalSteps";
 import { type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
-import { useT } from "@/lib/i18n";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
