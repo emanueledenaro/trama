@@ -24,7 +24,6 @@ import {
   waitReasonOf,
 } from "@shared/providerFailure";
 import { REPAIRABLE_CLIS, repairActivity } from "@shared/providerRepair";
-import type { BotShape } from "@shared/agentBot";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   AgentThreadAuthor,
@@ -287,7 +286,6 @@ import {
   renameSpecialist,
   setSpecialistColor,
   setSpecialistModel,
-  setSpecialistShape,
   usableChoice,
   requestStop,
   assignmentsAffectedByDecision,
@@ -6245,13 +6243,6 @@ export class TramaController {
   async setSpecialistColorByPerson(specialistId: string, color: AgentColor): Promise<void> {
     const project = this.requireProject();
     setSpecialistColor(project.document, specialistId, color);
-    this.changed();
-  }
-
-  /** The person chooses the body of an agent, or gives it back to its role or its id with null (W16). */
-  async setSpecialistShapeByPerson(specialistId: string, shape: BotShape | null): Promise<void> {
-    const project = this.requireProject();
-    setSpecialistShape(project.document, specialistId, shape);
     this.changed();
   }
 

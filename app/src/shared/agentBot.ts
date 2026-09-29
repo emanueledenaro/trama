@@ -51,11 +51,6 @@ export const DEVELOPER_SHAPES: BotShape[] = ["circle", "egg", "bean", "star", "p
 
 export const BOT_SHAPES: BotShape[] = [...Object.values(ROLE_SHAPES), ...DEVELOPER_SHAPES];
 
-/** Whether a value is one of the bodies of the family. */
-export function isBotShape(value: unknown): value is BotShape {
-  return typeof value === "string" && (BOT_SHAPES as string[]).includes(value);
-}
-
 /** A stable number from a string (FNV-1a), the same on every machine. */
 export function stableHash(text: string): number {
   let hash = 0x811c9dc5;
@@ -72,19 +67,17 @@ export function developerShape(id: string): BotShape {
 }
 
 /** The body of one agent seen alone, for example a colleague's agent in the presence list. */
-export function botShapeFor(agent: { id?: string; role?: TeamRole; name: string; shape?: BotShape | null }): BotShape {
-  if (agent.shape) return agent.shape;
+export function botShapeFor(agent: { id?: string; role?: TeamRole; name: string }): BotShape {
   if (agent.role && agent.role !== "developer") return ROLE_SHAPES[agent.role];
   return developerShape(agent.id ?? agent.name);
 }
 
-type Member = Pick<Specialist, "id" | "role" | "color" | "status" | "createdAt"> & { shape?: BotShape };
+type Member = Pick<Specialist, "id" | "role" | "color" | "status" | "createdAt">;
 
 /**
  * The body of every agent of a project, so that no two active agents look the same. A developer keeps the body its
  * id gives it; when another developer came first with that body, it takes the next one no developer uses, and once
- * all are taken the next one no developer of the same color uses. Earlier developers never change body. The body the
- * person chose for an agent, a fixed role's included, wins over all of this, and developers without one keep off it.
+ * all are taken the next one no developer of the same color uses. Earlier developers never change body.
  */
 export function teamBotShapes(members: Member[]): Map<string, BotShape> {
   const shapes = new Map<string, BotShape>();
@@ -93,16 +86,9 @@ export function teamBotShapes(members: Member[]): Map<string, BotShape> {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   const taken: { shape: BotShape; color: Member["color"] }[] = [];
   for (const member of members) {
-    if (member.role !== "developer") shapes.set(member.id, member.shape ?? ROLE_SHAPES[member.role]);
-  }
-  // The body the person chose stays; the developers without one take another (a removed developer keeps no claim).
-  for (const developer of developers) {
-    if (!developer.shape) continue;
-    shapes.set(developer.id, developer.shape);
-    if (developer.status !== "removed") taken.push({ shape: developer.shape, color: developer.color });
+    if (member.role !== "developer") shapes.set(member.id, ROLE_SHAPES[member.role]);
   }
   for (const developer of developers) {
-    if (developer.shape) continue;
     const start = stableHash(developer.id) % DEVELOPER_SHAPES.length;
     const order = DEVELOPER_SHAPES.map((_, i) => DEVELOPER_SHAPES[(start + i) % DEVELOPER_SHAPES.length]!);
     if (developer.status === "removed") {

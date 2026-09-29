@@ -1,4 +1,3 @@
-import type { BotShape } from "./agentBot";
 import type { ProviderAccount, ProviderId, ProviderModel } from "./codex";
 import type { RepositorySnapshot } from "./repository";
 
@@ -1226,8 +1225,6 @@ export interface Specialist {
   origin: "teamProposal" | "coordinator" | "fixedRole";
   /** The agent's own color, only on its identity (W15, ADR 0007): Trama picks a free one, the person may change it. */
   color: AgentColor;
-  /** The body the person chose for the agent; absent when its role or its id gives it one (W16). */
-  shape?: BotShape;
   /** The role in short, shown colored beside the name (W15): the fixed role's, or the developer's own. */
   tag: string;
   createdAt: string;

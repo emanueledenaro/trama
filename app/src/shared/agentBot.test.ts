@@ -3,11 +3,9 @@ import type { AgentColor, Specialist, SpecialistAssignment } from "./domain";
 import {
   ACTIVITY_LOOK,
   agentActivity,
-  BOT_SHAPES,
   botShapeFor,
   DEVELOPER_SHAPES,
   developerShape,
-  isBotShape,
   presenceActivity,
   ROLE_SHAPES,
   teamBotShapes,
@@ -82,30 +80,6 @@ describe("agent bot shapes (W16)", () => {
     expect(after.get(clash)).not.toBe(before);
     const removed = teamBotShapes([developer("S-A", "blue", "2026-09-01T00:00:00Z", "removed"), developer(clash, "indigo", "2026-09-03T00:00:00Z")]);
     expect(removed.get(clash)).toBe(before);
-  });
-});
-
-describe("the body the person chose", () => {
-  it("wins over the role's and the id's body, and any body of the family can be chosen", () => {
-    expect(BOT_SHAPES).toHaveLength(18);
-    expect(isBotShape("star")).toBe(true);
-    expect(isBotShape("cube")).toBe(false);
-    expect(isBotShape(null)).toBe(false);
-    const qa: Member = { id: "F-QA", role: "qa", color: "blue", status: "available", createdAt: "2026-09-01T00:00:00Z" };
-    expect(teamBotShapes([qa]).get("F-QA")).toBe(ROLE_SHAPES.qa);
-    expect(teamBotShapes([{ ...qa, shape: "star" }]).get("F-QA")).toBe("star");
-    expect(botShapeFor({ role: "qa", name: "QA", shape: "flower" })).toBe("flower");
-    expect(botShapeFor({ role: "qa", name: "QA", shape: null })).toBe(ROLE_SHAPES.qa);
-  });
-
-  it("keeps the chosen body off the developers who have none, and gives a developer back its own on reset", () => {
-    const first = developer("S-A", "blue", "2026-09-01T00:00:00Z");
-    const own = teamBotShapes([first]).get("S-A")!;
-    const chosen = { ...developer("S-B", "indigo", "2026-09-02T00:00:00Z"), shape: own };
-    const shapes = teamBotShapes([first, chosen]);
-    expect(shapes.get("S-B")).toBe(own);
-    expect(shapes.get("S-A")).not.toBe(own);
-    expect(teamBotShapes([first, { ...chosen, shape: undefined }]).get("S-B")).not.toBe(own);
   });
 });
 
