@@ -5,6 +5,7 @@ import { copyFile, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { ConflictAssessment, WorktreeSession } from "@shared/domain";
 import { conflictRanges, type LineRange } from "@shared/overlap";
+import type { BranchBase } from "./branchBase";
 import { t } from "./personLanguage";
 import { GIT_SAFE_OPTIONS, git, gitEnvironment, runProcess } from "./process";
 import { reviewWorktree } from "./workspace";
@@ -302,4 +303,37 @@ export async function assessConflict(input: {
   } catch (error) {
     return { ...base, classification: "unknown", conflictingFiles: [], detail: (error as Error).message };
   }
+}
+
+/**
+ * Compares a candidate with its base branch as it is on the remote, once the branch moved past the candidate's base, as
+ * right before its pull request is opened (negozio, pull request #25): a candidate that no longer merges with the branch
+ * goes back to the Coordinator instead of reaching GitHub in conflict. The branch was fetched into the checkout, so the
+ * comparison reads it there. Null when the branch did not move, has no copy on the remote, or was compared already.
+ */
+export async function assessWithRemoteBase(input: {
+  base: BranchBase;
+  candidateId: string;
+  snapshotId: string;
+  session: WorktreeSession;
+  changedFiles: string[];
+  cacheRoot: string;
+  probeRoot: string;
+  /** Whether the comparison with this id is already on the document. */
+  compared: (id: string) => boolean;
+}): Promise<ConflictAssessment | null> {
+  const { base, session } = input;
+  if (!base.branch || !base.remoteSHA || base.remoteSHA === session.baseSHA.toLowerCase()) return null;
+  if (input.compared(`${input.snapshotId}:${base.remoteSHA}`)) return null;
+  return assessConflict({
+    candidateId: input.candidateId,
+    snapshotId: input.snapshotId,
+    session,
+    changedFiles: input.changedFiles,
+    remoteSHA: base.remoteSHA,
+    references: [base.branch],
+    source: { kind: "local", path: session.sourceRoot },
+    cacheRoot: input.cacheRoot,
+    probeRoot: input.probeRoot,
+  });
 }

@@ -386,7 +386,7 @@ import {
 import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessProjectDivergence } from "./core/branchDivergence";
 import { type BranchBase, readBranchBase } from "./core/branchBase";
-import { assessConflict, combineWorktrees } from "./core/conflicts";
+import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
@@ -1762,6 +1762,11 @@ export class TramaController {
       document.conflicts ??= [];
       const heads = new Map<string, string[]>();
       if (defaultHead && !document.branchDivergence) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
+      // The project's branch as it is on GitHub, where the candidates' pull requests go: once it moved past a candidate's
+      // base, as with the person's realignment pushed from another clone, the candidate is compared with it too.
+      const branch = project.snapshot.branch;
+      const ownHead = branch && branch !== snapshot.defaultBranch ? snapshot.branches.find((b) => b.name === branch) : undefined;
+      if (ownHead) heads.set(ownHead.sha.toLowerCase(), [...(heads.get(ownHead.sha.toLowerCase()) ?? []), ownHead.name]);
       for (const pull of snapshot.pullRequests) {
         const sha = pull.headSHA.toLowerCase();
         heads.set(sha, [...(heads.get(sha) ?? []), `#${pull.number} ${pull.headRef}`]);
@@ -7335,6 +7340,11 @@ export class TramaController {
     const baseBranch = project.snapshot.branch ?? "main";
     // Work from a cloud session already has its draft pull request (A19): Trama checks it again on the Mac and takes it out of draft.
     if (assignment.cloud?.status === "returned" && assignment.cloud.pullRequest) return this.publishCloudCandidate(project, candidate, assignment, repository, message);
+    // Right before the pull request the base branch is read on the remote (negozio, pull request #25): a candidate that
+    // no longer merges with it goes back to the Coordinator as a conflict instead of reaching GitHub in conflict.
+    await this.compareWithRemoteBase(project, candidate);
+    const current = candidateReport(document, candidate, await this.integrationHeads(project));
+    if (current.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: current.blockers.map((b) => b.code).join(", ") }));
     // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
@@ -7356,6 +7366,34 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: t("main.controller.pullRequestPublishedTitle", { number: `${published.number}` }), detail: published.url, tone: "tool" });
     this.changedIn(project);
     return candidate.pullRequest;
+  }
+
+  /**
+   * Compares a candidate with its base branch as it is on the remote, after a fetch of the branch. A conflict is recorded
+   * as with the other remote heads, with its card, and the Coordinator resolves it within the mandate.
+   */
+  private async compareWithRemoteBase(project: ActiveProjectState, candidate: Candidate): Promise<void> {
+    const document = project.document;
+    const session = findAssignment(document, candidate.assignmentId)?.workspace;
+    const base = session ? await this.readBranchBase(project, true) : null;
+    if (!session || !base) return;
+    const assessment = await assessWithRemoteBase({
+      base,
+      candidateId: candidate.id,
+      snapshotId: candidate.snapshotId,
+      session,
+      changedFiles: candidate.changedFiles,
+      cacheRoot: join(this.storage.root, "RemoteCache"),
+      probeRoot: join(this.storage.root, "ConflictProbe"),
+      compared: (id) => (document.conflicts ?? []).some((a) => a.id === id),
+    });
+    if (!assessment) return;
+    (document.conflicts ??= []).push(assessment);
+    if (assessment.classification === "conflict") {
+      appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictCardTitle"), detail: null, referenceId: assessment.id });
+      this.continueWork(project, null, "worktreeConflict");
+    }
+    this.changedIn(project);
   }
 
   // MARK: Merge
