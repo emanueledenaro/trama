@@ -5,6 +5,7 @@ import { isActive } from "./team";
 import { translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 import { type ProviderWait, providerWaitLine } from "./resumeWork";
+import { holdsWork } from "./continuousWork";
 
 /**
  * The Coordinator's status line (Q6): one sentence that says what the Coordinator does now and what it does next, as in
@@ -173,9 +174,12 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const now = turn?.phrase ?? plan;
   const workers = workersPhrase(document);
 
-  // The next move of the task in focus: the person's first, since the work waits for it; else the Coordinator's own.
-  const personMove = state?.moves.find((m) => m.actor === "person") ?? null;
+  // The next move of the task in focus: the person's first, since the work waits for it; else the Coordinator's own. A
+  // person's move that holds none of the Coordinator's (a candidate or a plan to look at) waits beside its next move.
+  const firstPersonMove = state?.moves.find((m) => m.actor === "person") ?? null;
   const coordinatorMove = state?.moves.find((m) => m.actor === "coordinator" && m.move !== turn?.move) ?? null;
+  const personHolds = !coordinatorMove || state!.moves.some((m) => m.actor === "person" && holdsWork(state!, m.move));
+  const personMove = personHolds ? firstPersonMove : null;
   const next = personMove
     ? t("main.statusLine.next.waitForYou")
     : coordinatorMove && isCoordinatorMove(coordinatorMove.move)
@@ -188,8 +192,8 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const goalId = focus?.goalId ?? null;
   const action: StatusLineAction | null = declared
     ? { ...declared, requestId: latest!.id, goalId }
-    : personMove
-      ? { ...personMove, reason: "", message: null, requestId: null, goalId }
+    : firstPersonMove
+      ? { ...firstPersonMove, reason: "", message: null, requestId: null, goalId }
       : null;
 
   const stalled = !busyHere && latest?.step?.by === "trama" && latest.step.stalled ? latest.step.stalled : null;

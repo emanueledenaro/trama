@@ -56,6 +56,13 @@ function delegatedHolds(document: ProjectDocument, state: Pick<WorkState, "moves
   });
 }
 
+/**
+ * Whether the person's move holds the Coordinator's own moves: one of WAITS_FOR_PERSON, except a Pact card that blocks
+ * a developer's work, which holds only that work (W06). A candidate or a plan to look at waits beside the Coordinator.
+ */
+export const holdsWork = (state: Pick<WorkState, "questionsHoldOnlyTheirWork">, move: NextMove): boolean =>
+  WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
+
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
 /** A gate that ended in the background (ADR 0023) counts here too: the dialog that asked for it may have moved on. */
 export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "gateEnded", "round"];
@@ -150,7 +157,7 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
     return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
   }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
-  const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
+  const holds = (move: NextMove) => holdsWork(state, move);
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
   // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).

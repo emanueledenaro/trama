@@ -268,6 +268,35 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     expect(line.action).toMatchObject({ move: "reviewCandidate", actor: "person", targetId: stale.id });
   });
 
+  it("does not say it waits for the person when a verified candidate waits only for the Coordinator's green light", () => {
+    const document = confirmed();
+    document.mandate!.authorizedActions.push("integrateCandidate");
+    request(document, "r3");
+    team(document);
+    const luca = assign(
+      document,
+      { specialist: "Luca", kind: "agreedTicket", objective: "Carrello", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-6-luna", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Scrivi" },
+      document.mandate!.version,
+      "r3",
+      at(2),
+    );
+    endTurn(document, luca.id, null, { kind: "completed", text: "Fatto" });
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: luca.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-1", baseSHA: "base", diff: "+x", changedFiles: ["Sources/Orders/Cart.swift"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    );
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: candidate.snapshotId });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Cancello superato" });
+    expect(statusLine(document, null).text).toBe("Il prossimo passo è mio: do il via libera al candidato.");
+    setPersonLanguage("en");
+    try {
+      expect(statusLine(document, null).text).toBe("The next step is mine: give the candidate the green light.");
+    } finally {
+      setPersonLanguage("it");
+    }
+  });
+
   it("says the work is paused, keeps what still ends, and keeps the person's button (A05)", () => {
     const document = confirmed();
     request(document, "r3");
