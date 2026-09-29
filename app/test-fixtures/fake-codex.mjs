@@ -811,6 +811,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      // A11: the person asks the Coordinator to merge a squad into another.
+      const squadMergeMatch = text.match(/\[unisci-squadre:([^:\]]+):([^\]]+)\]/);
+      if (squadMergeMatch) {
+        callTool(threadId, "merge_squads", { squad: squadMergeMatch[1], into: squadMergeMatch[2] }).then((result) => {
+          toolDone("merge_squads", result);
+          const waiting = !result.isError && JSON.parse(result.content[0].text).status === "waiting_for_person";
+          finish(
+            result.isError
+              ? `Rifiutato: ${result.content[0].text}`
+              : waiting
+                ? `Unire ${squadMergeMatch[1]} a ${squadMergeMatch[2]}: scegli chi resta nella vista Squadre.`
+                : `Ho unito ${squadMergeMatch[1]} a ${squadMergeMatch[2]}.`,
+          );
+        });
+        return;
+      }
       const renameMatch = text.match(/\[rinomina:([^:\]]+):([^\]]+)\]/);
       if (renameMatch) {
         callTool(threadId, "rename_specialist", { specialist: renameMatch[1], name: renameMatch[2] }).then((result) => {

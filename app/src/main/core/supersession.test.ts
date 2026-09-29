@@ -232,7 +232,7 @@ describe("the Coordinator supersedes an older candidate of the same work (issue 
         detail: `Candidato ${third.id}, superato da ${thirteenth.id}: La versione n. 13 contiene lo stesso lavoro, aggiornato. Tolto da Aspetta te: Candidato da guardare, Catalogo con i soli prodotti disponibili.`,
       }),
     ]);
-    const english = activityLog([], [], [], [], [], document.candidates, "en").find((e) => e.kind === "supersede")!;
+    const english = activityLog([], [], [], [], [], document.candidates, [], "en").find((e) => e.kind === "supersede")!;
     expect(english.label).toBe("Candidate superseded by the Coordinator");
     expect(english.detail).toContain("Removed from Waiting for you: Candidato da guardare");
 

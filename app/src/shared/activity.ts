@@ -1,4 +1,4 @@
-import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, SquadChange, WorkEvent } from "./domain";
 import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
 import { problemActivity } from "./problems";
 
@@ -10,19 +10,21 @@ import { problemActivity } from "./problems";
 
 /**
  * How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, or failed on an error.
- * A step the Coordinator took for the person (A06) is made, or corrected by the person.
+ * A step the Coordinator took for the person (A06) is made, or corrected by the person. A change of the person to the
+ * squads (A11) is made, or undone.
  */
-export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed" | "corrected";
+export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed" | "corrected" | "undone";
 
 export interface ActivityEntry {
   /** The request of the move, or the round's id. */
   id: string;
   /**
    * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), a person's
-   * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), or a candidate the
-   * Coordinator declared superseded by a newer one of the same work (issue #421).
+   * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), a change of the
+   * person to the squads (A11), or a candidate the Coordinator declared superseded by a newer one of the same work
+   * (issue #421).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge" | "supersede";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round and for the squads the Coordinator formed (A10). */
@@ -44,6 +46,36 @@ export interface ActivityEntry {
   issue?: { number: number; url: string } | null;
   /** The pull request a merge names (issue #247); absent for the other entries. */
   pullRequest?: { number: number; url: string } | null;
+  /** The change to the squads the entry tells (A11), which the view words in the person's language; absent otherwise. */
+  squadChange?: SquadChange;
+}
+
+/**
+ * The person's changes to the squads (A11), made from the Squads view or through the Coordinator, and whether they
+ * were undone. `label` and `detail` are the Italian record; the view words them from `squadChange`. Pure.
+ */
+export function squadChangeEntries(changes: SquadChange[]): ActivityEntry[] {
+  const labels: Record<SquadChange["kind"], string> = { rename: "Squadra rinominata", merge: "Squadre unite", split: "Squadra divisa" };
+  const details: Record<SquadChange["kind"], (c: SquadChange) => string> = {
+    rename: (c) => `${c.names.from} si chiama ora ${c.names.to}.`,
+    merge: (c) => `${c.names.other} si è unita a ${c.names.to}.`,
+    split: (c) => `Da ${c.names.from} nasce la squadra ${c.names.other}.`,
+  };
+  return changes.map((change) => ({
+    id: change.id,
+    kind: "squad",
+    requestId: null,
+    move: null,
+    trigger: null,
+    label: labels[change.kind],
+    goalId: null,
+    startedAt: change.at,
+    endedAt: change.undoneAt,
+    outcome: change.undoneAt ? "undone" : "done",
+    detail: details[change.kind](change),
+    toolErrors: [],
+    squadChange: change,
+  }));
 }
 
 /**
@@ -114,6 +146,7 @@ export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
   stopped: "Fermata",
   failed: "Errore",
   corrected: "Corretto",
+  undone: "Annullata",
 };
 
 /**
@@ -166,8 +199,8 @@ export const ROUND_LABEL = "Giro del Coordinatore";
 
 /**
  * The automatic moves, the rounds with an outcome, the steps of the found problems, the person's steps the Coordinator
- * took and Trama's merges of the project, newest first, from the requests, the move lines Trama recorded, the rounds,
- * the problems, the steps and the candidates. Pure.
+ * took, Trama's merges and the person's changes to the squads of the project, newest first, from the requests, the
+ * move lines Trama recorded, the rounds, the problems, the steps, the candidates and the squad changes. Pure.
  */
 export function activityLog(
   requests: CoordinatorRequest[],
@@ -176,6 +209,7 @@ export function activityLog(
   problems: FoundProblem[] = [],
   steps: AutonomousStep[] = [],
   candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest" | "supersession">[] = [],
+  squadChanges: SquadChange[] = [],
   language: Language = DEFAULT_LANGUAGE,
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
@@ -237,7 +271,8 @@ export function activityLog(
   );
   const found = problemActivity(problems);
   const merged = [...mergeActivityEntries(candidates), ...supersessionActivityEntries(candidates, language)];
-  if (!done.length && !found.length && !taken.length && !merged.length) return moves;
+  const changed = squadChangeEntries(squadChanges);
+  if (!done.length && !found.length && !taken.length && !merged.length && !changed.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done, ...found, ...taken, ...merged].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found, ...taken, ...merged, ...changed].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
