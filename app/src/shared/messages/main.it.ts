@@ -2453,6 +2453,7 @@ export const mainIt = {
   "main.delegation.approvedBy": "Coordinatore con la tua delega",
   "main.delegation.mandateTitle": "Mandato v{version} con la delega piena",
   "main.delegation.mandateDetail": "Tutti i moduli e tutte le azioni delegabili, perché la persona ha dato la delega piena.",
+  "main.delegation.newModulesDetail": "La delega piena copre anche i moduli nuovi del progetto: {modules}.",
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Presa con la delega piena ({label}).",
   "main.delegation.stalled": "il Coordinatore non ha deciso quello che aspettava la persona.",

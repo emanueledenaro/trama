@@ -2377,6 +2377,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.delegation.approvedBy": "Coordinator with your delegation",
   "main.delegation.mandateTitle": "Mandate v{version} with the full delegation",
   "main.delegation.mandateDetail": "Every module and every delegable action, because the person gave the full delegation.",
+  "main.delegation.newModulesDetail": "The full delegation also covers the project's new modules: {modules}.",
   "main.delegation.ticketSubject": "Issue #{number}: {title}",
   "main.delegation.ticketTaken": "Taken with the full delegation ({label}).",
   "main.delegation.stalled": "the Coordinator did not decide what waited for the person.",

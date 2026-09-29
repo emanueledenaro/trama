@@ -8,13 +8,16 @@ import {
   DelegationError,
   grantDelegation,
   mandateForDelegation,
+  mandateForNewModules,
   markChoiceSeen,
   nextTicket,
   recordChoice,
   requireDelegation,
   revokeDelegation,
 } from "./fullDelegation";
+import { grantMandate, revokeMandate } from "./pact";
 import { PersonRequestError } from "./personRequest";
+import { restrictMandate } from "./projectMandate";
 
 const AT = "2026-09-29T01:00:00.000Z";
 const LATER = "2026-09-29T02:00:00.000Z";
@@ -138,6 +141,27 @@ describe("full delegation (issue #423)", () => {
     const widened = mandateForDelegation(document, ["A", "B"])!;
     document.mandate = { version: 2, objectives: ["o"], priorities: [], scopeModuleIds: ["A", "B"], authorizedActions: widened.authorizedActions, limits: [], grantedAt: AT, status: "granted", revocation: null, history: [] } as never;
     expect(mandateForDelegation(document, ["A", "B"])).toBeNull();
+  });
+
+  it("covers the modules the project gains after the delegation, and leaves out what the person took away since", () => {
+    const document = emptyDocument("p");
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["A"], authorizedActions: ["plan"], limits: ["l"] }, new Date(AT));
+    add(document, "person", typed("Fai tutto tu"), LATER);
+    // Without the delegation a new module waits for the person's mandate.
+    expect(mandateForNewModules(document, ["A", "B"])).toBeNull();
+    grantDelegation(document, { quote: "fai tutto tu", tickets: false }, new Date(LATER));
+    grantMandate(document, mandateForDelegation(document, ["A", "B"])!, new Date(LATER));
+    // Nothing new: the mandate the delegation brought knows every module.
+    expect(mandateForNewModules(document, ["A", "B"])).toBeNull();
+    expect(mandateForNewModules(document, ["A", "B", "C"])).toMatchObject({ objectives: ["o"], limits: ["l"], scopeModuleIds: ["A", "B", "C"], authorizedActions: document.mandate!.authorizedActions });
+
+    // The person narrows the mandate from the Mandate view: B and the merge stay out, only the new module comes in.
+    restrictMandate(document, { scopeModuleIds: ["A"], authorizedActions: ["plan", "executeInWorktree"] }, new Date(LATEST));
+    expect(mandateForNewModules(document, ["A", "B", "C"])).toMatchObject({ scopeModuleIds: ["A", "C"], authorizedActions: ["plan", "executeInWorktree"] });
+
+    // A mandate the person revoked stays revoked.
+    revokeMandate(document, "Basta così", new Date(LATEST));
+    expect(mandateForNewModules(document, ["A", "B", "C"])).toBeNull();
   });
 
   it("says in the chat with the person's words that it does everything, and keeps the computer awake only with open work", () => {

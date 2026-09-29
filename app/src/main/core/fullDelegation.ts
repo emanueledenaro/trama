@@ -175,4 +175,29 @@ export function mandateForDelegation(document: ProjectDocument, moduleIds: strin
   };
 }
 
+/**
+ * The mandate that covers the modules the project gained after the full delegation was given (issue #423), as a folder
+ * the work created, or null. The delegation brings a mandate over every module; one that appears later is covered too,
+ * with the same actions. A module that a version since the delegation knew stays as the person left it, so what they
+ * narrowed from the Mandate view stays narrowed; a mandate they revoked stays revoked. Pure.
+ */
+export function mandateForNewModules(document: ProjectDocument, moduleIds: string[]) {
+  const delegation = activeDelegation(document);
+  const mandate = document.mandate;
+  if (!delegation || mandate?.status !== "granted") return null;
+  const versions = [...mandate.history, mandate];
+  // The version in force when the delegation came, and every one since.
+  const known = [versions.filter((v) => v.grantedAt < delegation.grantedAt).at(-1), ...versions.filter((v) => v.grantedAt >= delegation.grantedAt)];
+  const seen = new Set(known.flatMap((v) => (v ? [...v.scopeModuleIds, ...(v.restriction?.removedModuleIds ?? [])] : [])));
+  const added = moduleIds.filter((id) => !seen.has(id));
+  if (!added.length) return null;
+  return {
+    objectives: mandate.objectives,
+    priorities: mandate.priorities,
+    scopeModuleIds: [...mandate.scopeModuleIds, ...added],
+    authorizedActions: mandate.authorizedActions,
+    limits: mandate.limits,
+  };
+}
+
 export { PersonRequestError };

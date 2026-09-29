@@ -1,6 +1,6 @@
 import { workState } from "./core/workPhase";
 import { openGrillingQuestions } from "@shared/grilling";
-import { chmod, cp, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
@@ -1941,6 +1941,24 @@ describe("TramaController", () => {
     expect(document.delegations?.[0]?.revokedBy).toEqual({ kind: "view" });
     expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "delegation" && e.content.title === "revoked")).toBe(true);
     expect(keepAwake.at(-1)).toBe(false);
+  });
+
+  it("covers with the mandate the modules the project gains while the full delegation is in force (issue #423)", async () => {
+    const { project: path } = await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[delega:fai tutto tu] Fai tutto tu", null, null, null);
+    const granted = document.mandate!.version;
+    expect(document.mandate!.scopeModuleIds).not.toContain("Sources/Shipping");
+
+    // The work creates a new folder: the project gains a module the mandate did not know.
+    await mkdir(join(path, "Sources/Shipping"), { recursive: true });
+    await writeFile(join(path, "Sources/Shipping/Shipment.swift"), "struct Shipment {}\n");
+    await controller!.refreshProject(false);
+    await controller!.send("Come va?", null, null, null);
+
+    // The Coordinator's turn already reads a mandate that covers it, as a new version told in Activity.
+    expect(document.mandate).toMatchObject({ status: "granted", version: granted + 1, scopeModuleIds: expect.arrayContaining(["Sources/Orders", "Sources/Shipping"]) });
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Mandato v${granted + 1} con la delega piena`)).toBe(true);
   });
 
 });

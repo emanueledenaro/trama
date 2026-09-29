@@ -422,7 +422,7 @@ import { confirmByButton, declineAction, finishAction, runnableArgs } from "./co
 import { redactSensitiveData } from "./core/redaction";
 import { runnableCommand } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
-import { activeDelegation, markChoiceSeen, mandateForDelegation, nextTicket, READY_LABEL, recordChoice, revokeDelegation } from "./core/fullDelegation";
+import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
 import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
@@ -2783,6 +2783,8 @@ export class TramaController {
       if (!selectedModel) throw new Error(this.coordinatorModelProblem(document, activeProvider));
       project.streaming = { requestId: request.id, text: "" };
       const runtime = await this.ensureRuntime(project);
+      // With the full delegation the turn reads a mandate over every module the project has now (issue #423).
+      this.coverNewModules(project, request.id);
       const study = await buildStudy(project.snapshot, document, project.github);
       if (closed()) return;
       document.coordinator.study = study;
@@ -3266,6 +3268,8 @@ export class TramaController {
   private takeDelegatedSteps(project: ActiveProjectState): string[] {
     const document = project.document;
     const taken: string[] = [];
+    // The modules the project gained under the full delegation come into the mandate before any step reads it (issue #423).
+    this.coverNewModules(project, null);
     // One step can open the next (the understanding opens the plan): the loop stops when no new step is possible.
     for (let pass = 0; pass < 4; pass++) {
       const steps = delegatedSteps(document, this.continuationGuards(project));
@@ -4889,6 +4893,33 @@ export class TramaController {
     appendEvent(document, "trama", { type: "card", kind: "delegation", title: delegation.revokedAt ? "revoked" : "granted", detail: null, referenceId: delegation.id }, requestId);
     this.changedIn(project);
     if (!delegation.revokedAt) void this.runDuties();
+  }
+
+  /**
+   * With the full delegation in force, the modules the project gained since it was given, as a folder the work created,
+   * come into a new version of the mandate, told in Activity (issue #423): the work on them does not stop at the tool.
+   * What the person narrowed from the Mandate view stays narrowed. Returns whether the mandate changed.
+   */
+  private coverNewModules(project: ActiveProjectState, requestId: string | null): boolean {
+    const terms = mandateForNewModules(project.document, project.snapshot.modules.map((m) => m.id));
+    if (!terms) return false;
+    const known = new Set(project.document.mandate?.scopeModuleIds ?? []);
+    const mandate = grantMandate(project.document, terms);
+    const added = mandate.scopeModuleIds.filter((id) => !known.has(id));
+    const name = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: t("main.delegation.mandateTitle", { version: mandate.version }),
+        detail: t("main.delegation.newModulesDetail", { modules: added.map(name).join(", ") }),
+        tone: "info",
+      },
+      requestId,
+    );
+    this.changedIn(project);
+    return true;
   }
 
   /** A product question the Coordinator answered with the delegation: the same effects as the person's answer (issue #423). */
