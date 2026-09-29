@@ -1,10 +1,11 @@
 import { IconCopy, IconGitPullRequest, IconMessage } from "@tabler/icons-react";
 import { useState } from "react";
-import { colleagueLabel, colleagueMessage, linesLabel, OVERLAP_LABEL, type OverlapItem, type OverlapLevel, type OverlapMark, overlapSummary } from "@shared/overlap";
+import { colleagueLabel, colleagueMessage, linesLabel, overlapLabel, type OverlapItem, type OverlapLevel, type OverlapMark, overlapSummary } from "@shared/overlap";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { errorText, useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 /**
  * Overlap warnings (G03): the three levels of decision 3 and the message to the colleague of decision 10. Trama
@@ -15,7 +16,8 @@ import { errorText, useUi } from "@/lib/store";
 const LEVEL_TONE = { module: "info", file: "warning", conflict: "destructive" } as const;
 
 export function OverlapBadge({ level }: { level: OverlapLevel }) {
-  return <Badge tone={LEVEL_TONE[level]}>{OVERLAP_LABEL[level]}</Badge>;
+  const t = useT();
+  return <Badge tone={LEVEL_TONE[level]}>{overlapLabel(t, level)}</Badge>;
 }
 
 const MARK_TEXT: Record<OverlapMark["level"], string> = {
@@ -54,9 +56,10 @@ function useSelfSide(item: OverlapItem): { name: string; branch: string | null }
 
 /** Decision 10: the message ready to edit, sent only by the person. */
 export function ColleagueMessage({ item, onClose }: { item: OverlapItem; onClose: () => void }) {
+  const t = useT();
   const self = useSelfSide(item);
   const canComment = useUi((s) => Boolean(s.app?.project?.github.repository && s.app.project.github.status === "ready"));
-  const [text, setText] = useState(() => colleagueMessage(item, self));
+  const [text, setText] = useState(() => colleagueMessage(t, item, self));
   const [done, setDone] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const pull = canComment ? item.pullRequest : null;
@@ -107,13 +110,14 @@ export function ColleagueMessage({ item, onClose }: { item: OverlapItem; onClose
 
 /** Files with the lines in conflict, when the probe found them. */
 function FileList({ item }: { item: OverlapItem }) {
+  const t = useT();
   if (item.level === "module" || !item.files.length) return null;
   return (
     <ul className="mt-1 flex flex-wrap gap-1" aria-label="File in comune">
       {item.files.slice(0, 8).map((file) => (
         <li key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
           {file}
-          {item.lines[file]?.length ? <span className="font-sans">, {linesLabel(item.lines[file]!)}</span> : null}
+          {item.lines[file]?.length ? <span className="font-sans">, {linesLabel(t, item.lines[file]!)}</span> : null}
         </li>
       ))}
       {item.files.length > 8 ? <li className="text-ui-xs text-muted-foreground">e altri {item.files.length - 8}</li> : null}
@@ -123,12 +127,13 @@ function FileList({ item }: { item: OverlapItem }) {
 
 /** One overlap: its level, the summary, the files and, on request, the message to the colleague. */
 export function OverlapRow({ item, detailed = true }: { item: OverlapItem; detailed?: boolean }) {
+  const t = useT();
   const [writing, setWriting] = useState(false);
   return (
     <div className="py-1.5" data-testid="overlap-item" data-level={item.level}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <OverlapBadge level={item.level} />
-        <span className="min-w-0 flex-1 text-ui-sm text-foreground/90">{overlapSummary(item)}</span>
+        <span className="min-w-0 flex-1 text-ui-sm text-foreground/90">{overlapSummary(t, item)}</span>
         {item.level !== "module" && !writing ? (
           <div className="cta-row ml-auto">
             <Button size="xs" variant="outline" onClick={() => setWriting(true)}>
@@ -140,7 +145,7 @@ export function OverlapRow({ item, detailed = true }: { item: OverlapItem; detai
       {detailed ? <FileList item={item} /> : null}
       {detailed && item.colleague.branch ? (
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
-          {colleagueLabel(item.colleague)} è su <span className="font-mono">{item.colleague.branch}</span>
+          {colleagueLabel(t, item.colleague)} è su <span className="font-mono">{item.colleague.branch}</span>
           {item.colleague.task ? `, per "${item.colleague.task.title}"` : ""}
           {item.pullRequest ? `, pull request #${item.pullRequest.number}` : ""}.
         </p>

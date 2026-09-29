@@ -10,6 +10,9 @@ import {
   retryDelayMs,
   waitReasonOf,
 } from "./providerFailure";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const now = new Date("2026-09-26T10:00:00.000Z");
 
@@ -35,7 +38,7 @@ const PI_OPENROUTER_429_BEFORE = `Pi ha raggiunto il limite di utilizzo. 429: ${
 describe("classifyProviderFailure", () => {
   it("reads OpenRouter's upstream 429 as a temporary, shared limit with Riprova, Cambia modello and Aggiungi la tua chiave", () => {
     for (const raw of [PI_OPENROUTER_429, PI_OPENROUTER_429_BEFORE]) {
-      const failure = classifyProviderFailure(raw, { provider: "Pi", now });
+      const failure = classifyProviderFailure(t, raw, { provider: "Pi", now });
       expect(failure).toMatchObject({
         kind: "temporaryLimit",
         title: "Limite temporaneo del provider",
@@ -53,38 +56,38 @@ describe("classifyProviderFailure", () => {
   });
 
   it("reads a used-up quota with its reset date", () => {
-    const codex = classifyProviderFailure(
+    const codex = classifyProviderFailure(t, 
       "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again in 2 days.",
       { provider: "ChatGPT", now },
     );
     expect(codex).toMatchObject({ kind: "quotaExhausted", temporary: false, until: "2026-09-28T10:00:00.000Z", actions: ["changeModel", "changeProvider"] });
     expect(codex.explanation).toMatch(/^ChatGPT ha esaurito la quota del piano\. Si sblocca il /);
 
-    const gemini = classifyProviderFailure(
+    const gemini = classifyProviderFailure(t, 
       '429: {"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}',
       { provider: "Antigravity", now },
     );
     expect(gemini).toMatchObject({ kind: "quotaExhausted", until: null, providerMessage: "You exceeded your current quota, please check your plan and billing details." });
 
     // The Pi and OpenCode limits of their adapter tests: a usage limit with its reset moment.
-    expect(classifyProviderFailure("429 rate_limit_error: usage limit reached, resets at 2099-01-01T00:00:00Z", { now })).toMatchObject({
+    expect(classifyProviderFailure(t, "429 rate_limit_error: usage limit reached, resets at 2099-01-01T00:00:00Z", { now })).toMatchObject({
       kind: "quotaExhausted",
       until: "2099-01-01T00:00:00.000Z",
     });
-    expect(classifyProviderFailure("You've hit your limit · resets 3pm (Europe/Rome)", { now }).kind).toBe("quotaExhausted");
+    expect(classifyProviderFailure(t, "You've hit your limit · resets 3pm (Europe/Rome)", { now }).kind).toBe("quotaExhausted");
   });
 
   it("reads a missing or expired access with Accedi di nuovo and Controlla di nuovo", () => {
-    const anthropic = classifyProviderFailure('401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', { provider: "Pi", now });
+    const anthropic = classifyProviderFailure(t, '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', { provider: "Pi", now });
     expect(anthropic).toMatchObject({ kind: "signIn", title: "Serve un nuovo accesso", actions: ["changeProvider", "checkAgain", "signIn"], providerMessage: "invalid x-api-key" });
     expect(anthropic.explanation).toBe("L'accesso a Pi manca o è scaduto. Accedi di nuovo, poi controlla lo stato.");
-    expect(classifyProviderFailure("OAuth token has expired. Please obtain a new token or refresh your existing token.", { now }).kind).toBe("signIn");
-    expect(classifyProviderFailure("Collega un provider in OpenCode con `opencode auth login` per usarlo in Trama.", { now }).kind).toBe("signIn");
-    expect(classifyProviderFailure("Grok richiede una chiave API: imposta XAI_API_KEY oppure esegui `grok login`.", { now }).kind).toBe("signIn");
+    expect(classifyProviderFailure(t, "OAuth token has expired. Please obtain a new token or refresh your existing token.", { now }).kind).toBe("signIn");
+    expect(classifyProviderFailure(t, "Collega un provider in OpenCode con `opencode auth login` per usarlo in Trama.", { now }).kind).toBe("signIn");
+    expect(classifyProviderFailure(t, "Grok richiede una chiave API: imposta XAI_API_KEY oppure esegui `grok login`.", { now }).kind).toBe("signIn");
   });
 
   it("reads a model the account cannot use with Cambia modello", () => {
-    const codex = classifyProviderFailure(
+    const codex = classifyProviderFailure(t, 
       '{"detail":"The \'gpt-6-sol\' model is not supported when using Codex with a ChatGPT account."}',
       { provider: "ChatGPT", now },
     );
@@ -94,19 +97,19 @@ describe("classifyProviderFailure", () => {
       actions: ["changeProvider", "changeModel"],
       providerMessage: "The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.",
     });
-    expect(classifyProviderFailure('404: {"message":"No endpoints found for qwen/qwen9:free.","code":404}', { now }).kind).toBe("modelUnavailable");
+    expect(classifyProviderFailure(t, '404: {"message":"No endpoints found for qwen/qwen9:free.","code":404}', { now }).kind).toBe("modelUnavailable");
   });
 
   it("tells a provider that does not answer from a limit", () => {
-    expect(classifyProviderFailure("getaddrinfo ENOTFOUND openrouter.ai", { now })).toMatchObject({ kind: "unreachable", actions: ["checkAgain", "retry"] });
-    expect(classifyProviderFailure("fetch failed", { now }).kind).toBe("unreachable");
+    expect(classifyProviderFailure(t, "getaddrinfo ENOTFOUND openrouter.ai", { now })).toMatchObject({ kind: "unreachable", actions: ["checkAgain", "retry"] });
+    expect(classifyProviderFailure(t, "fetch failed", { now }).kind).toBe("unreachable");
   });
 
   it("keeps other temporary limits temporary: overload and per-minute rate limits", () => {
-    const overloaded = classifyProviderFailure('529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', { provider: "Claude", now });
+    const overloaded = classifyProviderFailure(t, '529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', { provider: "Claude", now });
     expect(overloaded).toMatchObject({ kind: "temporaryLimit", actions: ["changeModel", "retry"] });
     expect(overloaded.explanation).toBe("Claude è sovraccarico in questo momento. Non è la quota del tuo account: passa da solo.");
-    const tpm = classifyProviderFailure(
+    const tpm = classifyProviderFailure(t, 
       "429 Rate limit reached for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Used 29000, Requested 1500. Please try again in 20s.",
       { now },
     );
@@ -114,25 +117,25 @@ describe("classifyProviderFailure", () => {
   });
 
   it("keeps an unknown failure's sentence, out of its JSON envelope", () => {
-    expect(classifyProviderFailure('{"error":{"message":"Tool schema rejected"}}', { now })).toMatchObject({
+    expect(classifyProviderFailure(t, '{"error":{"message":"Tool schema rejected"}}', { now })).toMatchObject({
       kind: "unknown",
       title: "Il Coordinatore non ha potuto rispondere",
       explanation: "Tool schema rejected",
       actions: ["retry"],
     });
-    expect(classifyProviderFailure("socket closed", { now })).toMatchObject({ kind: "unknown", explanation: "socket closed", technical: null });
+    expect(classifyProviderFailure(t, "socket closed", { now })).toMatchObject({ kind: "unknown", explanation: "socket closed", technical: null });
   });
 });
 
 describe("readable failures", () => {
   it("never lets a provider's JSON body through as the message", () => {
-    const shown = readableFailure(PI_OPENROUTER_429_BEFORE, "Pi");
+    const shown = readableFailure(t, PI_OPENROUTER_429_BEFORE, "Pi");
     expect(containsJson(shown)).toBe(false);
     expect(shown).toMatch(/^Limite temporaneo del provider\. /);
-    expect(failureSummary(PI_OPENROUTER_429)).not.toContain("{");
+    expect(failureSummary(t, PI_OPENROUTER_429)).not.toContain("{");
     // Plain text stays as it is.
-    expect(readableFailure("Il pianificatore non ha risposto.")).toBe("Il pianificatore non ha risposto.");
-    expect(readableFailure(null)).toBeNull();
+    expect(readableFailure(t, "Il pianificatore non ha risposto.")).toBe("Il pianificatore non ha risposto.");
+    expect(readableFailure(t, null)).toBeNull();
   });
 });
 
@@ -155,8 +158,8 @@ describe("waiting to resume a turn (C11)", () => {
   it("waits out limits, used up quotas and outages, never access or model failures", () => {
     const kinds = ["temporaryLimit", "quotaExhausted", "unreachable", "signIn", "modelUnavailable", "unknown"] as const;
     expect(kinds.map(waitReasonOf)).toEqual(["temporaryLimit", "quotaExhausted", "unreachable", null, null, null]);
-    expect(classifyProviderFailure("getaddrinfo ENOTFOUND chatgpt.com").kind).toBe("unreachable");
-    expect(classifyProviderFailure("You've hit your usage limit. Upgrade to Pro, or try again later.").kind).toBe("quotaExhausted");
+    expect(classifyProviderFailure(t, "getaddrinfo ENOTFOUND chatgpt.com").kind).toBe("unreachable");
+    expect(classifyProviderFailure(t, "You've hit your usage limit. Upgrade to Pro, or try again later.").kind).toBe("quotaExhausted");
   });
 
   it("checks a used up quota at its reset when sooner, otherwise at the regular check", () => {
@@ -168,11 +171,11 @@ describe("waiting to resume a turn (C11)", () => {
 
   it("says what Trama waits for", () => {
     const retry = { attempt: 2, maxAttempts: 5 };
-    expect(providerWaitText({ ...retry, reason: "unreachable" }, 45)).toBe("Trama riprova da sola tra 45 secondi, tentativo 2 di 5.");
-    expect(providerWaitText({ ...retry, reason: "temporaryLimit" }, 0)).toBe("Trama riprova ora, tentativo 2 di 5.");
-    expect(providerWaitText({ ...retry, reason: "quotaExhausted" }, 900)).toBe(
+    expect(providerWaitText(t, { ...retry, reason: "unreachable" }, 45)).toBe("Trama riprova da sola tra 45 secondi, tentativo 2 di 5.");
+    expect(providerWaitText(t, { ...retry, reason: "temporaryLimit" }, 0)).toBe("Trama riprova ora, tentativo 2 di 5.");
+    expect(providerWaitText(t, { ...retry, reason: "quotaExhausted" }, 900)).toBe(
       "Trama controlla di nuovo la quota tra 15 minuti e riprende il turno da sola appena si sblocca.",
     );
-    expect(providerWaitText({ ...retry, reason: "quotaExhausted" }, 0)).toBe("Trama controlla di nuovo la quota ora.");
+    expect(providerWaitText(t, { ...retry, reason: "quotaExhausted" }, 0)).toBe("Trama controlla di nuovo la quota ora.");
   });
 });

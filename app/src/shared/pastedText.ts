@@ -1,4 +1,6 @@
 /** A long paste kept as a card and sent after the prompt. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. */
+import type { Translate } from "./i18n";
+
 export const PASTE_MINIMUM_CHARACTERS = 4_000;
 export const PASTE_MINIMUM_LINES = 25;
 
@@ -13,9 +15,9 @@ export function pasteTitle(text: string): string {
   return (text.split("\n").map((l) => l.trim()).find(Boolean) ?? "").slice(0, 140);
 }
 
-export function pasteSizeLabel(text: string): string {
+export function pasteSizeLabel(t: Translate, text: string): string {
   const lines = text.split("\n").length;
-  return lines > 1 ? `${lines} righe` : `${text.length} caratteri`;
+  return lines > 1 ? t("shared.paste.lines", { count: lines }) : t("shared.paste.characters", { count: text.length });
 }
 
 /** `prompt`, a blank line and the pastes as a JSON array inside <pasted_text>. */

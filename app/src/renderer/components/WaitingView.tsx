@@ -274,7 +274,7 @@ function DecidedToday() {
   const t = useT();
   const document = useUi((s) => s.app?.project?.document ?? null);
   const [open, setOpen] = useState(false);
-  const decided = document ? decidedToday(document, new Date()) : NO_DECISIONS;
+  const decided = document ? decidedToday(t, document, new Date()) : NO_DECISIONS;
   if (!decided.length) return null;
   const title = `${t("waiting.decided.title")} · ${decided.length}`;
   return (

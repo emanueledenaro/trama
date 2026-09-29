@@ -55,13 +55,23 @@ export function translate(language: Language, key: MessageKey, params?: MessageP
   });
 }
 
-export type Translate = (key: MessageKey, params?: MessageParams) => string;
+/** A translate function bound to one language; `language` lets a shared helper format numbers and dates for it. */
+export interface Translate {
+  (key: MessageKey, params?: MessageParams): string;
+  readonly language: Language;
+}
 
 /** A translate function bound to one language. */
 export const translator = (language: Language | null | undefined): Translate => {
   const resolved = isLanguage(language) ? language : DEFAULT_LANGUAGE;
-  return (key, params) => translate(resolved, key, params);
+  return Object.assign((key: MessageKey, params?: MessageParams) => translate(resolved, key, params), { language: resolved });
 };
+
+/**
+ * Italian bound once: for text written for the model, which keeps its words whatever the interface language, and for
+ * records the main process still writes as Italian sentences.
+ */
+export const ITALIAN: Translate = translator("it");
 
 /** The placeholders a template uses, sorted: the catalogs must agree on them. */
 export const placeholders = (template: string): string[] => [...new Set([...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort();
@@ -107,4 +117,9 @@ export function formatRelativeTime(language: Language, iso: string, now = Date.n
 export function formatAgo(language: Language, iso: string, now = Date.now()): string {
   const relative = formatRelativeTime(language, iso, now);
   return relative === translate(language, "time.now") ? relative : translate(language, "time.ago", { time: relative });
+}
+
+/** A list with the language's last "and": "a, b e c", "a, b, and c". */
+export function formatList(language: Language, items: string[]): string {
+  return new Intl.ListFormat(localeOf(language), { type: "conjunction" }).format(items);
 }

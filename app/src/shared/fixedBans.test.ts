@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { commandBan, FIXED_BANS, isSecretPath, needsConfirmation, pathBan, pushBan, runnableCommand } from "./fixedBans";
+import { commandBan, fixedBans, isSecretPath, needsConfirmation, pathBan, pushBan, runnableCommand } from "./fixedBans";
+import { LANGUAGES, translator } from "./i18n";
 
 describe("fixed bans on commands (issue #244)", () => {
   it.each([
@@ -157,14 +158,17 @@ describe("fixed bans on files and pushes", () => {
   });
 
   it("lists every ban once, with a reason for the person", () => {
-    expect(new Set(FIXED_BANS.map((b) => b.id)).size).toBe(6);
-    for (const ban of FIXED_BANS) expect(ban.reason).toMatch(/\.$/);
+    for (const language of LANGUAGES) {
+      const bans = fixedBans(translator(language));
+      expect(new Set(bans.map((b) => b.id)).size).toBe(6);
+      for (const ban of bans) expect(ban.reason).toMatch(/\.$/);
+    }
   });
 });
 
 describe("actions the person asks for (issue #422)", () => {
   it("asks a confirmation only for what deletes something or cannot be undone", () => {
-    expect(FIXED_BANS.filter((b) => needsConfirmation(b.id)).map((b) => b.id)).toEqual(["forcePush", "deleteRemoteRef", "secrets"]);
+    expect(fixedBans(translator("it")).filter((b) => needsConfirmation(b.id)).map((b) => b.id)).toEqual(["forcePush", "deleteRemoteRef", "secrets"]);
   });
 
   it("runs one plain git or gh command and nothing that could run another program", () => {

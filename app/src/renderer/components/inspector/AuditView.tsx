@@ -1,7 +1,7 @@
 import { IconFocus2, IconRotateClockwise } from "@tabler/icons-react";
 import { plainText } from "@shared/plainLanguage";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
-import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { RecordName } from "@/components/chat/ReferenceText";
@@ -107,12 +107,12 @@ function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; a
   return (
     <li className="space-y-1 py-1.5" data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+        <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
         {finding.severity === "serious" ? <Badge tone="destructive">{t("audit.serious")}</Badge> : null}
         <span className="text-ui-sm text-foreground">{finding.title}</span>
       </div>
       <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
-        Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence)}
+        Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</span> : evidenceLabel(t, evidence)}
       </p>
       {evidence?.kind === "reproduction" ? <p className="whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p> : null}
       {finding.basis || finding.observed ? (
@@ -157,7 +157,7 @@ function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: string; audit:
     return (
       <div className="space-y-1">
         {/* The skill's own words ("no spec available") stay in the record; the person reads them in Italian (issue #270). */}
-        <p className="text-ui text-foreground/85">{axis.report ? plainText(axis.report) : null}</p>
+        <p className="text-ui text-foreground/85">{axis.report ? plainText(t, axis.report) : null}</p>
         {name === "spec" ? (
           <p className="text-ui-sm text-muted-foreground">{t(audit.target.kind === "candidate" ? "audit.axis.noSpec" : "audit.axis.noSpecCommits")}</p>
         ) : null}
@@ -193,7 +193,7 @@ function Verdict({ audit }: { audit: FocusAudit }) {
   const t = useT();
   const running = isRunning(audit);
   const total = auditFindings(audit).length;
-  const tally = findingTally(audit);
+  const tally = findingTally(t, audit);
   const lensLine = lensSummary(audit, t);
   return (
     <div className="space-y-1" data-testid="focus-audit-verdict">
@@ -219,7 +219,7 @@ function Verdict({ audit }: { audit: FocusAudit }) {
       {audit.status === "failed" && audit.failure ? <p className="text-ui-sm text-destructive">{audit.failure}</p> : null}
       {audit.summary ? (
         <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
-          {plainText(audit.summary)}
+          {plainText(t, audit.summary)}
         </p>
       ) : null}
       {audit.summary && lensLine ? (
@@ -319,7 +319,7 @@ function AuditBody({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
       {audit.status === "done" ? <Publication audit={audit} /> : null}
       <TechnicalDetail testId="focus-audit-technical">
         <p className="text-ui-sm text-muted-foreground">
-          {audit.target.kind === "candidate" ? t("audit.fixedPoint", { commit: audit.fixedPoint.slice(0, 10) }) : t("audit.fixedPointScoped", { point: fixedPointText(audit, t) })}
+          {audit.target.kind === "candidate" ? t("audit.fixedPoint", { commit: audit.fixedPoint.slice(0, 10) }) : t("audit.fixedPointScoped", { point: fixedPointText(t, audit) })}
           <Sep />
           {t("audit.files", { count: audit.changedFiles.length })}
         </p>
@@ -406,7 +406,7 @@ function ScopedAuditSection({ audit }: { audit: FocusAudit }) {
     <section className="px-4 py-3" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
-          {t("audit.title")} {focusTargetOf(audit.target, null, t)}
+          {t("audit.title")} {focusTargetOf(t, audit.target)}
         </h4>
         <div className="cta-row">
           {audit.status === "done" && linked && !audit.publication ? (

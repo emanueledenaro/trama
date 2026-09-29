@@ -1,4 +1,5 @@
-import { BLOCKER_TEXT } from "@shared/plainLanguage";
+import { ITALIAN } from "@shared/i18n";
+import { blockerText } from "@shared/plainLanguage";
 import type {
   Candidate,
   CandidateBlocker,
@@ -321,7 +322,7 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
     case "CLOUD_CHECK_FAILED":
       return t("main.workPhase.blockerCloudCheckFailed", { id, detail });
     default:
-      return t("main.workPhase.blockerOther", { id, reason: (BLOCKER_TEXT[blocker.code] ?? blocker.code).toLowerCase(), detail }).trim();
+      return t("main.workPhase.blockerOther", { id, reason: blockerText(t, blocker.code).toLowerCase(), detail }).trim();
   }
 }
 
@@ -412,7 +413,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish(
           "blocked",
           plan.failure
-            ? t("main.workPhase.blockerPlanFailedWith", { id: plan.id, failure: readableFailure(plan.failure) })
+            ? t("main.workPhase.blockerPlanFailedWith", { id: plan.id, failure: readableFailure(t, plan.failure) })
             : t("main.workPhase.blockerPlanFailed", { id: plan.id }),
           undefined,
           t("main.workPhase.whyPlanFailed"),
@@ -459,7 +460,7 @@ function readyPlan(
       return moves.finish(
         "blocked",
         slicing.failure
-          ? t("main.workPhase.blockerSlicingFailedWith", { id: plan.id, failure: readableFailure(slicing.failure) })
+          ? t("main.workPhase.blockerSlicingFailedWith", { id: plan.id, failure: readableFailure(t, slicing.failure) })
           : t("main.workPhase.blockerSlicingFailed", { id: plan.id }),
         undefined,
         t("main.workPhase.whySlicingFailed"),

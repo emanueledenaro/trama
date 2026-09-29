@@ -2,7 +2,10 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProjectTeam, Specialist, TeamRole } from "./domain";
-import { FIXED_ROLES, roleDuties, roleProfile, TEAM_MOMENTS, teamRoster } from "./roster";
+import { FIXED_ROLES, roleDuties, roleProfile, teamMoments, teamRoster } from "./roster";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const bundledSkills = readdirSync(join(import.meta.dirname, "../../resources/AIHero/skills"));
 
@@ -44,11 +47,11 @@ describe("team roster (W09)", () => {
       "devops",
     ]);
     for (const role of [...FIXED_ROLES, "developer" as const]) {
-      const profile = roleProfile(role);
+      const profile = roleProfile(t, role);
       expect(profile.name.trim()).not.toBe("");
       expect(profile.competence.trim()).not.toBe("");
-      expect(roleDuties(role).length).toBeGreaterThan(0);
-      for (const duty of roleDuties(role)) {
+      expect(roleDuties(t, role).length).toBeGreaterThan(0);
+      for (const duty of roleDuties(t, role)) {
         expect(duty.task.trim()).not.toBe("");
         for (const skill of duty.skills) expect(bundledSkills).toContain(skill);
       }
@@ -56,15 +59,15 @@ describe("team roster (W09)", () => {
   });
 
   it("gives security and performance no skill, as Trama's own additions", () => {
-    expect(roleDuties("security").flatMap((d) => d.skills)).toEqual([]);
-    expect(roleDuties("performance").flatMap((d) => d.skills)).toEqual([]);
+    expect(roleDuties(t, "security").flatMap((d) => d.skills)).toEqual([]);
+    expect(roleDuties(t, "performance").flatMap((d) => d.skills)).toEqual([]);
     const others = [...FIXED_ROLES, "developer" as const].filter((r) => r !== "security" && r !== "performance");
-    for (const role of others) expect(roleDuties(role).flatMap((d) => d.skills).length, role).toBeGreaterThan(0);
+    for (const role of others) expect(roleDuties(t, role).flatMap((d) => d.skills).length, role).toBeGreaterThan(0);
   });
 
   it("follows the spec table: who works at each moment, in order", () => {
-    const roster = teamRoster({ proposals: [], specialists: [], confirmedAt: null });
-    expect(roster.map((m) => m.moment)).toEqual(TEAM_MOMENTS.map((m) => m.moment));
+    const roster = teamRoster(t, { proposals: [], specialists: [], confirmedAt: null });
+    expect(roster.map((m) => m.moment)).toEqual(teamMoments(t).map((m) => m.moment));
     expect(roster.map((m) => [m.moment, m.figures.map((f) => f.profile.role)])).toEqual([
       ["spec", ["qa", "ux", "research", "documentation"]],
       ["slices", ["squadLead", "developer", "bugTriage"]],
@@ -85,7 +88,7 @@ describe("team roster (W09)", () => {
       confirmedAt: "",
       specialists: [member("cleanCode", "Clean Code"), member("developer", "Ada"), member("developer", "Bruno", "removed"), member("developer", "Cora", "working")],
     };
-    const roster = teamRoster(team);
+    const roster = teamRoster(t, team);
     const names = (moment: string, role: TeamRole) =>
       roster.find((m) => m.moment === moment)!.figures.find((f) => f.profile.role === role)!.specialists.map((s) => s.name);
     expect(names("slices", "developer")).toEqual(["Ada", "Cora"]);

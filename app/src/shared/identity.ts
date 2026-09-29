@@ -1,3 +1,4 @@
+import type { Translate } from "./i18n";
 import type { AgentColor, Specialist } from "./domain";
 
 /**
@@ -9,8 +10,6 @@ import type { AgentColor, Specialist } from "./domain";
 
 export interface AgentPaletteEntry {
   color: AgentColor;
-  /** The color's name in the Team view. */
-  label: string;
   /** The shade on light themes. */
   light: string;
   /** The shade on dark themes. */
@@ -19,16 +18,19 @@ export interface AgentPaletteEntry {
 
 /** Hues chosen away from the status colors (green, amber, red), in the order Trama hands them out. */
 export const AGENT_PALETTE: AgentPaletteEntry[] = [
-  { color: "blue", label: "Blu", light: "#1d4ed8", dark: "#93c5fd" },
-  { color: "indigo", label: "Indaco", light: "#4338ca", dark: "#a5b4fc" },
-  { color: "violet", label: "Viola", light: "#6d28d9", dark: "#c4b5fd" },
-  { color: "fuchsia", label: "Fucsia", light: "#86198f", dark: "#f0abfc" },
-  { color: "pink", label: "Rosa", light: "#9d174d", dark: "#f9a8d4" },
-  { color: "copper", label: "Rame", light: "#9a3412", dark: "#fdba74" },
-  { color: "olive", label: "Oliva", light: "#3f6212", dark: "#bef264" },
-  { color: "teal", label: "Verde acqua", light: "#115e59", dark: "#5eead4" },
-  { color: "cyan", label: "Ciano", light: "#155e75", dark: "#67e8f9" },
+  { color: "blue", light: "#1d4ed8", dark: "#93c5fd" },
+  { color: "indigo", light: "#4338ca", dark: "#a5b4fc" },
+  { color: "violet", light: "#6d28d9", dark: "#c4b5fd" },
+  { color: "fuchsia", light: "#86198f", dark: "#f0abfc" },
+  { color: "pink", light: "#9d174d", dark: "#f9a8d4" },
+  { color: "copper", light: "#9a3412", dark: "#fdba74" },
+  { color: "olive", light: "#3f6212", dark: "#bef264" },
+  { color: "teal", light: "#115e59", dark: "#5eead4" },
+  { color: "cyan", light: "#155e75", dark: "#67e8f9" },
 ];
+
+/** The color's name in the Team view. */
+export const colorName = (t: Translate, color: AgentColor): string => t(`shared.color.${color}`);
 
 export function isAgentColor(value: unknown): value is AgentColor {
   return AGENT_PALETTE.some((entry) => entry.color === value);
@@ -55,19 +57,18 @@ export function freeAgentColor(team: Pick<Specialist, "color" | "status">[]): Ag
   return best;
 }
 
-const FALLBACK_TAG = "Sviluppo";
 const MAXIMUM_TAG = 20;
 
 /** A developer's tag when the Coordinator gave none: the start of its competence, one or two words. */
-export function tagFromCompetence(competence: string): string {
+export function tagFromCompetence(t: Translate, competence: string): string {
   const first = competence.split(/[,.;:()]/)[0]!.trim().replace(/\s+/g, " ");
-  if (!first) return FALLBACK_TAG;
+  if (!first) return t("shared.role.developer.tag");
   const words = first.split(" ");
   if (words.length <= 2 && first.length <= MAXIMUM_TAG) return first;
   return words[0]!.slice(0, MAXIMUM_TAG);
 }
 
 /** The tag shown beside the agent's name. */
-export function agentTag(agent: Pick<Specialist, "tag" | "competence">): string {
-  return agent.tag?.trim() || tagFromCompetence(agent.competence);
+export function agentTag(t: Translate, agent: Pick<Specialist, "tag" | "competence">): string {
+  return agent.tag?.trim() || tagFromCompetence(t, agent.competence);
 }

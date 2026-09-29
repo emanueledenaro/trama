@@ -1,5 +1,6 @@
 import type { AssignmentStatus, ProjectDocument, Specialist, SpecialistAssignment, Squad } from "./domain";
 import { clampParallelDevelopers, parallelDevelopers } from "./parallel";
+import type { Translate } from "./i18n";
 import { SHARED_ROLES } from "./roster";
 import { cloudWorking } from "./workPlace";
 
@@ -96,6 +97,7 @@ export function squadLimitProblem(document: Pick<ProjectDocument, "team" | "sett
 }
 
 /** The problem as a technical error, for the tools and the logs. */
+// i18n-exempt: a technical error in English for the tools and the logs, never shown to the person.
 export function squadLimitError(problem: SquadLimitProblem): string {
   const are = (n: number, one: string, many: string) => `${n} ${n === 1 ? `${one} is` : `${many} are`}`;
   switch (problem.kind) {
@@ -109,16 +111,14 @@ export function squadLimitError(problem: SquadLimitProblem): string {
 }
 
 /** The problem in the person's words. */
-export function squadLimitText(problem: SquadLimitProblem): string {
+export function squadLimitText(t: Translate, problem: SquadLimitProblem): string {
   switch (problem.kind) {
     case "project":
-      return problem.limit === 1 ? "Uno sviluppatore è già al lavoro, il limite del progetto." : `${problem.limit} sviluppatori sono già al lavoro, il limite del progetto.`;
+      return t("shared.squad.limit.project", { count: problem.limit });
     case "squads":
-      return problem.limit === 1 ? "Una squadra è già al lavoro, il limite del progetto." : `${problem.limit} squadre sono già al lavoro, il limite del progetto.`;
+      return t("shared.squad.limit.squads", { count: problem.limit });
     case "developers":
-      return problem.limit === 1
-        ? `Uno sviluppatore è già al lavoro nella squadra ${problem.squad.name}, il limite per squadra.`
-        : `${problem.limit} sviluppatori sono già al lavoro nella squadra ${problem.squad.name}, il limite per squadra.`;
+      return t("shared.squad.limit.developers", { count: problem.limit, squad: problem.squad.name });
   }
 }
 
@@ -195,16 +195,17 @@ export function developersOutsideSquads(document: Pick<ProjectDocument, "team">)
  * The squad's status line (Q19, Q23), read from its developers' work: who works on what, who waits for an answer, or
  * that the squad is free. Never from the model.
  */
-export function squadStatusLine(document: Pick<ProjectDocument, "team">, squad: Squad): string {
+export function squadStatusLine(t: Translate, document: Pick<ProjectDocument, "team">, squad: Squad): string {
   const developers = members(document).filter((s) => squad.developerIds.includes(s.id));
   const atWork = developers.flatMap((s) => {
     const current = s.assignments.findLast(running);
-    return current ? [`${s.name} lavora a ${current.objective}${cloudWorking(current) ? " in una sessione cloud" : ""}`] : [];
+    if (!current) return [];
+    return [t(cloudWorking(current) ? "shared.squad.status.worksInCloud" : "shared.squad.status.works", { name: s.name, objective: current.objective })];
   });
   const waiting = developers.filter((s) => s.assignments.some((a) => a.status === "paused")).map((s) => s.name);
   const parts = [...atWork];
-  if (waiting.length) parts.push(`${waiting.join(", ")} ${waiting.length === 1 ? "aspetta" : "aspettano"} una risposta`);
+  if (waiting.length) parts.push(t("shared.squad.status.waiting", { count: waiting.length, names: waiting.join(", ") }));
   if (parts.length) return `${parts.join("; ")}.`;
-  if (!developers.length) return "Nessuno sviluppatore nella squadra.";
-  return "Libera: prende la prossima fetta pronta della sua area.";
+  if (!developers.length) return t("shared.squad.status.noDevelopers");
+  return t("shared.squad.status.free");
 }

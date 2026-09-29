@@ -38,6 +38,7 @@ const MESSAGE_SENT = inEveryLanguage("main.controller.messageSentTitle");
 const EMPTY_WITHOUT_TEXT = new Set([...NOTES, ...REASONING]);
 
 /** What a step is, from its title in any language, for its icon. */
+// i18n-exempt: reads the titles of stored steps, written in Italian before the catalogs existed.
 export function stepKind(title: string): "tool" | "reasoning" | "edit" | "note" | null {
   if (title.startsWith("Strumento") || title.includes(":")) return "tool";
   if (REASONING.has(title)) return "reasoning";

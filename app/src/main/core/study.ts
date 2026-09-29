@@ -4,7 +4,8 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitHubState, ProjectDocument, ProjectStudy, StudyPart, StudySection } from "@shared/domain";
 import type { RepositorySnapshot } from "@shared/repository";
-import { ACTION_LABELS } from "./pact";
+import { ITALIAN } from "@shared/i18n";
+import { actionLabel } from "./pact";
 import { readRepositoryFile } from "./repositoryScanner";
 
 const TOP_LEVEL_INSTRUCTIONS = ["AGENTS.md", "CLAUDE.md", "README.md", "CONTEXT.md", "CONTRIBUTING.md"];
@@ -149,7 +150,7 @@ function mandateSection(document: ProjectDocument): string {
     `Obiettivi: ${mandate.objectives.join("; ")}`,
     `Priorità: ${mandate.priorities.join("; ") || "nessuna"}`,
     `Perimetro (moduli): ${mandate.scopeModuleIds.join(", ")}`,
-    `Azioni autorizzate: ${mandate.authorizedActions.map((a) => ACTION_LABELS[a]).join("; ")}`,
+    `Azioni autorizzate: ${mandate.authorizedActions.map((a) => actionLabel(ITALIAN, a)).join("; ")}`,
     `Limiti: ${mandate.limits.join("; ") || "nessuno"}`,
   ].join("\n");
 }

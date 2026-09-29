@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderRepairStep } from "./codex";
+import { translator } from "./i18n";
 import { classifyProviderFailure } from "./providerFailure";
 import { REPAIRABLE_CLIS, repairActivity, repairGaveUpMessage } from "./providerRepair";
 
@@ -38,7 +39,7 @@ describe("automatic repair of a provider's CLI", () => {
   it("reaches the person whole, as the explanation of the failed turn", () => {
     for (const language of ["it", "en"] as const) {
       const message = repairGaveUpMessage(language, cli, "notCalled", repaired);
-      const failure = classifyProviderFailure(message, { provider: "Antigravity" });
+      const failure = classifyProviderFailure(translator(language), message, { provider: "Antigravity" });
       expect(failure.kind).toBe("unknown");
       expect(failure.explanation).toBe(message);
     }

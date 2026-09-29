@@ -60,7 +60,7 @@ export function reopeningResume(document: ProjectDocument, continuousWork: boole
   if (latest?.state === "interrupted" && CLOSED_TURNS.includes(latest.failure ?? "")) {
     turn = { requestId: latest.id, kind: "resume" };
   } else if (latest?.state === "failed" && latest.failure) {
-    const failure = classifyProviderFailure(latest.failure, { now });
+    const failure = classifyProviderFailure(t, latest.failure, { now });
     const reason = waitReasonOf(failure.kind);
     if (reason) turn = { requestId: latest.id, kind: "wait", reason, until: failure.until };
   }

@@ -7,7 +7,7 @@ import { DevinRuntime, devinProfile, parseDevinModels, resolveDevinAuthMethod, v
 import { DroidRuntime, droidProfile, resolveDroidAuthMethod } from "./droid";
 import { GrokRuntime, grokHookResponse, grokProfile, parseGrokModels, resolveGrokAuthMethod } from "./grok";
 import { classifyProviderFailure } from "@shared/providerFailure";
-import { setPersonLanguage } from "../../personLanguage";
+import { setPersonLanguage, t } from "../../personLanguage";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -22,8 +22,8 @@ describe("texts in English (issue #301)", () => {
     expect(() => resolveGrokAuthMethod(["xai.api_key"], false)).toThrow("Missing API key for Grok: set XAI_API_KEY or run `grok login`.");
     expect(() => resolveDroidAuthMethod([], false)).toThrow("Droid is not logged in: run `droid` to sign in or set FACTORY_API_KEY.");
     expect(() => resolveDevinAuthMethod([], false)).toThrow("Devin offers no sign-in method without a browser (methods offered: none). Update Devin.");
-    expect(classifyProviderFailure("Missing API key for Grok: set XAI_API_KEY or run `grok login`.").kind).toBe("signIn");
-    expect(classifyProviderFailure("Droid is not logged in: run `droid` to sign in or set FACTORY_API_KEY.").kind).toBe("signIn");
+    expect(classifyProviderFailure(t, "Missing API key for Grok: set XAI_API_KEY or run `grok login`.").kind).toBe("signIn");
+    expect(classifyProviderFailure(t, "Droid is not logged in: run `droid` to sign in or set FACTORY_API_KEY.").kind).toBe("signIn");
   });
 
   it("writes the Cursor status in English", () => {

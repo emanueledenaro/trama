@@ -25,6 +25,9 @@ import {
   TeamError,
 } from "./team";
 import { setPersonLanguage } from "./personLanguage";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const members = [
   { name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIds: ["Sources/Orders"] },
@@ -126,8 +129,8 @@ describe("full team (W09)", () => {
     expect(document.team.specialists.map((s) => s.role)).toEqual(FIXED_ROLES);
     for (const specialist of document.team.specialists) {
       expect(specialist).toMatchObject({
-        name: roleProfile(specialist.role).name,
-        competence: roleProfile(specialist.role).competence,
+        name: roleProfile(t, specialist.role).name,
+        competence: roleProfile(t, specialist.role).competence,
         origin: "fixedRole",
         status: "available",
         moduleIds: [],
@@ -195,7 +198,7 @@ describe("agent identity (W13, W15)", () => {
     const document = emptyDocument("p");
     const colors = document.team.specialists.map((s) => s.color);
     expect(colors.slice(0, AGENT_PALETTE.length)).toEqual(AGENT_PALETTE.map((e) => e.color));
-    for (const specialist of document.team.specialists) expect(specialist.tag).toBe(roleProfile(specialist.role).tag);
+    for (const specialist of document.team.specialists) expect(specialist.tag).toBe(roleProfile(t, specialist.role).tag);
     expect(document.team.specialists.find((s) => s.role === "regressionGuardian")!.tag).toBe("Regressioni");
     const proposal = proposeTeam(document, {
       requestId: null,
