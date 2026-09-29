@@ -322,6 +322,33 @@ describe("the candidate gate (W10)", () => {
     expect(prompts[1]).not.toContain("Verifiche finite dopo il loro turno");
   }, 120_000);
 
+  it("tells the Coordinator the result of a check its turn waited for when that turn ended first, stopped or set aside (ADR 0023)", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    const { project, document } = await openTeam(await slowSuite(hold));
+    // The turn waits for the check, as within the wait of ADR 0023, and ends before it: nobody reads the tool's answer.
+    const asked = controller!.send("[verifica:node_test]", null, null, null);
+    const inFlight = (controller as unknown as { checksInFlight: Map<string, unknown> }).checksInFlight;
+    await until(() => inFlight.size > 0);
+    await controller!.interrupt();
+    await asked;
+    expect(document.requests.at(-1)!.state).toBe("interrupted");
+    expect(project.runningRequestId).toBeNull();
+    await writeFile(hold, "");
+    const passed = () => document.events.find((e) => e.content.type === "activity" && e.content.title.endsWith(": superata"));
+    await until(() => passed() !== undefined && inFlight.size === 0, 60_000);
+    // The next turn tells the Coordinator the result it did not get.
+    const before = (await readLog(log)).length;
+    await controller!.send("Allora?", null, null, null);
+    const prompts = (await readLog(log))
+      .slice(before)
+      .filter((r) => r.method === "turn/start")
+      .map((r) => JSON.stringify(r.params.input));
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Verifiche finite dopo il loro turno");
+  }, 120_000);
+
   it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;

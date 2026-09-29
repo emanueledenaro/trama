@@ -6304,20 +6304,31 @@ export class TramaController {
   /**
    * Work a Coordinator turn asked for, waited for at most gateTurnWaitMs() (ADR 0023): its result when it ends in time;
    * otherwise null, the work goes on in the background and `later` gets its result, or null after a failure, at its end.
+   * When the turn of `requestId` ended first, stopped or set aside for the person's message, nobody reads the tool's
+   * answer: `later` gets the result too.
    */
-  private async waitInTurn<T>(work: Promise<T>, later: (result: T | null) => void): Promise<T | null> {
+  private async waitInTurn<T>(project: ActiveProjectState, requestId: string | null, work: Promise<T>, later: (result: T | null) => void): Promise<T | null> {
     let timer: NodeJS.Timeout | undefined;
     const settled = work.then((result) => ({ result }));
     // A failure after the wait belongs to `later`: it is not an unhandled rejection.
     settled.catch(() => undefined);
+    const turnEnded = () => requestId !== null && project.runningRequestId !== requestId;
     const waited = await Promise.race([
       settled,
       new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), gateTurnWaitMs());
         timer.unref?.();
       }),
-    ]).finally(() => clearTimeout(timer));
-    if (waited) return waited.result;
+    ])
+      .catch((error: unknown) => {
+        if (turnEnded()) later(null);
+        throw error;
+      })
+      .finally(() => clearTimeout(timer));
+    if (waited) {
+      if (turnEnded()) later(waited.result);
+      return waited.result;
+    }
     void work.then(later, () => later(null));
     return null;
   }
@@ -6342,7 +6353,7 @@ export class TramaController {
    */
   private runCheckInTurn(project: ActiveProjectState, check: ReadOnlyCheck, requestId: string | null): Promise<CheckResult | null> {
     const run = this.checkOnce(`checkout:${project.id}:${check}`, () => this.runCheck(check, project.rootPath, requestId));
-    return this.waitInTurn(run, (result) => {
+    return this.waitInTurn(project, requestId, run, (result) => {
       if (!result) return;
       // @model-text: one line of the section the Coordinator reads in its next turn.
       const line = `- ${CHECKS[check].title} (${check}): ${result.exitCode === 0 ? "superata" : `non superata, codice ${result.exitCode}`}.\n  ${result.output.slice(-1_200).trim()}`;
@@ -6355,7 +6366,7 @@ export class TramaController {
    * on the candidate at its end; then Trama weighs the next move. A red check starts its own event (checkFailed).
    */
   private verifyCandidateInTurn(project: ActiveProjectState, candidateId: string, check: ReadOnlyCheck, requestId: string | null): Promise<CheckResult | null> {
-    return this.waitInTurn(this.verifyCandidate(candidateId, check, requestId), (result) => {
+    return this.waitInTurn(project, requestId, this.verifyCandidate(candidateId, check, requestId), (result) => {
       if (!result || result.exitCode === 0 || environmentFailure(result.output)) this.continueWork(project, null, "checkEnded");
     });
   }
@@ -6539,7 +6550,7 @@ export class TramaController {
    */
   private reviewCandidateInTurn(project: ActiveProjectState, candidateId: string, requestId: string | null): Promise<TechnicalReview | null> {
     // A failed gate is recorded on the gate itself: the Coordinator reads it in the next move either way.
-    return this.waitInTurn(this.reviewCandidate(candidateId, requestId), () => this.continueWork(project, null, "gateEnded"));
+    return this.waitInTurn(project, requestId, this.reviewCandidate(candidateId, requestId), () => this.continueWork(project, null, "gateEnded"));
   }
 
   /** The candidates whose gate runs now, with the review it will record. */
