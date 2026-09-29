@@ -289,7 +289,7 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
     const gate = block(document, first, 3);
     reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: first.id, findings: ["Rilievo"] }, at(4));
     decide(document, { id: decision.id, value: "Anche il cliente vede la revisione", acceptedExample: "Ordine 42", rationale: "Chiesto dalla persona" }, at(5));
-    requestStop(document, ada.specialistId, "Trama", `Decision ${decision.id} changed or is under review.`, false, at(5));
+    requestStop(document, ada.specialistId, "trama", `Decision ${decision.id} changed or is under review.`, false, at(5));
     endTurn(document, ada.id, null, { kind: "interrupted" }, at(5));
     const second = declareCandidate(
       document,
@@ -319,13 +319,13 @@ describe("the cycle of candidates and reviews (issue #389)", () => {
   it("never resumes by itself work the person stopped, nor work whose decision is under review", () => {
     const document = project();
     const { ada, second, gate, decision } = stoppedByTrama(document);
-    ada.stops.at(-1)!.requestedBy = "Persona";
+    ada.stops.at(-1)!.by = "person";
     gate.returned = { assignmentId: ada.id, at: at(7).toISOString(), waiting: "Fermo" };
     expect(pendingReturns(document)).toEqual([]);
     expect(() => reopenForFindings(document, ada.id, { gateId: gate.id, candidateId: second.id, findings: ["Rilievo"] }, at(8))).toThrow(TeamError);
     expect(ada.status).toBe("stopped");
 
-    ada.stops.at(-1)!.requestedBy = "Trama";
+    ada.stops.at(-1)!.by = "trama";
     const alternatives = [
       { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
       { behavior: "Anche il cliente", example: "Il cliente vede lo stato review", consequence: null },

@@ -1,4 +1,3 @@
-import { ITALIAN, LANGUAGES, translate } from "@shared/i18n";
 import { blockerText } from "@shared/plainLanguage";
 import type {
   Candidate,
@@ -24,7 +23,7 @@ import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
 import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
-import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { activeDevelopers, authorize, heldByPersonStop, isActive, isTeamConfirmed, needsWorktree } from "./team";
 import { parallelDevelopers } from "@shared/parallel";
 import type { MessageKey } from "@shared/i18n";
 import { t } from "./personLanguage";
@@ -546,7 +545,7 @@ function assignedWork(
     }
     if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
       // Work the person stopped waits for their word: no automatic move takes it up again before they write.
-      if (!stoppedByPerson(document, assignment)) moves.assignWork();
+      if (!heldByPersonStop(document, assignment)) moves.assignWork();
       const failed = assignment.status === "failed";
       const blocker = !failed
         ? t("main.workPhase.blockerStopped", { id: assignment.id })
@@ -676,24 +675,6 @@ function assignedWork(
     return { phase: "candidate", blocker: null };
   }
   return { phase: "merged", blocker: null };
-}
-
-/**
- * The name Trama recorded for the person who stopped a developer's work, in every language: read only for the stops
- * recorded before `by`, which says who stopped as data.
- */
-const PERSON_ACTORS = LANGUAGES.map((language) => translate(language, "main.controller.personActor"));
-
-/**
- * Whether the person stopped this work and has not written in its dialog since: their stop is a choice, so the work waits
- * for their word instead of starting again by itself.
- */
-function stoppedByPerson(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
-  const stop = assignment.stops.at(-1);
-  if (assignment.status !== "stopped" || !stop) return false;
-  if (!(stop.by ? stop.by === "person" : PERSON_ACTORS.includes(stop.requestedBy))) return false;
-  const goalId = document.requests.find((r) => r.id === assignment.requestId)?.goalId ?? null;
-  return !document.requests.some((r) => (r.goalId ?? null) === goalId && r.step?.by !== "trama" && r.createdAt > stop.requestedAt);
 }
 
 /**

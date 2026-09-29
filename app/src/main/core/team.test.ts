@@ -12,11 +12,14 @@ import {
   developers,
   endTurn,
   findSpecialist,
+  findingsCannotReturn,
+  heldByPersonStop,
   proposeTeam,
   removeSpecialist,
   renameSpecialist,
   requestStop,
   resumeAssignment,
+  resumeProblem,
   setSpecialistColor,
   setSpecialistModel,
   teamMembers,
@@ -91,6 +94,32 @@ describe("team", () => {
     expect(report.text).toContain("Ada · incarico");
     expect(report.text).toContain("Risultato: Fatto");
     expect(() => removeSpecialist(document, ada.id, "fine", "Coordinatore")).not.toThrow();
+  });
+
+  it("holds for the person only the work they stopped, by who stopped it and not by the name shown (issue #423)", () => {
+    const document = emptyDocument("p");
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members }).id, null, null);
+    const assignment = assign(document, order(), 1, null);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+    requestStop(document, "Ada", "coordinator", "Cambio di piano");
+    endTurn(document, assignment.id, "t1", { kind: "interrupted" });
+    assignment.workspace = { sourceRoot: "/tmp/p", worktreeRoot: `/tmp/${assignment.id}`, branch: "trama/ada", baseSHA: "base" };
+    // The Coordinator's stop, whatever name it shows, is taken back with resume_assignment: it is not the person's.
+    assignment.stops.at(-1)!.requestedBy = "Coordinator";
+    expect(heldByPersonStop(document, assignment)).toBe(false);
+    expect(resumeProblem(document, assignment)?.code).not.toBe("stopped_by_person");
+    expect(findingsCannotReturn(document, assignment)?.code).toBe("cannot_resume");
+    // The person's stop holds the work until they write, whatever name it shows.
+    assignment.stops.at(-1)!.by = "person";
+    assignment.stops.at(-1)!.requestedBy = "Emanuele";
+    expect(heldByPersonStop(document, assignment)).toBe(true);
+    expect(resumeProblem(document, assignment)?.code).toBe("stopped_by_person");
+    // Stops recorded before `by` are read by their name.
+    delete assignment.stops.at(-1)!.by;
+    assignment.stops.at(-1)!.requestedBy = "Trama";
+    expect(heldByPersonStop(document, assignment)).toBe(false);
+    assignment.stops.at(-1)!.requestedBy = "Persona";
+    expect(heldByPersonStop(document, assignment)).toBe(true);
   });
 
   it("stops work left running by a previous launch", () => {

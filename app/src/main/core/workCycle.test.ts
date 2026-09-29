@@ -118,7 +118,7 @@ function blockedCandidate(document: ProjectDocument, assignment: SpecialistAssig
 /** Trama stops the work because a Pact decision changed while it ran (C06). */
 function stopByTrama(document: ProjectDocument, assignment: SpecialistAssignment, minute: number) {
   if (assignment.status === "completed") assignment.status = "running";
-  requestStop(document, assignment.specialistId, "Trama", "Decision changed or is under review.", false, at(minute));
+  requestStop(document, assignment.specialistId, "trama", "Decision changed or is under review.", false, at(minute));
   endTurn(document, assignment.id, null, { kind: "interrupted" }, at(minute));
 }
 
@@ -189,7 +189,7 @@ describe("a correction continues in the working copy of the work it corrects", (
     const marco = realignment(document);
     blockedCandidate(document, marco, 2);
     stopByTrama(document, marco, 3);
-    marco.stops.at(-1)!.requestedBy = "Persona";
+    marco.stops.at(-1)!.by = "person";
     request(document, "r2", 4).step = { move: "assignWork", by: "trama" };
     expect(openCorrections(document, "r2", { moduleIds: ["src/app"], slice: null })).toEqual([]);
     request(document, "r3", 5);
@@ -299,11 +299,11 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
     };
     expect(await call({ assignment: marco.id })).toMatchObject({ error: true, text: expect.stringContaining("assignment_running") });
 
-    requestStop(document, marco.specialistId, "Persona", "Basta per oggi", false, at(2));
+    requestStop(document, marco.specialistId, "person", "Basta per oggi", false, at(2));
     endTurn(document, marco.id, null, { kind: "interrupted" }, at(2));
     expect(await call({ assignment: marco.id })).toMatchObject({ error: true, text: expect.stringContaining("stopped_by_person") });
 
-    marco.stops.at(-1)!.requestedBy = "Trama";
+    marco.stops.at(-1)!.by = "trama";
     const candidate = blockedCandidate(document, marco, 3);
     candidate.pullRequest = { url: "u", number: 7, branch: marco.workspace!.branch, headSHA: "h", at: at(4).toISOString(), mergedAt: at(5).toISOString() };
     expect(await call({ assignment: marco.id })).toMatchObject({ error: true, text: expect.stringContaining("already_merged") });
@@ -376,7 +376,7 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
   it("resumes work the person stopped once the person wrote in its dialog, in any language", async () => {
     const document = shop();
     const marco = realignment(document);
-    requestStop(document, marco.specialistId, "Person", "Enough for today", false, at(2));
+    requestStop(document, marco.specialistId, "person", "Enough for today", false, at(2));
     endTurn(document, marco.id, null, { kind: "interrupted" }, at(2));
     const { context: tools, started } = context(document);
     const call = () => runCoordinatorTool("resume_assignment", { assignment: marco.id, instructions: "Riprendi", reason: "La persona lo chiede" }, tools);

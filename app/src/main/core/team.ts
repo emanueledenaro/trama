@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentColor,
   AssignmentCommit,
+  AssignmentStop,
   AssignmentPlace,
   CloudSession,
   AssignmentStatus,
@@ -935,33 +936,39 @@ export function findingsCannotReturn(document: ProjectDocument, assignment: Spec
     return new TeamError("cannot_resume", `Assignment ${assignment.id} is not completed.`);
   }
   // The Coordinator's stop is taken back with resume_assignment; the person's waits for their word.
-  const stopper = stoppedBy(assignment);
-  if (stopper === "Coordinatore" || heldByPersonStop(document, assignment)) {
-    return new TeamError("cannot_resume", `Assignment ${assignment.id} was stopped by ${stopper}: it resumes only on their request.`);
+  const stop = holdingStop(assignment);
+  if (stop && (stopActor(stop) === "coordinator" || heldByPersonStop(document, assignment))) {
+    return new TeamError("cannot_resume", `Assignment ${assignment.id} was stopped by ${stop.requestedBy}: it resumes only on their request.`);
   }
   return decisionUnderReview(document, assignment);
 }
 
-/** Who asked for the stop that holds the work now; null when the work is not stopped or stopped by itself, as an interruption. */
-export function stoppedBy(assignment: SpecialistAssignment): string | null {
+/** The stop that holds the work now; null when the work is not stopped or stopped by itself, as an interruption. */
+function holdingStop(assignment: SpecialistAssignment): AssignmentStop | null {
   if (assignment.status !== "stopped") return null;
   const stop = assignment.stops.at(-1);
   const turn = assignment.turns.at(-1);
   // A turn that started after the stop took the work up again: that stop is behind it.
-  return stop?.confirmedAt && (!turn || turn.startedAt <= stop.confirmedAt) ? stop.requestedBy : null;
+  return stop?.confirmedAt && (!turn || turn.startedAt <= stop.confirmedAt) ? stop : null;
 }
 
-/** The actors whose stop is not the person's: Trama itself and the Coordinator. */
-const TRAMA_ACTORS = ["Trama", "Coordinatore"];
+/**
+ * Who asked for a stop. The record says it; a stop recorded before `by` is read by the name Trama wrote then: "Trama",
+ * "Coordinatore", and the person under any other name, so an unknown name keeps the work waiting for them.
+ */
+function stopActor(stop: AssignmentStop): StopActor {
+  if (stop.by) return stop.by;
+  return stop.requestedBy === "Trama" ? "trama" : stop.requestedBy === "Coordinatore" ? "coordinator" : "person";
+}
 
 /**
  * Whether the person stopped this work and has not written in its dialog since: their stop is a choice, so nothing
- * takes the work up again before their word. A turn Trama started by itself is not their word.
+ * takes the work up again before their word, neither the round nor the Coordinator. A turn Trama started by itself is
+ * not their word. The one rule for the person's stop: the work phase, the corrections and resume_assignment read it.
  */
 export function heldByPersonStop(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
-  const stopper = stoppedBy(assignment);
-  if (!stopper || TRAMA_ACTORS.includes(stopper)) return false;
-  const stop = assignment.stops.at(-1)!;
+  const stop = holdingStop(assignment);
+  if (!stop || stopActor(stop) !== "person") return false;
   const goalId = document.requests.find((r) => r.id === assignment.requestId)?.goalId ?? assignment.goalId ?? null;
   return !document.requests.some((r) => (r.goalId ?? null) === goalId && r.step?.by !== "trama" && r.createdAt > stop.requestedAt);
 }
