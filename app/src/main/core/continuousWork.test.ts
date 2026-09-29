@@ -756,6 +756,26 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     expect(projectMove(screen.document, "round", free)?.move.move).toBe("clearCandidate");
   });
 
+  it("goes on in the round after a turn of the person that failed, since the delegation leaves them nothing to write; their Stop stays theirs", () => {
+    const document = delegated();
+    request(document, "r1");
+    answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+    mandate(document, ["plan"]);
+    request(document, "r2", { step: { move: "confirmUnderstanding", by: "person" } });
+    // The person's last message before the night: its turn failed on a provider error.
+    const failed = request(document, "r3", { state: "failed" });
+    expect(moveOf(document, "r3", "round")).toBe("preparePlan");
+    // Only the round takes it up, not the end of the failed turn itself.
+    expect(moveOf(document, "r3", "turnEnded")).toBeNull();
+    // The person's Stop is theirs, with the delegation too.
+    failed.state = "interrupted";
+    expect(moveOf(document, "r3", "round")).toBeNull();
+    // Without the delegation a failed turn of the person waits for them.
+    failed.state = "failed";
+    revokeDelegation(document, { kind: "view" });
+    expect(moveOf(document, "r3", "round")).toBeNull();
+  });
+
   it("does not let a mandate request hold the work while the delegation, which brings the full mandate, is in force", () => {
     const document = delegated();
     request(document, "r1");

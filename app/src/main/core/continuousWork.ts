@@ -139,7 +139,8 @@ const mandateGranted = (document: ProjectDocument): boolean => document.mandate?
 /**
  * The one Coordinator move Trama starts after `event` on the work of `requestId` (the request whose turn,
  * plan or assignment ended), or null. Pure: at most one move per event, none after an error or an
- * interruption (except the round after an automatic turn that failed), none from the end of an automatic turn, none
+ * interruption (except the round after an automatic turn that failed, or any turn with the full delegation), none from
+ * the end of an automatic turn, none
  * while the work waits for the person, none in pause and none without a granted mandate. The round tries the same move
  * ROUND_ATTEMPTS times in a row at most.
  */
@@ -153,7 +154,10 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   const latest = dialog.at(-1)!;
   // After an error or an interruption, including a stop of the automatic turn itself, the person decides how to go on.
   // The round takes up an automatic turn that failed: nobody wrote it, so nobody would come back to it (no dead end).
-  if (latest.state !== "completed" && !(event === "round" && latest.state === "failed" && latest.step?.by === "trama")) return null;
+  // With the full delegation (ADR 0022) it takes up a failed turn of the person's too: they left the work to the
+  // Coordinator and are not there to write again. A Stop stays the person's either way.
+  const takenUp = event === "round" && latest.state === "failed" && (latest.step?.by === "trama" || activeDelegation(document) !== null);
+  if (latest.state !== "completed" && !takenUp) return null;
   // An automatic turn never starts the next move: a move the Coordinator did not make is not retried in a loop.
   if (event === "turnEnded" && latest.step?.by === "trama") return null;
   // Only the current work of the dialog goes on: an older plan or assignment that ends starts nothing.
