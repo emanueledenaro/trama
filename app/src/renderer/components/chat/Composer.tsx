@@ -15,6 +15,7 @@ import { ContextPicker } from "./ContextPicker";
 import { ModelPicker } from "./ModelPicker";
 import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
@@ -398,11 +399,15 @@ export function Composer() {
                   <IconPhotoPlus className="size-4 text-primary" stroke={1.7} />
                 </Button>
               </Tooltip>
-              <Tooltip label={t("chat.composer.askTrama")}>
-                <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Ask Trama" onClick={openAskTrama}>
-                  <IconRoute className="size-4 text-primary" stroke={1.7} />
-                </Button>
-              </Tooltip>
+              {/* Issue #338: Ask Trama is the skill's name, not the button's; the button says what the person gets. */}
+              <IconButton
+                variant="chrome"
+                size="icon-sm"
+                className="rounded-md"
+                label={t("chat.composer.askTrama")}
+                icon={<IconRoute className="size-4 text-primary" stroke={1.7} />}
+                onClick={openAskTrama}
+              />
               <input
                 ref={fileInput}
                 type="file"
