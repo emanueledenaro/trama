@@ -15,22 +15,35 @@ import type {
   TechnicalReview,
   WorkKind,
 } from "@shared/domain";
-import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
+import { CommitMessageError, DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
 import { mergeRoute } from "./merge";
 import { messageStyle } from "./messageStyle";
-import type { WorkspaceReview } from "./workspace";
+import { MergeError, type WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
 import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
-import type { GitHubState, MergeRoute } from "@shared/domain";
+import type { GateRole, GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { decideDiscussion, DiscussionError, escalateDiscussion, openDiscussion, requireDiscussion } from "./discussions";
 import { type Discussion, discussions } from "@shared/discussions";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { GateSettlementError } from "./gate";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
+import { GateSettlementError, overruleFinding } from "./gate";
+import { GATE_ROLES } from "@shared/gate";
+import { replacedBy, retiredWork } from "@shared/conflictScope";
+import {
+  candidateReport,
+  CandidateError,
+  clearCandidate,
+  declareCandidate,
+  findCandidate,
+  latestCandidate,
+  openCorrections,
+  rebindTramaCandidate,
+  supersedeCandidate,
+  unchangedCandidate,
+} from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
@@ -47,6 +60,7 @@ import {
   addSpecialist,
   assign,
   authorize,
+  correctionWorktree,
   currentAssignment,
   developers,
   findAssignment,
@@ -59,7 +73,10 @@ import {
   refusalMessage,
   removeSpecialist,
   renameSpecialist,
+  releaseProblem,
   requestStop,
+  resumeProblem,
+  resumeWithInstructions,
   TeamError,
   usableChoice,
 } from "./team";
@@ -616,9 +633,41 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "settle_review",
     description:
-      "Settle a disagreement between a developer and the candidate reviewers when the gate stopped the same work again (the work phase says so): you decide, never the person, and no identical round starts. Read with read_team the blocking findings and the developer's answer first, and weigh them against the Pact, the mandate, the project's rules and what the person wrote. side findings: the reviewers are right, the developer resumes in the same worktree with the findings as your decision. side developer: the findings are overruled, the gate passes and you take the candidate to the merge with clear_candidate. Trama's own evidence (a failed check, a regression the guardian measured, a secret in the diff) cannot be overruled. reason says why in the person's words; doubt what you are not sure about, or omit it. The choice is recorded in Activity and in the recap.",
-    properties: { candidate: text, side: { type: "string", enum: ["findings", "developer"] }, reason: text, doubt: text },
+      "Settle a disagreement between a developer and the candidate reviewers when the gate stopped the same work again (the work phase says so): you decide, never the person, and no identical round starts. Read with read_team the blocking findings and the developer's answer first, and weigh them against the Pact, the mandate, the project's rules and what the person wrote. side findings: the reviewers are right, the developer resumes in the same worktree with the findings as your decision. side developer: the findings are overruled and remembered for this work, so they do not block the next rounds; the gate passes and you take the candidate to the merge with clear_candidate. decisionIDs names the Pact decisions the findings go against, when they do. Trama's own evidence (a failed check, a regression the guardian measured, a secret in the diff) cannot be overruled. reason says why in the person's words; doubt what you are not sure about, or omit it. The choice is recorded in Activity and in the recap.",
+    properties: { candidate: text, side: { type: "string", enum: ["findings", "developer"] }, reason: text, doubt: text, decisionIDs: list(0) },
     required: ["candidate", "side", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "overrule_finding",
+    description:
+      "Overrule one blocking finding of a candidate's blocked gate that goes against the Pact, as a spec reviewer asking to remove the business data the person decided to keep: role is the figure (read_team lists the gate's findings), title the finding's title as the gate reports it, reason why it is wrong in the person's words, decisionIDs the Pact decisions it goes against (at least one). Trama makes the finding advisory and remembers it for this work: the same figure's finding on the same file, or with the same title, does not block the next rounds, and the reviewers read it as already decided. When no blocking finding is left the gate passes and you give the green light with clear_candidate. Trama's own evidence (a red check, a regression, a secret in the diff) cannot be overruled. Recorded in Activity.",
+    properties: { candidate: text, role: { type: "string", enum: GATE_ROLES }, title: text, reason: text, decisionIDs: list(1) },
+    required: ["candidate", "role", "title", "reason", "decisionIDs"],
+    readOnly: false,
+  },
+  {
+    name: "resume_assignment",
+    description:
+      "Within the mandate (executeInWorktree), take up existing work again in its own working copy and branch instead of opening new work: work that stopped (Trama stopped it, or you did), failed, or ended with a candidate to correct. Its working copy keeps everything done so far, a resolved merge not committed yet included; new work with assign_task would start from an empty copy. assignment is the assignment (A-…) or its candidate (C-…). instructions says what to do now, in the developer's words; reason is one line for the person. Without specialist the same developer resumes in the same session. With specialist another developer takes over the same work in the same working copy and branch, and the earlier work is replaced. Trama refuses work still at work, work waiting for the answer to its question, merged work, work without a working copy, work that relies on a decision under review and work the person stopped.",
+    properties: { assignment: text, specialist: text, instructions: text, reason: text },
+    required: ["assignment", "instructions", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "release_worktree",
+    description:
+      "Within the mandate (executeInWorktree), free the working copy of work that is over, so copies do not pile up: work merged, superseded or replaced by work in another copy. assignment is the assignment (A-…) or a candidate (C-…) of that copy; reason is one line for the person. Trama frees the copy of merged work by itself. It refuses a copy someone works or waits in, one with a candidate still open, and one whose removal would lose uncommitted changes or unpublished commits: that removal is the person's, from the work's card.",
+    properties: { assignment: text, reason: text },
+    required: ["assignment", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "commit_merge",
+    description:
+      "Within the mandate (executeInWorktree), record the merge a developer resolved and left without a commit in its working copy, as a realignment of a branch with main: Trama writes the merge commit with both parents and a valid Conventional Commits message, and pushes nothing. assignment is the assignment (A-…) or its candidate (C-…); message is optional, Trama writes one otherwise. Trama refuses work still at work, a merge with files still in conflict or conflict markers, and a resolution that adds a secret or a sensitive file. The candidate stays valid: committing changes no file. Use it instead of opening new work when the merge is done and only the commit is missing.",
+    properties: { assignment: text, message: text },
+    required: ["assignment"],
     readOnly: false,
   },
   {
@@ -830,6 +879,13 @@ export interface ToolContext {
   reviewWorkspace(assignmentId: string): Promise<WorkspaceReview>;
   /** The rules the project declares for commits and branches (Q01); the defaults when absent. */
   conventions?(): Promise<CommitConventions>;
+  /**
+   * Concludes the resolved merge left in progress in an assignment's working copy with a merge commit, the project's
+   * message rules and no push; throws MergeError, or CommitMessageError for a message Trama refuses. Absent where Trama writes none.
+   */
+  concludeMerge?(assignmentId: string, message: string | null): Promise<{ commit: string; mergedHead: string; message: string }>;
+  /** Removes an assignment's working copy when that loses nothing; throws with the reason otherwise. Absent where Trama removes none. */
+  releaseWorktree?(assignmentId: string): Promise<{ branchDeleted: boolean }>;
   /** Runs a required check on a candidate's worktree and records the evidence. */
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
   /**
@@ -841,7 +897,9 @@ export interface ToolContext {
    * The Coordinator settles the disagreement on the candidate's blocked gate (ADR 0023). Returns why the developer has not
    * resumed yet with the findings, or null.
    */
-  settleReview?(candidateId: string, input: { side: "findings" | "developer"; reason: string; doubt: string | null }): { waiting: string | null };
+  settleReview?(candidateId: string, input: { side: "findings" | "developer"; reason: string; doubt: string | null; decisionIds?: string[] }): { waiting: string | null };
+  /** The Coordinator overruled one of a candidate's findings (overrule_finding): Trama tells it in Activity and, with the delegation, in the recap. */
+  findingOverruled?(candidateId: string, outcome: { role: GateRole; title: string; reason: string; decisionIds: string[]; gatePassed: boolean }): void;
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
   /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
@@ -1557,6 +1615,10 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (commitScope && !/^[A-Za-z0-9][\w./-]*$/.test(commitScope)) return toolFailure("invalid_arguments", "commitScope is one noun without spaces or parentheses.");
         const commit: AssignmentCommit | null =
           commitType || commitScope !== null || args.hotfix === true ? { type: commitType, scope: commitScope, hotfix: args.hotfix === true } : null;
+        // Work with edits that corrects blocked work of the same dialog supersedes its candidate (issue #389) and goes
+        // on in its working copy, where a resolved merge or the work done so far already is.
+        const replaces = withEdits ? openCorrections(document, context.runningRequestId, { moduleIds, slice }) : [];
+        const continued = correctionWorktree(document, replaces);
         const assignment = assign(
           document,
           {
@@ -1585,8 +1647,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             slice,
             commit,
             seams,
-            // Work with edits that corrects blocked work of the same dialog supersedes its candidate (issue #389).
-            replaces: withEdits ? openCorrections(document, context.runningRequestId, { moduleIds, slice }) : [],
+            replaces,
+            workspace: continued?.workspace ?? null,
           },
           document.mandate!.version,
           context.runningRequestId,
@@ -1605,8 +1667,116 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           slice: assignment.slice?.sliceId ?? null,
           requiredChecks: assignment.requiredChecks,
           ...(assignment.replaces?.length ? { replacesAssignmentIDs: assignment.replaces } : {}),
+          ...(continued ? { worktree: { branch: continued.workspace.branch, continuesAssignmentID: continued.assignmentId } } : {}),
           ...(presenceWarning ? { presence: presenceWarning } : {}),
         });
+      }
+      case "resume_assignment": {
+        const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
+        const assignment = findAssignment(document, named) ?? findAssignment(document, findCandidate(document, named)?.assignmentId ?? "");
+        if (!assignment) return toolFailure("unknown_assignment", `There is no assignment or candidate ${named}.`);
+        if (!needsWorktree(assignment)) return toolFailure("not_a_worktree", `${assignment.id} is read-only work: it has no working copy to resume.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
+        const reason = typeof args.reason === "string" ? clip(args.reason.trim(), 240) : "";
+        if (!instructions || !reason) return toolFailure("invalid_arguments", "instructions (what to do now, for the developer) and reason (one line for the person) are required.");
+        const problem = resumeProblem(document, assignment);
+        if (problem) return toolFailure(problem.code, problem.message);
+        const developer = typeof args.specialist === "string" ? args.specialist.trim() : "";
+        const other = developer ? findSpecialist(document, developer) : null;
+        if (developer && !other) return toolFailure("unknown_specialist", `Unknown specialist: ${developer}.`);
+        // Work that later work replaced, or that you retired, resumes as new work on its working copy: its own next
+        // candidates would stay superseded by the later work.
+        const replaced = document.team.specialists.some((s) => s.assignments.some((later) => replacedBy(assignment, later))) || retiredWork(document, assignment.id);
+        const target = other ?? findSpecialist(document, assignment.specialistId)!;
+        if (target.id === assignment.specialistId && !replaced) {
+          resumeWithInstructions(document, assignment.id, { text: instructions, reason });
+          context.addCard("assignment", t("main.coordinatorTools.card.assignment"), assignment.id);
+          context.changed();
+          context.startAssignment(assignment.id);
+          return toolSuccess({ assignmentID: assignment.id, status: "resumed", branch: assignment.workspace!.branch });
+        }
+        if (isFixedRole(target.role)) return toolFailure("fixed_role", `${target.name} is a fixed role: hand the work to a developer.`);
+        // The developer takes over the same work in the same working copy and branch as new work: the earlier work is replaced.
+        const personal = target.chosenModel ? usableChoice(target.chosenModel, context.providers, true) : null;
+        const handed = assign(
+          document,
+          {
+            specialist: target.id,
+            kind: assignment.kind,
+            objective: assignment.objective,
+            issueNumber: assignment.issueNumber,
+            exercise: assignment.exercise,
+            moduleIds: assignment.moduleIds,
+            dependencies: assignment.dependencies.filter((id) => findAssignment(document, id)?.status === "completed"),
+            decisionIds: Object.keys(assignment.decisionVersions ?? {}),
+            model: personal?.model ?? assignment.model,
+            provider: personal?.provider ?? assignment.provider ?? "codex",
+            ...(personal?.effort ? { effort: personal.effort } : assignment.effort ? { effort: assignment.effort } : {}),
+            modelReason: personal ? t("main.coordinatorTools.personModel") : assignment.modelReason,
+            goalId: assignment.goalId ?? null,
+            tools: assignment.tools,
+            requiredChecks: assignment.requiredChecks,
+            instructions: `${instructions}\n\n${assignment.instructions}`,
+            slice: assignment.slice ?? null,
+            commit: assignment.commit ?? null,
+            ...(assignment.seams ? { seams: assignment.seams } : {}),
+            replaces: [assignment.id],
+            workspace: assignment.workspace,
+          },
+          document.mandate!.version,
+          context.runningRequestId ?? assignment.requestId,
+        );
+        context.addCard("assignment", t("main.coordinatorTools.card.assignment"), handed.id);
+        context.changed();
+        context.startAssignment(handed.id);
+        const status = target.id === assignment.specialistId ? "resumed" : "handedOver";
+        return toolSuccess({ assignmentID: handed.id, specialistID: target.id, status, replacesAssignmentID: assignment.id, branch: handed.workspace!.branch });
+      }
+      case "release_worktree": {
+        const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
+        const assignment = findAssignment(document, named) ?? findAssignment(document, findCandidate(document, named)?.assignmentId ?? "");
+        if (!assignment) return toolFailure("unknown_assignment", `There is no assignment or candidate ${named}.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        const problem = releaseProblem(document, assignment);
+        if (problem) return toolFailure(problem.code, problem.message);
+        if (!context.releaseWorktree) return toolFailure("unavailable", "Trama cannot remove working copies here.");
+        try {
+          const { branchDeleted } = await context.releaseWorktree(assignment.id);
+          context.changed();
+          return toolSuccess({ assignmentID: assignment.id, status: "released", branchDeleted });
+        } catch (error) {
+          // Trama removes nothing that would lose work: uncommitted changes or commits not published stay with the person.
+          return toolFailure("not_released", `${(error as Error).message} Removing it would lose work: the person removes it from the work's card if they agree.`);
+        }
+      }
+      case "commit_merge": {
+        const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
+        const assignment = findAssignment(document, named) ?? findAssignment(document, findCandidate(document, named)?.assignmentId ?? "");
+        if (!assignment) return toolFailure("unknown_assignment", `There is no assignment or candidate ${named}.`);
+        if (!assignment.workspace || assignment.workspaceRemovedAt) return toolFailure("no_worktree", `${assignment.id} has no working copy.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        if (isActive(assignment)) return toolFailure("assignment_running", `${assignment.id} is at work: its developer may still be resolving the merge. Conclude it when the work ends.`);
+        if (!context.concludeMerge) return toolFailure("unavailable", "Trama cannot write in the working copies here.");
+        const message = typeof args.message === "string" && args.message.trim() ? args.message.trim() : null;
+        try {
+          const done = await context.concludeMerge(assignment.id, message);
+          context.changed();
+          return toolSuccess({
+            assignmentID: assignment.id,
+            commit: done.commit,
+            mergedHead: done.mergedHead,
+            message: done.message,
+            note: "The merge is recorded in the working copy and nothing was pushed. The candidate still describes the working copy: committing changed no file.",
+          });
+        } catch (error) {
+          if (error instanceof MergeError) return toolFailure(error.code, error.message);
+          if (error instanceof CommitMessageError) return toolFailure("invalid_commit_message", error.message);
+          throw error;
+        }
       }
       case "read_goals":
         return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });
@@ -1794,6 +1964,12 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (isActive(assignment)) return toolFailure("assignment_running", `Assignment ${assignment.id} is still running; declare the candidate when it ends.`);
         const review = await context.reviewWorkspace(assignment.id);
         if (review.changedFiles.length === 0) return toolFailure("empty_candidate", `The worktree of ${assignment.id} has no changes.`);
+        if (review.unmergedFiles?.length) {
+          return toolFailure(
+            "merge_unresolved",
+            `The merge in the working copy of ${assignment.id} still has files in conflict: ${review.unmergedFiles.join(", ")}. It is not the work yet: have the developer resolve them in the same copy with resume_assignment, then conclude the merge with commit_merge or declare the candidate.`,
+          );
+        }
         const input = {
           assignmentId: assignment.id,
           decisionIds: strings(args.decisionIDs),
@@ -1801,7 +1977,20 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           externalEffects: strings(args.externalEffects),
         };
         // Trama may have declared this same worktree after the developer's turn (issue #388): the declaration binds that one.
-        const candidate = rebindTramaCandidate(document, input, review) ?? declareCandidate(document, input, review);
+        const rebind = rebindTramaCandidate(document, input, review);
+        // One work, one candidate: a working copy that did not change is still the candidate declared from it.
+        const same = rebind ? null : unchangedCandidate(document, input, review);
+        if (same) {
+          return toolSuccess({
+            candidateID: same.id,
+            unchanged: true,
+            snapshot: same.snapshotId,
+            changedFiles: same.changedFiles,
+            requiredChecks: same.requiredChecks,
+            note: `The working copy did not change since candidate ${same.id}: it is still the candidate, with its evidence and its gate. A new gate on the same content gives the same findings: settle a disagreement with settle_review or overrule_finding instead.`,
+          });
+        }
+        const candidate = rebind ?? declareCandidate(document, input, review);
         const rebound = candidate.declaredBy === "trama";
         // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
         candidate.whitespaceErrors = review.whitespaceErrors;
@@ -1933,6 +2122,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             side,
             reason: typeof args.reason === "string" ? args.reason : "",
             doubt: typeof args.doubt === "string" ? args.doubt : null,
+            decisionIds: strings(args.decisionIDs),
           });
           context.changed();
           const next =
@@ -1942,6 +2132,31 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                 ? "The developer has not resumed yet: " + settled.waiting
                 : "The developer resumed with the findings as your decision.";
           return toolSuccess({ candidateID: found.candidate.id, side, next });
+        } catch (error) {
+          if (error instanceof GateSettlementError) return toolFailure(error.code, error.message);
+          throw error;
+        }
+      }
+      case "overrule_finding": {
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const role = GATE_ROLES.find((r) => r === args.role);
+        if (!role) return toolFailure("invalid_arguments", `role is one of: ${GATE_ROLES.join(", ")}.`);
+        const title = typeof args.title === "string" ? args.title : "";
+        const reason = typeof args.reason === "string" ? args.reason : "";
+        const decisionIds = strings(args.decisionIDs);
+        try {
+          const outcome = overruleFinding(document, found.candidate, { role, title, reason, decisionIds });
+          context.findingOverruled?.(found.candidate.id, { role, title, reason, decisionIds, gatePassed: outcome.gatePassed });
+          context.changed();
+          return toolSuccess({
+            candidateID: found.candidate.id,
+            remainingBlocking: outcome.remaining,
+            gatePassed: outcome.gatePassed,
+            next: outcome.gatePassed
+              ? "No blocking finding is left and the gate passed: give the green light with clear_candidate."
+              : "Other blocking findings remain: overrule the ones that go against the Pact, or settle the rest with settle_review.",
+          });
         } catch (error) {
           if (error instanceof GateSettlementError) return toolFailure(error.code, error.message);
           throw error;

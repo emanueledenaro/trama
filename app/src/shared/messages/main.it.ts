@@ -326,6 +326,7 @@ export const mainIt = {
   "main.controller.worktreeInUse":
     "Un altro incarico sta lavorando in questo worktree: aspetta che finisca.",
   "main.controller.worktreeRemovedTitle": "Worktree rimosso",
+  "main.controller.mergeConcludedTitle": "Merge registrato nella copia di lavoro {branch}",
   "main.controller.worktreeRemovedBranchDeleted":
     "Anche il branch {branch} è stato eliminato: non aveva commit.",
   "main.controller.worktreeRemovedBranchKept": "Il branch {branch} resta.",
@@ -809,6 +810,7 @@ export const mainIt = {
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
+  "main.workPhase.blockerDisputed": "Dopo i rilievi sul candidato {candidate}, lo sviluppatore dell'incarico {assignment} ha finito senza cambiare la copia di lavoro: non è d'accordo con i revisori. Un altro giro dei revisori sullo stesso contenuto darebbe gli stessi rilievi: decidi tu ora con settle_review, oppure supera con overrule_finding i rilievi che vanno contro il Patto. Non dichiarare di nuovo il candidato e non assegnare un incarico nuovo uguale.",
   "main.workPhase.blockerHeld": "La revisione ha fermato il lavoro dell'incarico {assignment} {rounds} volte di seguito, l'ultima sul candidato {candidate}. Trama non lo rimanda più allo sviluppatore e non rilancia i revisori: decidi tu con settle_review. Con i revisori, lo sviluppatore riprende con i rilievi come tua decisione; con lo sviluppatore, i rilievi sono superati e il lavoro va avanti fino all'unione. Scrivi il motivo e il dubbio, non chiedere alla persona e non assegnare un incarico nuovo uguale.",
   "main.workPhase.blockerSemanticConflict":
     "Il candidato {id} non funziona insieme al lavoro di un altro incarico: {detail}",
@@ -1152,6 +1154,9 @@ export const mainIt = {
     "Le verifiche {checks} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.",
   "main.gate.overruled": "Il Coordinatore ha superato i rilievi dei revisori: {reason}",
   "main.gate.settledTitle": "Il Coordinatore ha deciso fra {developer} e i revisori sul candidato {candidate}",
+  "main.gate.againstPact": "Va contro la decisione del Patto {decision} ({value}): è un suggerimento, non ferma il lavoro.",
+  "main.gate.overruledTitle": "Il Coordinatore ha superato un rilievo di {reviewer} sul candidato {candidate}",
+  "main.gate.overruledDetail": "Rilievo superato: {finding}. Motivo: {reason}. Decisioni del Patto: {decisions}.",
   "main.gate.settledFindings": "Hanno ragione i revisori: {reason}",
   "main.gate.settledDeveloper": "Ha ragione lo sviluppatore: {reason}",
   "main.gate.settledDoubt": "Dubbio: {doubt}",
@@ -1203,6 +1208,10 @@ export const mainIt = {
     "La copia di lavoro dell'incarico non c'è più: serve un nuovo incarico.",
   "main.gate.waiting.specialistRemoved":
     "Lo sviluppatore non è più nel team: serve un nuovo incarico.",
+  "main.gate.waiting.stopped":
+    "Il lavoro è stato fermato su richiesta: il Coordinatore lo riprende nella sua copia di lavoro quando serve.",
+  "main.gate.waiting.decisionUnderReview":
+    "Una decisione del Patto su cui si basa il lavoro è in revisione: il lavoro riprende con la risposta.",
   "main.gate.unreadableAnswer":
     "Il revisore non ha restituito un rapporto leggibile.",
   "main.gate.malformedFinding":
@@ -1905,6 +1914,8 @@ export const mainIt = {
     "Il messaggio di commit non porta il marcatore del candidato ({marker}).",
   "main.publication.extraFiles":
     "L'indice contiene file fuori dal candidato: {files}.",
+  "main.publication.unmergedFiles":
+    "Il merge nella copia di lavoro ha ancora file in conflitto: {files}. Vanno risolti prima del commit.",
   "main.publication.pullRequestClosed":
     "La pull request #{number} di questo branch è già chiusa: il nuovo candidato richiede un nuovo incarico.",
   "main.publication.createFailed":

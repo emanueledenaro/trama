@@ -26,17 +26,28 @@ export function replacedBy(assignment: SpecialistAssignment, later: SpecialistAs
 
 /**
  * A candidate is superseded when a newer candidate of the same assignment exists or when later work replaced its
- * assignment, and when the Coordinator declared it superseded by a newer candidate of the same work (issue #421). A
- * merged candidate is done, not superseded.
+ * assignment, and when the Coordinator declared it superseded by a newer candidate of the same work (issue #421). Work
+ * the Coordinator retired that way stays retired: a candidate it declares later is superseded too, without a second
+ * declaration. A merged candidate is done, not superseded.
  */
 export function candidateSuperseded(document: ProjectDocument, candidate: Candidate): boolean {
   if (candidate.pullRequest?.mergedAt) return false;
   if (candidate.supersession) return true;
   if (document.candidates.filter((c) => c.assignmentId === candidate.assignmentId).at(-1)?.id !== candidate.id) return true;
+  if (retiredWork(document, candidate.assignmentId)) return true;
   const all = assignmentsOf(document);
   const assignment = all.find((a) => a.id === candidate.assignmentId);
   if (!assignment) return false;
   return all.some((later) => replacedBy(assignment, later));
+}
+
+/** Whether the Coordinator declared a candidate of this work superseded by a candidate of other work (issue #421). */
+export function retiredWork(document: ProjectDocument, assignmentId: string): boolean {
+  return document.candidates.some((c) => {
+    if (c.assignmentId !== assignmentId || !c.supersession) return false;
+    const by = document.candidates.find((n) => n.id === c.supersession!.byCandidateId);
+    return by !== undefined && by.assignmentId !== assignmentId;
+  });
 }
 
 /** Whether the other side of a comparison between two worktrees is a candidate replaced by later work. */

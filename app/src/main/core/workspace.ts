@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { CommitConventions, WorktreeSession } from "@shared/domain";
 import { t } from "./personLanguage";
 import { git, GIT_SAFE_OPTIONS, gitEnvironment, runProcess } from "./process";
@@ -16,6 +16,8 @@ export interface WorkspaceReview {
   excludedSensitiveFiles: string[];
   /** What `git diff --check` reports on the changed files: whitespace errors and conflict markers (Q01). */
   whitespaceErrors: string[];
+  /** The files a merge in progress left in conflict: the worktree is not the work yet. Absent in readings made before. */
+  unmergedFiles?: string[];
 }
 
 export function slug(name: string): string {
@@ -121,6 +123,95 @@ export function isSensitive(path: string): boolean {
   return containsExcludedComponent(path.split("/").filter((c) => c !== ".gitignore"));
 }
 
+/**
+ * Whether a merge is in progress in the worktree, as a realignment with the main branch the developer left without a
+ * commit: the commit it merges (MERGE_HEAD) and the files still in conflict. Read only.
+ */
+export async function mergeState(root: string): Promise<{ mergeHead: string | null; unmergedFiles: string[] }> {
+  const head = await runProcess("git", [...GIT_SAFE_OPTIONS, "rev-parse", "-q", "--verify", "MERGE_HEAD"], { cwd: root, env: gitEnvironment(true) });
+  const mergeHead = head.exitCode === 0 ? head.stdout.trim() || null : null;
+  if (!mergeHead) return { mergeHead: null, unmergedFiles: [] };
+  const unmergedFiles = [...new Set((await git(["diff", "--name-only", "-z", "--diff-filter=U"], root)).split("\0").filter(Boolean))];
+  return { mergeHead, unmergedFiles };
+}
+
+/** Why Trama does not conclude a merge in a worktree; the message is for the Coordinator. */
+export class MergeError extends Error {
+  constructor(
+    readonly code: "no_merge" | "unmerged_files" | "conflict_markers" | "sensitive_content",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * The Conventional Commits message of a merge Trama concludes: `chore: merge <what> into <branch>`, where <what> is the
+ * branch the merge names or the merged commit, and without the branch when the header would be too long.
+ */
+export async function mergeCommitMessage(session: WorktreeSession, conventions: CommitConventions): Promise<string> {
+  const root = session.worktreeRoot;
+  const { mergeHead } = await mergeState(root);
+  if (!mergeHead) throw new MergeError("no_merge", `There is no merge in progress in the working copy on ${session.branch}.`);
+  const path = (await git(["rev-parse", "--git-path", "MERGE_MSG"], root)).trim();
+  const first = (await readFile(isAbsolute(path) ? path : join(root, path), "utf8").catch(() => "")).split("\n")[0] ?? "";
+  const named = /^Merge (?:remote-tracking )?branch '([^']+)'/.exec(first)?.[1];
+  const what = named ?? mergeHead.slice(0, 7);
+  const full = `chore: merge ${what} into ${session.branch}`;
+  return full.length <= Math.min(conventions.headerMaxLength, 100) ? full : `chore: merge ${what}`;
+}
+
+/**
+ * Concludes the resolved merge left in progress in a worktree (MERGE_HEAD, no file in conflict) with a merge commit that
+ * has both parents, as `git commit` records it. The files the merge commit writes of its own, the resolution, carry no
+ * conflict marker and nothing `scan` finds (secrets, sensitive files); the files the other branch brought as they are
+ * belong to it. Never pushes: the pull request is still the way to the main branch.
+ */
+export async function concludeMerge(
+  session: WorktreeSession,
+  message: string,
+  scan: (content: { diff: string; changedFiles: string[] }) => string[],
+): Promise<{ commit: string; mergedHead: string }> {
+  const root = session.worktreeRoot;
+  const merge = await mergeState(root);
+  if (!merge.mergeHead) throw new MergeError("no_merge", `There is no merge in progress in the working copy on ${session.branch}: nothing to conclude.`);
+  if (merge.unmergedFiles.length) {
+    throw new MergeError("unmerged_files", `The merge has files still in conflict: ${merge.unmergedFiles.join(", ")}. The developer resolves them first.`);
+  }
+  const staged = (await git(["diff", "--cached", "--name-only", "-z", "--no-renames", "HEAD"], root)).split("\0").filter(Boolean);
+  const own = await differentFrom(root, merge.mergeHead, staged);
+  if (own.length) {
+    const diff = await git(["diff", "--cached", "--no-renames", "HEAD", "--", ...own], root);
+    const marked = [...new Set(conflictMarkerFiles(diff))];
+    if (marked.length) throw new MergeError("conflict_markers", `The resolution still has conflict markers in ${marked.join(", ")}.`);
+    const findings = scan({ diff, changedFiles: own });
+    if (findings.length) throw new MergeError("sensitive_content", `The resolution cannot be committed: ${findings.join("; ")}`);
+  }
+  await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", message], root, false);
+  return { commit: (await git(["rev-parse", "HEAD"], root)).trim(), mergedHead: merge.mergeHead };
+}
+
+/** The files of a diff whose added lines carry a conflict marker. */
+function conflictMarkerFiles(diff: string): string[] {
+  const files: string[] = [];
+  let file = "";
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++ ")) file = line.replace(/^\+\+\+ (b\/)?/, "");
+    else if (/^\+(?:<{7}|>{7})(?:\s|$)|^\+={7}$/.test(line)) files.push(file);
+  }
+  return files;
+}
+
+/** The staged `paths` whose content differs from the one they have in `commit`. */
+export async function differentFrom(root: string, commit: string, paths: string[]): Promise<string[]> {
+  const different: string[] = [];
+  for (const path of paths) {
+    const result = await runProcess("git", [...GIT_SAFE_OPTIONS, "diff", "--cached", "--quiet", commit, "--", path], { cwd: root, env: gitEnvironment(true) });
+    if (result.exitCode !== 0) different.push(path);
+  }
+  return different;
+}
+
 /** What the worktree changed against its base: tracked and untracked files, sensitive paths excluded. */
 export async function reviewWorktree(session: WorktreeSession): Promise<WorkspaceReview> {
   const root = session.worktreeRoot;
@@ -146,7 +237,8 @@ export async function reviewWorktree(session: WorktreeSession): Promise<Workspac
     }
   }
   const whitespaceErrors = await diffCheck(root, session.baseSHA, changedFiles, untracked);
-  return { snapshotId: hash.digest("hex"), baseSHA: session.baseSHA, diff: parts.join(""), changedFiles, excludedSensitiveFiles, whitespaceErrors };
+  const { unmergedFiles } = await mergeState(root);
+  return { snapshotId: hash.digest("hex"), baseSHA: session.baseSHA, diff: parts.join(""), changedFiles, excludedSensitiveFiles, whitespaceErrors, unmergedFiles };
 }
 
 /**

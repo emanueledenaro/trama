@@ -581,6 +581,17 @@ function assignedWork(
         block: "reviewLoop",
       };
     }
+    // The developer ended the returned work without changing the copy: a disagreement the Coordinator settles now,
+    // without another round of the reviewers on the same content (one work, one candidate).
+    if (blocker?.code === "GATE_BLOCKED" && disputedSince(assignment, candidate)) {
+      moves.add(coordinator("settleReview", candidate.id));
+      return {
+        phase: "blocked",
+        blocker: t("main.workPhase.blockerDisputed", { assignment: assignment.id, candidate: candidate.id }),
+        why: candidateBlockerWhy(workOf(document, assignment), blocker),
+        block: "reviewLoop",
+      };
+    }
     if (blocker) {
       // A blocker only the person settles waits for them (issue #390): new work would not settle it.
       if (PERSON_BLOCKERS.includes(blocker.code)) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));
@@ -693,9 +704,24 @@ export function greenLightMissing(document: ProjectDocument, candidate: Candidat
 
 /**
  * Whether the gate sent `candidate` back to the developer of `assignment` and the developer has finished since (W10):
- * the worktree moved on, so the candidate no longer describes the work.
+ * the worktree moved on, so the candidate no longer describes the work. When Trama read the copy after that turn and
+ * found the candidate's content, the developer disputed the findings instead (see `disputedSince`).
  */
-const correctedSince = (assignment: SpecialistAssignment, candidate: Candidate) => assignment.gateReturn?.candidateId === candidate.id && !isActive(assignment);
+const correctedSince = (assignment: SpecialistAssignment, candidate: Candidate) =>
+  assignment.gateReturn?.candidateId === candidate.id && !isActive(assignment) && !disputedSince(assignment, candidate);
+
+/**
+ * Whether the developer ended the work the gate sent back without changing its working copy: Trama read the copy after
+ * the return and it is still the candidate's. The developer disputes the findings; a new gate on the same content would
+ * give the same findings, so the Coordinator settles it (ADR 0023).
+ */
+const disputedSince = (assignment: SpecialistAssignment, candidate: Candidate) => {
+  const returned = assignment.gateReturn;
+  const read = assignment.worktreeSnapshot;
+  return (
+    returned?.candidateId === candidate.id && !isActive(assignment) && !!read && read.snapshotId === candidate.snapshotId && read.at > returned.at
+  );
+};
 
 /** The one next step to show under the latest reply of each dialog: the declared move, while the work still allows it. */
 export function nextStepViews(document: ProjectDocument): Record<string, NextStepView> {

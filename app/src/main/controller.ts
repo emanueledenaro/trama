@@ -292,6 +292,8 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  mergedWorktrees,
+  worktreeSharers,
   reopenForFindings,
   resumePausedAssignment,
   stopOrphanedAssignments,
@@ -302,7 +304,17 @@ import {
   recordTurnContext,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { adoptRemoteBranch, branchCommitMessages, checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  adoptRemoteBranch,
+  branchCommitMessages,
+  checkoutCommit,
+  concludeMerge,
+  mergeCommitMessage,
+  prepareWorktree,
+  removeWorktree,
+  reviewWorktree,
+  validateWorktree,
+} from "./core/workspace";
 import {
   claudeCloudTransport,
   cloudBranchName,
@@ -344,6 +356,11 @@ import {
   usesCodeReview,
   GateSettlementError,
   settleGate,
+  applyOverruled,
+  applyPactRule,
+  decidedLines,
+  overruledFor,
+  rememberOverruled,
 } from "./core/gate";
 import { blockingFindings, gateStatus, latestGate } from "@shared/gate";
 import { fixedBanInfo } from "@shared/fixedBans";
@@ -419,7 +436,7 @@ import { type ReviewCall, runReviewSession } from "./core/learning/reviewRunner"
 import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git, runProcess } from "./core/process";
 import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
-import { redactSensitiveData } from "./core/redaction";
+import { redactSensitiveData, repositoryLocator } from "./core/redaction";
 import { runnableCommand } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, nextTicket, READY_LABEL, recordChoice, revokeDelegation } from "./core/fullDelegation";
@@ -2332,10 +2349,13 @@ export class TramaController {
             return reviewWorktree(assignment.workspace);
           },
           conventions: () => readProjectConventions(current.rootPath),
+          concludeMerge: (assignmentId, message) => this.concludeAssignmentMerge(current, assignmentId, message, current.runningRequestId),
+          releaseWorktree: (assignmentId) => this.freeWorktree(current, assignmentId),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidateInTurn(current, candidateId, current.runningRequestId),
           settleReview: (candidateId, input) => this.settleReview(current, candidateId, input),
+          findingOverruled: (candidateId, outcome) => this.findingOverruled(current, candidateId, outcome),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           waitingFor: (candidateId) => {
             const item = (current.waiting ?? []).find((i) => i.kind === "candidate" && i.targetId === candidateId);
@@ -5144,7 +5164,10 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error(t("main.controller.stopBeforeTurn"));
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, t("main.controller.newSpecialistThreadTitle"), null, "info");
-      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
+      // Work that continues in the working copy of the work it replaces is told so (a correction, a hand-over).
+      const continues =
+        assignment.replaces?.find((id) => findAssignment(document, id)?.workspace?.worktreeRoot === assignment.workspace?.worktreeRoot) ?? null;
+      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions, continues));
       const prompt = [brief, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
@@ -5834,16 +5857,65 @@ export class TramaController {
     await this.stopAssignmentRuntime(assignmentId);
   }
 
+  /**
+   * The Coordinator concludes the resolved merge a developer left in progress in the working copy (commit_merge): Trama
+   * writes the merge commit with both parents and a valid message, and pushes nothing. Told in the work's Activity.
+   */
+  private async concludeAssignmentMerge(
+    project: ActiveProjectState,
+    assignmentId: string,
+    message: string | null,
+    requestId: string | null,
+  ): Promise<{ commit: string; mergedHead: string; message: string }> {
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(`Assignment ${assignmentId} has no working copy.`);
+    await validateWorktree(assignment.workspace, this.worktreesRoot);
+    const conventions = await readProjectConventions(project.rootPath);
+    const written = message?.trim() || (await mergeCommitMessage(assignment.workspace, conventions));
+    const redacted = await redactSensitiveData(written, repositoryLocator(assignment.workspace.worktreeRoot));
+    requireValidCommitMessage(redacted, conventions);
+    const done = await concludeMerge(assignment.workspace, redacted, secretFindings);
+    appendEvent(
+      project.document,
+      "trama",
+      { type: "activity", title: t("main.controller.mergeConcludedTitle", { branch: assignment.workspace.branch }), detail: commitHeader(redacted), tone: "tool" },
+      requestId,
+      new Date(),
+      { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
+    );
+    this.changedIn(project);
+    return { ...done, message: redacted };
+  }
+
   /** The person removes the worktree of finished work; refused when it would lose work (T08). */
   async removeAssignmentWorktree(assignmentId: string): Promise<void> {
-    const project = this.requireProject();
+    await this.freeWorktree(this.requireProject(), assignmentId);
+  }
+
+  /**
+   * Frees the working copies of merged work nobody continues in (the branch and the merge are on GitHub), so they do not
+   * pile up. A copy git refuses to remove stays: nothing that would lose work goes.
+   */
+  private async freeMergedWorktrees(project: ActiveProjectState): Promise<void> {
+    for (const assignment of mergedWorktrees(project.document)) {
+      const root = assignment.workspace!.worktreeRoot;
+      if (this.worktreesKept.has(root)) continue;
+      // Tried once per session: a copy git keeps, as one with files of its own, is not tried at every reading.
+      await this.freeWorktree(project, assignment.id).catch(() => this.worktreesKept.add(root));
+    }
+  }
+
+  /** The working copies of merged work that could not be freed in this session. */
+  private readonly worktreesKept = new Set<string>();
+
+  /** Removes the working copy of `assignmentId` and of the work that shares it, when that loses nothing (T08). */
+  private async freeWorktree(project: ActiveProjectState, assignmentId: string): Promise<{ branchDeleted: boolean }> {
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(t("main.controller.noWorktreeToRemove"));
     if (isActive(assignment)) throw new DomainError(t("main.controller.stopBeforeRemovingWorktree"));
-    // A fix of a candidate works in the candidate's worktree (W11): the worktree goes only when all of them stopped.
-    const sharing = project.document.team.specialists
-      .flatMap((s) => s.assignments)
-      .filter((a) => a.workspace?.worktreeRoot === assignment.workspace!.worktreeRoot && !a.workspaceRemovedAt);
+    // A fix of a candidate works in the candidate's worktree (W11), a correction or a hand-over in the work's: the
+    // worktree goes only when all of them stopped.
+    const sharing = worktreeSharers(project.document, assignment);
     if (sharing.some(isActive)) throw new DomainError(t("main.controller.worktreeInUse"));
     const published = project.document.candidates.some((c) => sharing.some((a) => a.id === c.assignmentId) && c.pullRequest);
     const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
@@ -5862,7 +5934,8 @@ export class TramaController {
       new Date(),
       { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
     );
-    this.changed();
+    this.changedIn(project);
+    return { branchDeleted };
   }
 
   /** The person changes the provider or model of a stopped assignment (ADR 0009). */
@@ -6253,7 +6326,17 @@ export class TramaController {
         const spec = auditSpec(document, assignment, project.github.issues);
         beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
         this.changedIn(project);
-        const input = { projectName: project.name, gate, candidate, assignment, spec, language: this.state.language };
+        // The Pact in force is the person's rules, and the findings overruled on this work are already decided.
+        const input = {
+          projectName: project.name,
+          gate,
+          candidate,
+          assignment,
+          spec,
+          decisions: document.decisions,
+          decided: overruledFor(document, assignment.id),
+          language: this.state.language,
+        };
         const skill = await this.nativeSkill("code-review");
         const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
           this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
@@ -6268,7 +6351,13 @@ export class TramaController {
         );
         await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
       }
-      if (!blocked.length) closeGate(gate);
+      if (!blocked.length) {
+        // A finding against a Pact decision in force, or one the Coordinator already overruled on this work, does not
+        // stop it (ADR 0023).
+        applyPactRule(document, gate);
+        applyOverruled(document, gate);
+        closeGate(gate);
+      }
     } catch (error) {
       failGate(gate, (error as Error).message);
     } finally {
@@ -6348,6 +6437,7 @@ export class TramaController {
         `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
         `Decisioni del Patto da rispettare:\n${decisions}`,
         reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
+        decidedLines(overruledFor(document, assignment.id).filter((d) => d.role === "cleanCode")),
         `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
         "Rispondi con verdict approved oppure changesRequested, un riassunto breve e i findings (un elenco vuoto se non ne hai).",
       ]
@@ -6488,7 +6578,7 @@ export class TramaController {
   private settleReview(
     project: ActiveProjectState,
     candidateId: string,
-    input: { side: "findings" | "developer"; reason: string; doubt: string | null },
+    input: { side: "findings" | "developer"; reason: string; doubt: string | null; decisionIds?: string[] },
   ): { waiting: string | null } {
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
@@ -6496,6 +6586,11 @@ export class TramaController {
     if (!candidate || !gate) throw new GateSettlementError("not_blocked", `The candidate ${candidateId} has no gate to settle.`);
     settleGate(gate, candidate, input);
     const settled = gate.settled!;
+    // With the developer the findings are remembered for the work: the next rounds do not block on them again.
+    if (input.side === "developer") {
+      const decisionIds = (input.decisionIds ?? []).filter((id) => document.decisions.some((d) => d.id === id));
+      rememberOverruled(document, gate, { reason: settled.reason, decisionIds });
+    }
     let waiting: string | null = null;
     if (input.side === "findings") {
       // The findings go back once more, now as the Coordinator's decision; the count of rounds starts again from here.
@@ -6527,6 +6622,21 @@ export class TramaController {
     }
     this.changedIn(project);
     return { waiting };
+  }
+
+  /** The Coordinator overruled a reviewer's finding with the Pact (overrule_finding): told in Activity and, with the delegation, in the recap. */
+  private findingOverruled(
+    project: ActiveProjectState,
+    candidateId: string,
+    outcome: { role: GateRole; title: string; reason: string; decisionIds: string[]; gatePassed: boolean },
+  ): void {
+    const document = project.document;
+    const reviewer = document.team.specialists.find((s) => s.role === outcome.role && s.status !== "removed")?.name ?? roleProfile(this.t, outcome.role).name;
+    const title = t("main.gate.overruledTitle", { reviewer, candidate: candidateId });
+    const choice = t("main.gate.overruledDetail", { finding: outcome.title, reason: outcome.reason, decisions: outcome.decisionIds.join(", ") });
+    appendEvent(document, "trama", { type: "activity", title, detail: choice, tone: "info" }, null);
+    if (activeDelegation(document)) recordChoice(document, { kind: "doubt", subject: title, choice, targetId: candidateId, doubt: null });
+    this.changedIn(project);
   }
 
   /**
@@ -7119,6 +7229,8 @@ export class TramaController {
         this.integrating.delete(candidate.id);
       }
     }
+    // Merged work leaves its working copy: it would only pile up.
+    await this.freeMergedWorktrees(project);
   }
 
   /**

@@ -804,6 +804,8 @@ export interface SpecialistAssignment {
   worktreeSnapshot?: { snapshotId: string; at: string } | null;
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /** The Coordinator resumed the work in its working copy with these instructions (resume_assignment); the latest, absent before any. */
+  coordinatorNote?: { text: string; reason: string; at: string } | null;
   /**
    * The earlier assignments this work corrects (issue #389): later work in the same dialog on their modules while
    * their candidate was still blocked. Their candidates are superseded by this work's; absent when it corrects nothing.
@@ -1784,6 +1786,8 @@ export interface ProjectDocument {
   audits?: FocusAudit[];
   /** The candidate gates (W10); absent until the first candidate is reviewed. */
   gates?: CandidateGate[];
+  /** The reviewers' findings the Coordinator overruled (ADR 0023); absent until the first. */
+  overruledFindings?: OverruledFinding[];
   /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
   continuousWork?: ContinuousWorkRecord;
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
@@ -2120,6 +2124,32 @@ export interface GateFinding {
   detail: string;
   /** The file it is about, with the line when known; null when it is about the whole diff. */
   file: string | null;
+  /**
+   * The Coordinator already overruled this finding with its reason and the Pact decisions it cites: it was blocking and
+   * is advisory now. Absent on a finding nobody overruled.
+   */
+  overruled?: { findingId: string; reason: string; decisionIds: string[] } | null;
+  /** The Pact decision the figure says the finding asks the work to go against; such a finding is advisory. */
+  against?: string;
+}
+
+/**
+ * A reviewer's finding the Coordinator overruled, with the reason and the Pact decisions it cites: the same figure's
+ * finding on the same file (or, without a file, with the same title) no longer blocks the same work, and the reviewers
+ * read it as already decided. Trama's own evidence (a red check, a regression, a secret) is never overruled.
+ */
+export interface OverruledFinding {
+  id: string;
+  role: GateRole;
+  title: string;
+  /** The file without the line; null when the finding named none. */
+  file: string | null;
+  reason: string;
+  decisionIds: string[];
+  /** The work it belongs to: the assignments of its lineage when it was overruled. */
+  assignmentIds: string[];
+  candidateId: string;
+  at: string;
 }
 
 /** One figure of the gate, reviewing the diff in a session of its own. */
