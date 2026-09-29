@@ -327,6 +327,8 @@ export const it = {
   "settings.presence.openProject": "Apri un progetto per scegliere se condividere la presenza.",
   "settings.presence.demo": "Il progetto di esempio non condivide la presenza.",
   "settings.presence.share": "Condividi la presenza in {name}",
+  "settings.presence.pause": "Sospendi la presenza",
+  "settings.presence.resume": "Riprendi la presenza",
   // Window (issue #330)
   "workbench.views": "Viste",
   "workbench.view.projects": "Progetti",
@@ -375,7 +377,6 @@ export const it = {
   "workbench.editor.closeTab": "Chiudi {name}",
   "workbench.editor.resize": "Larghezza dei dettagli accanto alla conversazione",
   "workbench.editor.split": "Affianca i dettagli alla conversazione",
-  "workbench.editor.unsplit": "Apri i dettagli sopra la conversazione",
   // From a finding to work (F04)
   "audit.finding.backlog": "Metti nel backlog",
   "audit.finding.backlogHint": "GitHub non è collegato: il rilievo va nel backlog di Trama.",
@@ -782,8 +783,8 @@ export const it = {
   "workbench.status.divergence": "Avviso sul branch del progetto",
   "workbench.status.activity": "Attività",
   "workbench.status.pause": "Pausa del Coordinatore",
-  "workbench.status.pauseHint": "Pausa del Coordinatore: ferma mosse automatiche, giri e lavoro automatico del progetto",
   "workbench.status.resume": "Riprendi il Coordinatore",
+  "workbench.status.resumeShort": "Riprendi",
   "workbench.status.resumeHint": "Riprendi il lavoro automatico del progetto",
   "workbench.status.stop": "Ferma",
   "workbench.status.stopMove": "Ferma: {move}",
@@ -798,7 +799,7 @@ export const it = {
   "focus.pauseHint": "Toglie questo lavoro dal primo piano: passa al prossimo in coda",
   "focus.goTo": "Vai al lavoro",
   "focus.queue": "Lavori in coda",
-  "focus.open": "Apri",
+  "focus.openInChat": "Mostra nella chat",
   "focus.resume": "Riprendi",
   "focus.bringForward": "Metti in primo piano",
   "focus.paused": "Sospeso",
@@ -1155,6 +1156,7 @@ export const it = {
   "rules.modules.inMandate": "Nel mandato",
   "rules.module.back": "Moduli",
   "rules.module.ask": "Chiedi al Coordinatore su questo modulo",
+  "rules.module.askShort": "Chiedi",
   "rules.module.inMandate": "Il modulo rientra nel mandato.",
   "rules.module.outOfMandate": "Il modulo non rientra nel mandato attuale.",
   "rules.module.colleagues": "Colleghi al lavoro qui",
@@ -1211,6 +1213,12 @@ export const it = {
   "reviewLoop.label": "Lavoro fermato più volte",
   "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
   "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
+  // Buttons of the chat and composer (issue #338)
+  "chat.buttons.resumeTurn": "Riprendi",
+  "chat.buttons.openWaiting": "Apri in Aspetta te",
+  "chat.buttons.askRoute": "Chiedi un percorso al Coordinatore",
+  "chat.buttons.openDiff": "Apri il diff",
+  "chat.buttons.examine": "Esame approfondito",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

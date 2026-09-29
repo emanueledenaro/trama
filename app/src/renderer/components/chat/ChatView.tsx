@@ -9,7 +9,7 @@ import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { useSeam } from "@/components/Seam";
 import { TramaMark } from "@/components/brand/TramaMark";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
@@ -263,7 +263,10 @@ function Timeline() {
         {rows.map((row, index) => (
           <div key={row.id} className="px-1" data-anchors={rowAnchors(row).join(" ") || undefined}>
             {tags[index] ? <GoalTag goalId={tags[index]} /> : null}
-            <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
+            {/* One filled button in the window (issue #338): Aspetta te's while something waits, else the last row's. */}
+            <FilledScope allowed={!waiting && index === rows.length - 1}>
+              <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
+            </FilledScope>
           </div>
         ))}
         {queued.map((message) => (

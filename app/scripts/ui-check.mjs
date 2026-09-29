@@ -53,11 +53,53 @@ const capture = async (options) => {
 };
 // Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
 const shotNames = new Set();
+// Issue #338: the buttons of a screen. Filled buttons ("default" variant, the send arrow is "prominent" and does not
+// count) and buttons a screen reader cannot name: no aria-label, no text, no title.
+const buttonAudit = () =>
+  page.evaluate(() => {
+    // Shown means on top at its center: a button scrolled out of its panel or covered by a popup does not count.
+    const shown = (node) => {
+      const box = node.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) return false;
+      if (node.closest('[inert], [aria-hidden="true"]')) return false;
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
+      const top = document.elementFromPoint(x, y);
+      // A disabled button lets the pointer through to what holds it.
+      return Boolean(top && (node.contains(top) || (node.disabled && top.contains(node))));
+    };
+    const nameOf = (node) =>
+      (
+        node.getAttribute("aria-label") ||
+        (node.getAttribute("aria-labelledby") ?? "")
+          .split(/\s+/)
+          .map((id) => (id ? (document.getElementById(id)?.textContent ?? "") : ""))
+          .join(" ") ||
+        node.textContent ||
+        node.getAttribute("title") ||
+        ""
+      ).trim();
+    const buttons = [...document.querySelectorAll('button, [role="button"]')].filter(shown);
+    return {
+      // A primary drawn as an outline, where the window's one filled button is elsewhere, is not filled.
+      filled: buttons.filter((node) => node.dataset.variant === "default" && node.dataset.filled !== "false").map((node) => nameOf(node)),
+      nameless: buttons.filter((node) => !nameOf(node)).map((node) => node.outerHTML.slice(0, 200)),
+    };
+  });
+// What every screenshot showed, written next to the screenshots for the review of the button rule.
+const buttonScreens = {};
 const shot = async (name) => {
   if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
   shotNames.add(name);
   await page.waitForTimeout(400);
   await capture({ path: join(out, `${name}.png`) });
+  // Issue #338: in every screenshot at most one filled button besides the send arrow, and no button without a name.
+  const audit = await buttonAudit();
+  buttonScreens[name] = audit;
+  await writeFile(join(out, "button-audit.json"), `${JSON.stringify(buttonScreens, null, 2)}\n`);
+  if (audit.nameless.length) throw new Error(`A button without a name in ${name}: ${audit.nameless[0]}`);
+  if (audit.filled.length > 1) throw new Error(`More than one filled button in ${name}: ${audit.filled.join(", ")}`);
   console.log("saved", name);
 };
 // Issue #330: the window is laid out as VS Code. The activity bar picks a view, the side bar shows it; until the slices
@@ -1307,6 +1349,8 @@ if (/(Candidato|incarico) [AC]-[0-9A-F]{8}/.test(await demoCandidate.innerText()
 await page.waitForTimeout(500);
 await shot("04f-candidate");
 await themeShots("04f2-waiting-candidate");
+// Issue #338: in the chat card Apri il diff is an icon, named by its tooltip.
+if ((await demoCandidate.getByRole("button", { name: "Apri il diff" }).innerText()).trim()) throw new Error("The chat card's Apri il diff is not an icon");
 await demoCandidate.getByRole("button", { name: "Apri il diff" }).click();
 // Issue #336: the diff opens in the candidate's tab, open and in view.
 await detailPane().locator('[data-testid="candidate-diff"][open]').waitFor();
@@ -1904,6 +1948,15 @@ await editor.waitFor({ state: "detached" });
 // Mappa: asking about a module puts the question in the composer with the module as the message's context.
 await openModules();
 await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+// Issue #338: the module's question is "Chiedi" with its icon, inside the pane; the name keeps the whole question.
+{
+  const askModule = detailPane().getByRole("button", { name: "Chiedi al Coordinatore su questo modulo" });
+  if ((await askModule.innerText()).trim() !== "Chiedi") throw new Error("The module's ask button does not read Chiedi");
+  const askBox = await askModule.boundingBox();
+  const paneBox = await detailPane().boundingBox();
+  const textFits = await askModule.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+  if (!askBox || !paneBox || !textFits || askBox.x + askBox.width > paneBox.x + paneBox.width + 1) throw new Error("The module's ask button overflows its pane");
+}
 await detailPane().getByRole("button", { name: "Chiedi al Coordinatore su questo modulo" }).click();
 await expectAsked("Cosa fa il modulo Orders", "Mappa, Chiedi al Coordinatore su questo modulo");
 if (!(await page.getByRole("button", { name: "Contesto del messaggio" }).innerText()).includes("Orders")) throw new Error("The module is not the message's context");
@@ -2040,8 +2093,10 @@ await pausedLine.waitFor({ timeout: 20_000 });
 await pausedLine.getByTestId("status-line-text").getByText(/Coordinatore in pausa: i turni in corso finiscono/).waitFor();
 const resumeButton = pausedLine.getByRole("button", { name: "Riprendi il Coordinatore" });
 await resumeButton.waitFor();
+// Issue #338: Riprendi starts the work again, icon and text; Pausa is an icon only.
+if ((await resumeButton.innerText()).trim() !== "Riprendi") throw new Error("Riprendi in the status bar is not icon and text");
 // The last action sits on the right: Riprendi, unless the person has a move of their own, which stays last. Issue #330:
-// in the status bar Riprendi is an icon and the person's move is text, so the window keeps one filled button.
+// in the status bar Riprendi is an icon with its text (issue #338) and the person's move is text, so the window keeps one filled button.
 const lastButton = pausedLine.getByRole("button").last();
 const lastBox = await lastButton.boundingBox();
 const pausedBox = await pausedLine.boundingBox();
@@ -2050,6 +2105,25 @@ if ((await lastButton.getAttribute("aria-label")) !== "Riprendi il Coordinatore"
   throw new Error("The last button of the paused line is not the primary");
 }
 await themeShots("15c-status-line-paused");
+// Issue #338: the button rule on the parts no view owns, the chat with its composer and the status bar in pause, at
+// 1280x800 and 1680x1050 with the Codex and Claude themes, light and dark.
+{
+  const pausedLook = await lookOf();
+  for (const [width, height] of [
+    [1280, 800],
+    [1680, 1050],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`38-button-rule-${width}x${height}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+  await setLookTo(pausedLook.provider, pausedLook.dark);
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
 await page.waitForTimeout(300);
 if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started a move in pause");
 await resumeButton.click();
@@ -2073,8 +2147,11 @@ if ((await recapCard.getAttribute("data-reason")) !== "request") throw new Error
 const recapNeeds = recapCard.locator('[data-testid="recap-need"][data-waiting="true"]');
 if (await recapNeeds.count()) {
   const needBox = await recapNeeds.first().boundingBox();
-  const openBox = await recapNeeds.first().getByRole("button", { name: "Apri in Aspetta te" }).boundingBox();
-  if (!needBox || !openBox || needBox.x + needBox.width - (openBox.x + openBox.width) > 2) throw new Error("The recap's Apri in Aspetta te is not on the right");
+  // Issue #338: the whole line of the need opens it in Aspetta te, from its left edge to its right edge.
+  const openBox = await recapNeeds.first().getByRole("button", { name: /^Apri in Aspetta te/ }).boundingBox();
+  if (!needBox || !openBox || needBox.x + needBox.width - (openBox.x + openBox.width) > 2 || openBox.x - needBox.x > 2) {
+    throw new Error("The recap's Apri in Aspetta te is not on the right");
+  }
 } else {
   await recapCard.getByText("Niente: per ora vado avanti da solo.").waitFor();
 }
@@ -3025,7 +3102,8 @@ const auditDone = async () => {
   await page.locator('[data-testid="focus-audit"]:is([data-status="done"], [data-status="failed"])').waitFor({ timeout: 60_000 });
   if ((await focusAudit.getAttribute("data-status")) !== "done") throw new Error(`Focus mode failed: ${await focusAudit.innerText()}`);
 };
-const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
+// Issue #338: Esame approfondito is an icon in the chat card; its name is the aria-label.
+const focusActions = await sliceCandidate.locator(".cta-row button").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label") || node.textContent));
 if (!focusActions.some((label) => label.includes("Esame approfondito"))) throw new Error(`No Esame approfondito on the candidate: ${focusActions}`);
 await sliceCandidate.getByRole("button", { name: "Esame approfondito" }).click();
 await focusAudit.waitFor({ timeout: 20_000 });
@@ -3434,8 +3512,10 @@ await skillMenu.getByRole("option", { name: /\/ask-trama/ }).getByText("Ask whic
 await shot("21-ask-trama-menu");
 await page.keyboard.press("Escape");
 await composer().fill("");
-await page.getByRole("button", { name: "Ask Trama", exact: true }).click();
-await expectAsked("/ask-trama ", "Ask Trama");
+// Issue #338: Ask Trama is the skill's name, not a button's; the button says what the person gets.
+if (await page.getByRole("button", { name: "Ask Trama", exact: true }).count()) throw new Error("A button is still named after the Ask Trama skill");
+await page.getByRole("button", { name: "Chiedi un percorso al Coordinatore", exact: true }).click();
+await expectAsked("/ask-trama ", "Chiedi un percorso al Coordinatore");
 await page.keyboard.type("Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.");
 await page.keyboard.press("Enter");
 // Issue #292: the proposed route waits for the person in Aspetta te; the chat keeps its reference.
@@ -3722,10 +3802,12 @@ await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
 await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
 await page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true }).waitFor();
-await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" }).click();
-await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
+// Issue #338: the pause of the presence says what it pauses, "Sospendi la presenza", and its way back "Riprendi la presenza".
+if (await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa", exact: true }).count()) throw new Error("Presence still offers Metti in pausa");
+await page.getByTestId("settings").getByRole("button", { name: "Sospendi la presenza" }).click();
+await page.getByTestId("settings").getByRole("button", { name: "Riprendi la presenza" }).waitFor();
 await shot("16c-presence-settings");
-await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+await page.getByTestId("settings").getByRole("button", { name: "Riprendi la presenza" }).click();
 // Issue #272: the Monitor never says "no repository" above the repository it then offers.
 await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
 await page.getByTestId("settings").getByText("Repository osservati").waitFor();
@@ -3764,6 +3846,8 @@ const focusOverlap = page.locator('[data-testid="focus-overlap"][data-level="con
 await page.locator('[data-testid="status-focus"][data-overlap="conflict"]').waitFor({ timeout: 10_000 });
 await openFocusPanel();
 await focusOverlap.waitFor({ timeout: 10_000 });
+// Issue #338: the details of the overlaps are a chevron with their number.
+if (!/^\d+$/.test((await focusOverlap.getByRole("button", { name: /^Dettagli/ }).innerText()).trim())) throw new Error("The overlaps' details are not an icon with their number");
 await focusOverlap.getByRole("button", { name: /^Dettagli/ }).click();
 await focusOverlap.getByRole("button", { name: "Scrivi a Bea" }).first().click();
 const colleagueMessage = focusOverlap.getByTestId("colleague-message");

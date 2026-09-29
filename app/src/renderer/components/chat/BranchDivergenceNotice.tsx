@@ -3,6 +3,7 @@ import { useState } from "react";
 import { divergenceQuestion, divergenceSummary } from "@shared/conflictScope";
 import type { BranchDivergence } from "@shared/domain";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
@@ -28,10 +29,14 @@ export function BranchDivergencePanel({ divergence, onDone, filesOpen = false }:
           </p>
         </div>
         <div className="cta-row ml-auto">
-          <Button size="xs" variant="ghost" aria-expanded={open} aria-controls="branch-divergence-files" onClick={() => setOpen(!open)}>
-            {t("divergence.showFiles", { count: files.length })}
-            <IconChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
-          </Button>
+          {/* Issue #338: showing the files is secondary, an icon with its name; asking is the panel's primary, text, last. */}
+          <IconButton
+            label={t("divergence.showFiles", { count: files.length })}
+            icon={<IconChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />}
+            aria-expanded={open}
+            aria-controls="branch-divergence-files"
+            onClick={() => setOpen(!open)}
+          />
           <Button
             size="xs"
             onClick={() => {

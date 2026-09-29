@@ -1,6 +1,7 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
+import { createContext, useContext } from "react";
 import { cn } from "@/lib/cn";
 
 export const buttonVariants = cva(
@@ -37,6 +38,28 @@ export const buttonVariants = cva(
 
 export type ButtonProps = React.ComponentProps<"button"> & VariantProps<typeof buttonVariants>;
 
+/**
+ * Whether a primary action may be drawn filled here (ADR 0018, issue #338): the window has one filled button, the one
+ * of Aspetta te. Outside it a primary stays the primary (last, on the right, `data-variant="default"`) and is drawn as
+ * an outline, with `data-filled="false"`.
+ */
+const FilledContext = createContext(true);
+
+export function FilledScope({ allowed, children }: { allowed: boolean; children: React.ReactNode }) {
+  return <FilledContext.Provider value={allowed}>{children}</FilledContext.Provider>;
+}
+
 export function Button({ className, variant, size, type = "button", ...props }: ButtonProps) {
-  return <button type={type} data-variant={variant ?? "default"} className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+  const filledAllowed = useContext(FilledContext);
+  const role = variant ?? "default";
+  const muted = role === "default" && !filledAllowed;
+  return (
+    <button
+      type={type}
+      data-variant={role}
+      data-filled={muted ? "false" : undefined}
+      className={cn(buttonVariants({ variant: muted ? "outline" : variant, size }), className)}
+      {...props}
+    />
+  );
 }

@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconChevronDown, IconFocus2, IconUsers } from "@tabler/icons-react";
+import { IconChevronDown, IconFocus2, IconMessageCircle, IconPlayerPlay, IconUsers } from "@tabler/icons-react";
 import { useState } from "react";
 import type { FocusTask } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
@@ -7,6 +7,7 @@ import { type OverlapItem, overlapSummary, strongest } from "@shared/overlap";
 import { OverlapBadge, OverlapRow } from "@/components/OverlapNotice";
 import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
@@ -59,10 +60,15 @@ function OverlapLine({ items }: { items: OverlapItem[] }) {
         <OverlapBadge level={top.level} />
         <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground/85">{overlapSummary(top)}</span>
         <div className="cta-row ml-auto">
-          <Button size="xs" variant="ghost" aria-expanded={open} aria-controls="focus-overlaps" onClick={() => setOpen(!open)}>
-            {items.length === 1 ? t("focus.details") : t("focus.detailsCount", { count: items.length })}
-            <IconChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
-          </Button>
+          {/* Secondary: the chevron with the number of overlaps (issue #338); the name says what it opens. */}
+          <IconButton
+            label={items.length === 1 ? t("focus.details") : t("focus.detailsCount", { count: items.length })}
+            icon={<IconChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />}
+            count={items.length}
+            aria-expanded={open}
+            aria-controls="focus-overlaps"
+            onClick={() => setOpen(!open)}
+          />
         </div>
       </div>
       {open ? (
@@ -112,15 +118,15 @@ function QueueRow({ task }: { task: FocusTask }) {
         ) : null}
       </div>
       <div className="cta-row ml-auto">
-        <Button size="xs" variant="ghost" onClick={() => openDialog(task.goalId)}>
-          {t("focus.open")}
-        </Button>
+        {/* Issue #338: opening the task's chat is secondary, an icon; Riprendi starts work, icon and text; the moves of a
+            queued task are not filled, since the panel's one filled button is "Vai al lavoro". */}
+        <IconButton label={t("focus.openInChat")} icon={<IconMessageCircle />} onClick={() => openDialog(task.goalId)} />
         {task.status === "paused" ? (
           <Button size="xs" variant="outline" onClick={() => void change("resume", task.id)}>
-            {t("focus.resume")}
+            <IconPlayerPlay /> {t("focus.resume")}
           </Button>
         ) : null}
-        <Button size="xs" onClick={() => void change("focus", task.id).then(() => openDialog(task.goalId))}>
+        <Button size="xs" variant="outline" onClick={() => void change("focus", task.id).then(() => openDialog(task.goalId))}>
           {t("focus.bringForward")}
         </Button>
       </div>

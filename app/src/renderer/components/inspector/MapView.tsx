@@ -101,9 +101,12 @@ export function ModuleView({ id }: { id: string }) {
           {inMandate ? t("rules.module.inMandate") : t("rules.module.outOfMandate")}
         </p>
         <div className="cta-row mt-3">
-          <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
-            <IconMessageCircle stroke={1.8} /> {t("rules.module.ask")}
-          </Button>
+          {/* Issue #338: "Chiedi" with its icon fits the narrow side bar; the tooltip and the name keep the whole question. */}
+          <Tooltip label={t("rules.module.ask")}>
+            <Button size="sm" variant="outline" aria-label={t("rules.module.ask")} onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
+              <IconMessageCircle stroke={1.8} /> {t("rules.module.askShort")}
+            </Button>
+          </Tooltip>
         </div>
       </div>
       <InspectorSection title={`${t("rules.module.files")} (${module.files.length})`}>

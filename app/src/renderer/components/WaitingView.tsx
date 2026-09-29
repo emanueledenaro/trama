@@ -2,7 +2,7 @@ import { IconHourglass } from "@tabler/icons-react";
 import { useEffect, useRef } from "react";
 import { blocksText, type WaitingItem, type WaitingKind, waitingItemFor, waitingSummary } from "@shared/waitingForYou";
 import { findGoal } from "@shared/goals";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { cn } from "@/lib/cn";
@@ -74,7 +74,7 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
           <EmptyNote>Nessuna domanda, proposta o permesso da dare.</EmptyNote>
         </InspectorSection>
       ) : null}
-      {items.map((item) => {
+      {items.map((item, index) => {
         const goal = document ? findGoal(document, item.goalId) : null;
         return (
           <section
@@ -89,7 +89,10 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
               <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
               {goal ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">Nel dialogo di {goal.title}</span> : null}
             </div>
-            <WaitingCard item={item} />
+            {/* The window's one filled button is the first item's (issue #338); the others keep their primary as an outline. */}
+            <FilledScope allowed={index === 0}>
+              <WaitingCard item={item} />
+            </FilledScope>
           </section>
         );
       })}

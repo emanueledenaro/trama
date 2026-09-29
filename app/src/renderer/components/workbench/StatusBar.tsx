@@ -137,13 +137,16 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
         </button>
       </Tooltip>
       {line.paused ? (
+        // Riprendi starts the work again: icon and text (issue #338), with the Coordinator in its name.
         <Tooltip label={t("workbench.status.resumeHint")}>
           <button type="button" className={ITEM} aria-label={t("workbench.status.resume")} onClick={() => void act("coordinator:pause", { paused: false })}>
             <IconPlayerPlay className="size-3.5" stroke={1.8} />
+            {t("workbench.status.resumeShort")}
           </button>
         </Tooltip>
       ) : (
-        <Tooltip label={t("workbench.status.pauseHint")}>
+        // Pause is an icon whose tooltip is its name (issue #338).
+        <Tooltip label={t("workbench.status.pause")}>
           <button type="button" className={ITEM} aria-label={t("workbench.status.pause")} onClick={() => void act("coordinator:pause", { paused: true })}>
             <IconPlayerPause className="size-3.5" stroke={1.8} />
           </button>
