@@ -1259,8 +1259,13 @@ export const mainIt = {
   "main.auditFindings.unread": "Trama non legge questo percorso: {reason}",
   "main.auditFindings.outsideFiles":
     "`{file}` è fuori dai file che Trama legge.",
+  "main.auditFindings.place.candidateCopy": "nella copia di lavoro del candidato",
+  "main.auditFindings.place.candidate": "su questo candidato",
+  "main.auditFindings.place.projectCopy": "nel progetto",
+  "main.auditFindings.place.module": "sul modulo {name}",
+  "main.auditFindings.place.project": "sul progetto",
   "main.auditFindings.fileMissing":
-    "Il file {file} non esiste nella copia di lavoro del candidato.",
+    "Il file {file} non esiste {copy}.",
   "main.auditFindings.lineMissing":
     "Il file {file} ha {lines} righe: la riga {line} non esiste.",
   "main.auditFindings.quoteMissing":
@@ -1270,9 +1275,9 @@ export const mainIt = {
   "main.auditFindings.commandNotOurs":
     "Trama esegue solo le proprie verifiche, e questo comando non è tra quelle di questo esame.",
   "main.auditFindings.checkPassed":
-    "Trama ha eseguito {check} su questo candidato e la verifica è superata.",
+    "Trama ha eseguito {check} {on} e la verifica è superata.",
   "main.auditFindings.checkFailed":
-    "Trama ha eseguito {check} su questo candidato e la verifica non è superata.",
+    "Trama ha eseguito {check} {on} e la verifica non è superata.",
   "main.auditFindings.reproduction":
     "Trama non esegue le riproduzioni scritte da un modello.",
   "main.auditFindings.noProof":
@@ -1294,6 +1299,8 @@ export const mainIt = {
   // audit.ts
   "main.audit.running":
     "La focus mode sul candidato {candidate} è già in corso.",
+  "main.audit.commitIssuesSource": "Issue {issues} citate nei commit",
+  "main.audit.commitIssuesSource.one": "Issue {issues} citata nei commit",
   "main.audit.sliceSource": "Fetta {slice} del piano {plan}",
   "main.audit.sliceSourceIssue":
     "Fetta {slice} del piano {plan}, issue #{issue}",
@@ -2301,6 +2308,8 @@ export const mainIt = {
   "main.findingWork.quotedLine": "{label}, riga citata: {quote}",
   "main.findingWork.command": "il comando {command}",
   "main.findingWork.reproduction": "riproduzione:\n{steps}",
+  "main.findingWork.moduleNamed": "modulo {name}",
+  "main.findingWork.project": "progetto",
   "main.findingWork.candidateOf": "candidato di {author}",
   "main.findingWork.candidateReviewed": "candidato esaminato",
   "main.findingWork.markdown.title": "**Rilievo {source}:** {title}",
@@ -2446,5 +2455,14 @@ export const mainIt = {
   "main.squads.joins": "{developer} entra nella squadra {squad}.",
   "main.squads.hired": "Aggiunti dentro il mandato: {names}.",
   "main.requestedAction.notFound": "Azione non trovata.",
+  "main.delegation.approvedBy": "Coordinatore con la tua delega",
+  "main.delegation.mandateTitle": "Mandato v{version} con la delega piena",
+  "main.delegation.mandateDetail": "Tutti i moduli e tutte le azioni delegabili, perché la persona ha dato la delega piena.",
+  "main.delegation.ticketSubject": "Issue #{number}: {title}",
+  "main.delegation.ticketTaken": "Presa con la delega piena ({label}).",
+  "main.delegation.stalled": "il Coordinatore non ha deciso quello che aspettava la persona.",
+  "main.delegation.candidateSubject": "Candidato {id}",
+  "main.delegation.approvedAfterShots": "Approvato dopo le schermate",
+  "main.delegation.mandateObjective": "Portare avanti tutto il lavoro del progetto con la delega piena",
   "main.slicePicking.squadsFull": "Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera.",
 } satisfies Record<string, string>;

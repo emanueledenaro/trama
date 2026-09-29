@@ -34,6 +34,8 @@ export type CardKind =
   | "overlap"
   /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
   | "recap"
+  /** The person gave or withdrew the full delegation (issue #423); referenceId is the delegation. */
+  | "delegation"
   /** Trama reordered the Coordinator's context (ADR 0019); referenceId is the Activity event with the context summary. */
   | "contextRollover"
   /** An action a fixed ban stops, done or asked for because the person wrote it (issue #422); referenceId is the action. */
@@ -213,7 +215,7 @@ export interface ContinuousWorkRecord {
 }
 
 /** What made the Coordinator write a recap (A03): one or more milestones, or the person's request. */
-export type RecapReason = "milestone" | "request";
+export type RecapReason = "milestone" | "request" | "return";
 
 /** A milestone of the work (A03): a slice done, a candidate merged, a goal achieved. */
 export type MilestoneKind = "sliceDone" | "candidateMerged" | "goalAchieved";
@@ -248,6 +250,21 @@ export interface RecapRecord {
   /** The status line when the recap was written. */
   doing: string;
   needs: RecapNeed[];
+  /**
+   * What the Coordinator decided with the full delegation since the last recap, with its doubts (issue #423); absent
+   * without such choices and in recaps written before.
+   */
+  delegated?: RecapDelegated[];
+}
+
+/** One choice of the recap made with the full delegation: what was to decide, the choice, the doubt. */
+export interface RecapDelegated {
+  /** The choice's id, so the card lets the person review it while it is still to review. */
+  id: string;
+  kind: DelegatedChoice["kind"];
+  subject: string;
+  choice: string;
+  doubt: string | null;
 }
 
 /** The recaps of a project and the milestones already told (A03). Absent until Trama first reads the milestones. */
@@ -342,7 +359,11 @@ export type NextMove =
   | "preparePlan"
   | "assignWork"
   | "verifyCandidate"
-  | "answerQuestion";
+  | "answerQuestion"
+  /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
+  | "decideWithDelegation"
+  /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
+  | "takeTicket";
 
 /** The move the Coordinator chose among the allowed ones, with its one-line reason. */
 export interface NextStep {
@@ -470,6 +491,41 @@ export interface RequestedAction {
   output: string | null;
 }
 
+/**
+ * The full delegation (issue #423, ADR 0022): the person wrote "fai tutto tu", or words with the same sense, in the
+ * composer. The Coordinator takes by itself also the choices that wait for the person and records them; deletions and
+ * what cannot be undone still wait for the confirmation. The person withdraws it in the chat or from the Mandate view.
+ */
+export interface FullDelegation {
+  id: string;
+  grantedAt: string;
+  /** The person's message that gave it, and the words the Coordinator quoted. */
+  request: { eventId: string; quote: string };
+  /** True when the person also asked to do the open tickets ("fai tutti i ticket"). */
+  tickets: boolean;
+  revokedAt: string | null;
+  revokedBy: { kind: "view" } | { kind: "message"; eventId: string; quote: string } | null;
+}
+
+/** A choice the Coordinator made with the full delegation, with its doubt, for the person to review (issue #423). */
+export interface DelegatedChoice {
+  id: string;
+  delegationId: string;
+  /** A product decision, an interface candidate approved, new work for the goal, an issue taken, or another doubt. */
+  kind: "decision" | "interfaceCandidate" | "goal" | "ticket" | "doubt";
+  /** What was to decide, in the person's words. */
+  subject: string;
+  /** What the Coordinator chose. */
+  choice: string;
+  /** What the Coordinator was not sure about; null when it had no doubt. */
+  doubt: string | null;
+  /** The record the choice acts on: the question, the candidate, the goal, the issue number; null for a doubt. */
+  targetId: string | null;
+  at: string;
+  /** When the person reviewed it; null while it is to review. */
+  seenAt: string | null;
+}
+
 /** The one mandate request waiting for the person: the latest unresolved one (W14). */
 export function pendingMandateRequest(document: Pick<ProjectDocument, "mandateRequests">): MandateRequest | null {
   return document.mandateRequests.filter((r) => !r.resolution).at(-1) ?? null;
@@ -505,7 +561,15 @@ export interface DecisionRequest {
   /** Set when the question belongs to a grilling round before a plan (M01). */
   grilling?: GrillingPlace | null;
   askedAt: string;
-  outcome: { answer: string; alternativeIndex: number | null; decisionId: string; version: number; answeredAt: string } | null;
+  outcome: {
+    answer: string;
+    alternativeIndex: number | null;
+    decisionId: string;
+    version: number;
+    answeredAt: string;
+    /** Set when the Coordinator chose the answer with the full delegation (issue #423): the person can review it. */
+    byDelegation?: { choiceId: string } | null;
+  } | null;
   /**
    * Set when the person withdrew the open question with a reason (W03): it stays in the history, records no
    * decision and no longer waits for an answer. Absent in documents written before withdrawals.
@@ -1642,6 +1706,10 @@ export interface ProjectDocument {
   fixedBanRefusals?: FixedBanRefusal[];
   /** Banned actions the person asked for in the composer (issue #422); absent in documents written before. */
   requestedActions?: RequestedAction[];
+  /** The full delegations the person gave, oldest first (issue #423); absent in documents written before. */
+  delegations?: FullDelegation[];
+  /** The choices the Coordinator made with the full delegation (issue #423); absent in documents written before. */
+  delegatedChoices?: DelegatedChoice[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
@@ -1922,11 +1990,25 @@ export interface AuditAxis {
  * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement,
  * each with a proof that Trama verifies (F02).
  */
+/**
+ * What focus mode examines (F03, spec #124 Q1): a candidate against its base, or a module or the whole project against a
+ * fixed point the person chose. A module keeps its name and path as they were when the examination opened.
+ */
+export type FocusTarget =
+  | { kind: "candidate"; candidateId: string; assignmentId: string }
+  | { kind: "module"; moduleId: string; moduleName: string; path: string }
+  | { kind: "project" };
+
 export interface FocusAudit {
   id: string;
-  target: { kind: "candidate"; candidateId: string; assignmentId: string };
-  /** The fixed point of code-review: the candidate's base commit. */
+  target: FocusTarget;
+  /** The fixed point of code-review: the candidate's base commit, or the commit the person's fixed point resolved to. */
   fixedPoint: string;
+  /** The fixed point as the person wrote it (a branch, a tag, `HEAD~5`); absent for a candidate, whose base is the fixed point. */
+  fixedPointRef?: string;
+  /** The commits between the fixed point and HEAD, one line each, for a module or the project (F03). */
+  commits?: string[];
+  /** The candidate's snapshot, or the checkout's HEAD for a module or the project. */
   snapshotId: string;
   changedFiles: string[];
   status: AuditStatus;
@@ -2314,6 +2396,15 @@ export interface AppState {
   onboarding: import("./onboarding").OnboardingState;
   /** GitHub CLI's login, read on demand for the guide. */
   gitHubCli: import("./onboarding").GitHubCliState;
+  /** The full-screen focus mode the person is in (F03); null outside it. Notifications wait until the person leaves it. */
+  focusMode?: FocusModeState | null;
+}
+
+/** Focus mode on screen (F03): the examination shown and the notifications held back while it stays open. */
+export interface FocusModeState {
+  projectId: string;
+  auditId: string;
+  pausedNotifications: number;
 }
 
 export interface ProviderState {

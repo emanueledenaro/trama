@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 import { CardFrame, Field } from "./Cards";
 import { ReferenceText } from "./ReferenceText";
+import { DelegatedChoices } from "./Delegation";
 
 /**
  * The Coordinator's recap in the chat (A03): the milestones, what it did, what it does, what it needs from the person.
@@ -83,6 +84,7 @@ function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
 }
 
 export function RecapCard({ recapId, title }: { recapId: string; title: string }) {
+  const t = useT();
   const recap = useUi((s) => s.app?.project?.document.recap?.recaps.find((r) => r.id === recapId) ?? null);
   const waiting = useWaiting();
   if (!recap) {
@@ -125,6 +127,11 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             </p>
           )}
         </Field>
+        {recap.delegated?.length ? (
+          <Field label={t("recap.delegated.title")}>
+            <DelegatedChoices choices={recap.delegated} />
+          </Field>
+        ) : null}
         <Field label="Cosa faccio">
           <p data-testid="recap-doing">
             <ReferenceText text={recap.doing} />

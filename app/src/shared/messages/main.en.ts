@@ -1211,8 +1211,13 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.auditFindings.unread": "Trama does not read this path: {reason}",
   "main.auditFindings.outsideFiles":
     "`{file}` is outside the files Trama reads.",
+  "main.auditFindings.place.candidateCopy": "in the candidate's working copy",
+  "main.auditFindings.place.candidate": "on this candidate",
+  "main.auditFindings.place.projectCopy": "in the project",
+  "main.auditFindings.place.module": "on the {name} module",
+  "main.auditFindings.place.project": "on the project",
   "main.auditFindings.fileMissing":
-    "The file {file} does not exist in the candidate's working copy.",
+    "The file {file} does not exist {copy}.",
   "main.auditFindings.lineMissing":
     "The file {file} has {lines} lines: line {line} does not exist.",
   "main.auditFindings.quoteMissing":
@@ -1222,9 +1227,9 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.auditFindings.commandNotOurs":
     "Trama runs only its own checks, and this command is not one of this review's.",
   "main.auditFindings.checkPassed":
-    "Trama ran {check} on this candidate and the check passed.",
+    "Trama ran {check} {on} and the check passed.",
   "main.auditFindings.checkFailed":
-    "Trama ran {check} on this candidate and the check did not pass.",
+    "Trama ran {check} {on} and the check did not pass.",
   "main.auditFindings.reproduction":
     "Trama does not run reproductions written by a model.",
   "main.auditFindings.noProof":
@@ -1246,6 +1251,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   // audit.ts
   "main.audit.running":
     "Deep review on candidate {candidate} is already running.",
+  "main.audit.commitIssuesSource": "Issues {issues} cited in the commits",
+  "main.audit.commitIssuesSource.one": "Issue {issues} cited in the commits",
   "main.audit.sliceSource": "Slice {slice} of plan {plan}",
   "main.audit.sliceSourceIssue": "Slice {slice} of plan {plan}, issue #{issue}",
   "main.audit.unreadableAnswer": "The axis did not return a readable report.",
@@ -2226,6 +2233,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.findingWork.quotedLine": "{label}, quoted line: {quote}",
   "main.findingWork.command": "the command {command}",
   "main.findingWork.reproduction": "reproduction:\n{steps}",
+  "main.findingWork.moduleNamed": "the {name} module",
+  "main.findingWork.project": "the project",
   "main.findingWork.candidateOf": "{author}'s candidate",
   "main.findingWork.candidateReviewed": "the reviewed candidate",
   "main.findingWork.markdown.title": "**Finding {source}:** {title}",
@@ -2370,5 +2379,14 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.squads.joins": "{developer} joins squad {squad}.",
   "main.squads.hired": "Added within the mandate: {names}.",
   "main.requestedAction.notFound": "Action not found.",
+  "main.delegation.approvedBy": "Coordinator with your delegation",
+  "main.delegation.mandateTitle": "Mandate v{version} with the full delegation",
+  "main.delegation.mandateDetail": "Every module and every delegable action, because the person gave the full delegation.",
+  "main.delegation.ticketSubject": "Issue #{number}: {title}",
+  "main.delegation.ticketTaken": "Taken with the full delegation ({label}).",
+  "main.delegation.stalled": "the Coordinator did not decide what waited for the person.",
+  "main.delegation.candidateSubject": "Candidate {id}",
+  "main.delegation.approvedAfterShots": "Approved after the screenshots",
+  "main.delegation.mandateObjective": "Carry on all the project's work with the full delegation",
   "main.slicePicking.squadsFull": "The squads at work are at their limit: the slice starts when one frees up.",
 };
