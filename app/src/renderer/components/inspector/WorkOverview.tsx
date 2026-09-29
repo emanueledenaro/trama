@@ -12,6 +12,7 @@ import {
   IconListCheck,
   IconMessageCircle,
   IconPlayerPause,
+  IconPlayerPlay,
   IconPlus,
   IconTarget,
 } from "@tabler/icons-react";
@@ -206,9 +207,22 @@ function Summary({ slices, planTitle, onShow }: { slices: SliceRow[]; planTitle:
           </span>
         </p>
       ) : null}
-      {waiting.length || conflicts ? (
-        // What holds the work, each chip opening where it is answered: Aspetta te, the branch and its conflict.
+      {waiting.length || conflicts || line?.continuousWorkOff ? (
+        // What holds the work, each chip one click from where it is answered: continuous work off in Impostazioni, Aspetta
+        // te, the branch and its conflict.
         <div className="mt-2 flex flex-wrap gap-1.5" data-testid="work-held">
+          {line?.continuousWorkOff ? (
+            <button
+              type="button"
+              className={cn(HOLD_CHIP, "bg-[var(--color-background-button-secondary)] text-foreground hover:bg-[var(--sidebar-accent)]")}
+              title={t("workbench.status.continuousOnHint")}
+              data-testid="work-continuous-on"
+              onClick={() => void act("settings:update", { continuousWork: true })}
+            >
+              <IconPlayerPlay className="size-3 shrink-0" stroke={1.8} />
+              <span className="truncate">{t("workbench.status.continuousOn")}</span>
+            </button>
+          ) : null}
           {waiting.length ? (
             <button
               type="button"

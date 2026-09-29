@@ -161,9 +161,16 @@ function slicesHeld(state: WorkState): string | null {
 /**
  * The status line of the project. Pure: `runningRequestId` is the Coordinator turn that runs now, if any, and `wait` the
  * provider limit the Coordinator waits for (issue #249). The next move and the person's button come from the task in
- * focus; what runs now comes from the whole project.
+ * focus; what runs now comes from the whole project. `continuousWork` is the setting of Impostazioni: off, the
+ * Coordinator starts nothing by itself, so its own next move waits for the person's message and the line says so.
  */
-export function statusLine(document: ProjectDocument, runningRequestId: string | null, wait: ProviderWait | null = null, at = new Date()): StatusLineView {
+export function statusLine(
+  document: ProjectDocument,
+  runningRequestId: string | null,
+  wait: ProviderWait | null = null,
+  at = new Date(),
+  continuousWork = true,
+): StatusLineView {
   const running = runningRequestId ? (document.requests.find((r) => r.id === runningRequestId && r.state === "running") ?? null) : null;
   const focus = focusView(document).focus;
   const latest = focus ? latestOf(document, focus.goalId) : null;
@@ -225,21 +232,25 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
     };
   }
 
+  // With continuous work off in Impostazioni the Coordinator's own next move never starts by itself: saying "the next
+  // step is mine" made the person think Trama was stuck. The line says it waits for a message, and names the move.
+  const off = !continuousWork && !now && next !== null && !personMove;
   const sentences: string[] = [];
   if (now) sentences.push(next ? t("main.statusLine.nowThen", { now, next }) : `${now}.`);
   if (workers) sentences.push(`${workers}.`);
-  if (!now && next) sentences.push(personMove ? t("main.statusLine.waitingForYou") : t("main.statusLine.nextIsMine", { next }));
+  if (!now && next) sentences.push(personMove ? t("main.statusLine.waitingForYou") : off ? t("main.statusLine.continuousOff") : t("main.statusLine.nextIsMine", { next }));
   if (!sentences.length && blocked) sentences.push(t("main.statusLine.workStopped"));
 
   const lineState: StatusLineView["state"] =
-    now || workers ? "working" : blocked || held ? "blocked" : personMove || stalled ? "waiting" : next ? "next" : action ? "waiting" : "idle";
+    now || workers ? "working" : blocked || held ? "blocked" : personMove || stalled || off ? "waiting" : next ? "next" : action ? "waiting" : "idle";
   return {
     state: lineState,
     text: sentences.length ? sentences.join(" ") : nothingGoingOn(),
-    reason,
+    reason: off ? (reason ?? t("main.statusLine.continuousOffNext", { next: next! })) : reason,
     action,
     runningMove,
     paused: false,
     providerWait: null,
+    ...(off ? { continuousWorkOff: true } : {}),
   };
 }

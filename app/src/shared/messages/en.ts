@@ -997,6 +997,8 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.status.resumeHint": "Resume the project's automatic work",
   "workbench.status.stop": "Stop",
   "workbench.status.stopMove": "Stop: {move}",
+  "workbench.status.continuousOn": "Turn continuous work back on",
+  "workbench.status.continuousOnHint": "The Coordinator takes its moves by itself again. You can also change it in Settings.",
   "workbench.status.focus": "Work in focus",
   "workbench.status.focusOf": "Work in focus: {title}",
   "focus.none": "No work in focus: it is all suspended.",

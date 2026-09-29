@@ -949,7 +949,7 @@ export class TramaController {
     );
     project.backlogs = squadBacklogs(project.document, project.snapshot.modules);
     project.focus = focusView(project.document);
-    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project));
+    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project), new Date(), this.state.settings.continuousWork !== false);
     project.waiting = waitingForYou(this.t, project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
@@ -8747,6 +8747,7 @@ export class TramaController {
       update = rest;
     }
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
+    const continuousTurnedOn = this.state.settings.continuousWork === false && update.continuousWork === true;
     this.state.settings = { ...this.state.settings, ...update, learning };
     // The new language holds at once: the window re-renders with the state, and the agents' next turn gets the updated rules.
     if ("language" in update) this.state.language = this.resolveLanguage();
@@ -8761,6 +8762,9 @@ export class TramaController {
     await this.saveSettings();
     // A higher shared limit lets the work in line start now.
     if (update.sharedDevelopers !== undefined) this.startNextInLine();
+    // Continuous work turned back on, from Impostazioni or the status bar: a round runs at once, as after Riprendi,
+    // so the Coordinator's next move does not wait for the next timed round.
+    if (continuousTurnedOn) void this.runRound().catch((error) => this.fail(error));
   }
 
   dismissError(): void {

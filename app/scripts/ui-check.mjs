@@ -5,7 +5,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
-import { addWorkView } from "./work-view-fixture.mjs";
+import { addCoordinatorMove, addWorkView } from "./work-view-fixture.mjs";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
@@ -5497,6 +5497,46 @@ await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza
 await page.getByTestId("status-conflict").click();
 await page.getByTestId("branch-divergence").getByTestId("branch-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
 await page.keyboard.press("Escape");
+await app.close();
+
+// Continuous work off (found live on the negozio, 29 September): the setting was off in Impostazioni, so the
+// Coordinator never started anything by itself, while the status bar said "Il prossimo passo è mio: verifico il
+// lavoro." as if it were about to. With the mandate granted, the team confirmed and a ready slice, the Coordinator's own
+// next move is "assegno S5": the status bar says it waits for a message and offers to turn continuous work back on,
+// and Lavoro says the same at its top. The button turns it on and the line goes back to the Coordinator's move.
+{
+  let workPath = null;
+  for (const file of await readdir(join(dataDir, "Projects"))) {
+    if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-lavoro-")) workPath = join(dataDir, "Projects", file);
+  }
+  if (!workPath) throw new Error("Continuous work off: the project's state was not saved");
+  await writeFile(workPath, JSON.stringify(addCoordinatorMove(JSON.parse(await readFile(workPath, "utf8")))));
+}
+({ app, page } = await launch(workEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), workProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.setViewportSize({ width: 1280, height: 800 });
+{
+  const offLine = page.locator('[data-testid="status-line"][data-state="waiting"]');
+  await offLine.getByTestId("status-line-text").getByText("Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.").waitFor({ timeout: 20_000 });
+  await offLine.getByTestId("status-line-reason").getByText("Acceso, il prossimo passo sarebbe mio: assegno S5.").waitFor();
+  if (await page.getByTestId("status-line-text").getByText(/prossimo passo è mio/).count()) throw new Error("With continuous work off the status bar still says the next step is the Coordinator's");
+  const turnOn = offLine.getByTestId("status-continuous-on");
+  if ((await turnOn.innerText()).trim() !== "Riaccendi il lavoro continuo") throw new Error("The status bar does not offer to turn continuous work back on");
+  await openView("Lavoro");
+  const offWork = page.getByTestId("side-bar").getByTestId("work-overview");
+  await offWork.getByTestId("work-next").getByText("Lavoro continuo spento", { exact: false }).waitFor();
+  await offWork.getByTestId("work-held").getByTestId("work-continuous-on").waitFor();
+  await offWork.getByTestId("work-slices-ready").getByTestId("work-slice").filter({ hasText: "S5 Ricevuta dell'ordine via email" }).waitFor();
+  await themeShots("15d-status-line-continuous-off");
+  await turnOn.click();
+  await page.getByTestId("status-continuous-on").waitFor({ state: "detached", timeout: 20_000 });
+  if (await page.getByTestId("status-line-text").getByText(/^Lavoro continuo spento/).count()) throw new Error("The status bar still says continuous work is off after turning it on");
+  await offWork.getByTestId("work-continuous-on").waitFor({ state: "detached" });
+  // The next launches start with continuous work off, as the rest of the check expects.
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+}
 await app.close();
 
 // Issue #271: a noisy history stays compact. The technical steps of each turn (seven read_issues in a row, empty

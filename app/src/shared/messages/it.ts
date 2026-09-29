@@ -999,6 +999,8 @@ export const it = {
   "workbench.status.resumeHint": "Riprendi il lavoro automatico del progetto",
   "workbench.status.stop": "Ferma",
   "workbench.status.stopMove": "Ferma: {move}",
+  "workbench.status.continuousOn": "Riaccendi il lavoro continuo",
+  "workbench.status.continuousOnHint": "Il Coordinatore riprende da solo le sue mosse. Si cambia anche in Impostazioni.",
   "workbench.status.focus": "Lavoro in primo piano",
   "workbench.status.focusOf": "Lavoro in primo piano: {title}",
   "focus.none": "Nessun lavoro in primo piano: sono tutti sospesi.",

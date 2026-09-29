@@ -8,6 +8,7 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconPlayerTrackNext,
+  IconRepeatOff,
   IconTarget,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
@@ -52,10 +53,14 @@ const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
   idle: <IconCircleDashed className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />,
 };
 
-/** The icon of the status line: paused, waiting for a provider's limit, or the line's state. Lavoro shows it too. */
+/**
+ * The icon of the status line: paused, waiting for a provider's limit, continuous work off, or the line's state. Lavoro
+ * shows it too.
+ */
 export function StatusLineIcon({ line }: { line: StatusLineView }) {
   if (line.paused && line.state !== "working") return <IconPlayerPause className="size-3 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />;
   if (line.providerWait && line.state !== "working") return <IconClockPause className="size-3 shrink-0 text-warning" stroke={1.8} />;
+  if (line.continuousWorkOff && line.state !== "working") return <IconRepeatOff className="size-3 shrink-0 text-foreground" stroke={1.8} />;
   return <>{STATUS_ICONS[line.state]}</>;
 }
 
@@ -185,6 +190,21 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
         >
           {t("workbench.status.stop")}
         </button>
+      ) : null}
+      {line.continuousWorkOff ? (
+        // Continuous work is off in Impostazioni and the Coordinator's next move waits for it: turned on here, the
+        // Coordinator takes its moves by itself again. A text button, as the person's move.
+        <Tooltip label={t("workbench.status.continuousOnHint")}>
+          <button
+            type="button"
+            className={cn(ITEM, "font-medium text-foreground")}
+            data-testid="status-continuous-on"
+            onClick={() => void act("settings:update", { continuousWork: true })}
+          >
+            <IconPlayerPlay className="size-3.5" stroke={1.8} />
+            {t("workbench.status.continuousOn")}
+          </button>
+        </Tooltip>
       ) : null}
       {action ? (
         // The person's move: text, not a filled button, since the one filled button of the window is Aspetta te's.

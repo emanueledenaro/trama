@@ -108,6 +108,31 @@ const ticket = (id, title, blockedBy, issue) => ({
   issue: issue ? { number: issue, url: `https://github.com/trama-ui/negozio/issues/${issue}`, at: at(28, 9) } : null,
 });
 
+/**
+ * Gives the Coordinator a move of its own on top of the Lavoro records: the mandate granted (the pending proposal
+ * answered), the team confirmed and a fifth slice ready, so the next move is "assegno S5". With continuous work off the
+ * status bar must say that the Coordinator waits for a message, not that the next step is its own.
+ */
+export function addCoordinatorMove(document) {
+  const now = at(28, 12);
+  for (const request of document.mandateRequests ?? []) if (!request.resolution) request.resolution = { kind: "granted", version: 1, resolvedAt: now };
+  document.mandate = {
+    version: 1,
+    objectives: ["Spedizioni e pagamenti"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["plan", "executeInWorktree"],
+    limits: [],
+    grantedAt: now,
+    status: "granted",
+    revocation: null,
+    history: [],
+  };
+  document.team.confirmedAt = document.team.confirmedAt ?? now;
+  document.plans.find((plan) => plan.id === PLAN).slicing.tickets.push(ticket("S5", "Ricevuta dell'ordine via email", [], null));
+  return document;
+}
+
 /** Writes the Lavoro records in `document`, the saved state of the project at `root` whose HEAD is `head`. */
 export function addWorkView(document, root, head) {
   document.goals = [

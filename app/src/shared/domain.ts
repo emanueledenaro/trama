@@ -348,6 +348,11 @@ export interface StatusLineView {
    * work resumes by itself. `until` is the end the provider gave, ISO, or null when it did not say. Null when none.
    */
   providerWait: { provider: string; until: string | null } | null;
+  /**
+   * Continuous work is off in Impostazioni and the next move is the Coordinator's own: it starts nothing by itself, so
+   * the work waits for the person's message. The status bar offers to turn continuous work back on. Absent otherwise.
+   */
+  continuousWorkOff?: boolean;
 }
 
 /** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */

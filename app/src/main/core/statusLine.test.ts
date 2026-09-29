@@ -153,6 +153,29 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     expect(line.action).toBeNull();
   });
 
+  it("says continuous work is off when the Coordinator's own next move would never start by itself", () => {
+    const document = confirmed();
+    request(document, "r3");
+    slicedPlan(document, "r3");
+    team(document);
+    // Off in Impostazioni: not "the next step is mine", but that the Coordinator waits for a message, with the move.
+    const off = statusLine(document, null, null, new Date(), false);
+    expect(off).toMatchObject({
+      state: "waiting",
+      text: "Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.",
+      reason: "Acceso, il prossimo passo sarebbe mio: assegno S1.",
+      continuousWorkOff: true,
+    });
+    // On, the line is the usual one and carries no flag.
+    const on = statusLine(document, null, null, new Date(), true);
+    expect(on).toMatchObject({ state: "next", text: "Il prossimo passo è mio: assegno S1." });
+    expect(on.continuousWorkOff).toBeUndefined();
+    // A move that runs is said as it is: continuous work only holds the moves that have not started.
+    const assigning = request(document, "r4", { state: "running", step: { move: "assignWork", by: "trama" } });
+    expect(statusLine(document, assigning.id, null, new Date(), false)).toMatchObject({ state: "working", text: "Sto assegnando S1." });
+    expect(statusLine(document, assigning.id, null, new Date(), false).continuousWorkOff).toBeUndefined();
+  });
+
   it("changes with the move in progress and the next step", () => {
     const document = confirmed();
     request(document, "r3");

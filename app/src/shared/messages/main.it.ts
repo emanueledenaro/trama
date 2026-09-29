@@ -1472,6 +1472,8 @@ export const mainIt = {
   "main.statusLine.nowThen": "{now}, poi {next}.",
   "main.statusLine.waitingForYou": "Aspetto te per andare avanti.",
   "main.statusLine.nextIsMine": "Il prossimo passo è mio: {next}.",
+  "main.statusLine.continuousOff": "Lavoro continuo spento: il Coordinatore aspetta un tuo messaggio.",
+  "main.statusLine.continuousOffNext": "Acceso, il prossimo passo sarebbe mio: {next}.",
   "main.statusLine.workStopped": "Il lavoro è fermo.",
   "main.statusLine.manyAgents": "{count} agenti sono al lavoro",
   "main.statusLine.workingOn": "{names} lavorano su {slices}",
