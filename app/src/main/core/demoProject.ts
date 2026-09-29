@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { t } from "./personLanguage";
 
 const MARKER = ".trama-example";
 
@@ -22,7 +23,7 @@ export async function prepareDemoProject(resourceDirectory: string, examplesDire
   const destination = join(examplesDirectory, "Negozio");
   if (existsSync(destination)) {
     if (!existsSync(join(destination, MARKER))) {
-      throw new Error("La cartella dell'esempio esiste già e non è gestita da Trama. Spostala o rinominala per ricreare il progetto di esempio.");
+      throw new Error(t("main.demo.folderTaken"));
     }
     return destination;
   }
@@ -34,6 +35,7 @@ export async function prepareDemoProject(resourceDirectory: string, examplesDire
     await writeFile(join(staging, ".gitignore"), ".build/\n.swiftpm/\n.DS_Store\n");
     await git(["init", "-b", "main"], staging);
     await git(["add", "."], staging);
+    // @model-text: the first commit of the example project is project content.
     await git(["commit", "-m", "Progetto di esempio iniziale"], staging);
     await rename(staging, destination);
   } catch (error) {

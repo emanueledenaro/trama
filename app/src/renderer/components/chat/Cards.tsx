@@ -311,7 +311,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
               : resolution.kind === "corrected"
                 ? `Corretto, v${resolution.version}`
                 : superseded
-                  ? "Superata"
+                  ? "Sostituita"
                   : resolution.kind === "rejected"
                     ? "Rifiutata"
                     : "Non concesso"}
@@ -324,7 +324,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
       <p className="text-ui text-foreground/90">{request.reason}</p>
       {superseded ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="superseded-mandate">
-          Superata da una richiesta più recente: non si può più concedere.
+          Sostituita da una richiesta più recente: non si può più concedere.
         </p>
       ) : null}
       {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
@@ -1909,7 +1909,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   if (superseded) {
     return (
-      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Superato</Badge>}>
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Sostituito</Badge>}>
         <p className="text-ui-sm text-muted-foreground" data-testid="conflict-superseded">
           {worktree ? "Uno dei due candidati" : "Il candidato"} è stato sostituito da un lavoro più recente: questo conflitto non va risolto.
         </p>

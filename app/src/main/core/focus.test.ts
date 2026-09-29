@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { emptyDocument } from "./document";
-import { focusTask, focusText, focusView, NOT_STARTED_LABEL, openTasks, pauseTask, resumeTask, taskIdOf, PROJECT_WORK_TITLE } from "./focus";
+import { focusTask, focusText, focusView, notStartedLabel, openTasks, pauseTask, resumeTask, taskIdOf, projectWorkTitle } from "./focus";
 import { archiveGoal, createGoal, proposeGoal, updateGoal } from "./goals";
 import { createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, proposeTeam } from "./team";
+import { setPersonLanguage } from "./personLanguage";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
 
@@ -126,7 +127,7 @@ describe("open tasks", () => {
         {
           id: "work:r1",
           goalId: null,
-          title: PROJECT_WORK_TITLE,
+          title: projectWorkTitle(),
           phase: "spec",
           phaseLabel: "spec",
           blocker: null,
@@ -138,7 +139,7 @@ describe("open tasks", () => {
           goalId: exports.id,
           title: "Esportazione CSV",
           phase: null,
-          phaseLabel: NOT_STARTED_LABEL,
+          phaseLabel: notStartedLabel(),
           blocker: null,
           waitingFor: null,
           status: "queued",
@@ -165,7 +166,7 @@ describe("open tasks", () => {
     request(document, "r1", null, 1, "[proponi-team] creami degli agenti");
     question(document, "r1");
     const [task] = openTasks(document);
-    expect(task!.title).toBe(PROJECT_WORK_TITLE);
+    expect(task!.title).toBe(projectWorkTitle());
     expect(taskIdOf(document, "r1")).toBe("work:r1");
   });
 
@@ -288,5 +289,18 @@ describe("saved focus", () => {
       taskId: `goal:${orders.id}`,
       pausedTaskIds: ["work:r1"],
     });
+  });
+});
+
+describe("focus texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("labels and refuses in the person's language", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    goal(document, "Checkout", 0);
+    expect(openTasks(document)[0]).toMatchObject({ title: "Checkout", phaseLabel: "not started" });
+    expect(projectWorkTitle()).toBe("Project work");
+    expect(() => pauseTask(document, "goal:G-00000000")).toThrow("Task goal:G-00000000 is not open: it is closed or does not exist.");
   });
 });

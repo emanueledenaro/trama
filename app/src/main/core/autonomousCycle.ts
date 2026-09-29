@@ -5,6 +5,8 @@ import { shortId } from "@shared/ids";
 import type { ContinuationGuards } from "./continuousWork";
 import { focusView } from "./focus";
 import { DomainError } from "./pact";
+import type { MessageKey } from "@shared/i18n";
+import { t } from "./personLanguage";
 import { authorize, isTeamConfirmed } from "./team";
 import { workRequests, workState } from "./workPhase";
 
@@ -139,10 +141,10 @@ export function recordAutonomousStep(document: ProjectDocument, step: DelegatedS
  */
 export function correctAutonomousStep(document: ProjectDocument, stepId: string, note: string, now = new Date()): AutonomousStep {
   const step = document.autonomousSteps?.find((s) => s.id === stepId);
-  if (!step) throw new DomainError("Passo del Coordinatore non trovato.");
-  if (step.correction) throw new DomainError("Hai già corretto questo passo: scrivi al Coordinatore nella chat.");
+  if (!step) throw new DomainError(t("main.autonomousCycle.stepNotFound"));
+  if (step.correction) throw new DomainError(t("main.autonomousCycle.alreadyCorrected"));
   const text = note.trim();
-  if (!text) throw new DomainError("Scrivi cosa cambiare.");
+  if (!text) throw new DomainError(t("main.autonomousCycle.emptyCorrection"));
   step.correction = { note: text.slice(0, 2000), at: now.toISOString() };
   return step;
 }
@@ -158,19 +160,22 @@ export function planWorkStarted(document: ProjectDocument, plan: WorkPlan): bool
   );
 }
 
-/** What the Coordinator reads when the person corrects one of its steps and the work cannot simply be redrawn. */
+/**
+ * What the Coordinator reads when the person corrects one of its steps and the work cannot simply be redrawn. Trama
+ * sends it as the person's message, so the chat shows it in the person's language.
+ */
 export function correctionMessage(step: AutonomousStep): string {
-  const what: Record<AutonomousMove, string> = {
-    confirmUnderstanding: "la comprensione condivisa che hai confermato da solo",
-    confirmTeam: "il team che hai confermato da solo",
-    confirmSeams: "i seam che hai confermato da solo",
-    confirmSlices: "le fette che hai confermato da solo",
-    formSquads: "le squadre che hai formato da solo",
+  const what: Record<AutonomousMove, MessageKey> = {
+    confirmUnderstanding: "main.autonomousCycle.what.confirmUnderstanding",
+    confirmTeam: "main.autonomousCycle.what.confirmTeam",
+    confirmSeams: "main.autonomousCycle.what.confirmSeams",
+    confirmSlices: "main.autonomousCycle.what.confirmSlices",
+    formSquads: "main.autonomousCycle.what.formSquads",
   };
-  return `Correggo ${what[step.move]}: ${step.correction?.note ?? ""}\nRiparti da quel passo con la mia correzione.`;
+  return t("main.autonomousCycle.correction", { what: t(what[step.move]), note: step.correction?.note ?? "" });
 }
 
-/** The Coordinator's line in the turn's state (A06): which steps Trama takes on its behalf, and where new work goes. */
+/** The Coordinator's line in the turn's state (A06): which steps Trama takes on its behalf, and where new work goes. @model-text */
 export function autonomyLine(document: ProjectDocument): string {
   const covered = DELEGABLE.filter((move) => authorize(document.mandate, STEP_ACTIONS[move]) === "authorized");
   const steps = covered.length

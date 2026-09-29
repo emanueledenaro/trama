@@ -36,6 +36,7 @@ import {
   type AgentRuntime,
   extractJsonAnswer,
   type HostToolServer,
+  interruptedTurnError,
   type OpenThreadOptions,
   type ProviderAccount,
   ProviderError,
@@ -45,6 +46,7 @@ import {
   schemaInstruction,
   type TurnEvent,
 } from "./types";
+import { t } from "../personLanguage";
 import {
   containedWriteTarget,
   currentUsageLimit,
@@ -362,10 +364,10 @@ async function mcpRequest(server: HostToolServer, method: string, params: Record
     body: JSON.stringify({ jsonrpc: "2.0", id: randomUUID(), method, params }),
     signal,
   });
-  if (!response.ok) throw new Error(`Il server degli strumenti di Trama ha risposto ${response.status}.`);
+  if (!response.ok) throw new Error(t("main.pi.toolServerStatus", { status: String(response.status) }));
   const payload = (await response.json()) as unknown;
-  if (!isRecord(payload)) throw new Error("Risposta MCP non valida.");
-  if (isRecord(payload.error)) throw new Error(typeof payload.error.message === "string" ? payload.error.message : "Errore MCP.");
+  if (!isRecord(payload)) throw new Error(t("main.pi.invalidMcpResponse"));
+  if (isRecord(payload.error)) throw new Error(typeof payload.error.message === "string" ? payload.error.message : t("main.pi.mcpError"));
   return payload.result;
 }
 
@@ -376,7 +378,7 @@ export function piHostToolResult(result: unknown): AgentToolResult<unknown> {
           .flatMap((item) => (isRecord(item) && item.type === "text" && typeof item.text === "string" ? [item.text] : []))
           .join("\n")
       : "";
-    throw new Error(message || "Lo strumento di Trama non è riuscito.");
+    throw new Error(message || t("main.pi.hostToolFailed"));
   }
   const content =
     isRecord(result) && Array.isArray(result.content)
@@ -411,6 +413,7 @@ export function guardReadTool(
       const path = typeof (params as { path?: unknown } | null)?.path === "string" ? (params as { path: string }).path : "";
       if (path && !isReadable(roots, cwd, path)) {
         onRefused(toolCallId, resolve(cwd, expandHome(path.replace(/^@/, ""))));
+        // @model-text: the refusal is the tool result the agent reads.
         throw new Error(`Lettura fuori dal progetto non consentita: ${path}`);
       }
       return definition.execute(toolCallId, params, ...rest);
@@ -420,7 +423,7 @@ export function guardReadTool(
 
 export async function buildPiHostTools(server: HostToolServer, reserved: Set<string>): Promise<ToolDefinition[]> {
   const result = await mcpRequest(server, "tools/list", {});
-  if (!isRecord(result) || !Array.isArray(result.tools)) throw new Error("tools/list ha restituito un catalogo non valido.");
+  if (!isRecord(result) || !Array.isArray(result.tools)) throw new Error(t("main.pi.invalidToolCatalog"));
   return result.tools.flatMap((value): ToolDefinition[] => {
     if (!isRecord(value) || typeof value.name !== "string" || reserved.has(value.name)) return [];
     const name = value.name;
@@ -539,7 +542,7 @@ export class PiRuntime implements AgentRuntime {
     try {
       sdk = await loadPiSdk();
     } catch (error) {
-      return { kind: "unavailable", message: `SDK di Pi non disponibile: ${(error as Error).message}` };
+      return { kind: "unavailable", message: t("main.pi.sdkUnavailable", { error: (error as Error).message }) };
     }
     const block = currentUsageLimit("pi");
     if (block) return block;
@@ -549,7 +552,7 @@ export class PiRuntime implements AgentRuntime {
       registry = new sdk.ModelRegistry(await createPiModelRuntime(sdk, this.agentDir(sdk), false));
       available = ensurePiAnthropicCatalogModels(registry.getAvailable(), registry.getAll());
     } catch (error) {
-      return { kind: "unavailable", message: `Pi non ha potuto leggere le credenziali: ${(error as Error).message}` };
+      return { kind: "unavailable", message: t("main.pi.credentialsUnreadable", { error: (error as Error).message }) };
     }
     if (available.length === 0) return { kind: "signedOut" };
     const providers = [...new Set(available.map((model) => model.provider))].map(
@@ -587,12 +590,12 @@ export class PiRuntime implements AgentRuntime {
     try {
       return await loadPiSdk();
     } catch (error) {
-      throw new ProviderError("executableNotFound", `SDK di Pi non disponibile: ${(error as Error).message}`);
+      throw new ProviderError("executableNotFound", t("main.pi.sdkUnavailable", { error: (error as Error).message }));
     }
   }
 
   async openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
-    if (this.active) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.active) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     await this.dispose();
     const sdk = await this.requireSdk();
     const cwd = resolve(options.cwd);
@@ -618,12 +621,13 @@ export class PiRuntime implements AgentRuntime {
       try {
         hostTools = await buildPiHostTools(toolServer, new Set([...builtIn, "bash"]));
       } catch (error) {
-        throw new ProviderError("rpcError", `Pi non ha potuto collegare gli strumenti di Trama: ${(error as Error).message}`);
+        throw new ProviderError("rpcError", t("main.pi.toolsNotConnected", { error: (error as Error).message }));
       }
     }
     this.hostToolNames = new Set(hostTools.map((tool) => tool.name));
     // Every write goes to the real target checked here, and the file is opened with O_NOFOLLOW.
-    const gate = (path: string): string => {
+    // @model-text: the refusals are the tool results the agent reads.
+    const gate =(path: string): string => {
       const root = this.writableRoot;
       if (!root) throw new Error("Scrittura non consentita: questo turno è in sola lettura.");
       const target = containedWriteTarget(root, resolve(cwd, path));
@@ -685,7 +689,7 @@ export class PiRuntime implements AgentRuntime {
           const sessionRegistry = new sdk.ModelRegistry(services.modelRuntime);
           registry = sessionRegistry;
           const model = findPiModel(sessionRegistry, options.model);
-          if (!model) throw new ProviderError("invalidModel", `Il modello Pi ${options.model} non è disponibile.`);
+          if (!model) throw new ProviderError("invalidModel", t("main.pi.modelUnavailable", { model: options.model }));
           return {
             ...(await sdk.createAgentSessionFromServices({
               services,
@@ -704,7 +708,7 @@ export class PiRuntime implements AgentRuntime {
       );
     } catch (error) {
       if (error instanceof ProviderError) throw error;
-      throw new ProviderError("rpcError", `Avvio della sessione Pi non riuscito: ${(error as Error).message}`);
+      throw new ProviderError("rpcError", t("main.pi.sessionStartFailed", { error: (error as Error).message }));
     }
     this.runtime = runtime;
     this.registry = registry;
@@ -717,7 +721,7 @@ export class PiRuntime implements AgentRuntime {
       });
     } catch (error) {
       await this.dispose();
-      throw new ProviderError("rpcError", `Pi non ha potuto collegare le sue estensioni: ${(error as Error).message}`);
+      throw new ProviderError("rpcError", t("main.pi.extensionsNotBound", { error: (error as Error).message }));
     }
     const session = runtime.session;
     const threadId = session.sessionFile ?? session.sessionManager.getSessionFile() ?? session.sessionId;
@@ -726,16 +730,16 @@ export class PiRuntime implements AgentRuntime {
 
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
-    if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
-    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (!prompt) throw new ProviderError("emptyPrompt", t("main.provider.emptyMessage"));
+    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
     const runtime = this.runtime;
-    if (!runtime) throw new ProviderError("processExited", "La sessione Pi non è aperta.");
+    if (!runtime) throw new ProviderError("processExited", t("main.pi.sessionNotOpen"));
     const block = currentUsageLimit("pi");
     if (block) throw new ProviderError("blocked", block.message);
     const session = runtime.session;
-    if (session.isStreaming) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (session.isStreaming) throw new ProviderError("turnAlreadyRunning", t("main.provider.turnRunning"));
 
-    const pending = new PendingTurn(options.onEvent, "Pi è stato chiuso.");
+    const pending = new PendingTurn(options.onEvent, t("main.provider.closed", { provider: "Pi" }));
     this.pending = pending;
     const images: ImageContent[] = [];
     let text: string;
@@ -743,7 +747,7 @@ export class PiRuntime implements AgentRuntime {
       const current = session.model ? `${session.model.provider}/${session.model.id}` : null;
       if (options.model && options.model !== current) {
         const model = this.registry ? findPiModel(this.registry, options.model) : undefined;
-        if (!model) throw new ProviderError("invalidModel", `Il modello Pi ${options.model} non è disponibile.`);
+        if (!model) throw new ProviderError("invalidModel", t("main.pi.modelUnavailable", { model: options.model }));
         await session.setModel(model);
         pending.checkpoint();
       }
@@ -756,7 +760,7 @@ export class PiRuntime implements AgentRuntime {
         try {
           images.push({ type: "image", data: (await readFile(path)).toString("base64"), mimeType });
         } catch {
-          throw new ProviderError("rpcError", `Impossibile leggere l'immagine allegata: ${path}`);
+          throw new ProviderError("rpcError", t("main.pi.imageUnreadable", { path }));
         }
         pending.checkpoint();
       }
@@ -768,7 +772,7 @@ export class PiRuntime implements AgentRuntime {
       // The turn below registers synchronously, so an interrupt from here on reaches it.
       if (this.pending === pending) this.pending = null;
     }
-    if (this.runtime !== runtime) throw new ProviderError("processExited", "La sessione Pi non è più aperta.");
+    if (this.runtime !== runtime) throw new ProviderError("processExited", t("main.pi.sessionNoLongerOpen"));
     this.writableRoot = this.writable && options.writableRoot ? resolve(options.writableRoot) : null;
 
     return new Promise<string>((resolvePromise, rejectPromise) => {
@@ -804,7 +808,7 @@ export class PiRuntime implements AgentRuntime {
         })
         .then(
           () => this.completeTurn(turn, turn.errorMessage),
-          (error: unknown) => this.completeTurn(turn, error instanceof Error && error.message.trim() ? error.message : "Il turno di Pi non è riuscito."),
+          (error: unknown) => this.completeTurn(turn, error instanceof Error && error.message.trim() ? error.message : t("main.pi.turnFailed")),
         );
     });
   }
@@ -819,7 +823,7 @@ export class PiRuntime implements AgentRuntime {
     }
     if (turn.interruptRequested || (errorMessage && isPiInterruption(errorMessage))) {
       turn.onEvent({ type: "interrupted" });
-      turn.reject(new Error("Turno interrotto."));
+      turn.reject(interruptedTurnError());
       return;
     }
     if (errorMessage) {
@@ -904,7 +908,7 @@ export class PiRuntime implements AgentRuntime {
             server: this.toolServerLabel(event.toolName),
             tool: event.toolName,
             succeeded: !event.isError,
-            error: event.isError ? (output ?? "Strumento non riuscito.") : null,
+            error: event.isError ? (output ?? t("main.pi.toolFailed")) : null,
           });
         }
         return;
@@ -948,8 +952,9 @@ export class PiRuntime implements AgentRuntime {
     this.pending = null;
     const turn = this.active;
     if (turn) {
-      turn.onEvent({ type: "failed", message: "Pi è stato chiuso." });
-      turn.reject(new ProviderError("processExited", "Pi è stato chiuso."));
+      const closed = t("main.provider.closed", { provider: "Pi" });
+      turn.onEvent({ type: "failed", message: closed });
+      turn.reject(new ProviderError("processExited", closed));
     }
     void this.dispose();
   }

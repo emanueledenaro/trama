@@ -1,9 +1,14 @@
 import type { ProjectDocument } from "@shared/domain";
+import { LANGUAGES, translate } from "@shared/i18n";
 import { type ReferenceIndex, unknownReferences } from "@shared/references";
 import { appendEvent } from "./document";
+import { t } from "./personLanguage";
 
 /** The activity Trama records when a Coordinator reply cites ids that name nothing of the project (issue #277). */
-export const UNKNOWN_REFERENCES_TITLE = "Riferimento che Trama non trova";
+export const unknownReferencesTitle = () => t("main.referenceCheck.title");
+
+/** Whether an activity title is this one, in any language: the event keeps the words of the language it was recorded in. */
+const isUnknownReferencesTitle = (title: string) => LANGUAGES.some((language) => title === translate(language, "main.referenceCheck.title"));
 
 /**
  * Checks the ids a Coordinator reply cites against Trama's data (issue #277): those that name nothing stay plain
@@ -15,10 +20,7 @@ export function recordUnknownReferences(document: ProjectDocument, requestId: st
     appendEvent(
       document,
       "trama",
-      { type: "activity", title: UNKNOWN_REFERENCES_TITLE, detail:
-          unknown.length === 1
-            ? `La risposta cita ${unknown[0]}, che non esiste tra i dati di Trama: resta testo semplice.`
-            : `La risposta cita ${unknown.join(", ")}, che non esistono tra i dati di Trama: restano testo semplice.`, tone: "error" },
+      { type: "activity", title: unknownReferencesTitle(), detail: t("main.referenceCheck.detail", { ids: unknown.join(", "), count: unknown.length }), tone: "error" },
       requestId,
     );
   }
@@ -26,6 +28,7 @@ export function recordUnknownReferences(document: ProjectDocument, requestId: st
 }
 
 /**
+ * @model-text
  * What the Coordinator reads when its previous reply in the same dialog cited ids that name nothing (issue #277):
  * which ones, and where the real ids are. Null otherwise.
  */
@@ -36,7 +39,7 @@ export function unknownReferencesFeedback(document: ProjectDocument, requestId: 
   const previous = document.requests.slice(0, position).findLast((r) => (r.goalId ?? null) === goalId);
   if (!previous) return null;
   const event = document.events.findLast(
-    (e) => e.requestId === previous.id && e.content.type === "activity" && e.content.title === UNKNOWN_REFERENCES_TITLE,
+    (e) => e.requestId === previous.id && e.content.type === "activity" && isUnknownReferencesTitle(e.content.title),
   );
   if (event?.content.type !== "activity" || !event.content.detail) return null;
   return [

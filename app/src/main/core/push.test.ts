@@ -1,12 +1,13 @@
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ProjectMandate } from "@shared/domain";
 import { decideToolPermission } from "./providers/claudeAgent";
+import { setPersonLanguage } from "./personLanguage";
 import { git } from "./process";
 import { commandBan } from "@shared/fixedBans";
-import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushBranch, type PushRecord, PushRefusedError } from "./push";
+import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushBranch, type PushRecord, PushRefusedError, pushRefusal } from "./push";
 
 const mandate = (authorizedActions: ProjectMandate["authorizedActions"]) =>
   ({ version: 1, objectives: [], priorities: [], scopeModuleIds: [], authorizedActions, limits: [], grantedAt: "", status: "granted", revocation: null, history: [] }) as ProjectMandate;
@@ -153,5 +154,18 @@ describe("the only pushes in Trama's code (issue #273)", () => {
     // Presence writes only refs/trama/presence/<user> (ADR 0015), never a branch.
     expect(presencePushes.length).toBeGreaterThan(0);
     for (const line of presencePushes) expect(line).toMatch(/:\$\{presenceRef\(/);
+  });
+});
+
+describe("push texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the refusals and the Activity rows in the person's language", () => {
+    setPersonLanguage("en");
+    expect(pushRefusal("mandate_missing")).toBe("The project has no mandate: Trama does not publish branches on GitHub.");
+    expect(pushActivity({ outcome: "pushed", branch: "feature/a", remote: "origin" })).toMatchObject({ title: "Trama published a branch on GitHub", detail: "feature/a on origin" });
+    expect(agentPushActivity("git push", false).detail).toBe("Request: git push\nThe sandbox stopped it: only Trama publishes, and only with a mandate that allows it.");
+    setPersonLanguage("it");
+    expect(pushActivity({ outcome: "pushed", branch: "feature/a", remote: "origin" }).detail).toBe("feature/a su origin");
   });
 });

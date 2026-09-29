@@ -5,6 +5,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "../../personLanguage";
 import { ProviderError, type RuntimeOptions } from "../types";
 import {
   AcpAgentRuntime,
@@ -34,7 +35,7 @@ export function resolveDroidAuthMethod(advertised: string[], hasApiKey: boolean)
   const ids = new Set(advertised.map((id) => id.trim()));
   if (hasApiKey && ids.has(DROID_API_KEY_AUTH_METHOD_ID)) return DROID_API_KEY_AUTH_METHOD_ID;
   if (ids.has(DROID_DEVICE_PAIRING_AUTH_METHOD_ID)) return DROID_DEVICE_PAIRING_AUTH_METHOD_ID;
-  throw new ProviderError("authenticationRequired", "Droid non ha un accesso disponibile. Esegui `droid` per accedere oppure imposta FACTORY_API_KEY.");
+  throw new ProviderError("authenticationRequired", t("main.droid.noSignIn"));
 }
 
 /** Factory's credential stores (providerUsage/droidCredentials.ts); only their existence is checked. */
@@ -52,7 +53,7 @@ export const droidProfile: AcpProviderProfile = {
   id: "droid",
   label: LABEL,
   resolveExecutable: (configured) =>
-    resolveBinary(configured, ["droid"], "Droid CLI (droid) non trovato. Installalo e accedi eseguendo `droid`.", [
+    resolveBinary(configured, ["droid"], t("main.droid.notInstalled"), [
       join(process.env.HOME?.trim() || homedir(), ".local", "bin"),
     ]),
   async launch(executable, input) {
@@ -74,8 +75,8 @@ export const droidProfile: AcpProviderProfile = {
   async readAccount(executable) {
     const missing = await probeCliVersion(executable, buildChildEnvironment(executable, DROID_API_KEY_ENV_KEYS), LABEL);
     if (missing) return missing;
-    if (firstEnv(DROID_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: "Chiave API Factory" };
-    return droidCredentialFiles().some(fileExists) ? { kind: "authenticated", label: "Accesso Droid CLI" } : { kind: "signedOut" };
+    if (firstEnv(DROID_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: t("main.droid.apiKeyLabel") };
+    return droidCredentialFiles().some(fileExists) ? { kind: "authenticated", label: t("main.droid.cliSignInLabel") } : { kind: "signedOut" };
   },
   // Droid has no model list command: discovery runs in a disposable ACP session.
   probeEffortsPerModel: true,
