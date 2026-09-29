@@ -422,7 +422,7 @@ const noHorizontalScroll = async (where) => {
 // The wave on the interface's priorities (29 September 2026): a view of the side bar at its narrowest (240 px, the sash
 // moved from the keyboard) and at its widest, light and dark, then back to the normal width and the look it had.
 const sideBarWidthNow = () => page.getByRole("separator", { name: /Larghezza della barra laterale/ }).getAttribute("aria-valuenow");
-const sideBarEnds = async (name) => {
+const sideBarEnds = async (name, check = async () => {}) => {
   const look = await lookOf();
   const sash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   for (const end of ["narrow", "wide"]) {
@@ -440,6 +440,7 @@ const sideBarEnds = async (name) => {
     }
     await page.waitForTimeout(400);
     await noHorizontalScroll(`${name}, side bar ${end}`);
+    await check(end);
     for (const dark of [false, true]) {
       await setLookTo(look.provider, dark);
       await shot(`${name}-${end}-${dark ? "dark" : "light"}`);
@@ -4684,6 +4685,12 @@ for (const provider of ["codex", "claudeAgent"]) {
   }
 }
 await setLookTo(groupLook.provider, groupLook.dark);
+// Critique of 29 September 2026: at the side bar's narrowest, every branch name stays on one line.
+await presencePanel.scrollIntoViewIfNeeded();
+await sideBarEnds("52e-squads-who-works", async (end) => {
+  const wrapped = await presencePanel.locator('[data-testid="group-branches"], [data-testid="group-files"], [data-testid="group-task"]').evaluateAll((lines) => lines.filter((line) => line.getBoundingClientRect().height > 20).length);
+  if (wrapped) throw new Error(`${wrapped} lines of Chi lavora su cosa wrap with the side bar ${end}`);
+});
 // A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
 await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
 await page.waitForTimeout(400);
