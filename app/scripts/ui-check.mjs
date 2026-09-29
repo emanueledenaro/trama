@@ -941,6 +941,25 @@ await setTheme("system");
     await waitingBar.waitFor();
   }
   await page.setViewportSize(viewport);
+  // UI wave of 29 September: one status line at the top, how the view works folded behind "Come funziona"; the open
+  // item's card is its one frame, with no second border and no second title. Then the side bar at its widest.
+  await waitingBar.getByRole("button", { name: "Decidi" }).click();
+  const view = page.getByTestId("waiting-view");
+  await view.waitFor();
+  const how = view.getByTestId("waiting-view-how");
+  if ((await how.getAttribute("aria-expanded")) !== "false") throw new Error("Aspetta te explains itself before the person asks");
+  const openItem = view.locator('[data-testid="waiting-item"][data-open="true"]');
+  await openItem.getByTestId("waiting-open-card").waitFor();
+  if (await openItem.locator(":scope > div.rounded-xl").count()) throw new Error("The open item of Aspetta te wraps its card in a second frame");
+  await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
+  await how.click();
+  await view.getByText("Mentre aspetti, il Coordinatore lavora sul resto.", { exact: false }).waitFor();
+  await themeShots("31e-waiting-view-side-bar-wide");
+  await how.click();
+  await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
+  await activityBar().getByRole("button", { name: "Aspetta te", exact: true }).click();
+  await page.getByTestId("side-bar").waitFor({ state: "detached" });
+  await waitingBar.waitFor();
 }
 // Issue #331: the questions have one home, Aspetta te. Patto keeps one line per question that opens it there, with no
 // button to answer; the open project in Progetti carries the same count as the icon of Aspetta te.

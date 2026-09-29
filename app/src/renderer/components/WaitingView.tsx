@@ -122,10 +122,7 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
   }, [focusKey]);
   return (
     <div ref={list} data-testid="waiting-view" data-count={items.length}>
-      <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3" data-testid="waiting-view-summary">
-        <h4 className="text-ui-lg font-medium text-foreground">{items.length ? t("waiting.view.count", { count: items.length }) : t("waiting.view.none")}</h4>
-        <p className="mt-1 text-ui-sm text-muted-foreground">{items.length ? t("waiting.view.lead") : t("waiting.view.empty")}</p>
-      </section>
+      <WaitingStatus count={items.length} />
       {items.length === 0 ? (
         <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3">
           <p className="text-ui text-muted-foreground/70">{t("waiting.view.emptyList")}</p>
@@ -140,7 +137,42 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
   );
 }
 
-/** The open item: what it is, what it holds, then its card with the decision buttons at the top. */
+/**
+ * The status at the top of the view (UI wave of 29 September): one line with how many things wait and their order; how
+ * the view works folds behind "Come funziona", since the person reads it once. The count is in the header too, as on the
+ * icon of the activity bar.
+ */
+function WaitingStatus({ count }: { count: number }) {
+  const t = useT();
+  const [how, setHow] = useState(false);
+  return (
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-2.5" data-testid="waiting-view-summary">
+      <div className="flex min-w-0 items-start gap-2">
+        <p className={cn("min-w-0 flex-1 text-ui-sm", count ? "text-foreground" : "text-muted-foreground")}>
+          {count ? t("waiting.view.status", { count }) : t("waiting.view.none")}
+        </p>
+        {count ? (
+          <button
+            type="button"
+            aria-expanded={how}
+            onClick={() => setHow(!how)}
+            className="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-sm px-1 text-ui-xs text-muted-foreground transition-colors hover:bg-[var(--sidebar-accent)] hover:text-foreground"
+            data-testid="waiting-view-how"
+          >
+            {t("waiting.view.how")}
+            <IconChevronRight className={cn("size-3 shrink-0 transition-transform", how && "rotate-90")} stroke={1.8} />
+          </button>
+        ) : null}
+      </div>
+      {count === 0 || how ? <p className="mt-1 text-ui-xs text-muted-foreground">{count ? t("waiting.view.howText") : t("waiting.view.empty")}</p> : null}
+    </section>
+  );
+}
+
+/**
+ * The open item: what it holds, then its card with the decision buttons. The card is the one frame, set apart with the
+ * accent: no border around it and no second title, since the card already names what it is (UI wave of 29 September).
+ */
 function OpenItem({ item }: { item: WaitingItem }) {
   const t = useT();
   const blocksText = useBlocksText();
@@ -148,18 +180,18 @@ function OpenItem({ item }: { item: WaitingItem }) {
   return (
     <section
       role="listitem"
+      aria-label={item.label}
       data-waiting-key={item.key}
       data-testid="waiting-item"
       data-waiting-kind={item.kind}
       data-open="true"
-      className="border-b border-[color:var(--app-surface-divider)] px-2 pt-2"
+      className="border-b border-[color:var(--app-surface-divider)] px-3 pt-2.5 pb-1"
     >
-      <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--color-text-accent)_45%,transparent)] px-2 pt-2 pb-0.5">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-ui-sm">
-          <span className="font-medium text-foreground">{item.label}</span>
-          <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
-          {goal ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">{t("waiting.item.inGoal", { title: goal.title })}</span> : null}
-        </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-0.5 text-ui-xs" data-testid="waiting-item-meta">
+        <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
+        {goal ? <span className="min-w-0 truncate text-muted-foreground">{t("waiting.item.inGoal", { title: goal.title })}</span> : null}
+      </div>
+      <div className="waiting-open-card" data-testid="waiting-open-card">
         <WaitingCard item={item} />
       </div>
     </section>
@@ -245,11 +277,8 @@ function WaitingCard({ item }: { item: WaitingItem }) {
     case "confirmation":
       return <RequestedActionCard actionId={item.targetId} />;
     case "memory":
-      return proposal ? (
-        <div className="my-3">
-          <MemoryProposalCard proposal={proposal} />
-        </div>
-      ) : null;
+      // Its margins come from the open item's frame (index.css, .waiting-open-card).
+      return proposal ? <MemoryProposalCard proposal={proposal} /> : null;
   }
 }
 
