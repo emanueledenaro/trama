@@ -5,7 +5,6 @@ import { Input, Label, TextArea } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
 import { SearchPalette } from "@/components/SearchPalette";
 import { FocusStartDialog } from "@/components/focus/FocusStartDialog";
-import { GuideDialog } from "@/components/onboarding/GuideDialog";
 import { act, useUi } from "@/lib/store";
 
 function CreateProjectDialog() {
@@ -115,7 +114,6 @@ export function Dialogs() {
       <CreateProjectDialog />
       <CloneProjectDialog />
       <SearchPalette />
-      <GuideDialog />
       <FocusStartDialog />
     </>
   );

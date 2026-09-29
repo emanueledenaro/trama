@@ -8,21 +8,20 @@ import { act, useUi } from "@/lib/store";
 type SetupReport = { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string };
 
 /**
- * The actions of one guide step, shared by the guide (C12) and the welcome (B02). Calls to action sit on the
- * right with the primary last; in the welcome the footer owns "skip", so `where="welcome"` leaves it out.
+ * The actions of one step of Configura, in the Benvenuto (B02, issue #354): what the person does to take the step,
+ * and "Rimanda" or "Riprendi questo passo". Calls to action sit on the right with the primary last. They never mark a
+ * step done: the state does.
  */
-export function StepActions({ step, where = "guide" }: { step: StepState; where?: "guide" | "welcome" }) {
+export function StepActions({ step }: { step: StepState }) {
   const t = useT();
   const app = useUi((s) => s.app)!;
-  const setDialog = useUi((s) => s.setDialog);
-  const setExercise = useUi((s) => s.setExercise);
   const [report, setReport] = useState<SetupReport | null>(null);
   const [running, setRunning] = useState(false);
   const id = step.id as GuideStepId;
-  const size = where === "welcome" ? "sm" : "xs";
+  const size = "xs";
   const skipped = step.status === "skipped";
   const skip =
-    where === "welcome" || step.status === "done" ? null : skipped ? (
+    step.status === "done" ? null : skipped ? (
       <Button variant="ghost" size={size} onClick={() => void act("onboarding:update", { unskipStep: id })}>
         {t("step.resumeThis")}
       </Button>
@@ -38,18 +37,9 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
       return (
         <>
           {skip}
-          {where === "guide" ? (
-            <Button
-              variant="outline"
-              size={size}
-              onClick={() => {
-                setDialog(null);
-                useUi.getState().openSettings("connections");
-              }}
-            >
-              {t("step.allProviders")}
-            </Button>
-          ) : null}
+          <Button variant="outline" size={size} onClick={() => useUi.getState().openSettings("connections")}>
+            {t("step.allProviders")}
+          </Button>
           <Button
             variant="outline"
             size={size}
@@ -82,18 +72,6 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
           {skip}
           <Button variant="outline" size={size} disabled={app.gitHubCli.status === "checking"} onClick={() => void act("onboarding:checkGitHub", undefined)}>
             {t("step.checkAgain")}
-          </Button>
-        </>
-      );
-    case "project":
-      return (
-        <>
-          {skip}
-          <Button variant="outline" size={size} onClick={() => setDialog("createProject", "guide")}>
-            {t("step.createProject")}
-          </Button>
-          <Button size={size} onClick={() => void act("project:openDialog", undefined)}>
-            {t("step.openProject")}
           </Button>
         </>
       );
@@ -141,22 +119,7 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
         </>
       );
     }
-    case "exercise":
-      return (
-        <>
-          {skip}
-          <Button
-            size={size}
-            onClick={() =>
-              void act("exercise:start", { exercise: "first" }).then(() => {
-                setExercise("first");
-                setDialog(null);
-              })
-            }
-          >
-            {step.status === "done" ? t("step.moreExercises") : app.project?.isDemo ? t("step.resumeExercise") : t("step.startExercise")}
-          </Button>
-        </>
-      );
+    default:
+      return null;
   }
 }

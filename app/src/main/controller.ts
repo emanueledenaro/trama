@@ -799,6 +799,7 @@ export class TramaController {
       platform: process.platform,
       onboarding: { ...EMPTY_ONBOARDING },
       gitHubCli: { ...UNKNOWN_GITHUB_CLI },
+      started: false,
     };
     this.state.codex = this.state.providers.codex;
   }
@@ -962,6 +963,8 @@ export class TramaController {
         await this.storage.saveRecentProjects(imported);
       }
     }
+    // Settings, onboarding and recent projects are read: from now on the window may decide on the Benvenuto.
+    this.state.started = true;
     this.publishNow();
     void this.refreshCodex();
     void this.refreshProviders();

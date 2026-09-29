@@ -2444,6 +2444,11 @@ export interface AppState {
   /** The developers at work in all open projects and the authorized work waiting for a free slot (issue #39). */
   sharedCapacity: SharedCapacity;
   platform: NodeJS.Platform;
+  /**
+   * Whether Trama read its settings, the onboarding and the recent projects (issue #354). The window gets a first
+   * state before that: until then it decides nothing about the Benvenuto.
+   */
+  started: boolean;
   /** The first-run guide's persisted progress (C12). */
   onboarding: import("./onboarding").OnboardingState;
   /** GitHub CLI's login, read on demand for the guide. */

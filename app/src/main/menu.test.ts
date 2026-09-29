@@ -197,8 +197,9 @@ describe("application menu (issue #345)", () => {
     expect(click("Documentation")).toBe(`open:${DOCUMENTATION_URL}`);
     expect(click("Report an Issue on GitHub")).toBe(`open:${REPORT_ISSUE_URL}`);
     expect(click("Third-Party Notices")).toBe("openNotices");
-    expect(click("Welcome to Trama")).toBe("send:welcome");
-    expect(click("Getting Started")).toBe("send:guide");
+    expect(click("Welcome")).toBe("send:welcome");
+    // The getting started guide became the Benvenuto tab (issue #354): Help has one item for it.
+    expect(help.some((item) => item.label === "Getting Started" || item.label === "Welcome to Trama")).toBe(false);
     expect(click("Exercises on the Example Project")).toBe("send:exercises");
   });
 

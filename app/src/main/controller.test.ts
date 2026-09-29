@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PROVIDERS } from "@shared/providers";
+import { EMPTY_ONBOARDING, isFirstLaunch, welcomeLaunchDecision } from "@shared/onboarding";
 import type { AppState, ProjectDocument } from "@shared/domain";
 import { chatEvents, decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { activityLog } from "@shared/activity";
@@ -109,6 +110,45 @@ function lastToolError(document: ProjectDocument): string {
 }
 
 describe("TramaController", () => {
+  // Issue #354: the window is created before start() reads settings and recent projects, and it gets a state
+  // before then. That state must say it is not read yet: deciding on it showed the Benvenuto again, with every step
+  // done, after a restart of the Mac.
+  it("marks the state read only after settings, onboarding and recent projects are loaded (issue #354)", async () => {
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const project = await mkdtemp(join(tmpdir(), "trama-project-"));
+    const storage = new AppStorage(data);
+    const onboarding = { ...EMPTY_ONBOARDING, firstRunShownAt: "2026-09-01T09:00:00.000Z", welcomeClosedAt: "2026-09-01T09:05:00.000Z" };
+    await storage.saveSettings({ theme: "system", sidebarWidth: 256, lastProjectId: null, monitor: { enabled: false, openAtLogin: false, intervalSeconds: 300, repositories: [] }, onboarding });
+    await storage.saveRecentProjects([{ id: "p1", name: "Negozio", path: project, isDemo: false, lastOpenedAt: "2026-09-01T09:10:00.000Z" }]);
+    const published: AppState[] = [];
+    controller = new TramaController(data, {
+      publish: (s) => published.push(structuredClone(s)),
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    // What the window reads before start(): empty onboarding and no recent projects, and it says so.
+    const early = structuredClone(controller.snapshot);
+    expect(early.started).toBe(false);
+    expect(early.onboarding.firstRunShownAt).toBeNull();
+    expect(early.recentProjects).toEqual([]);
+    expect(isFirstLaunch(early)).toBe(false);
+    expect(welcomeLaunchDecision(early)).toBe("wait");
+    await controller.start();
+    // Every state marked read carries what was saved: never an empty onboarding that looks like a first launch.
+    const read = published.filter((state) => state.started);
+    expect(read.length).toBeGreaterThan(0);
+    for (const state of read) {
+      expect(state.onboarding.firstRunShownAt).toBe(onboarding.firstRunShownAt);
+      expect(state.recentProjects.map((p) => p.id)).toEqual(["p1"]);
+      expect(isFirstLaunch(state)).toBe(false);
+    }
+  });
+
   it("prepares the AI Hero method when a project without it opens (T04)", async () => {
     const { project } = await setup();
     const { existsSync } = await import("node:fs");

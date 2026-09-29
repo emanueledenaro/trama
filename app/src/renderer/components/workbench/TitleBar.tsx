@@ -5,6 +5,7 @@ import {
   IconChevronDown,
   IconFolderPlus,
   IconGitBranch,
+  IconHome,
   IconLayoutBottombar,
   IconLayoutList,
   IconLayoutSidebar,
@@ -15,7 +16,7 @@ import {
 } from "@tabler/icons-react";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
-import { ExercisesChip, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
+import { HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -35,6 +36,7 @@ function ProjectMenu() {
   const setMainView = useUi((s) => s.setMainView);
   const setDialog = useUi((s) => s.setDialog);
   const openDialog = useUi((s) => s.openDialog);
+  const openWelcome = useUi((s) => s.openWelcome);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
   const name = project ? (project.isDemo ? t("workbench.title.demoProject") : project.name) : t("workbench.title.noProject");
   return (
@@ -74,6 +76,12 @@ function ProjectMenu() {
           <MenuItem onClick={() => setDialog("createProject")}>
             <IconPencilPlus stroke={1.8} />
             {t("workbench.title.createProject")}
+          </MenuItem>
+          <MenuSeparator />
+          {/* The Benvenuto reopens from here and from the Help menu (issue #354). */}
+          <MenuItem onClick={() => openWelcome()}>
+            <IconHome stroke={1.8} />
+            {t("welcome.tab")}
           </MenuItem>
         </MenuPopup>
       </Menu>
@@ -130,7 +138,6 @@ function NavigationButtons() {
 export function TitleBar({ isMac }: { isMac: boolean }) {
   const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
-  const mainView = useUi((s) => s.mainView);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const activityOpen = useUi((s) => s.panelOpen);
   const toggleSidebar = useUi((s) => s.toggleSidebar);
@@ -171,12 +178,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
         </button>
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-1">
-        {/* The goal filter is in the summary of Lavoro (issue #332); the crumb after the project clears it. */}
-        {project && mainView === "dialog" && project.isDemo ? (
-          <div className="no-drag flex min-w-0 items-center gap-1">
-            <ExercisesChip />
-          </div>
-        ) : null}
+        {/* The goal filter is in the summary of Lavoro (issue #332); the exercises start from Impara in the Benvenuto (issue #354). */}
         {project ? (
           <Tooltip label={t("workbench.title.refresh")}>
             <button type="button" className={ICON_BUTTON} aria-label={t("workbench.title.refresh")} onClick={() => void refreshProject()}>

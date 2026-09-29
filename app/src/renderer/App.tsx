@@ -2,10 +2,9 @@ import { useEffect, useRef } from "react";
 import type { ProviderId } from "@shared/codex";
 import { chatComposer } from "@shared/goals";
 import { translator } from "@shared/i18n";
-import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
+import { isFirstLaunch, welcomeLaunchDecision } from "@shared/onboarding";
 import { Dialogs } from "@/components/Dialogs";
 import { FocusModeView } from "@/components/focus/FocusModeView";
-import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Sash, useResizableHeight, useResizableWidth } from "@/lib/resizable";
 import { ActivityBar } from "@/components/workbench/ActivityBar";
 import { EditorArea } from "@/components/workbench/EditorArea";
@@ -65,7 +64,6 @@ export function App() {
   const openedModule = useUi((s) => s.editorFocus === "detail" && (s.activeDetail?.startsWith("detail:module:") ?? false));
   // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
   const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
-  const welcomeOpen = useUi((s) => s.welcome !== null);
   // While something waits, the window's one filled button is Aspetta te's (issue #338).
   const waiting = useWaiting().length > 0;
   // The bottom panel with Activity: 200 px, 260 from a 1500 px wide window, remembered; the editor keeps its height above (issue #337).
@@ -88,11 +86,13 @@ export function App() {
         requestAnimationFrame(() => document.querySelector('[data-testid="about-trama"]')?.scrollIntoView({ block: "center" }));
       }
       else if (command === "createProject") ui.setDialog("createProject");
-      else if (command === "guide") ui.setDialog("guide");
-      else if (command === "welcome") ui.setWelcome("hello");
+      else if (command === "welcome") ui.openWelcome();
       else if (command === "exercises") {
         const exercise = ui.exercise ?? "first";
-        void act("exercise:start", { exercise }).then(() => useUi.getState().setExercise(exercise));
+        void act("exercise:start", { exercise }).then(() => {
+          useUi.getState().setExercise(exercise);
+          useUi.getState().closeWelcome();
+        });
       }
       else if (command === "toggleSidebar") ui.toggleSidebar();
       else if (command === "view:projects") openMenuView(ui, "projects");
@@ -128,15 +128,28 @@ export function App() {
   }, [app?.platform]);
   useThemeClass(app?.settings.theme);
 
-  // The welcome shows by itself once, on a first launch with no projects (B02); the guide reopens it (C12).
-  const welcomeChecked = useRef(false);
+  // The Benvenuto (issue #354). Nothing is decided on the state the window gets before Trama read its settings and
+  // recent projects: that state is empty, and deciding on it showed the Benvenuto again with every step done.
+  // On the first launch the mark weaves in at its head, once. With a project open it opens by itself only when no
+  // provider is connected, once per project opened, on the provider step; the optional steps never reopen it.
+  const firstLaunchChecked = useRef(false);
+  const launchDecided = useRef<string | null>(null);
   useEffect(() => {
-    if (!app || welcomeChecked.current) return;
-    welcomeChecked.current = true;
-    if (shouldShowWelcomeOnLaunch(app)) {
-      useUi.getState().setWelcome("hello");
-      void act("onboarding:update", { shown: true });
+    if (!app?.started) return;
+    if (!firstLaunchChecked.current) {
+      firstLaunchChecked.current = true;
+      if (isFirstLaunch(app)) {
+        useUi.getState().setWelcomeIntro(true);
+        void act("onboarding:update", { shown: true });
+      }
     }
+    const projectId = app.project?.id ?? null;
+    if (projectId === null) launchDecided.current = null;
+    if (projectId === null || launchDecided.current === projectId) return;
+    const decision = welcomeLaunchDecision(app);
+    if (decision === "wait") return;
+    launchDecided.current = projectId;
+    if (decision === "open") useUi.getState().openWelcome("provider");
   }, [app]);
 
   // Opening the map or a module in the example project is a step of the first exercise (C13).
@@ -159,8 +172,6 @@ export function App() {
         className="flex h-svh w-full flex-col bg-[var(--app-shell-background)]"
         data-sidebar-state={sidebarOpen ? "expanded" : "collapsed"}
         data-testid="workbench"
-        // Behind the welcome the window is inert, even when the focus was not yet inside it (B02).
-        inert={welcomeOpen}
       >
         <TitleBar isMac={isMac} />
         <div className="flex min-h-0 flex-1">
@@ -220,7 +231,6 @@ export function App() {
         </div>
         <StatusBar />
       </div>
-      <WelcomeView />
       <Dialogs />
       <Toast />
     </TooltipProvider>

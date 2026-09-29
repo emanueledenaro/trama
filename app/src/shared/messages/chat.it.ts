@@ -453,7 +453,6 @@ export const chatIt = {
   "chat.plan.approve": "Approva il piano e chiedi di realizzarlo",
 
   // Chat header, timeline and queue (ChatView)
-  "chat.view.exercises": "Esercizi",
   "chat.view.demoProject": "Progetto di esempio",
   "chat.view.onlyThisGoal": "Mostra solo questo obiettivo",
   "chat.view.goalTag": "Obiettivo: {title}",

@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconSchool, IconTarget, IconTrash, IconChevronDown, IconCheck } from "@tabler/icons-react";
+import { IconTarget, IconTrash, IconChevronDown, IconCheck } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
@@ -15,7 +15,7 @@ import { useT } from "@/lib/i18n";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { act, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
-import { ProjectPicker } from "@/components/launch/ProjectPicker";
+import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Composer } from "./Composer";
 import { useWaiting, WaitingSummary } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
@@ -24,24 +24,8 @@ export const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
 export const HEADER_CHIP_ACTIVE = "bg-[var(--color-background-button-secondary)] text-[var(--color-text-foreground)]";
 
-/** Recalls the exercise guide on the example project. */
-export function ExercisesChip() {
-  const exercise = useUi((s) => s.exercise);
-  const setExercise = useUi((s) => s.setExercise);
-  const t = useT();
-  return (
-    <button
-      type="button"
-      aria-label={t("chat.view.exercises")}
-      aria-pressed={Boolean(exercise)}
-      className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
-      onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
-    >
-      <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
-      <span className="hidden @min-[640px]/chat:inline">{t("chat.view.exercises")}</span>
-    </button>
-  );
-}
+/** What the main tab of the editor area shows; without a project it is the Benvenuto. */
+type EditorPage = "dialog" | "overview" | "settings" | "welcome";
 
 /**
  * The goal filter of the chat (U01): the whole chat or the messages and events of one goal. It only changes what the
@@ -311,9 +295,10 @@ function Timeline() {
 }
 
 /**
- * The main tab of the editor area (issue #330): the conversation with the Coordinator, or the overview or the settings.
- * `cover` is a detail tab that covers the conversation in a narrow window (issue #336): it lies over the timeline, the
- * row of Aspetta te stays in view below it, and the timeline and the composer stay mounted, hidden, with the draft.
+ * The main tab of the editor area (issue #330): the conversation with the Coordinator, or the overview, the settings or
+ * the Benvenuto (issue #354). Without a project the Benvenuto is the only thing in the window. `cover` is a detail tab
+ * that covers the conversation in a narrow window (issue #336): it lies over the timeline, the row of Aspetta te stays
+ * in view below it, and the timeline and the composer stay mounted, hidden, with the draft.
  */
 export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const project = useUi((s) => s.app?.project);
@@ -321,13 +306,19 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const waitingNow = useWaiting().length > 0;
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
+  const page: EditorPage = mainView === "dialog" && !project ? "welcome" : mainView;
   return (
     <div className="@container/chat relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {mainView === "overview" ? (
+      {page === "overview" ? (
         <OverviewView />
-      ) : mainView === "settings" ? (
+      ) : page === "settings" ? (
         <SettingsView />
-      ) : project ? (
+      ) : page === "welcome" || !project ? (
+        // The Benvenuto's one primary, the provider's Collega, gives way to Aspetta te's while something waits (issue #338).
+        <FilledScope allowed={!waitingNow}>
+          <WelcomeView />
+        </FilledScope>
+      ) : (
         <>
           <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
@@ -345,14 +336,15 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
               <div className="pointer-events-auto">
                 <WaitingSummary />
                 <div hidden={Boolean(cover)}>
-                  <Composer />
+                  {/* "Collega un provider" in place of sending is the composer's primary: outlined while something waits. */}
+                  <FilledScope allowed={!waitingNow}>
+                    <Composer />
+                  </FilledScope>
                 </div>
               </div>
             </div>
           </div>
         </>
-      ) : (
-        <ProjectPicker />
       )}
     </div>
   );
