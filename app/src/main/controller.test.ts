@@ -2032,6 +2032,22 @@ describe("TramaController", () => {
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Mandato v${granted + 1} con la delega piena`)).toBe(true);
   });
 
+  it("tells the person what it decided while they worked on another project, when they come back to it (issue #423)", async () => {
+    const { project: first } = await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[delega:fai tutto tu] Fai tutto tu", null, null, null);
+    recordChoice(document, { kind: "decision", subject: "Chi vede la revisione?", choice: "Anche il cliente", targetId: null, doubt: null });
+    // The person left the window long ago, then opened another project; now they come back to the first one.
+    controller!.personAway(Date.now() - 3 * 3_600_000);
+    const other = await mkdtemp(join(tmpdir(), "trama-project-"));
+    await cp(join(root, "resources/DemoProject"), other, { recursive: true });
+    await controller!.openProject(other);
+    await controller!.openProject(first);
+    const back = controller!.snapshot.project!.document;
+    expect(back.recap?.recaps.at(-1)).toMatchObject({ reason: "return" });
+    expect(back.personLeftAt).toBeUndefined();
+  });
+
   it("tells the person what it decided while Trama was closed, when they open it again after a long absence (issue #423)", async () => {
     const { data } = await setup();
     const restart = async () => {
