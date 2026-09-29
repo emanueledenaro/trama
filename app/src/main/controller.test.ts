@@ -2077,6 +2077,9 @@ describe("TramaController", () => {
     // The person left the window in the evening, then Trama closed; in the morning it opens again.
     controller!.personAway(Date.now() - 8 * 3_600_000);
     document = await restart();
+    // The recap of the return is written once the project opened: wait for it, as a slower machine writes it later.
+    await until(() => controller!.snapshot.project!.document.recap?.recaps.at(-1)?.reason === "return");
+    document = controller!.snapshot.project!.document;
     const recap = document.recap?.recaps.at(-1);
     expect(recap).toMatchObject({ reason: "return" });
     expect(recap?.delegated?.find((c) => c.kind === "decision")).toMatchObject({ doubt: "Non so se vale per i buoni" });
