@@ -110,6 +110,9 @@ export function useTargetTitle(target: InspectorTarget): { title: string; id: st
   const t = useT();
   const recordId = targetId(target) ?? (target.kind === "specialist" || target.kind === "goal" ? target.id : null);
   const record = useRecord(recordId);
+  // A discussion between agents (A12) is named by its motive, so two open discussions tell each other apart.
+  const motive = useUi((s) => (target.kind === "agentThread" ? (s.app?.project?.document.agentThreads?.find((th) => th.id === target.id)?.discussion?.motive ?? null) : null));
+  if (motive && target.kind === "agentThread") return { title: motive, id: target.id };
   // The id stays on the hover of the tab (issue #270).
   const id = recordId ?? undefined;
   return { title: detailTitle(target, record ? asTitle(record.label) : null, t), id };

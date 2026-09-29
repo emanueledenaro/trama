@@ -2,25 +2,29 @@ import { Popover } from "@base-ui/react/popover";
 import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@tabler/icons-react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import { failureSummary } from "@shared/providerFailure";
+import type { MessageKey, Translate } from "@shared/i18n";
 import { coordinatorUnavailableReason, PROVIDERS } from "@shared/providers";
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_GLOW, ProviderIcon } from "@/components/ProviderIcon";
 import { PickerHeader, PickerList, PickerNote, PickerOption, PickerPopup, PickerSearch, usePickerSearch } from "@/components/ui/picker";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { act, useUi } from "@/lib/store";
 import { useT } from "@/lib/i18n";
+import { act, useUi } from "@/lib/store";
 
-export const EFFORT_LABELS: Record<string, string> = {
-  minimal: "Minimo",
-  low: "Basso",
-  medium: "Medio",
-  high: "Alto",
-  xhigh: "Molto alto",
-  max: "Massimo",
-  ultra: "Ultra",
-  thinking: "Ragionamento",
+const EFFORT_LABELS: Record<string, MessageKey> = {
+  minimal: "chat.model.effort.minimal",
+  low: "chat.model.effort.low",
+  medium: "chat.model.effort.medium",
+  high: "chat.model.effort.high",
+  xhigh: "chat.model.effort.xhigh",
+  max: "chat.model.effort.max",
+  ultra: "chat.model.effort.ultra",
+  thinking: "chat.model.effort.thinking",
 };
+
+/** The effort level's name in the current language; a level Trama does not know keeps the provider's id. */
+export const effortLabel = (t: Translate, effort: string): string => (EFFORT_LABELS[effort] ? t(EFFORT_LABELS[effort]) : effort);
 
 /** Provider catalogues separate facts with " · "; Trama shows them as a plain list. */
 const plainDescription = (text: string) => text.replaceAll(" · ", ", ");
@@ -85,15 +89,15 @@ export function ModelPicker({
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         className={className}
-        aria-label={`Provider e modello del Coordinatore: ${PROVIDERS.find((p) => p.id === selectedProvider)?.name ?? selectedProvider}`}
+        aria-label={t("chat.model.label", { provider: PROVIDERS.find((p) => p.id === selectedProvider)?.name ?? selectedProvider })}
       >
         <ProviderIcon provider={selectedProvider} />
         <span className={cn("min-w-0 truncate", modelMissing ? "text-warning line-through" : "text-[var(--color-text-foreground)]")}>
-          {current?.displayName ?? selectedModel ?? "Scegli un modello"}
+          {current?.displayName ?? selectedModel ?? t("chat.model.choose")}
         </span>
-        {effort ? <span className="shrink-0 text-muted-foreground">{EFFORT_LABELS[effort] ?? effort}</span> : null}
+        {effort ? <span className="shrink-0 text-muted-foreground">{effortLabel(t, effort)}</span> : null}
         {fastMode && current?.supportsFastMode ? (
-          <IconBoltFilled aria-label="Modalità veloce attiva" className="size-3 shrink-0 text-[var(--color-text-accent)]" />
+          <IconBoltFilled aria-label={t("chat.model.fastOn")} className="size-3 shrink-0 text-[var(--color-text-accent)]" />
         ) : null}
         <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
       </Popover.Trigger>
@@ -132,28 +136,28 @@ export function ModelPicker({
           warning={!usable}
           meta={
             usable
-              ? `${models.length === 1 ? "1 modello" : `${models.length} modelli`}`
+              ? t("chat.model.count", { count: models.length })
               : account?.kind === "blocked"
-                ? "Bloccato"
+                ? t("chat.model.blocked")
                 : account?.kind === "signedOut"
-                  ? "Accesso richiesto"
-                  : "Non collegato"
+                  ? t("chat.model.signedOut")
+                  : t("chat.model.notConnected")
           }
         />
 
-        {usable && searchable ? <PickerSearch value={query} onChange={setQuery} placeholder="Cerca un modello" /> : null}
+        {usable && searchable ? <PickerSearch value={query} onChange={setQuery} placeholder={t("chat.model.search")} /> : null}
 
-        <PickerList label="Modelli">
+        <PickerList label={t("chat.model.models")}>
           {!usable ? (
             <PickerNote>
               {account?.kind === "blocked"
                 ? failureSummary(t, account.message, descriptor?.name)
                 : descriptor?.signInCommand
-                  ? `Collegalo dal terminale con ${descriptor.signInCommand}.`
-                  : "Collegalo dalle impostazioni."}
+                  ? t("chat.model.signInTerminal", { command: descriptor.signInCommand })
+                  : t("chat.model.signInSettings")}
             </PickerNote>
           ) : visible.length === 0 ? (
-            <PickerNote>Nessun modello corrisponde.</PickerNote>
+            <PickerNote>{t("chat.model.noMatch")}</PickerNote>
           ) : (
             visible.map((m) => {
               const refused = providers[browsing]?.unsupportedModels?.includes(m.model) ?? false;
@@ -161,7 +165,7 @@ export function ModelPicker({
                 <PickerOption
                   key={m.model}
                   title={m.displayName}
-                  subtitle={refused ? "Non disponibile con questo account" : m.description ? plainDescription(m.description) : undefined}
+                  subtitle={refused ? t("chat.model.unsupported") : m.description ? plainDescription(m.description) : undefined}
                   warning={refused}
                   active={browsing === selectedProvider && m.model === selectedModel}
                   disabled={refused}
@@ -175,7 +179,7 @@ export function ModelPicker({
         {coordinatorUnavailableReason(t, browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(t, browsing)}</p> : null}
 
         {modelMissing && browsing === selectedProvider ? (
-          <p className="px-4 pb-2 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>
+          <p className="px-4 pb-2 text-ui-xs text-warning">{t("chat.model.missing", { model: selectedModel ?? "" })}</p>
         ) : null}
 
         {efforts.length && browsing === selectedProvider && current ? (
@@ -217,6 +221,7 @@ function EffortSlider({
   fast: { enabled: boolean; onToggle: () => void } | null;
   onChange: (level: string) => void;
 }) {
+  const t = useT();
   const track = useRef<HTMLDivElement>(null);
   const index = Math.max(0, levels.indexOf(value));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -273,10 +278,10 @@ function EffortSlider({
     >
       <div className="flex items-center gap-2">
         {fast ? (
-          <Tooltip label={fast.enabled ? "Modalità veloce attiva" : "Modalità veloce spenta"}>
+          <Tooltip label={fast.enabled ? t("chat.model.fastOn") : t("chat.model.fastOff")}>
             <button
               type="button"
-              aria-label="Modalità veloce"
+              aria-label={t("chat.model.fast")}
               aria-pressed={fast.enabled}
               onClick={fast.onToggle}
               className="inline-flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
@@ -292,13 +297,13 @@ function EffortSlider({
           <span className="size-6 shrink-0" />
         )}
         <div className="min-w-0 flex-1 text-center leading-tight">
-          <div className="text-ui font-medium text-[var(--slider-accent)]">{EFFORT_LABELS[levels[shown]!] ?? levels[shown]}</div>
+          <div className="text-ui font-medium text-[var(--slider-accent)]">{effortLabel(t, levels[shown]!)}</div>
           <div className="truncate text-ui-xs text-muted-foreground">{modelName}</div>
         </div>
-        <Tooltip label="Sforzo predefinito">
+        <Tooltip label={t("chat.model.defaultEffort")}>
           <button
             type="button"
-            aria-label="Torna allo sforzo predefinito"
+            aria-label={t("chat.model.resetEffort")}
             disabled={!defaultValue || defaultValue === value}
             onClick={() => defaultValue && onChange(defaultValue)}
             className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground disabled:opacity-35"
@@ -311,11 +316,11 @@ function EffortSlider({
         ref={track}
         role="slider"
         tabIndex={0}
-        aria-label="Sforzo"
+        aria-label={t("chat.model.effort")}
         aria-valuemin={0}
         aria-valuemax={last}
         aria-valuenow={shown}
-        aria-valuetext={EFFORT_LABELS[levels[shown]!] ?? levels[shown]}
+        aria-valuetext={effortLabel(t, levels[shown]!)}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           setDragIndex(indexAt(event.clientX));

@@ -11,6 +11,7 @@ import {
   IconFocus2,
   IconHourglass,
   IconMessageCircle,
+  IconMessages,
   IconPinned,
   IconUsers,
 } from "@tabler/icons-react";
@@ -23,6 +24,7 @@ import { LANGUAGES, type MessageKey, type Translate, translator } from "@shared/
 import { PROVIDERS } from "@shared/providers";
 import { AGENT_PALETTE, colorName } from "@shared/identity";
 import { agentThreadsByRecent, threadParticipants } from "@shared/agentThreads";
+import { discussionState, minutesLeft, squadDiscussions } from "@shared/discussions";
 import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, teamMoments } from "@shared/roster";
 import { developersOutsideSquads, sharedRoleMembers, squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
 import { assignmentStatus, candidateStatus } from "@shared/states";
@@ -42,6 +44,7 @@ import { useT } from "@/lib/i18n";
 import { act, examineCandidate, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
+import { DiscussionStateChip } from "./AgentThreadView";
 import { GroupBoardSection } from "./GroupBoard";
 import { MergeProposalCard, MergeSquad, RenameSquad, type SquadEdit, SplitSquad, SquadMenu } from "./SquadChanges";
 import { EmptyNote, InspectorSection } from "./Inspector";
@@ -252,7 +255,70 @@ function SquadGroup({ squad }: { squad: Squad }) {
           <PersonRow key={s.id} specialist={s} />
         ))}
       </div>
+      <DiscussionRows squadId={squad.id} />
       {backlog ? <SquadBacklog backlog={backlog} /> : null}
+    </section>
+  );
+}
+
+/** At most this many discussions per squad in the view; the others stay on each agent's page. */
+const SHOWN_DISCUSSIONS = 3;
+
+/**
+ * The discussions between agents of a squad (A12, Q23), or those between squads with `squadId` null: the open ones
+ * first, each with its motive and its state or the minutes left. A row opens the discussion.
+ */
+function DiscussionRows({ squadId }: { squadId: string | null }) {
+  const t = useT();
+  const document = useUi((s) => s.app?.project?.document);
+  const setInspector = useUi((s) => s.setInspector);
+  // Issue #336: a discussion opens in a tab of the editor; its row is marked while that tab is the active one.
+  const selected = useUi((s) => (s.activeDetail?.startsWith("agentThread:") ? s.activeDetail.slice("agentThread:".length) : null));
+  const now = Date.now();
+  const rows = document ? squadDiscussions(document, squadId).slice(0, SHOWN_DISCUSSIONS) : [];
+  if (!rows.length) return null;
+  return (
+    <div className="mt-1.5" data-testid="squad-discussions">
+      <p className="px-2 text-ui-xs text-muted-foreground">{t("teams.discussions.title")}</p>
+      <div className="mt-0.5 flex flex-col">
+        {rows.map((thread) => {
+          const state = discussionState(thread, now);
+          return (
+            <button
+              key={thread.id}
+              type="button"
+              title={thread.id}
+              data-testid="discussion-row"
+              data-state={state}
+              aria-current={selected === thread.id || undefined}
+              onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
+              className={cn("flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui hover:bg-[var(--sidebar-accent)]", selected === thread.id && "bg-[var(--sidebar-selected)]")}
+            >
+              <IconMessages className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
+              <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.discussion.motive}</span>
+              {state === "open" ? (
+                <span className="shrink-0 text-ui-xs text-muted-foreground">{t("teams.discussions.left", { count: minutesLeft(thread, now) })}</span>
+              ) : (
+                <DiscussionStateChip state={state} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** The discussions that cross squads (A12): the Coordinator chairs them. Absent while there are none. */
+function DiscussionsAcrossSquads() {
+  const t = useT();
+  const document = useUi((s) => s.app?.project?.document);
+  if (!document || !squadDiscussions(document, null).length) return null;
+  return (
+    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="discussions-across">
+      <p className="px-2 text-ui-sm font-medium text-foreground">{t("teams.discussions.across")}</p>
+      <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground">{t("teams.discussions.acrossNote")}</p>
+      <DiscussionRows squadId={null} />
     </section>
   );
 }
@@ -451,6 +517,7 @@ export function SquadsView() {
       {squads.map((squad) => (
         <SquadGroup key={squad.id} squad={squad} />
       ))}
+      <DiscussionsAcrossSquads />
       {!squads.length || outside.length ? (
         <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5">
           <p className="px-2 text-ui-sm font-medium text-foreground">{squads.length ? t("teams.outside.title") : t("teams.developers.title")}</p>

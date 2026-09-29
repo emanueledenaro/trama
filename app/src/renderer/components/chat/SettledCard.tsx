@@ -14,12 +14,11 @@ import { type SettledCard, settledCard } from "@shared/settledCards";
 import type { TimelineRow } from "@shared/timeline";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
+import { useT, withNodes, useLanguage } from "@/lib/i18n";
 import { REVEAL_EVENT } from "@/lib/nextStep";
-import { useLanguage } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
 import { DisclosureChevron } from "./WorkSteps";
-import { useT } from "@/lib/i18n";
 
 function lineIcon(row: TimelineRow) {
   if (row.kind === "grillingRound") return <IconListCheck stroke={1.8} />;
@@ -66,6 +65,7 @@ function useSettled(row: TimelineRow): SettledCard | null {
  * A card still open stays whole.
  */
 export function SettledOr({ row, children }: { row: TimelineRow; children: React.ReactNode }) {
+  const t = useT();
   const settled = useSettled(row);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -98,7 +98,7 @@ export function SettledOr({ row, children }: { row: TimelineRow; children: React
           </span>
           {settled.answer ? (
             <span className="block truncate text-ui-sm text-foreground/85" data-testid="settled-answer">
-              Hai scelto: <ReferenceText text={settled.answer} />
+              {withNodes(t("chat.settled.chose"), { answer: <ReferenceText text={settled.answer} /> })}
             </span>
           ) : null}
         </span>
@@ -106,7 +106,7 @@ export function SettledOr({ row, children }: { row: TimelineRow; children: React
         <button
           type="button"
           aria-expanded={open}
-          aria-label={open ? `Chiudi: ${settled.title}` : `Apri: ${settled.title}`}
+          aria-label={open ? t("chat.settled.close", { title: settled.title }) : t("chat.settled.open", { title: settled.title })}
           onClick={(event) => {
             event.stopPropagation();
             setOpen(!open);

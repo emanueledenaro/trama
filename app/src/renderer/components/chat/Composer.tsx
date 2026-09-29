@@ -18,10 +18,11 @@ import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { withQuestion } from "@/lib/askCoordinator";
 import { Sep } from "@/components/ui/sep";
+import { currentLanguage, useT } from "@/lib/i18n";
+import { translate } from "@shared/i18n";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAXIMUM_IMAGES = 8;
@@ -39,7 +40,7 @@ function readImage(file: File): Promise<DraftImage> {
       const url = String(reader.result);
       resolve({
         id: crypto.randomUUID(),
-        name: file.name || "immagine",
+        name: file.name || translate(currentLanguage(), "chat.composer.imageName"),
         mimeType: file.type,
         dataBase64: url.slice(url.indexOf(",") + 1),
         previewUrl: url,
@@ -85,9 +86,9 @@ export function Composer() {
 
   const addFiles = async (files: File[]) => {
     const accepted = files.filter((f) => IMAGE_TYPES.includes(f.type));
-    if (accepted.length < files.length) setToast("Trama accetta immagini PNG, JPEG, GIF o WebP.");
+    if (accepted.length < files.length) setToast(t("chat.composer.imageTypes"));
     const room = MAXIMUM_IMAGES - images.length;
-    if (accepted.length > room) setToast(`Puoi allegare al massimo ${MAXIMUM_IMAGES} immagini per messaggio.`);
+    if (accepted.length > room) setToast(t("chat.composer.tooManyImages", { count: MAXIMUM_IMAGES }));
     const read = await Promise.all(accepted.slice(0, Math.max(0, room)).map(readImage));
     setImages((current) => [...current, ...read].slice(0, MAXIMUM_IMAGES));
   };
@@ -167,7 +168,7 @@ export function Composer() {
             : []),
           ...skillCandidates(mention.query, project.skills)
             .slice(0, 12)
-            .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" })),
+            .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? t("chat.composer.skill") })),
         ].slice(0, 12);
 
   /** Opens the mention menu while the word before the cursor starts with @. */
@@ -225,7 +226,7 @@ export function Composer() {
     if (!prompt && !pastes.length) return;
     // The draft stays: it leaves once a provider is connected.
     if (noProvider) return openWelcome("provider");
-    const message = serializePastes(prompt || "Leggi il testo incollato.", pastes.map((p) => p.text));
+    const message = serializePastes(prompt || t("chat.composer.readPasted"), pastes.map((p) => p.text));
     // A draft save still pending would write the sent text back as the dialog's draft.
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
@@ -242,7 +243,7 @@ export function Composer() {
         {mention && candidates.length ? (
           <div
             role="listbox"
-            aria-label={mention.sigil === "@" ? "Menzioni" : "Skill"}
+            aria-label={mention.sigil === "@" ? t("chat.composer.mentions") : t("chat.composer.skill")}
             className="translucent-popup absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-y-auto rounded-[0.875rem] p-1 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]"
           >
             {candidates.map((candidate, index) => (
@@ -296,7 +297,7 @@ export function Composer() {
               data-testid="composer-drop"
             >
               <IconPhotoPlus className="size-4 text-[var(--color-text-accent)]" stroke={1.8} />
-              Rilascia le immagini per allegarle al messaggio
+              {t("chat.composer.dropImages")}
             </div>
           ) : null}
           {dropSeam.stitch}
@@ -307,11 +308,11 @@ export function Composer() {
                   key={paste.id}
                   className="group/paste relative flex max-w-64 min-w-0 flex-col rounded-lg border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-2.5 py-1.5"
                 >
-                  <span className="truncate text-ui-sm text-foreground">{pasteTitle(paste.text) || "Testo incollato"}</span>
-                  <span className="text-ui-xs text-muted-foreground">Testo incollato<Sep />{pasteSizeLabel(t, paste.text)}</span>
+                  <span className="truncate text-ui-sm text-foreground">{pasteTitle(paste.text) || t("chat.composer.pasted")}</span>
+                  <span className="text-ui-xs text-muted-foreground">{t("chat.composer.pasted")}<Sep />{pasteSizeLabel(t, paste.text)}</span>
                   <button
                     type="button"
-                    aria-label="Rimuovi testo incollato"
+                    aria-label={t("chat.composer.removePasted")}
                     onClick={() => setPastes((current) => current.filter((p) => p.id !== paste.id))}
                     className="absolute -top-1.5 -right-1.5 hidden size-4 items-center justify-center rounded-full bg-foreground text-background group-hover/paste:flex"
                   >
@@ -328,7 +329,7 @@ export function Composer() {
                   <img src={image.previewUrl} alt={image.name} className="size-full object-cover" />
                   <button
                     type="button"
-                    aria-label={`Rimuovi ${image.name}`}
+                    aria-label={t("chat.composer.removeImage", { name: image.name })}
                     onClick={() => setImages((current) => current.filter((i) => i.id !== image.id))}
                     className="absolute top-0.5 right-0.5 hidden size-4 items-center justify-center rounded-full bg-black/60 text-white group-hover/image:flex"
                   >
@@ -387,23 +388,23 @@ export function Composer() {
               }}
               placeholder={
                 running
-                  ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito"
+                  ? t("chat.composer.placeholderQueued")
                   : goal
-                    ? `Messaggio al Coordinatore sull'obiettivo «${goal.title}». Usa @ per citare moduli, file, issue e decisioni`
-                    : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, / per una skill"
+                    ? t("chat.composer.placeholderGoal", { title: goal.title })
+                    : t("chat.composer.placeholder")
               }
-              aria-label="Messaggio al Coordinatore"
+              aria-label={t("chat.composer.label")}
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
             />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-1.5 pr-2 pb-1 pl-1.5 sm:flex-nowrap sm:gap-0">
             <div className="flex min-w-0 flex-1 items-center gap-1">
-              <Tooltip label="Allega immagini">
-                <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Allega immagini" onClick={() => fileInput.current?.click()}>
+              <Tooltip label={t("chat.composer.attach")}>
+                <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label={t("chat.composer.attach")} onClick={() => fileInput.current?.click()}>
                   <IconPhotoPlus className="size-4 text-primary" stroke={1.7} />
                 </Button>
               </Tooltip>
-              <Tooltip label="Ask Trama: descrivi la situazione e il Coordinatore propone il percorso">
+              <Tooltip label={t("chat.composer.askTrama")}>
                 <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Ask Trama" onClick={openAskTrama}>
                   <IconRoute className="size-4 text-primary" stroke={1.7} />
                 </Button>
@@ -439,20 +440,20 @@ export function Composer() {
                   </Button>
                 </Tooltip>
               ) : busy && !text.trim() && !pastes.length ? (
-                <Tooltip label="Interrompi">
+                <Tooltip label={t("chat.composer.interrupt")}>
                   <Button
                     variant="prominent"
                     size="icon-xs"
                     className="size-7 rounded-full"
-                    aria-label="Interrompi"
+                    aria-label={t("chat.composer.interrupt")}
                     onClick={() => void act("coordinator:interrupt", undefined)}
                   >
                     <span className="block size-2 rounded-[1px] bg-current" />
                   </Button>
                 </Tooltip>
               ) : (
-                <Tooltip label="Invia al Coordinatore">
-                  <Button type="submit" variant="prominent" size="icon-xs" className="size-7 rounded-full" disabled={!text.trim() && !pastes.length} aria-label="Invia al Coordinatore">
+                <Tooltip label={t("chat.composer.send")}>
+                  <Button type="submit" variant="prominent" size="icon-xs" className="size-7 rounded-full" disabled={!text.trim() && !pastes.length} aria-label={t("chat.composer.send")}>
                     <IconArrowUp className="size-4.5 shrink-0" stroke={2.2} />
                   </Button>
                 </Tooltip>

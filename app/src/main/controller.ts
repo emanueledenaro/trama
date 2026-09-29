@@ -25,6 +25,7 @@ import {
 import { REPAIRABLE_CLIS, repairActivity } from "@shared/providerRepair";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
+  AgentThreadAuthor,
   ActiveProjectState,
   AutomaticWorkRequest,
   BranchDivergence,
@@ -131,6 +132,25 @@ import {
 } from "./core/cleanCode";
 import { contextBriefing, openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { recordGate } from "./core/agentThreads";
+import {
+  CHAIR_SCHEMA,
+  chairInstructions,
+  chairOf,
+  closeOverdueDiscussions,
+  decideDiscussion,
+  DiscussionError,
+  discussionAnswered,
+  discussionModel,
+  discussionPrompt,
+  escalateDiscussion,
+  PARTICIPANT_SCHEMA,
+  participantInstructions,
+  personWrites,
+  postToDiscussion,
+  readChairAnswer,
+  readParticipantAnswer,
+} from "./core/discussions";
+import { type Discussion, discussionModelSetting, isDiscussion, isDiscussionModelSetting } from "@shared/discussions";
 import { prepareDemoProject } from "./core/demoProject";
 import {
   appendEvent,
@@ -971,6 +991,7 @@ export class TramaController {
     this.planners.clear();
     for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
     for (const [, run] of this.gateRuns) for (const client of run.clients) client.stop();
+    for (const client of this.discussionClients) client.stop();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -2269,6 +2290,7 @@ export class TramaController {
           providers: this.connectedProviders(),
           startAssignment: (id) => void this.startAssignment(id),
           questionAnswered: () => this.resumeAnsweredWork(current),
+          discussionOpened: (threadId) => void this.runDiscussion(current, threadId),
           automaticWork: () => automaticWorkStatus(current.document, this.dutyContext(current, current.snapshot.headSHA)),
           startAutomaticWork: async (request) => (await this.startDutyOnRequest(current, request, "coordinator", current.runningRequestId)).id,
           startDomainWriting: (proposalId) => {
@@ -3403,6 +3425,9 @@ export class TramaController {
    */
   async runRound(): Promise<void> {
     const project = this.state.project;
+    // A discussion past its time box closes with the chair's decision (A12): a rule of Trama, no provider turn, also
+    // in pause and in the example project.
+    if (project && !this.quitting) this.closeOverdueDiscussions(project);
     if (!project || this.quitting || this.roundRunning || !project.stateWritable || project.isDemo) return;
     // The results of cloud sessions come back also in pause: collecting them starts no provider turn (A19).
     await this.refreshCloudSessions(project).catch(() => undefined);
@@ -3444,6 +3469,146 @@ export class TramaController {
     } finally {
       this.roundRunning = false;
     }
+  }
+
+  // MARK: Discussions between agents (A12)
+
+  private readonly discussionRuns = new Set<string>();
+  private readonly discussionClients = new Set<AgentRuntime>();
+
+  /** Closes the discussions past their time box with the chair's decision and tells it in Activity (A12). */
+  private closeOverdueDiscussions(project: ActiveProjectState): void {
+    if (!project.stateWritable) return;
+    const closed = closeOverdueDiscussions(project.document, new Date(), this.state.language);
+    if (!closed.length) return;
+    const t = translator(this.state.language);
+    for (const thread of closed) {
+      appendEvent(
+        project.document,
+        "trama",
+        { type: "activity", title: t("main.discussions.activity.timeBox", { motive: thread.discussion.motive }), detail: thread.discussion.outcome?.decision ?? null, tone: "info" },
+        null,
+      );
+    }
+    this.changedIn(project);
+  }
+
+  /**
+   * The model a participant's turn runs on (Q17): the Coordinator's provider, on its lightest model unless the person
+   * chose the role's model in the settings. The role's model is the agent's own when it runs on that provider, else the
+   * Coordinator's. Null when no provider can run a read-only turn now.
+   */
+  private discussionRunner(document: ProjectDocument, speaker: AgentThreadAuthor): { provider: ProviderId; model: string } | null {
+    const provider = this.coordinatorProvider(document);
+    if (!hasAdapter(provider) || !supportsReadOnly(provider)) return null;
+    if (providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null)) return null;
+    const specialist = speaker.kind === "specialist" ? document.team.specialists.find((s) => s.id === speaker.specialistId) : undefined;
+    const own = specialist?.model && (specialist.provider ?? "codex") === provider ? specialist.model : null;
+    const roleModel = own ?? document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
+    const chosen = discussionModel(this.state.providers[provider]?.models ?? [], roleModel, discussionModelSetting(document));
+    return chosen ? { provider, model: chosen.model } : null;
+  }
+
+  /** One read-only turn of a discussion, in an ephemeral thread of its own. */
+  private async discussionTurn(project: ActiveProjectState, runner: { provider: ProviderId; model: string }, instructions: string, prompt: string, outputSchema: Record<string, unknown>): Promise<string> {
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
+    this.discussionClients.add(client);
+    try {
+      const cwd = project.rootPath;
+      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
+      return await client.runTurn({ threadId: opening.threadId, prompt, cwd, model: runner.model, outputSchema, onEvent: () => undefined });
+    } finally {
+      this.discussionClients.delete(client);
+      client.stop();
+    }
+  }
+
+  /**
+   * Runs a discussion between agents (A12): one turn for each participant who has not spoken yet, then the chair's,
+   * which closes it with a decision or puts a product choice to the person. Every turn runs read-only on the model of
+   * the discussions, and its message keeps the model that wrote it. A turn that fails leaves the discussion open: the
+   * time box closes it. Nothing runs once the discussion is no longer open, Trama is closing or the project changed.
+   */
+  private async runDiscussion(project: ActiveProjectState, threadId: string): Promise<void> {
+    if (this.discussionRuns.has(threadId) || !project.stateWritable) return;
+    this.discussionRuns.add(threadId);
+    const language = this.state.language === "en" ? "en" : "it";
+    const find = (): Discussion | null => {
+      const thread = project.document.agentThreads?.find((t) => t.id === threadId);
+      return thread && isDiscussion(thread) && thread.discussion.status === "open" && !this.quitting ? thread : null;
+    };
+    try {
+      const first = find();
+      if (!first) return;
+      const chair = chairOf(first);
+      const spoken = new Set(first.messages.flatMap((m) => (m.author.kind === "specialist" ? [m.author.specialistId] : [])));
+      for (const specialistId of first.specialistIds.filter((id) => id !== first.discussion.chairId && !spoken.has(id))) {
+        const thread = find();
+        if (!thread) return;
+        const author: AgentThreadAuthor = { kind: "specialist", specialistId };
+        const runner = this.discussionRunner(project.document, author);
+        if (!runner) return;
+        const answer = readParticipantAnswer(await this.discussionTurn(project, runner, participantInstructions(language), discussionPrompt(project.document, thread, author), PARTICIPANT_SCHEMA));
+        if (!find()) return;
+        postToDiscussion(project.document, threadId, author, answer.message, { model: runner, proposal: answer.proposal });
+        this.changedIn(project);
+      }
+      const thread = find();
+      if (!thread) return;
+      const runner = this.discussionRunner(project.document, chair);
+      if (!runner) return;
+      const answer = readChairAnswer(await this.discussionTurn(project, runner, chairInstructions(language), discussionPrompt(project.document, thread, chair), CHAIR_SCHEMA));
+      if (!find()) return;
+      if (answer.product) {
+        const request = createDecisionRequest(project.document, {
+          requestId: null,
+          category: "product",
+          question: answer.product.question,
+          concreteCase: answer.product.concreteCase,
+          alternatives: answer.product.alternatives.map((a) => ({ ...a, consequence: null })),
+          revisesDecisionId: null,
+        });
+        postToDiscussion(project.document, threadId, chair, answer.message, { model: runner });
+        escalateDiscussion(project.document, threadId, request);
+        appendEvent(project.document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, null);
+      } else {
+        decideDiscussion(project.document, threadId, { decision: answer.decision!, by: chair, how: "agreed", model: runner });
+      }
+      this.changedIn(project);
+    } catch (error) {
+      const thread = project.document.agentThreads?.find((t) => t.id === threadId);
+      appendEvent(
+        project.document,
+        "trama",
+        {
+          type: "activity",
+          title: translate(this.state.language, "main.discussions.activity.turnFailed", { motive: thread?.discussion?.motive ?? threadId }),
+          detail: (error as Error).message,
+          tone: "error",
+        },
+        null,
+      );
+      this.changedIn(project);
+    } finally {
+      this.discussionRuns.delete(threadId);
+    }
+  }
+
+  /**
+   * The person writes in a discussion (Q32): the Coordinator passes the message on and records it. In an open
+   * discussion whose turns ended without a decision, the chair reads it and closes the discussion now.
+   */
+  writeInDiscussion(threadId: string, text: string): void {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError(translate(this.state.language, "main.controller.projectReadOnly"));
+    try {
+      personWrites(project.document, threadId, text, new Date(), this.state.language);
+    } catch (error) {
+      if (error instanceof DiscussionError) throw new DomainError(error.message);
+      throw error;
+    }
+    this.changedIn(project);
+    void this.runDiscussion(project, threadId);
   }
 
   /**
@@ -4209,6 +4374,8 @@ export class TramaController {
     this.stopWorkDependingOn(decision.id);
     // A card that blocked a developer's work (W06): the work resumes with the person's answer.
     if (personAnswered(project.document, request)) this.resumeAnsweredWork(project);
+    // A discussion between agents that waited for this product choice closes with the answer (A12).
+    discussionAnswered(project.document, request);
     this.changed();
     // The answer goes back to the dialog the question was asked in, whatever the person is looking at.
     await this.send(decisionMessage(request, decision), null, null, null, [], null, goalId, false);
@@ -4223,6 +4390,7 @@ export class TramaController {
     const request = withdrawDecisionRequest(project.document, requestId, reason);
     const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
     if (personAnswered(project.document, request)) this.resumeAnsweredWork(project);
+    discussionAnswered(project.document, request);
     this.changed();
     await this.send(withdrawalMessage(request), null, null, null, [], null, goalId, false);
   }
@@ -5569,6 +5737,10 @@ export class TramaController {
     if (update.workPlace !== undefined) {
       if (!isWorkPlaceSetting(update.workPlace)) throw new DomainError(t("main.controller.invalidWorkPlace"));
       settings.workPlace = update.workPlace;
+    }
+    if (update.discussionModel !== undefined) {
+      if (!isDiscussionModelSetting(update.discussionModel)) throw new DomainError(translate(this.state.language, "main.discussions.modelSetting"));
+      settings.discussionModel = update.discussionModel;
     }
     project.document.settings = settings;
     this.changedIn(project);

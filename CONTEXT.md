@@ -10,7 +10,7 @@ Il Patto Vivo è questo legame operativo tra decisioni, deleghe e verifiche. Non
 
 ## Lingua
 
-Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, inclusi interfaccia, documentazione di prodotto, issue e pull request, sono in italiano. I contenuti persistiti e le fonti esistenti mantengono la loro lingua per non alterare il loro significato.
+Il codice sorgente e i commit sono in inglese. Le parole rivolte alla persona, inclusi documentazione di prodotto, issue e pull request, sono in italiano. L'interfaccia è nella lingua che la persona sceglie, italiano o inglese (issue #301). I contenuti persistiti e le fonti esistenti mantengono la loro lingua per non alterare il loro significato.
 
 Nei testi per la persona Trama usa l'italiano semplice del glossario dell'interfaccia (`docs/glossario.md`): nomi al posto degli id, che restano al passaggio del mouse, e parole comuni al posto del gergo. Nell'interfaccia il task in focus si chiama lavoro in primo piano, la focus mode esame approfondito, i seam punti di prova e il worktree copia di lavoro.
 
@@ -22,6 +22,7 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | --- | --- |
 | Coordinatore | Coordinator |
 | Sviluppatore | Developer |
+| Specialista | Specialist |
 | Ruoli fissi | Fixed roles |
 | Squadre, squadra | Squads, squad |
 | Obiettivo | Goal |
@@ -38,6 +39,7 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | Scheda del Patto | Pact card |
 | Decisione | Decision |
 | Mandato, mandato di progetto | Mandate, project mandate |
+| Perimetro | Scope |
 | Via libera | Green light |
 | Aspetta te | Waiting for you |
 | Attività | Activity |
@@ -80,6 +82,10 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | Traguardo | Milestone |
 | Sospendere un lavoro | Suspend work |
 | Guardiano delle regressioni | Regression guardian |
+| Unire | Merge |
+| Standard di pubblicazione | Publishing standard |
+| Sforzo (del modello) | Effort |
+| Finestra di contesto | Context window |
 
 ## Ruoli e coordinamento
 
@@ -249,7 +255,7 @@ Backlog: l'elenco ordinato delle fette, delle issue e dei problemi trovati non a
 
 Problema trovato: un problema fuori dal lavoro in corso che Trama riconosce con regole sue, mai con il giudizio del modello: una verifica rossa sul checkout del progetto, una verifica della suite rossa sul candidato e anche sulla sua base, un rilievo non bloccante di un revisore su un file che il candidato non cambia. Il Coordinatore apre una sola issue per problema: prima rilegge le issue aperte e, se una ha lo stesso segno nel testo o lo stesso titolo, collega quella. La issue porta l'etichetta di triage "da valutare" del repository e il riferimento alla prova; il bug triage la smista con `triage` come ogni issue nuova e Trama le applica le etichette dell'esito. Dopo il triage Trama la assegna all'incarico che lavora già sul problema o la mette nel backlog, e la scelta resta in Attività. Il riepilogo cita le issue aperte con il numero. Senza GitHub il problema resta una voce del backlog in Trama. Per aprire le issue serve un mandato concesso; in pausa e nel progetto di esempio non parte niente.
 
-Discussione tra agenti: una conversazione visibile tra agenti per stimare e dividere il lavoro, sciogliere blocchi e dipendenze tra squadre, rivedere un candidato o risolvere un conflitto. Ha un tempo massimo e finisce con una decisione registrata, o con una domanda alla persona se la scelta è di prodotto. Non esistono discussioni private.
+Discussione tra agenti: una conversazione visibile tra agenti per stimare e dividere il lavoro, sciogliere blocchi e dipendenze tra squadre, rivedere un candidato o risolvere un conflitto. Ha un tempo massimo e finisce con una decisione registrata, o con una domanda alla persona se la scelta è di prodotto. Non esistono discussioni private. La apre il Coordinatore con un motivo e almeno due agenti; la presiede il capo squadra quando tutti i partecipanti sono nella sua squadra, altrimenti il Coordinatore. Ogni partecipante parla una volta, poi chi presiede chiude con una decisione o passa la scelta di prodotto alla persona: diventa una voce di "Aspetta te" e la discussione aspetta la risposta, anche oltre il tempo massimo. Allo scadere del tempo chi presiede chiude con l'ultima proposta, o con la decisione di ripiego del motivo se nessuno ne ha fatta una; è una regola di Trama, senza turni del modello. I turni usano il modello più leggero del provider del Coordinatore, o quello del ruolo se la persona lo sceglie nelle impostazioni del progetto, e ogni messaggio dice quale modello l'ha scritto. La persona legge ogni discussione nella vista Squadre e può scriverci finché non è chiusa: il Coordinatore inoltra il messaggio e lo registra.
 
 ## Accesso al computer
 

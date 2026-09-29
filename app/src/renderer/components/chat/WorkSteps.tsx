@@ -15,10 +15,10 @@ import { readableFailure } from "@shared/providerFailure";
 import { formatDuration } from "@shared/timeline";
 import { stepKind, type TechnicalStep, type WorkRow } from "@shared/technicalSteps";
 import { cn } from "@/lib/cn";
+import { useT, withNodes } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
 import { AgentName } from "@/components/AgentIdentity";
 import { ReferenceText } from "./ReferenceText";
-import { useT } from "@/lib/i18n";
 
 /**
  * The steps of a turn of work (issue #271): the chat names the turn in one line, Activity lists its steps. Shared by
@@ -105,11 +105,13 @@ export function WorkLabel({ row, avatar = true }: { row: WorkRow; avatar?: boole
   // avatar in its own column, so the label leaves it out there.
   const who = specialist ? <AgentName agent={specialist} avatar={avatar} size={32} className="mr-1" /> : null;
   const label = row.running
-    ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
+    ? specialist ? <>{withNodes(t("chat.workSteps.specialistRunning"), { who })}</> : t("chat.workSteps.coordinatorRunning")
     : row.durationMs !== null
-      ? specialist ? <>{who}ha lavorato per {formatDuration(t, row.durationMs)}</> : `Ha lavorato per ${formatDuration(t, row.durationMs)}`
+      ? specialist
+        ? <>{withNodes(t("chat.workSteps.specialistWorked", { duration: formatDuration(t, row.durationMs) }), { who })}</>
+        : t("chat.workSteps.worked", { duration: formatDuration(t, row.durationMs) })
       : specialist
-        ? <>{who}attività</>
-        : "Attività";
+        ? <>{withNodes(t("chat.workSteps.specialistActivity"), { who })}</>
+        : t("chat.workSteps.activity");
   return <span className={cn(row.running && "shimmer-text")}>{label}</span>;
 }
