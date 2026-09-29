@@ -1450,8 +1450,11 @@ export class TramaController {
     project.snapshot = snapshot;
     this.publish();
     const stale = this.dropStaleDivergence(project);
-    if (refreshGitHub && !project.isDemo) void this.refreshGitHub();
-    else if (stale) void this.assessRemoteConflicts();
+    // Aggiorna in the title bar is the one refresh of the project (issue #332): map, GitHub and the colleagues' presence.
+    if (refreshGitHub && !project.isDemo) {
+      void this.refreshGitHub();
+      void this.refreshPresence().catch(() => undefined);
+    } else if (stale) void this.assessRemoteConflicts();
   }
 
   /**
