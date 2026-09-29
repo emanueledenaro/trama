@@ -305,6 +305,10 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
       expect(text).not.toMatch(/riassegnalo con assign_task|la correzione con assign_task|con assign_task il riallineamento/);
     }
     expect(automaticMoveSection("assignWork", { kind: "worktreeConflict", blocker: "Conflitto con main", why: "Conflitto" })).toContain("commit_merge");
+    // A finding against the Pact is overruled citing the decision, so it does not come back at the next round.
+    const loop = automaticMoveSection("settleReview", { kind: "reviewLoop", blocker: "Bloccato due volte", why: "Disaccordo" });
+    expect(loop).toContain("overrule_finding");
+    expect(loop).toContain("decisionIDs");
   });
 
   it("lets the Coordinator record the resolved merge in the working copy (commit_merge), never while the developer works", async () => {

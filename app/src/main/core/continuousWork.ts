@@ -268,7 +268,7 @@ const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
   stalledAssignment:
     "Leggi con read_team perché l'incarico si è fermato, poi riprendilo nella stessa copia di lavoro con resume_assignment, allo stesso sviluppatore o con specialist a un altro libero, con le istruzioni per superare il motivo. Solo un incarico senza copia di lavoro si assegna di nuovo con assign_task.",
   reviewLoop:
-    "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
+    "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Un rilievo che va contro una decisione del Patto lo superi da solo con overrule_finding, citando la decisione in decisionIDs (anche in settle_review): così non torna al giro dopo. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
 };
 
 /** @model-text */
