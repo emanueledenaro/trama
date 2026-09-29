@@ -6,6 +6,18 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-29
+
+### Added
+
+- **app:** Let the Coordinator settle disagreements and keep the chat free while the team works ([#473](https://github.com/emanueledenaro/trama/pull/473)).
+- **app:** Let the person choose each agent's model and look in its tab ([#467](https://github.com/emanueledenaro/trama/pull/467)).
+- **app:** Keep one neutral glass surface and let the provider set only the accents ([#463](https://github.com/emanueledenaro/trama/pull/463)).
+
+### Fixed
+
+- **app:** Keep the candidate's reviewer rows readable in a narrow side bar ([#456](https://github.com/emanueledenaro/trama/pull/456)).
+
 ## [0.2.0] - 2026-09-29
 
 ### Added
@@ -159,5 +171,6 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **app:** Bring main back to green with the three pending fixes ([#225](https://github.com/emanueledenaro/trama/pull/225)).
 - **app:** Keep agent sessions inside the project ([#221](https://github.com/emanueledenaro/trama/pull/221)).
 
-[Unreleased]: https://github.com/emanueledenaro/trama/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/emanueledenaro/trama/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/emanueledenaro/trama/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/emanueledenaro/trama/releases/tag/v0.2.0
