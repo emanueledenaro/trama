@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { DelegatedChoice, FullDelegation, GitHubIssue, ProjectDocument } from "@shared/domain";
+import type { DelegatedChoice, FullDelegation, GitHubIssue, MandateRequest, ProjectDocument } from "@shared/domain";
+import { pendingMandateRequest } from "@shared/domain";
 import { activeDelegation } from "@shared/delegation";
 import { shortId } from "@shared/ids";
 import { t } from "./personLanguage";
 import { DELEGABLE_ACTIONS } from "@shared/labels";
+import { resolveMandateRequest } from "./pact";
 import { findPersonRequest, PersonRequestError } from "./personRequest";
 
 export { activeDelegation } from "@shared/delegation";
@@ -198,6 +200,20 @@ export function mandateForNewModules(document: ProjectDocument, moduleIds: strin
     authorizedActions: mandate.authorizedActions,
     limits: mandate.limits,
   };
+}
+
+/**
+ * Under the full delegation, the pending mandate request that the mandate in force already covers waits for nobody
+ * (ADR 0022): it is granted with that version, as when the delegation itself widened the mandate. A request for more
+ * than the mandate has, as for what the person took away since, stays theirs. Returns the request answered, or null.
+ */
+export function settleCoveredMandateRequest(document: ProjectDocument, now = new Date()): MandateRequest | null {
+  const mandate = document.mandate;
+  const pending = pendingMandateRequest(document);
+  if (!activeDelegation(document) || mandate?.status !== "granted" || !pending) return null;
+  const covered =
+    pending.scopeModuleIds.every((id) => mandate.scopeModuleIds.includes(id)) && pending.authorizedActions.every((a) => mandate.authorizedActions.includes(a));
+  return covered ? resolveMandateRequest(document, pending.id, "granted", mandate.version, now) : null;
 }
 
 export { PersonRequestError };

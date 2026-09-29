@@ -1961,6 +1961,17 @@ describe("TramaController", () => {
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Mandato v${granted + 1} con la delega piena`)).toBe(true);
   });
 
+  it("does not leave the person a mandate request that the full delegation's mandate already covers (issue #423)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[delega:fai tutto tu] Fai tutto tu", null, null, null);
+    await controller!.send("[chiedi-mandato] Serve il piano per gli ordini", null, null, null);
+    const request = document.mandateRequests.at(-1)!;
+    await until(() => request.resolution !== null);
+    expect(request.resolution).toMatchObject({ kind: "granted", version: document.mandate!.version });
+    expect(waitingForYou(t, document).some((item) => item.kind === "mandate")).toBe(false);
+  });
+
 });
 
 describe("the branch divergence notice (issue #390)", () => {

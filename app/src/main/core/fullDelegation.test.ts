@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EventContent, EventOrigin, GitHubIssue, ProjectDocument } from "@shared/domain";
+import type { EventContent, EventOrigin, GitHubIssue, MandateAction, ProjectDocument } from "@shared/domain";
 import { delegationLine, keepsAwake } from "@shared/delegation";
 import { emptyDocument } from "./document";
 import {
@@ -14,8 +14,9 @@ import {
   recordChoice,
   requireDelegation,
   revokeDelegation,
+  settleCoveredMandateRequest,
 } from "./fullDelegation";
-import { grantMandate, revokeMandate } from "./pact";
+import { createMandateRequest, grantMandate, revokeMandate } from "./pact";
 import { PersonRequestError } from "./personRequest";
 import { restrictMandate } from "./projectMandate";
 
@@ -162,6 +163,23 @@ describe("full delegation (issue #423)", () => {
     // A mandate the person revoked stays revoked.
     revokeMandate(document, "Basta così", new Date(LATEST));
     expect(mandateForNewModules(document, ["A", "B", "C"])).toBeNull();
+  });
+
+  it("answers a mandate request the delegation's mandate covers, and leaves the person one that asks for more", () => {
+    const document = emptyDocument("p");
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["A", "B"], authorizedActions: ["plan", "executeInWorktree"], limits: [] }, new Date(AT));
+    const ask = (actions: MandateAction[]) =>
+      createMandateRequest(document, { requestId: null, reason: "Serve", objectives: ["o"], priorities: [], scopeModuleIds: ["A"], authorizedActions: actions, limits: [] });
+    ask(["plan"]);
+    // Without the delegation the request is the person's.
+    expect(settleCoveredMandateRequest(document)).toBeNull();
+    add(document, "person", typed("Fai tutto tu"), LATER);
+    grantDelegation(document, { quote: "fai tutto tu", tickets: false }, new Date(LATER));
+    expect(settleCoveredMandateRequest(document, new Date(LATEST))).toMatchObject({ resolution: { kind: "granted", version: 1 } });
+    // A request for an action the mandate does not have stays the person's.
+    const more = ask(["integrateCandidate"]);
+    expect(settleCoveredMandateRequest(document)).toBeNull();
+    expect(more.resolution).toBeNull();
   });
 
   it("says in the chat with the person's words that it does everything, and keeps the computer awake only with open work", () => {
