@@ -19,6 +19,7 @@ import { ReferenceText } from "@/components/chat/ReferenceText";
 import { OverlapBadge } from "@/components/OverlapNotice";
 import { useWaiting } from "@/components/WaitingView";
 import { Spinner } from "@/components/Spinner";
+import { FilledScope } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
@@ -41,6 +42,8 @@ type Popup = "focus" | "divergence" | null;
 
 /** A panel over the status bar; a click outside the bar or Escape closes it. */
 function StatusPopup({ side, children }: { side: "start" | "end"; children: React.ReactNode }) {
+  // While something waits, the window's one filled button is Aspetta te's (issue #338).
+  const waiting = useWaiting().length > 0;
   return (
     <div
       className={cn(
@@ -48,7 +51,7 @@ function StatusPopup({ side, children }: { side: "start" | "end"; children: Reac
         side === "start" ? "left-2" : "right-2",
       )}
     >
-      {children}
+      <FilledScope allowed={!waiting}>{children}</FilledScope>
     </div>
   );
 }

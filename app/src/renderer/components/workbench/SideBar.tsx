@@ -1,7 +1,9 @@
 import { IconArrowNarrowLeft, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@tabler/icons-react";
 import { InspectorBody, InspectorTitle, targetTitle } from "@/components/inspector/Inspector";
 import { ProjectsView } from "@/components/sidebar/Sidebar";
+import { FilledScope } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { type InspectorTarget, useUi } from "@/lib/store";
@@ -42,6 +44,7 @@ export function SideBar({ size }: { size: SideBarWidth }) {
   const tabCount: Partial<Record<TargetKind, number>> = { pact: decisions };
   // A view with few tabs shows them as a segmented control across the side bar, as Regole (issue #334).
   const segmented = tabs.length > 1 && tabs.length <= 3;
+  const waiting = useWaiting().length > 0;
   return (
     <aside
       aria-label={target ? targetTitle(target.kind, t) : viewName}
@@ -137,7 +140,11 @@ export function SideBar({ size }: { size: SideBarWidth }) {
           </div>
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto">{target ? <InspectorBody target={target} /> : <ProjectsView />}</div>
+      {/* While something waits, the window's one filled button is Aspetta te's (issue #338): the other views draw their
+          primary as an outline. */}
+      <FilledScope allowed={view === "waiting" || !waiting}>
+        <div className="min-h-0 flex-1 overflow-y-auto">{target ? <InspectorBody target={target} /> : <ProjectsView />}</div>
+      </FilledScope>
     </aside>
   );
 }
