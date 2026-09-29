@@ -555,10 +555,16 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
         // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
-        const findings = text.includes("Misure deterministiche di Trama")
-          ? [{ severity: "suggestion", rule: "kiss", file: "NOTE.md", line: 1, message: "La nota può dire in una riga sola cosa documenta." }]
-          : [];
-        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
+        // "[clean-contro-patto]" makes Clean Code block on the last Pact decision it was given, if its schema has `against`.
+        const canName = Boolean(params.outputSchema?.properties?.findings?.items?.properties?.against);
+        const pactIds = [...text.matchAll(/^- (\S+) v\d+: /gm)].map((m) => m[1]);
+        const findings = text.includes("[clean-contro-patto]") && text.includes("Misure deterministiche di Trama")
+          ? [{ severity: "blocking", rule: "other", file: "NOTE.md", line: 1, message: "Dati fissi in NOTE.md", ...(canName ? { against: pactIds.at(-1) ?? "" } : {}) }]
+          : text.includes("Misure deterministiche di Trama")
+            ? [{ severity: "suggestion", rule: "kiss", file: "NOTE.md", line: 1, message: "La nota può dire in una riga sola cosa documenta." }]
+            : [];
+        const blocking = findings.some((x) => x.severity === "blocking");
+        setTimeout(() => finish(JSON.stringify({ verdict: blocking ? "changesRequested" : verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
         return;
       }
       if (writableRootOf(params)) {
@@ -590,7 +596,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             }, 10);
           });
         }
-        const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}`;
+        const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}${text.includes("[clean-contro-patto]") ? "Ragione sociale fissa nel codice [clean-contro-patto]\n" : ""}`;
         writeFileSync(join(root, "NOTE.md"), `Lavoro dello specialista\n${extra}`);
         // "[impostazioni]" also changes the code owners, a setting of the repository: its merge runs into a fixed ban (issue #247).
         if (text.includes("[impostazioni]")) {
@@ -954,7 +960,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         // [assegna] or [assegna:<slice>]: without a slice the fake names the first ready one Trama lists (M05).
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
         // "[segreto]" and "[bloccante]" are work outside the plan: they never take the ready slice.
-        const slice = named ? { slice: named } : text.includes("[segreto]") || text.includes("[bloccante]") ? {} : readySlice(text);
+        const slice = named ? { slice: named } : text.includes("[segreto]") || text.includes("[bloccante]") || text.includes("[clean-contro-patto]") ? {} : readySlice(text);
         // "[con-decisioni]" names every decision in force, so the card lists the Pact decisions the work relies on.
         const relied = text.includes("[con-decisioni]") ? JSON.parse((await callTool(threadId, "read_pact", {})).content[0].text).decisions.map((d) => d.id) : null;
         callTool(threadId, "assign_task", {
@@ -977,7 +983,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[correggi-spazi]") ? "[correggi-spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}${text.includes("[cancella]") ? "[cancella] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[clean-contro-patto]") ? "[clean-contro-patto] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[correggi-spazi]") ? "[correggi-spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}${text.includes("[cancella]") ? "[cancella] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");

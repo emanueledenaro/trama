@@ -101,7 +101,7 @@ describe("the technical review against the standard (V05, Q03)", () => {
     expect(text).toContain("Your findings are your judgement, never evidence. The measures Trama lists are evidence");
     expect(reviewerInstructions({ disabledRules: allRules, note: null })).not.toContain("Clean Code");
     expect(REVIEW_OUTPUT_SCHEMA.required).toEqual(["verdict", "summary", "findings"]);
-    expect(REVIEW_OUTPUT_SCHEMA.properties.findings.items.required).toEqual(["severity", "rule", "file", "line", "message"]);
+    expect(REVIEW_OUTPUT_SCHEMA.properties.findings.items.required).toEqual(["severity", "rule", "file", "line", "message", "against"]);
   });
 
   it("reads blocking findings and suggestions; a blocking finding asks for changes whatever the verdict", () => {

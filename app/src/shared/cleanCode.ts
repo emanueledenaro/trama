@@ -124,6 +124,8 @@ export interface ReviewFinding {
   /** 1-based line in the candidate's version of the file; null when the finding covers the whole file. */
   line: number | null;
   message: string;
+  /** The Pact decision the finding asks the work to go against; such a finding is advisory. Absent when none. */
+  against?: string;
 }
 
 export type CodeMeasureKind = "arguments" | "functionLength" | "duplication";

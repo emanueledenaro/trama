@@ -353,6 +353,30 @@ describe("the candidate gate (W10)", () => {
     expect(prompts[0]).toContain("Verifiche finite dopo il loro turno");
   }, 120_000);
 
+  it("does not block on a Clean Code finding against a Pact decision the candidate was not declared with", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const { document, decision } = await openTeam(await repository(false));
+    // A second decision in force, which the candidate is not declared with: Clean Code must still read it.
+    controller!.recordDecision({ id: null, value: "I dati aziendali restano nella config del sito", acceptedExample: "site.config.ts", rationale: "Un solo posto da cambiare" });
+    const other = document.decisions.find((d) => d.id !== decision.id)!;
+    await controller!.send("[assegna] [clean-contro-patto]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    const before = (await readLog(log)).length;
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const gate = document.gates![0]!;
+    const candidate = document.candidates[0]!;
+    const review = gate.reviews.find((r) => r.role === "cleanCode")!;
+    // Clean Code read the whole Pact and the rule, and named the decision its finding goes against.
+    const turns = (await readLog(log)).slice(before).filter((r) => r.method === "turn/start" && (r.params.input as { text?: string }[]).some((i) => i.text?.includes("Revisione tecnica")));
+    expect(turns.length).toBeGreaterThan(0);
+    expect(JSON.stringify(turns[0]!.params.input)).toContain(`${other.id} v${other.version}: ${other.value}`);
+    expect(review.findings).toEqual([expect.objectContaining({ title: "Dati fissi in NOTE.md", severity: "advisory", overruled: expect.objectContaining({ decisionIds: [other.id] }) })]);
+    expect(gate.status).toBe("passed");
+    expect(candidate.technicalReview).toMatchObject({ verdict: "approved", gateId: gate.id });
+  });
+
   it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;

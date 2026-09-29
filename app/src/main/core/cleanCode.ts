@@ -15,6 +15,7 @@ import {
   type ReviewFinding,
 } from "@shared/cleanCode";
 import type { StandardCheck } from "@shared/domain";
+import { PACT_RULE } from "./gate";
 import { REPORT_HEADINGS } from "./implementation";
 
 /**
@@ -83,7 +84,7 @@ export function updateCleanCode(settings: CleanCodeSettings | undefined, change:
 
 /** The reviewer's instructions: what it judges, and that only Trama's measures and checks are evidence. */
 export function reviewerInstructions(settings: CleanCodeSettings | undefined, language: Language = DEFAULT_LANGUAGE): string {
-  const base = `You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in ${LANGUAGE_NAMES_IN_ENGLISH[language]}. You never approve on behalf of the person and you never merge.`;
+  const base = `You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in ${LANGUAGE_NAMES_IN_ENGLISH[language]}. You never approve on behalf of the person and you never merge. ${PACT_RULE} When a finding asks the work to go against a Pact decision, name that decision's id in \`against\` (an empty string otherwise).`;
   const rules = activeRules(settings);
   if (!rules.length) return base;
   return [
@@ -132,8 +133,9 @@ export const REVIEW_OUTPUT_SCHEMA = {
           file: { type: "string" },
           line: { type: "integer" },
           message: { type: "string" },
+          against: { type: "string" },
         },
-        required: ["severity", "rule", "file", "line", "message"],
+        required: ["severity", "rule", "file", "line", "message", "against"],
         additionalProperties: false,
       },
     },
@@ -168,7 +170,7 @@ export function readReviewAnswer(raw: { verdict?: unknown; summary?: unknown; fi
 
 function readFinding(item: unknown): ReviewFinding | null {
   if (!item || typeof item !== "object") return null;
-  const { severity, rule, file, line, message } = item as Record<string, unknown>;
+  const { severity, rule, file, line, message, against } = item as Record<string, unknown>;
   if (typeof file !== "string" || !file.trim() || typeof message !== "string" || !message.trim()) return null;
   const known = typeof rule === "string" && isCleanCodeRule(rule) ? rule : null;
   // A breach of a blocking rule blocks whatever severity the reviewer wrote; the reviewer may only raise one.
@@ -179,6 +181,7 @@ function readFinding(item: unknown): ReviewFinding | null {
     file: file.trim(),
     line: typeof line === "number" && Number.isInteger(line) && line > 0 ? line : null,
     message: message.trim(),
+    ...(typeof against === "string" && against.trim() ? { against: against.trim() } : {}),
   };
 }
 

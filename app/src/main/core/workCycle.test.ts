@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Candidate, CoordinatorRequest, GateFinding, GateRole, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { GATE_ROLES, latestGate } from "@shared/gate";
+import { REVIEW_OUTPUT_SCHEMA, readReviewAnswer, reviewerInstructions } from "./cleanCode";
 import { candidateAfterTurn, declareCandidate, inspectCandidate, latestCandidate, openCorrections, recordEvidence, recordTechnicalReview } from "./candidates";
 import { automaticMove, automaticMoveSection } from "./continuousWork";
 import { workState } from "./workPhase";
@@ -10,6 +11,7 @@ import { emptyDocument } from "./document";
 import {
   applyOverruled,
   applyPactRule,
+  cleanCodeOutcome,
   readReviewerAnswer,
   REVIEWER_SCHEMA,
   SEVERITY_RULE,
@@ -570,6 +572,46 @@ describe("the reviewers read the Pact as rules and the findings the Coordinator 
     // A decision that does not exist decides nothing: the finding still blocks.
     expect(findings[1]).toMatchObject({ severity: "blocking" });
     expect(gate.status).toBe("blocked");
+  });
+
+  it("holds Clean Code to the Pact as the other figures: the rule, the field and a block that follows the decision", () => {
+    expect(reviewerInstructions(undefined)).toContain(PACT_RULE);
+    expect(reviewerInstructions({ disabledRules: [], note: null })).toContain(PACT_RULE);
+    expect(REVIEW_OUTPUT_SCHEMA.properties.findings.items.required).toContain("against");
+    const document = shop();
+    const marco = realignment(document);
+    endTurn(document, marco.id, null, { kind: "completed", text: "Fatto" }, at(2));
+    const candidate = nextCandidate(document, marco, 2);
+    const decision = document.decisions[0]!;
+    const raw = (findings: object[], verdict = "changesRequested") => ({ verdict, summary: "Dati fissi nel codice.", findings });
+    const finding = { severity: "blocking", rule: "other", file: "src/config.ts", line: 3, message: "Dati fissi in src/config.ts" };
+
+    // A blocking finding against a decision in force stops nothing, and the gate passes.
+    const followed = gateWith(document, candidate, [], 3);
+    finishReview(followed, "cleanCode", cleanCodeOutcome(readReviewAnswer(raw([{ ...finding, against: decision.id }])), document.decisions), at(3));
+    expect(applyPactRule(document, followed)).toBe(1);
+    closeGate(followed, at(3));
+    expect(followed.reviews.find((r) => r.role === "cleanCode")!.findings[0]).toMatchObject({ severity: "advisory", overruled: { decisionIds: [decision.id] } });
+    expect(followed.status).toBe("passed");
+
+    // The reviewer already made it a suggestion but still asks for changes: the request is not a block of its own.
+    const suggested = gateWith(document, nextCandidate(document, marco, 4), [], 4);
+    finishReview(suggested, "cleanCode", cleanCodeOutcome(readReviewAnswer(raw([{ ...finding, severity: "suggestion", against: decision.id }])), document.decisions), at(4));
+    applyPactRule(document, suggested);
+    closeGate(suggested, at(4));
+    expect(suggested.status).toBe("passed");
+
+    // A decision that does not exist decides nothing, and a request for changes with no finding still blocks.
+    const unknown = gateWith(document, nextCandidate(document, marco, 5), [], 5);
+    finishReview(unknown, "cleanCode", cleanCodeOutcome(readReviewAnswer(raw([{ ...finding, against: "D-INESISTENTE" }])), document.decisions), at(5));
+    applyPactRule(document, unknown);
+    closeGate(unknown, at(5));
+    expect(unknown.status).toBe("blocked");
+    const bare = gateWith(document, nextCandidate(document, marco, 6), [], 6);
+    finishReview(bare, "cleanCode", cleanCodeOutcome(readReviewAnswer(raw([])), document.decisions), at(6));
+    applyPactRule(document, bare);
+    closeGate(bare, at(6));
+    expect(bare.status).toBe("blocked");
   });
 
   it("remembers a finding overruled with a Pact decision, so the same work is not blocked by it again", () => {
