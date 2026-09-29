@@ -9,6 +9,11 @@ import { addWorkView } from "./work-view-fixture.mjs";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
+// Issue #461: while this file exists, the fake Codex server replies to an unscripted turn with a plain, complete
+// sentence instead of its usual test-only echo, so the four README screenshots read like a real conversation. Only
+// the sections that produce those screenshots create it. Its own randomly named directory keeps the path from being
+// guessed or raced by another local process, the same way dataDir does above.
+const readmeShotsFlag = join(await mkdtemp(join(tmpdir(), "trama-ui-readme-shots-")), "flag");
 // Each launch uses the same Trama data folder, so a second launch is a real reopening.
 const launch = async (env = {}) => {
   const app = await electron.launch({
@@ -22,6 +27,7 @@ const launch = async (env = {}) => {
       TRAMA_SYSTEM_LANGUAGE: "it",
       // A move Trama starts by itself keeps running until the check stops it (W04).
       FAKE_CODEX_AUTOMATIC: "wait",
+      FAKE_CODEX_README_SHOTS: readmeShotsFlag,
       ...env,
     },
   });
@@ -846,6 +852,9 @@ await nextStep.click();
 await page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-open="true"][data-waiting-kind="question"]').waitFor();
 await page.waitForTimeout(600);
 await shot("03a2-next-step-questions");
+// Issue #461: the decision and team screenshots of the README come from this point on, so the fake Codex server
+// stops echoing its usual test-only reply until the team is confirmed, further down.
+await writeFile(readmeShotsFlag, "");
 await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-decisione]");
 await page.keyboard.press("Enter");
 await page.getByRole("main").getByText("Cosa succede a un ordine pagato annullato?").first().waitFor({ timeout: 20_000 });
@@ -1082,7 +1091,8 @@ await shot("04-work-expanded");
 }
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await closePanels();
-await page.getByLabel("Messaggio al Coordinatore").fill("[proponi-team]");
+// Issue #461: this exact turn shows up in the README's team screenshot, so it reads like a person's own request.
+await page.getByLabel("Messaggio al Coordinatore").fill("Puoi proporre un team per il modulo Orders?");
 await page.keyboard.press("Enter");
 const teamItem = await openWaiting("team");
 await teamItem.getByRole("button", { name: "Conferma il team" }).waitFor({ timeout: 20_000 });
@@ -1178,6 +1188,8 @@ await sharedRoles.getByTestId("team-figure").filter({ hasText: "Guardiano delle 
 if (await sharedRoles.locator('[data-role="qa"], [data-role="squadLead"]').count()) throw new Error("A member of the squad is among the shared roles");
 if (await teamPanel.getByText("Chiarimento e spec", { exact: true }).count()) throw new Error("The Squads view still lists the team moment by moment");
 await themeShots("04e-squads");
+// Issue #461: the README screenshots are done; the rest of the run goes back to the usual fake Codex replies.
+await rm(readmeShotsFlag, { force: true });
 // W16: right after the team is generated, every agent rests with its eyes open; only an agent out of the team sleeps.
 // A blink lasts 0.13 s and comes every few seconds, so with a dozen bots one sample often catches one: three samples
 // 200 ms apart, and each bot keeps its widest eyes, since no blink covers two of them.
