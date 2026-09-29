@@ -4,6 +4,7 @@ import type { Element, ElementContent, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { IconAlertCircle, IconAlertTriangle, IconArrowsSplit, IconBulb, IconFlame, IconInfoCircle, IconLock, type Icon } from "@tabler/icons-react";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import type { CalloutKind } from "@/lib/remarkCallouts";
 
 const CALLOUT_ICONS: Record<CalloutKind, Icon> = {
@@ -89,6 +90,7 @@ export function comparisonOf(table: Element): { options: { title: Element; recom
 }
 
 export function ChatTable({ node, children, components }: ComponentProps<"table"> & { node?: Element; components: Record<string, unknown> }) {
+  const t = useT();
   const comparison = node ? comparisonOf(node) : null;
   if (!comparison) return <table>{children}</table>;
   const render = (cell: Element): ReactNode =>
@@ -99,7 +101,7 @@ export function ChatTable({ node, children, components }: ComponentProps<"table"
         <section key={i} className={cn("chat-compare__card", option.recommended && "chat-compare__card--recommended")}>
           <header className="chat-compare__title">
             <span>{render(option.title)}</span>
-            {option.recommended && <span className="chat-compare__badge">Consigliata</span>}
+            {option.recommended && <span className="chat-compare__badge">{t("chat.compare.recommended")}</span>}
           </header>
           <dl>
             {option.values.map((value, j) => (

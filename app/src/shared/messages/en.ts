@@ -1,4 +1,5 @@
 // The English catalog (issue #301): the same keys and placeholders as `it.ts`, in plain English.
+import { chatEn } from "./chat.en";
 import type { it } from "./it";
 import { mainEn } from "./main.en";
 import { sharedEn } from "./shared.en";
@@ -1487,4 +1488,6 @@ export const en: Record<keyof typeof it, string> = {
   "supersession.activity.label": "Candidate superseded by the Coordinator",
   "supersession.activity.detail": "Candidate {id}, superseded by {by}: {reason}.",
   "supersession.activity.waiting": "Removed from Waiting for you: {item}.",
+
+  ...chatEn,
 };
