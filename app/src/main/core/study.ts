@@ -11,6 +11,7 @@ const TOP_LEVEL_INSTRUCTIONS = ["AGENTS.md", "CLAUDE.md", "README.md", "CONTEXT.
 const MAXIMUM_INSTRUCTION_FILES = 40;
 const MAXIMUM_INSTRUCTION_BYTES = 64_000;
 
+// @model-text: the study is the Coordinator's context, as every section below.
 const HEADINGS: Record<StudyPart, string> = {
   code: "## Codice",
   instructions: "## File di istruzione",
@@ -32,6 +33,7 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 
 /** Removes credentials that may appear in instruction files before they reach the model. */
+// @model-text: the placeholder is part of the model's context.
 export function redactSecrets(text: string): string {
   return SECRET_PATTERNS.reduce(
     (current, pattern) =>
@@ -50,6 +52,7 @@ function clip(text: string, bytes: number): string {
 
 const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
+// @model-text: the Coordinator's context.
 function codeSection(snapshot: RepositorySnapshot): string {
   const lines = [
     `Repository: ${snapshot.name}. Branch: ${snapshot.branch ?? "non rilevato"}. HEAD: ${snapshot.headSHA ?? "non disponibile"}.`,
@@ -79,6 +82,7 @@ async function instructionFiles(root: string): Promise<string[]> {
   return files.slice(0, MAXIMUM_INSTRUCTION_FILES);
 }
 
+// @model-text: the Coordinator's context.
 async function instructionsSection(root: string): Promise<string> {
   const parts: string[] = [];
   let total = 0;
@@ -98,6 +102,7 @@ async function instructionsSection(root: string): Promise<string> {
   return parts.length ? parts.join("\n\n") : "Nessun file di istruzione trovato.";
 }
 
+// @model-text: the Coordinator's context.
 function githubSection(github: GitHubState): string {
   if (!github.repository) return "Nessun repository GitHub collegato a origin.";
   if (github.status !== "ready") return `Repository ${github.repository}. Issue non lette: ${github.message ?? "lettura in corso"}.`;
@@ -107,6 +112,7 @@ function githubSection(github: GitHubState): string {
   return lines.join("\n");
 }
 
+// @model-text: the Coordinator's context.
 function monitorSection(github: GitHubState, document: ProjectDocument): string {
   if (!github.snapshot) return "Nessuna lettura di branch e pull request dei colleghi.";
   const conflicts = (document.conflicts ?? []).filter((a) => a.classification === "conflict" || a.classification === "overlap");
@@ -125,6 +131,7 @@ function monitorSection(github: GitHubState, document: ProjectDocument): string 
   return lines.join("\n");
 }
 
+// @model-text: the Coordinator's context.
 function pactSection(document: ProjectDocument): string {
   if (!document.decisions.length) return "Nessuna decisione registrata nel Patto.";
   return document.decisions
@@ -132,6 +139,7 @@ function pactSection(document: ProjectDocument): string {
     .join("\n");
 }
 
+// @model-text: the Coordinator's context.
 function mandateSection(document: ProjectDocument): string {
   const mandate = document.mandate;
   if (!mandate) return "Nessun mandato concesso: il Coordinatore legge e propone, non agisce.";
@@ -146,6 +154,7 @@ function mandateSection(document: ProjectDocument): string {
   ].join("\n");
 }
 
+// @model-text: the Coordinator's context.
 function historySection(document: ProjectDocument): string {
   const lines: string[] = [];
   for (const event of document.events.slice(-40)) {

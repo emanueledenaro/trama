@@ -1,10 +1,11 @@
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
-import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, type MessageKey, translate } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
+import { t } from "./core/personLanguage";
 
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -25,10 +26,15 @@ function surfaceColor(): string {
 
 // The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
+/** The power save blocker the full delegation holds (issue #423), or null. */
+let keepAwakeId: number | null = null;
+/** How long the person stays away before Trama tells them what it did with the delegation; TRAMA_RETURN_AFTER_MS for checks. */
+const RETURN_AFTER_MS = Number(process.env.TRAMA_RETURN_AFTER_MS ?? 30 * 60_000);
+
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
     window?.webContents.send("trama:state", state);
-    // The menu's Informazioni su Trama follows the interface language.
+    // The menu follows the interface language: it is built again only when the language changes.
     if (app.isReady() && state.language !== menuLanguage) buildMenu(state.language);
   },
   openExternal: (url) => shell.openExternal(url),
@@ -50,6 +56,14 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
   systemLanguages: () => {
     const override = process.env.TRAMA_SYSTEM_LANGUAGE;
     return override ? [override] : [...app.getPreferredSystemLanguages(), app.getLocale()];
+  },
+  // The full delegation keeps the computer awake while there is open work (issue #423); without it, the usual sleep.
+  setKeepAwake: (awake) => {
+    if (awake && keepAwakeId === null) keepAwakeId = powerSaveBlocker.start("prevent-app-suspension");
+    if (!awake && keepAwakeId !== null) {
+      powerSaveBlocker.stop(keepAwakeId);
+      keepAwakeId = null;
+    }
   },
   setOpenAtLogin: (enabled) => {
     if (process.platform === "linux") return;
@@ -94,7 +108,11 @@ function createWindow(): void {
   window.on("closed", () => {
     window = null;
   });
-  window.on("focus", () => void controller.refreshCodex());
+  window.on("focus", () => {
+    void controller.refreshCodex();
+    controller.personReturned(RETURN_AFTER_MS);
+  });
+  window.on("blur", () => controller.personAway());
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -115,17 +133,17 @@ async function chooseFolder(title: string): Promise<string | null> {
 type Handler<K extends ActionName> = (payload: ActionMap[K][0]) => Promise<ActionMap[K][1]> | ActionMap[K][1];
 const handlers: { [K in ActionName]: Handler<K> } = {
   "project:openDialog": async () => {
-    const path = await chooseFolder("Apri progetto");
+    const path = await chooseFolder(t("main.dialog.openProject"));
     if (path) await controller.openProject(path);
   },
   "project:open": ({ path }) => controller.openProject(path),
   "project:openDemo": () => controller.openDemo(),
   "project:create": async ({ name, idea }) => {
-    const parent = await chooseFolder("Scegli la cartella");
+    const parent = await chooseFolder(t("main.dialog.chooseFolder"));
     if (parent) await controller.createProject(parent, name, idea);
   },
   "project:clone": async ({ repository }) => {
-    const parent = await chooseFolder("Scegli dove clonare il progetto");
+    const parent = await chooseFolder(t("main.dialog.chooseCloneFolder"));
     if (parent) await controller.cloneProject(parent, repository);
   },
   "project:close": () => controller.closeProject(),
@@ -171,6 +189,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "mandate:revoke": ({ reason }) => controller.revokeMandate(reason),
   "mandate:restrict": (input) => controller.restrictMandate(input),
   "fixedBan:acknowledge": ({ id }) => controller.acknowledgeFixedBan(id),
+  "requestedAction:confirm": ({ id }) => controller.confirmRequestedAction(id),
+  "requestedAction:decline": ({ id }) => controller.declineRequestedAction(id),
+  "delegation:revoke": () => controller.revokeDelegation(),
+  "delegation:seen": ({ id }) => controller.markDelegatedChoiceSeen(id),
   "mandate:reject": ({ requestId, reason }) => controller.rejectMandateRequest(requestId, reason),
   "autonomousStep:correct": ({ stepId, note }) => controller.correctAutonomousStep(stepId, note),
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
@@ -180,7 +202,15 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "assignment:cloudCheck": ({ assignmentId }) => controller.checkCloudSession(assignmentId),
   "assignment:changeProvider": ({ assignmentId, provider, model }) => controller.changeAssignmentProvider(assignmentId, provider, model),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
+  "squad:rename": ({ squadId, name }) => controller.renameSquadByPerson(squadId, name),
+  "squad:merge": ({ intoId, fromId, keepIds }) => controller.mergeSquadsByPerson(intoId, fromId, keepIds),
+  "squad:split": ({ squadId, moduleIds, developerIds, name }) => controller.splitSquadByPerson(squadId, moduleIds, developerIds, name),
+  "squad:undo": ({ changeId }) => controller.undoSquadChangeByPerson(changeId),
+  "squad:confirmMerge": ({ proposalId, keepIds }) => controller.confirmSquadMergeByPerson(proposalId, keepIds),
+  "squad:dismissMerge": ({ proposalId }) => controller.dismissSquadMergeByPerson(proposalId),
   "specialist:rename": ({ specialistId, name }) => controller.renameSpecialistByPerson(specialistId, name),
+  "backlog:move": ({ squadId, key, to }) => controller.moveBacklogItemByPerson(squadId, key, to),
+  "backlog:release": ({ squadId, key }) => controller.releaseBacklogItemByPerson(squadId, key),
   "specialist:setColor": ({ specialistId, color }) => controller.setSpecialistColorByPerson(specialistId, color),
   "automaticWork:start": (request) => controller.startAutomaticWork(request),
   "pactDemo:run": () => controller.runPactDemo(),
@@ -190,6 +220,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:declineMerge": ({ candidateId }) => controller.declineMergeByPerson(candidateId),
   "candidate:shot": ({ candidateId, index }) => controller.interfaceShot(candidateId, index),
   "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
+  "focusMode:open": ({ target, fixedPoint }) => controller.startScopedFocusAudit(target, fixedPoint),
+  "focusMode:fixedPoints": () => controller.focusFixedPoints(),
+  "focusMode:enter": async ({ auditId }) => controller.enterFocusMode(auditId),
+  "focusMode:exit": async () => controller.exitFocusMode(),
   "finding:followUp": ({ auditId, findingId, kind }) => controller.followUpFinding(auditId, findingId, kind),
   "audit:publish": ({ auditId }) => controller.publishAuditReport(auditId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
@@ -254,6 +288,7 @@ let menuLanguage: Language | null = null;
 function buildMenu(language: Language): void {
   menuLanguage = language;
   const about = translate(language, "menu.about");
+  const label = (key: MessageKey): string => translate(language, key);
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -262,73 +297,73 @@ function buildMenu(language: Language): void {
             submenu: [
               { role: "about" as const, label: about },
               { type: "separator" as const },
-              { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
+              { label: label("main.menu.settings"), accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
               { type: "separator" as const },
-              { role: "hide" as const, label: "Nascondi Trama" },
-              { role: "hideOthers" as const, label: "Nascondi altre" },
-              { role: "unhide" as const, label: "Mostra tutte" },
+              { role: "hide" as const, label: label("main.menu.hide") },
+              { role: "hideOthers" as const, label: label("main.menu.hideOthers") },
+              { role: "unhide" as const, label: label("main.menu.showAll") },
               { type: "separator" as const },
-              { role: "quit" as const, label: "Esci da Trama" },
+              { role: "quit" as const, label: label("main.menu.quitTrama") },
             ],
           },
         ]
       : []),
     {
-      label: "Archivio",
+      label: label("main.menu.file"),
       submenu: [
-        { label: "Apri progetto…", accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
-        { label: "Apri progetto di esempio", click: () => void controller.openDemo().catch(() => undefined) },
-        { label: "Crea un progetto…", click: () => sendMenu("createProject") },
+        { label: label("main.menu.openProject"), accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
+        { label: label("main.menu.openDemo"), click: () => void controller.openDemo().catch(() => undefined) },
+        { label: label("main.menu.createProject"), click: () => sendMenu("createProject") },
         { type: "separator" },
         // Through the window, so the menu item confirms the rescan like the header button does (W12).
-        { label: "Aggiorna progetto", accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
-        ...(isMac ? [] : [{ type: "separator" as const }, { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
-        ...(isMac ? [{ role: "close" as const, label: "Chiudi finestra" }] : [{ role: "quit" as const, label: "Esci" }]),
+        { label: label("main.menu.refreshProject"), accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
+        ...(isMac ? [] : [{ type: "separator" as const }, { label: label("main.menu.settings"), accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
+        ...(isMac ? [{ role: "close" as const, label: label("main.menu.closeWindow") }] : [{ role: "quit" as const, label: label("main.menu.quit") }]),
       ],
     },
     {
-      label: "Composizione",
+      label: label("main.menu.edit"),
       submenu: [
-        { role: "undo", label: "Annulla" },
-        { role: "redo", label: "Ripeti" },
+        { role: "undo", label: label("main.menu.undo") },
+        { role: "redo", label: label("main.menu.redo") },
         { type: "separator" },
-        { role: "cut", label: "Taglia" },
-        { role: "copy", label: "Copia" },
-        { role: "paste", label: "Incolla" },
-        { role: "selectAll", label: "Seleziona tutto" },
+        { role: "cut", label: label("main.menu.cut") },
+        { role: "copy", label: label("main.menu.copy") },
+        { role: "paste", label: label("main.menu.paste") },
+        { role: "selectAll", label: label("main.menu.selectAll") },
       ],
     },
     {
-      label: "Vista",
+      label: label("main.menu.view"),
       submenu: [
-        { label: "Scrivi al Coordinatore", accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
-        { label: "Mostra o nascondi la barra laterale", accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
-        { label: "Mostra dettagli", accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
+        { label: label("main.menu.focusComposer"), accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
+        { label: label("main.menu.toggleSidebar"), accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
+        { label: label("main.menu.toggleInspector"), accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
         { type: "separator" },
-        { label: "Mappa", accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
-        { label: "Patto", accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
-        { label: "Mandato", accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
-        { label: "Issue", accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
-        { label: "Team", accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
-        { label: "Lavoro", accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
-        { label: "Gruppo", accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
-        { label: "Memoria", accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
+        { label: label("main.menu.map"), accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
+        { label: label("main.menu.pact"), accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
+        { label: label("main.menu.mandate"), accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
+        { label: label("main.menu.issues"), accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
+        { label: label("main.menu.team"), accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
+        { label: label("main.menu.work"), accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
+        { label: label("main.menu.group"), accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
+        { label: label("main.menu.memory"), accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
         { type: "separator" },
-        { role: "resetZoom", label: "Dimensione reale" },
-        { role: "zoomIn", label: "Ingrandisci" },
-        { role: "zoomOut", label: "Riduci" },
+        { role: "resetZoom", label: label("main.menu.resetZoom") },
+        { role: "zoomIn", label: label("main.menu.zoomIn") },
+        { role: "zoomOut", label: label("main.menu.zoomOut") },
         { type: "separator" },
-        { role: "togglefullscreen", label: "Schermo intero" },
-        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: "Strumenti per sviluppatori" }]),
+        { role: "togglefullscreen", label: label("main.menu.fullScreen") },
+        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: label("main.menu.devTools") }]),
       ],
     },
-    { role: "windowMenu", label: "Finestra" },
+    { role: "windowMenu", label: label("main.menu.window") },
     {
       role: "help",
-      label: "Aiuto",
+      label: label("main.menu.help"),
       submenu: [
-        { label: translate(language, "welcome.tab"), click: () => sendMenu("welcome") },
-        { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
+        { label: label("main.menu.welcome"), click: () => sendMenu("welcome") },
+        { label: label("main.menu.exercises"), click: () => sendMenu("exercises") },
         // Windows and Linux have no application menu: Informazioni su Trama opens the section of Impostazioni.
         ...(isMac ? [] : [{ type: "separator" as const }, { label: about, click: () => sendMenu("about") }]),
       ],

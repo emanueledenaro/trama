@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { CommitConventions, WorktreeSession } from "@shared/domain";
+import { t } from "./personLanguage";
 import { git, GIT_SAFE_OPTIONS, gitEnvironment, runProcess } from "./process";
 import { isTramaBranch, validateBranchName, workBranchName } from "./conventions";
 import { containsExcludedComponent } from "./repositoryScanner";
@@ -41,10 +42,10 @@ export async function prepareWorktree(
   naming: { prefix: string; issue?: number | null; conventions?: CommitConventions } = { prefix: "feature" },
 ): Promise<WorktreeSession> {
   const label = slug(name);
-  if (!label) throw new Error("Il nome del worktree non è valido.");
+  if (!label) throw new Error(t("main.workspace.invalidName"));
   const sourceRoot = (await git(["rev-parse", "--show-toplevel"], repository)).trim();
   const baseSHA = (await git(["rev-parse", "HEAD"], sourceRoot)).trim();
-  if (!/^[0-9a-f]{40,64}$/.test(baseSHA)) throw new Error("HEAD non è un commit.");
+  if (!/^[0-9a-f]{40,64}$/.test(baseSHA)) throw new Error(t("main.workspace.headNotCommit"));
   await mkdir(worktreesRoot, { recursive: true });
   const managedRoot = await realpath(worktreesRoot);
   const taken = new Set(
@@ -58,12 +59,12 @@ export async function prepareWorktree(
   while (taken.has(nameFor(id))) id = randomUUID();
   const branch = nameFor(id);
   const problems = validateBranchName(branch, naming.conventions);
-  if (problems.length) throw new Error(`Nome di branch non valido: ${problems.join(" ")}`);
+  if (problems.length) throw new Error(t("main.workspace.invalidBranch", { problems: problems.join(" ") }));
   const worktreeRoot = join(managedRoot, id);
-  if (!isStrictDescendant(worktreeRoot, managedRoot) || existsSync(worktreeRoot)) throw new Error(`Percorso non sicuro: ${worktreeRoot}`);
+  if (!isStrictDescendant(worktreeRoot, managedRoot) || existsSync(worktreeRoot)) throw new Error(t("main.workspace.unsafePath", { path: worktreeRoot }));
   await git(["worktree", "add", "-b", branch, worktreeRoot, baseSHA], sourceRoot, false);
   const resolved = await realpath(worktreeRoot);
-  if (!isStrictDescendant(resolved, managedRoot)) throw new Error(`Percorso non sicuro: ${resolved}`);
+  if (!isStrictDescendant(resolved, managedRoot)) throw new Error(t("main.workspace.unsafePath", { path: resolved }));
   return { sourceRoot, worktreeRoot: resolved, branch: branch, baseSHA };
 }
 
@@ -72,7 +73,7 @@ export async function prepareWorktree(
  * under the same name. The base is where the branch left the project's HEAD, so the candidate compares with it.
  */
 export async function adoptRemoteBranch(repository: string, branch: string, worktreesRoot: string): Promise<WorktreeSession> {
-  if (!isTramaBranch(branch)) throw new Error(`Il branch ${branch} non è un branch di Trama.`);
+  if (!isTramaBranch(branch)) throw new Error(t("main.workspace.notTramaBranch", { branch }));
   const sourceRoot = (await git(["rev-parse", "--show-toplevel"], repository)).trim();
   const remoteRef = `refs/remotes/origin/${branch}`;
   const fetched = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "fetch", "--no-tags", "--quiet", "origin", `+refs/heads/${branch}:${remoteRef}`], {
@@ -80,19 +81,19 @@ export async function adoptRemoteBranch(repository: string, branch: string, work
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     timeoutMs: 120_000,
   });
-  if (fetched.exitCode !== 0) throw new Error(`git fetch del branch ${branch} non riuscito: ${fetched.stderr.trim().split("\n").at(-1) ?? ""}`.trim());
+  if (fetched.exitCode !== 0) throw new Error(t("main.workspace.fetchFailed", { branch, error: fetched.stderr.trim().split("\n").at(-1) ?? "" }).trim());
   const baseSHA = (await git(["merge-base", remoteRef, "HEAD"], sourceRoot)).trim();
-  if (!/^[0-9a-f]{40,64}$/.test(baseSHA)) throw new Error(`Il branch ${branch} non ha una base in comune con il progetto.`);
+  if (!/^[0-9a-f]{40,64}$/.test(baseSHA)) throw new Error(t("main.workspace.noCommonBase", { branch }));
   await mkdir(worktreesRoot, { recursive: true });
   const managedRoot = await realpath(worktreesRoot);
   const worktreeRoot = join(managedRoot, randomUUID());
-  if (!isStrictDescendant(worktreeRoot, managedRoot) || existsSync(worktreeRoot)) throw new Error(`Percorso non sicuro: ${worktreeRoot}`);
+  if (!isStrictDescendant(worktreeRoot, managedRoot) || existsSync(worktreeRoot)) throw new Error(t("main.workspace.unsafePath", { path: worktreeRoot }));
   const local = (await git(["for-each-ref", "--format=%(refname)", `refs/heads/${branch}`], sourceRoot)).trim();
   if (local) await git(["worktree", "add", worktreeRoot, branch], sourceRoot, false);
   else await git(["worktree", "add", "-b", branch, worktreeRoot, remoteRef], sourceRoot, false);
   if (local) await git(["reset", "--quiet", "--hard", remoteRef], worktreeRoot, false);
   const resolved = await realpath(worktreeRoot);
-  if (!isStrictDescendant(resolved, managedRoot)) throw new Error(`Percorso non sicuro: ${resolved}`);
+  if (!isStrictDescendant(resolved, managedRoot)) throw new Error(t("main.workspace.unsafePath", { path: resolved }));
   return { sourceRoot, worktreeRoot: resolved, branch, baseSHA };
 }
 
@@ -109,14 +110,14 @@ export async function branchCommitMessages(session: WorktreeSession): Promise<st
 export async function validateWorktree(session: WorktreeSession, worktreesRoot: string): Promise<void> {
   const managedRoot = await realpath(worktreesRoot);
   const root = await realpath(session.worktreeRoot);
-  if (!isStrictDescendant(root, managedRoot) || !isTramaBranch(session.branch)) throw new Error("Il worktree non è gestito da Trama.");
+  if (!isStrictDescendant(root, managedRoot) || !isTramaBranch(session.branch)) throw new Error(t("main.workspace.notManaged"));
   const top = (await git(["rev-parse", "--show-toplevel"], root)).trim();
-  if ((await realpath(top)) !== root) throw new Error("Il worktree non corrisponde più alla sessione.");
+  if ((await realpath(top)) !== root) throw new Error(t("main.workspace.sessionMismatch"));
   const branch = (await git(["branch", "--show-current"], root)).trim();
-  if (branch !== session.branch) throw new Error("Il branch del worktree è cambiato.");
+  if (branch !== session.branch) throw new Error(t("main.workspace.branchChanged"));
 }
 
-function isSensitive(path: string): boolean {
+export function isSensitive(path: string): boolean {
   return containsExcludedComponent(path.split("/").filter((c) => c !== ".gitignore"));
 }
 
@@ -132,13 +133,13 @@ export async function reviewWorktree(session: WorktreeSession): Promise<Workspac
   const hash = createHash("sha256").update(session.baseSHA);
   for (const path of changedFiles) {
     const full = join(root, path);
-    if (existsSync(full) && (await lstat(full)).isSymbolicLink()) throw new Error(`Collegamento simbolico nel candidato: ${path}`);
+    if (existsSync(full) && (await lstat(full)).isSymbolicLink()) throw new Error(t("main.workspace.symlink", { path }));
     const contents = existsSync(full) ? await readFile(full) : null;
     hash.update(`\0${path}\0`).update(contents ?? "deleted");
     if (untracked.includes(path)) {
       // `git diff --no-index` exits with 1 when the files differ, which is always the case here.
       const result = await runProcess("git", [...GIT_SAFE_OPTIONS, "diff", "--no-index", "--", "/dev/null", path], { cwd: root, env: gitEnvironment(true) });
-      if (result.exitCode > 1) throw new Error(result.stderr.trim() || "git diff non riuscito");
+      if (result.exitCode > 1) throw new Error(result.stderr.trim() || t("main.workspace.diffFailed"));
       parts.push(result.stdout);
     } else {
       parts.push(await git(["diff", session.baseSHA, "--", path], root));
@@ -157,7 +158,7 @@ async function diffCheck(root: string, baseSHA: string, changedFiles: string[], 
   const tracked = changedFiles.filter((p) => !untracked.includes(p));
   const run = async (args: string[]) => {
     const result = await runProcess("git", [...GIT_SAFE_OPTIONS, ...args], { cwd: root, env: gitEnvironment(true) });
-    if (result.exitCode > 3) throw new Error(result.stderr.trim() || "git diff --check non riuscito");
+    if (result.exitCode > 3) throw new Error(result.stderr.trim() || t("main.workspace.diffCheckFailed"));
     outputs.push(...result.stdout.split("\n").filter((line) => line.trim()));
   };
   if (tracked.length) await run(["diff", "--check", baseSHA, "--", ...tracked]);
@@ -174,10 +175,10 @@ export async function removeWorktree(session: WorktreeSession, worktreesRoot: st
   await validateWorktree(session, worktreesRoot);
   const root = session.worktreeRoot;
   if ((await git(["status", "--porcelain"], root)).trim()) {
-    throw new Error("Il worktree ha modifiche non salvate in un commit: rimuoverlo le perderebbe.");
+    throw new Error(t("main.workspace.uncommitted"));
   }
   const ahead = (await git(["rev-list", `${session.baseSHA}..HEAD`], root)).trim();
-  if (ahead && !published) throw new Error("Il worktree ha commit non pubblicati: pubblica il candidato o tienilo.");
+  if (ahead && !published) throw new Error(t("main.workspace.unpublished"));
   await git(["worktree", "remove", root], session.sourceRoot, false);
   if (ahead) return { branchDeleted: false };
   await git(["branch", "-d", session.branch], session.sourceRoot, false);

@@ -1,5 +1,6 @@
 import { CONFLICT_SIDE_TITLE, candidateSuperseded, conflictSide, explainedByDivergence, otherSideSuperseded } from "./conflictScope";
 import type { AssignmentStatus, CandidateState, ProjectDocument } from "./domain";
+import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
 import { isExerciseAssessment } from "./onboarding";
 import { ASSIGNMENT_STATUS, CANDIDATE_STATE, planStatus } from "./states";
 import type { PresenceRecord } from "./presence";
@@ -30,6 +31,8 @@ export interface SettledContext {
   candidateStates: Record<string, CandidateState>;
   /** The colleagues sharing their presence, for the side of a conflict. */
   colleagues: PresenceRecord[];
+  /** The person's language, for the lines that are translated; Italian when absent. */
+  language?: Language;
 }
 
 const MANDATE_OUTCOME: Record<"granted" | "corrected" | "rejected" | "revoked" | "superseded", (version: number | null) => Label> = {
@@ -37,7 +40,7 @@ const MANDATE_OUTCOME: Record<"granted" | "corrected" | "rejected" | "revoked" |
   corrected: (version) => ({ label: `Corretto, v${version}`, tone: "success" }),
   rejected: () => ({ label: "Rifiutata", tone: "secondary" }),
   revoked: () => ({ label: "Non concesso", tone: "secondary" }),
-  superseded: () => ({ label: "Superata", tone: "secondary" }),
+  superseded: () => ({ label: "Sostituita", tone: "secondary" }),
 };
 
 const TEAM_OUTCOME: Record<"confirmed" | "corrected" | "superseded", Label> = {
@@ -73,7 +76,9 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (request.withdrawal) return { title, subject: request.question, answer: null, outcome: { label: "Ritirata", tone: "secondary" } };
       const outcome = request.outcome!;
       const chosen = outcome.alternativeIndex === null ? outcome.answer : (request.alternatives[outcome.alternativeIndex]?.behavior ?? outcome.answer);
-      return { title, subject: request.question, answer: chosen, outcome: { label: "Decisa", tone: "success" } };
+      // Decided by the Coordinator with the person's full delegation (issue #423): the line says so, for the review.
+      const label = outcome.byDelegation ? translate(DEFAULT_LANGUAGE, "delegation.decision.badge") : "Decisa";
+      return { title, subject: request.question, answer: chosen, outcome: { label, tone: "success" } };
     }
     case "mandate": {
       const request = document.mandateRequests.find((r) => r.id === id);
@@ -111,7 +116,7 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (explainedByDivergence(document, assessment)) return { title, subject, answer: null, outcome: { label: "Nell'avviso del progetto", tone: "secondary" } };
       const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
       if ((candidate && candidateSuperseded(document, candidate)) || otherSideSuperseded(document, assessment)) {
-        return { title, subject, answer: null, outcome: { label: "Superato", tone: "secondary" } };
+        return { title, subject, answer: null, outcome: { label: "Sostituito", tone: "secondary" } };
       }
       return null;
     }
@@ -133,12 +138,21 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
       if (!candidate || (state !== "superseded" && !merged && !refused)) return null;
       const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
       const files = candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`;
+      // The Coordinator declared it superseded by a newer candidate of the same work (issue #421): "Superato", with why.
+      const declared = state === "superseded" && !merged ? candidate.supersession : undefined;
+      const language = context.language ?? DEFAULT_LANGUAGE;
       const outcome: Label = merged
         ? { label: `Unito, #${candidate.pullRequest!.number}`, tone: "success" }
-        : state === "superseded"
-          ? CANDIDATE_STATE[state]
-          : { label: "Rifiutato da te", tone: "warning" };
-      const what = refused && state !== "superseded" ? `${files}, motivo: ${candidate.humanRejection!.note}` : files;
+        : declared
+          ? { label: translate(language, "supersession.outcome"), tone: "secondary" }
+          : state === "superseded"
+            ? CANDIDATE_STATE[state]
+            : { label: "Rifiutato da te", tone: "warning" };
+      const what = declared
+        ? translate(language, "supersession.subject", { files, reason: declared.reason })
+        : refused && state !== "superseded"
+          ? `${files}, motivo: ${candidate.humanRejection!.note}`
+          : files;
       return { title: `Candidato ${candidate.id}`, subject: specialist ? `${specialist.name}: ${what}` : what, answer: null, outcome };
     }
     default:

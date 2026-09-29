@@ -3,9 +3,11 @@ import { plainConflictReference } from "@shared/plainLanguage";
 import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { blockingFindings, latestGate } from "@shared/gate";
+import { workRequests } from "@shared/grilling";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
+import { t } from "./personLanguage";
 import { authorize, findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
 
@@ -27,6 +29,42 @@ export function findCandidate(document: ProjectDocument, id: string): Candidate 
 export function latestCandidate(document: ProjectDocument, assignmentId: string): Candidate | null {
   return document.candidates.filter((c) => c.assignmentId === assignmentId).at(-1) ?? null;
 }
+
+/**
+ * The earlier work that new work in the dialog of `requestId` corrects (issue #389): a completed or failed assignment of
+ * the same work, on the same slice or, outside slices, on one of the same modules, whose latest candidate is still
+ * open and stopped by a check, the reviewers or a conflict. Its candidate is then superseded by the new work's, so the
+ * two versions never collide. Work whose candidate is verified, approved or merged is not corrected: new work on its
+ * modules is other work.
+ */
+export function openCorrections(
+  document: ProjectDocument,
+  requestId: string | null,
+  work: { moduleIds: string[]; slice: { planId: string; sliceId: string } | null },
+): string[] {
+  const scope = requestId ? workRequests(document, requestId) : null;
+  if (!scope) return [];
+  return document.team.specialists
+    .flatMap((s) => s.assignments)
+    .filter((earlier) => {
+      if (earlier.requestId === null || !scope.has(earlier.requestId)) return false;
+      if (earlier.status !== "completed" && earlier.status !== "failed") return false;
+      const same = earlier.slice || work.slice
+        ? earlier.slice?.planId === work.slice?.planId && earlier.slice?.sliceId === work.slice?.sliceId
+        : earlier.moduleIds.some((m) => work.moduleIds.includes(m));
+      if (!same) return false;
+      const candidate = latestCandidate(document, earlier.id);
+      if (!candidate || candidate.pullRequest || candidateSuperseded(document, candidate)) return false;
+      const blockers = inspectCandidate(document, candidate, null);
+      if (blockers.some((b) => !STILL_CHECKING.includes(b.code))) return true;
+      // A gate that failed to finish asks for the review again, not for new work (as workPhase.ts).
+      return candidate.technicalReview?.verdict === "changesRequested" && !blockers.some((b) => b.code === "GATE_FAILED");
+    })
+    .map((a) => a.id);
+}
+
+/** Blockers that only wait for Trama's checks or reviewers: nothing to correct yet. */
+const STILL_CHECKING = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"];
 
 /**
  * Whether an assessment still describes its other side: always for a remote head; for another developer's worktree
@@ -217,7 +255,7 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   }
   // The developer changed the worktree after the candidate (issue #388): it no longer describes the work to review.
   if (!candidate.pullRequest && worktreeChanged(document, candidate)) {
-    blockers.push({ code: "WORKTREE_CHANGED", detail: "The worktree changed after this candidate: declare a new candidate from it." });
+    blockers.push({ code: "WORKTREE_CHANGED", detail: t("main.candidates.worktreeChanged") });
   }
   for (const [id, version] of Object.entries(candidate.decisionVersions)) {
     if (document.decisions.find((d) => d.id === id)?.version !== version) blockers.push({ code: "DECISION_CHANGED", detail: id });
@@ -247,9 +285,9 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   const gate = latestGate(document.gates, candidate.id);
   const current = gate?.snapshotId === candidate.snapshotId ? gate : null;
   if (current?.status === "checking" || current?.status === "reviewing") {
-    blockers.push({ code: "GATE_RUNNING", detail: "I revisori del candidato sono al lavoro." });
+    blockers.push({ code: "GATE_RUNNING", detail: t("main.candidates.gateRunning") });
   } else if (current?.status === "failed") {
-    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? "Una figura non ha finito la revisione." });
+    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? t("main.candidates.gateFailed") });
   } else if (current?.status === "blocked" && !current.checksFailed.length) {
     const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
     blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
@@ -344,15 +382,76 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
   return candidate;
 }
 
+/**
+ * Whether two candidates are versions of the same work (issue #421): the same slice or, outside slices, work on one of
+ * the same modules; work that names no module is the same when it names the same issue. A candidate of a slice and
+ * one outside it are different work.
+ */
+export function sameWork(document: ProjectDocument, older: Candidate, newer: Candidate): boolean {
+  const olderWork = findAssignment(document, older.assignmentId);
+  const newerWork = findAssignment(document, newer.assignmentId);
+  const olderSlice = olderWork?.slice ?? null;
+  const newerSlice = newerWork?.slice ?? null;
+  if (olderSlice || newerSlice) return olderSlice?.planId === newerSlice?.planId && olderSlice?.sliceId === newerSlice?.sliceId;
+  if (!older.touchedModules.length && !newer.touchedModules.length) {
+    return olderWork?.issueNumber != null && olderWork.issueNumber === newerWork?.issueNumber;
+  }
+  return older.touchedModules.some((m) => newer.touchedModules.includes(m));
+}
+
+/**
+ * The Coordinator declares an older candidate superseded by a newer candidate of the same work (issue #421), with the
+ * reason in plain words: the older one is no longer merged nor compared with other work, and stays in the history. It
+ * refuses a merged candidate, a candidate of other work and the newer candidate itself. `waiting` is the "Aspetta te"
+ * item the older candidate had, kept so the reason says what left the list.
+ */
+export function supersedeCandidate(
+  document: ProjectDocument,
+  input: { candidateId: string; byCandidateId: string; reason: string; actor: string; waiting: { label: string; title: string } | null },
+  now = new Date(),
+): Candidate {
+  const candidate = findCandidate(document, input.candidateId);
+  if (!candidate) throw new CandidateError("unknown_candidate", `Unknown candidate: ${input.candidateId}.`);
+  const newer = findCandidate(document, input.byCandidateId);
+  if (!newer) throw new CandidateError("unknown_candidate", `Unknown candidate: ${input.byCandidateId}.`);
+  // One line; the texts that cite it add their own full stop.
+  const reason = (input.reason.trim().split("\n")[0] ?? "").trim().replace(/[.;:!\s]+$/, "");
+  if (!reason) throw new CandidateError("missing_reason", "reason is required: one line for the person, in their language.");
+  if (candidate.pullRequest?.mergedAt) {
+    throw new CandidateError("candidate_merged", `Candidate ${candidate.id} is already merged (pull request #${candidate.pullRequest.number}): merged work cannot be superseded.`);
+  }
+  if (candidate.id === newer.id || !(candidate.declaredAt < newer.declaredAt)) {
+    throw new CandidateError(
+      "candidate_is_newest",
+      `Candidate ${candidate.id} is not older than ${newer.id}: only an older version of the work is superseded, never the newer candidate itself.`,
+    );
+  }
+  if (!sameWork(document, candidate, newer)) {
+    throw new CandidateError(
+      "other_work",
+      `Candidates ${candidate.id} and ${newer.id} belong to different work (different slice or modules): other work is compared with the worktree probe, not superseded.`,
+    );
+  }
+  if (candidateSuperseded(document, newer)) {
+    throw new CandidateError("newer_superseded", `Candidate ${newer.id} is itself superseded: name the latest candidate of the work.`);
+  }
+  if (candidate.supersession || candidateSuperseded(document, candidate)) {
+    throw new CandidateError("already_superseded", `Candidate ${candidate.id} is already superseded: nothing to do.`);
+  }
+  candidate.supersession = { byCandidateId: newer.id, reason: reason.slice(0, 240), actor: input.actor, at: now.toISOString(), waiting: input.waiting };
+  candidate.updatedAt = now.toISOString();
+  return candidate;
+}
+
 /** The person's review of this exact candidate; it is required before publishing a pull request. */
 export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
-  if (!candidate) throw new CandidateError("unknown_candidate", `Candidato sconosciuto: ${candidateId}.`);
+  if (!candidate) throw new CandidateError("unknown_candidate", t("main.candidates.unknown", { id: candidateId }));
   if (candidateSuperseded(document, candidate)) {
-    throw new CandidateError("candidate_superseded", "Il candidato è stato sostituito da un lavoro più recente: rivedi quello nuovo.");
+    throw new CandidateError("candidate_superseded", t("main.candidates.superseded"));
   }
   const blockers = inspectCandidate(document, candidate, headSHA);
-  if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
+  if (blockers.length) throw new CandidateError("candidate_not_verified", t("main.candidates.notVerified", { codes: blockers.map((b) => b.code).join(", ") }));
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
   // An ok on the same content takes back an earlier refusal (issue #247).
   if (candidate.humanRejection) candidate.humanRejection = null;

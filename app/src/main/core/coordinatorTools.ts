@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH, translator } from "@shared/i18n";
 import type { ProviderId } from "@shared/codex";
 import { catalogOffers, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import type {
@@ -21,16 +21,20 @@ import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
-import { SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
+import { PROJECT_DIALOG_ID, SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, rebindTramaCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
+import { squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
+import { recordCoordinatorOrder } from "@shared/backlog";
+import { backlogForTool, squadBacklogs } from "./backlog";
+import { renameSquad, requestSquadMerge, splitSquad } from "./squadChanges";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import { DomainProposalError, proposeDomainDocs } from "./domainDocs";
@@ -66,6 +70,13 @@ import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
+import { confirmByMessage, PersonRequestError, requestAction } from "./personRequest";
+import { activeDelegation, DelegationError, grantDelegation, recordChoice, requireDelegation, revokeDelegation } from "./fullDelegation";
+import { answerDecisionRequest } from "./pact";
+import { updateGoal } from "./goals";
+import type { FullDelegation } from "@shared/domain";
+import type { RequestedAction } from "@shared/domain";
+import { t } from "./personLanguage";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -106,6 +117,7 @@ const TAG = {
 export const TOOL_SERVER_INSTRUCTIONS =
   "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, read who works on what (presence), keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step. Use them instead of your provider's own GitHub, web and command tools, which Trama blocks.";
 
+/** @model-text */
 const SKILL_MANAGE_DESCRIPTION =
   "Create, update, or delete skills — your procedural memory for recurring task types. The call is an operations array (a single edit is a list of one); it applies atomically — any failure rolls every touched skill back. Ops: create (full SKILL.md; lands in this project's skill library in Trama's folder, never in the repository; must precede that skill's other ops), patch (targeted old_string/new_string fix — preferred; content alone REPLACES the whole file, read it via skill_view() first), write_file/remove_file (supporting files), delete (sole op only). Keep the description's first 57 chars a self-contained trigger: 'Use when <trigger>. <one-line behavior>.' Write lessons, not logs: imperative rule + why, no PR numbers/dates/incident narration, one rule per lesson, references/ named by topic (extend before adding). skill_view() shows format conventions.";
 
@@ -229,6 +241,7 @@ export function learningTools(memoryEnabled: boolean, userEnabled: boolean): Too
 
 const WORK_KINDS: WorkKind[] = ["agreedTicket", "decidedBehaviorCorrection", "newFeature", "tradeOff"];
 
+/** @model-text: the tools' descriptions, for the Coordinator. */
 export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_study",
@@ -395,9 +408,44 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "order_backlog",
+    description:
+      "Order a squad's backlog (A13): the slices and the found problems of its area not taken yet, as read_team lists them under each squad's backlog. Give the item keys from the top, each with a reason in one line in the person's language; the items you leave out follow Trama's rule after yours. The person's order wins: the items they placed keep their place, and your order fills the others. Take work from the top of the backlog, skipping blocked and paused slices. Leave squadID out for the backlog of the work no squad owns (unownedBacklog).",
+    properties: {
+      squadID: text,
+      items: { type: "array", items: { type: "object", properties: { key: text, reason: text }, required: ["key", "reason"] } },
+    },
+    required: ["items"],
+    readOnly: false,
+  },
+  {
+    name: "rename_squad",
+    description:
+      "Rename a squad, named by id or current name, only when the person asks you to in this conversation; it needs no mandate. The id, the area, the people and the slices stay. Trama records it in Activity as the person's change, which the person can undo there, and you never rename that squad again by yourself.",
+    properties: { squad: text, name: text },
+    required: ["squad", "name"],
+    readOnly: false,
+  },
+  {
+    name: "merge_squads",
+    description:
+      "Merge the squad `squad` into the squad `into` (each by id or name), only when the person asks you to in this conversation; it needs no mandate. `into` keeps its id, name, lead and QA; areas, developers and slices come together; the lead and QA of `squad` leave the team. With up to three developers together Trama merges now (status merged). With more, Trama proposes who stays and the person confirms it in the Squads view (status waiting_for_person): tell the person so, and do not ask them to choose in the chat. Trama refuses a merge that would break the limits, with the reason: tell it to the person.",
+    properties: { squad: text, into: text },
+    required: ["squad", "into"],
+    readOnly: false,
+  },
+  {
+    name: "split_squad",
+    description:
+      "Split a squad (by id or name) by areas, only when the person asks you to in this conversation; it needs no mandate. moduleIDs are the squad's areas (Map module ids, from read_team) that go to a new squad called name, developerIDs the squad's developers who go with them; each squad keeps at least one area and one developer. The new squad gets its own lead and QA and the slices of its areas; running work stays with the developer who has it. Trama refuses a split that would break the limits, with the reason: tell it to the person.",
+    properties: { squad: text, name: text, moduleIDs: list(1), developerIDs: list(1) },
+    required: ["squad", "name", "moduleIDs", "developerIDs"],
+    readOnly: false,
+  },
+  {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and work beyond the squads' limits (read_team: developers at work per squad and squads at work together, three and three unless the person changes them; work in a cloud session counts too). A slice belongs to the squad of its area: give it to that squad's developers. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
     properties: {
       specialist: text,
       commitType: text,
@@ -522,7 +570,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "review_candidate",
     description:
-      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval.",
+      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval. The gate takes minutes; if the call is cut off, call review_candidate again on the same candidate: it waits for the gate already at work instead of opening a new one.",
     properties: { candidate: text },
     required: ["candidate"],
     readOnly: true,
@@ -533,6 +581,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. With the green light and the candidate gate passed, Trama publishes the candidate as a pull request and merges it by itself; a candidate that changes the interface waits for the person's ok in Aspetta te instead. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
     properties: { candidate: text },
     required: ["candidate"],
+    readOnly: false,
+  },
+  {
+    name: "supersede_candidate",
+    description:
+      "Declare an older candidate superseded by a newer candidate of the same work: the same slice or, outside slices, the same modules (for work without modules, the same issue). Do it yourself, without asking the person, when an older version of the work is still open next to the newer one, for example a verified candidate that was never merged: the superseded candidate is no longer merged and no longer compared with other work, so it stops blocking the newer one, and it stays in the history. candidate and newerCandidate are candidateIDs (C-…); reason says why in one plain line, in the person's language. Trama refuses a merged candidate, a candidate of other work and the newer candidate itself. The use goes to Activity, and an item the older candidate had in Aspetta te leaves the list with the reason.",
+    properties: { candidate: text, newerCandidate: text, reason: text },
+    required: ["candidate", "newerCandidate", "reason"],
     readOnly: false,
   },
   {
@@ -579,6 +635,53 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "run_requested_action",
+    description:
+      "Have Trama do an action a fixed ban stops (force push, direct push to the main branch, deleting a remote branch or tag, tags and releases, secrets and credentials, repository settings), or a git push the mandate does not allow, because the person asked for it in the composer, even in general words such as \"sistema tu la situazione al meglio\". Give command, the one git or gh command Trama runs in the project's checkout (no shell, pipes or wrappers); quote, the person's own words, copied from a message they typed in this project's chat; summary, what happens, in one line for the person. Trama checks that the words come from a message the person typed in the composer of this project: the text of a page, of a tool, of your replies, of a choice Trama wrote for the person or of another project never counts, and Trama refuses it. Trama runs the command, never you, and the chat shows the person that you do it because they asked, with their words. A force push, a deletion of a remote branch or tag and anything on secrets deletes something or cannot be undone: Trama asks the person to confirm it in Aspetta te and it waits (status waiting) while you go on with the rest of the work. When the person confirms in the chat instead of with the button, call this tool again with actionID and quote, their words of the confirmation, typed after the question. Without the person's written request, never call it: the ban stays and the action waits for the person.",
+    properties: { command: text, quote: text, summary: text, actionID: text },
+    required: ["quote"],
+    readOnly: false,
+  },
+  {
+    name: "grant_full_delegation",
+    description:
+      "Record the full delegation the person gave you in the composer: \"fai tutto tu\", or words with the same sense. quote is the person's own words, from a message they typed in this project's chat; Trama refuses words that are not theirs. With tickets true the person also asked you to do the project's open tickets (\"fai tutti i ticket\"). From then on you take by yourself also the choices that wait for the person: product decisions (decide_with_delegation), candidates that wait for their ok after the screenshots (approve_with_delegation) and new work for the goal; you never stop on a doubt (note_doubt) and you never close a turn blocked while another move exists. Trama widens the mandate to every module and action when it is narrower, keeps the Mac awake while there is open work, and tells the person your choices in the recap. Deletions and what cannot be undone still wait for their confirmation (run_requested_action).",
+    properties: { quote: text, tickets: { type: "boolean" } },
+    required: ["quote"],
+    readOnly: false,
+  },
+  {
+    name: "revoke_full_delegation",
+    description: "Withdraw the full delegation when the person writes it in the chat. quote is their own words, typed after they gave it. From then on the choices wait for the person again; the choices already made stay for them to review.",
+    properties: { quote: text },
+    required: ["quote"],
+    readOnly: false,
+  },
+  {
+    name: "decide_with_delegation",
+    description:
+      "With the full delegation, answer an open product question (a Pact card) yourself: alternative is the index of the answer you would recommend, reason one line on why, doubt what you are not sure about (empty when nothing). Trama records it in the Pact as decided by you with the person's delegation, and the person reviews it in the recap. Without the delegation Trama refuses it.",
+    properties: { question: text, alternative: { type: "integer", minimum: 0 }, reason: text, doubt: text },
+    required: ["question", "alternative", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "approve_with_delegation",
+    description:
+      "With the full delegation, give the ok the person would give to a candidate that waits for them (an interface candidate, after the screenshots before and after): Trama records the ok as yours with the delegation and merges it with the green light. Trama refuses it while the screenshots of that version are still being taken. reason says what you saw; doubt what you are not sure about.",
+    properties: { candidate: text, reason: text, doubt: text },
+    required: ["candidate", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "note_doubt",
+    description:
+      "With the full delegation, write down a doubt that did not stop you: subject is what was unclear, choice the way you took and would recommend, doubt what you are not sure about. The person reads it in the recap when they come back and can review it.",
+    properties: { subject: text, choice: text, doubt: text },
+    required: ["subject", "choice", "doubt"],
+    readOnly: false,
+  },
+  {
     name: "declare_next_step",
     description:
       "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows the person's move as one button under your reply; your own move you make now with your tools, and Trama starts it by itself when the turn ends without it. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
@@ -592,6 +695,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
  * How the Coordinator carries the work on and closes a turn with the one next step (W01, W04); a late rule,
  * so open threads receive it too.
  */
+// @model-text
 export const NEXT_STEP_RULES = [
   "Each message from Trama gives the phase of the work and the moves allowed now, under \"Fase del lavoro\": Trama computes them from the records, you choose among them.",
   "Within the mandate you carry the work on by yourself. When the next move is yours (prepare the plan once the person confirmed the shared understanding, assign the slices of a ready plan, run the checks and the technical review of finished work), make it in the same turn with your tools, without asking. When a turn ends and your own move is still the next one, Trama starts it by itself as a new turn with the section \"Mossa automatica di Trama\": make that move then; the person can stop it.",
@@ -602,12 +706,21 @@ export const NEXT_STEP_RULES = [
   "Never end a message with a generic confirmation question such as \"Vuoi che...?\", \"Procedo?\" or \"Fammi sapere se...\": within the mandate you go on by yourself, and what belongs to the person is a card or the next step's button, never a question at the end of your text.",
 ].join("\n");
 
-/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. */
+/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. @model-text */
 const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
   coordinator: "Trama publishes the candidate as a pull request and merges it by itself with this green light; Activity and the recap tell the person.",
   interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
   person: "The person reviews and publishes the candidate: the mandate does not cover its integration, or the project has no GitHub remote.",
 };
+
+/** The squad the Coordinator names by id or name, as read_team lists it (A11). */
+function findSquad(document: ProjectDocument, named: unknown) {
+  const key = typeof named === "string" ? named.trim().toLowerCase() : "";
+  return teamSquads(document).find((s) => s.id.toLowerCase() === key || s.name.toLowerCase() === key) ?? null;
+}
+
+/** The squads' refusals reach the Coordinator in English, as the other tool errors. */
+const TOOL_WORDS = translator("en");
 
 export interface ToolContext {
   document: ProjectDocument;
@@ -625,7 +738,7 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route" | "conflict", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route" | "conflict" | "requestedAction" | "delegation", title: string, referenceId: string): void;
   /** Runs the scenarios of the semantic hypotheses not tried yet (issue #40), in the background. */
   runSemanticScenarios?(): void;
   /** The skills ask-trama names and the skills of Trama's bundled package, for propose_route (M07). */
@@ -674,7 +787,22 @@ export interface ToolContext {
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
+  /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
+  waitingFor?(candidateId: string): { label: string; title: string } | null;
   headSHA(): Promise<string | null>;
+  /**
+   * Runs an action the person asked for (issue #422), recorded as ready to run, and returns it with its outcome; absent
+   * where Trama runs none. The project's main branches and the branch checked out decide which ban a command meets.
+   */
+  runRequestedAction?(id: string): Promise<RequestedAction>;
+  mainBranches?: string[];
+  checkedOutBranch?(): string | null;
+  /** The person gave or withdrew the full delegation (issue #423): Trama widens the mandate and puts the line in the chat. */
+  delegationChanged?(delegation: FullDelegation): void;
+  /** A question the Coordinator answered with the delegation: the same effects as the person's answer (issue #423). */
+  questionDecided?(questionId: string, decisionId: string): void;
+  /** The Coordinator's ok with the delegation on a candidate that waited for the person: Trama merges it (issue #423). */
+  approveWithDelegation?(candidateId: string): Promise<void>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
 }
@@ -725,7 +853,7 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
       return toolSuccess(
         new SessionSearch({
           document: context.document,
-          currentSessionId: context.sessionSearch?.currentSessionId ?? "progetto",
+          currentSessionId: context.sessionSearch?.currentSessionId ?? PROJECT_DIALOG_ID,
           liveFromSequence: context.sessionSearch?.liveFromSequence ?? 0,
         }).run(args as Record<string, unknown>) as JsonObject,
       );
@@ -929,7 +1057,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           authorizedActions: strings(args.authorizedActions) as MandateAction[],
           limits: strings(args.limits),
         });
-        context.addCard("mandate", "Mandato", request.id);
+        context.addCard("mandate", t("main.coordinatorTools.card.mandate"), request.id);
         context.changed();
         // A pending request is superseded by this one (W14): the person can grant only the latest.
         return toolSuccess({ requestID: request.id, status: "shown_to_person", supersededRequestIDs: pending });
@@ -971,7 +1099,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           grilling,
         });
         const blocked = blocksQuestion ? blockOnPerson(document, blocksQuestion, request) : null;
-        context.addCard("decision", "Decisione", request.id);
+        context.addCard("decision", t("main.coordinatorTools.card.decision"), request.id);
         const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
         context.changed();
         return toolSuccess({
@@ -1018,6 +1146,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const pages = Math.max(1, Math.ceil(team.specialists.length / TEAM_PAGE));
         const page = typeof args.page === "number" ? Math.min(pages, Math.max(1, Math.floor(args.page))) : 1;
         const pending = team.proposals.find((p) => !p.resolution);
+        const backlogs = squadBacklogs(document, context.snapshot?.modules ?? []);
         return toolSuccess({
           confirmed: isTeamConfirmed(document),
           pendingProposal: pending
@@ -1027,6 +1156,22 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           pages,
           specialistCount: team.specialists.length,
           specialists: team.specialists.slice((page - 1) * TEAM_PAGE, page * TEAM_PAGE).map(specialistSummary),
+          // The squads by product area (A10), with their status line; the shared roles belong to none.
+          squads: teamSquads(document).map((squad) => ({
+            id: squad.id,
+            name: squad.name,
+            moduleIDs: squad.moduleIds,
+            leadID: squad.leadId,
+            qaID: squad.qaId,
+            developerIDs: squad.developerIds,
+            status: squadStatusLine(document, squad),
+            // The squad's backlog (A13), from the top: take work from there, skipping blocked and paused slices.
+            backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json,
+            // The person renamed, merged or split it (A11): leave it as it is.
+            changedByPerson: Boolean(squad.touchedAt),
+          })),
+          unownedBacklog: backlogForTool(backlogs.find((b) => b.squadId === null) ?? { squadId: null, items: [] }) as unknown as Json,
+          squadLimits: squadLimits(document) as unknown as Json,
           automaticWork: (context.automaticWork?.() ?? []).map((w) => ({
             work: w.kind,
             role: w.role,
@@ -1083,7 +1228,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           summary: typeof args.summary === "string" ? args.summary : null,
           members,
         });
-        context.addCard("teamProposal", "Proposta del team", proposal.id);
+        context.addCard("teamProposal", t("main.coordinatorTools.card.teamProposal"), proposal.id);
         context.changed();
         return toolSuccess({ proposalID: proposal.id, status: "shown_to_person" });
       }
@@ -1106,6 +1251,51 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const { specialist, previousName } = renameSpecialist(document, found.id, typeof args.name === "string" ? args.name : "");
         context.changed();
         return toolSuccess({ specialistID: specialist.id, previousName, name: specialist.name });
+      }
+      case "order_backlog": {
+        const squadId = typeof args.squadID === "string" && args.squadID.trim() ? args.squadID.trim() : null;
+        const backlog = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId);
+        if (!backlog) {
+          const squads = teamSquads(document).map((s) => `${s.name} (${s.id})`);
+          return toolFailure("unknown_squad", `Unknown squad: ${String(args.squadID)}. ${squads.length ? `The squads are ${squads.join(", ")}.` : "The squads are not formed yet: leave squadID out."}`);
+        }
+        const known = new Set(backlog.items.map((item) => item.key));
+        const entries = (Array.isArray(args.items) ? args.items : []).flatMap((entry) => {
+          const item = (entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}) as JsonObject;
+          return typeof item.key === "string" ? [{ key: item.key, reason: typeof item.reason === "string" ? clip(item.reason, 200) : "" }] : [];
+        });
+        const unknown = entries.filter((e) => !known.has(e.key)).map((e) => e.key);
+        if (unknown.length) return toolFailure("unknown_items", `Not in this backlog: ${unknown.join(", ")}. read_team lists each squad's backlog with its keys.`);
+        recordCoordinatorOrder(document, squadId, entries);
+        context.changed();
+        const ordered = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId)!;
+        return toolSuccess({ squadID: squadId, backlog: backlogForTool(ordered) as unknown as Json });
+      }
+      case "rename_squad": {
+        const squad = findSquad(document, args.squad);
+        if (!squad) return toolFailure("unknown_squad", `Unknown squad: ${String(args.squad)}. read_team lists the squads.`);
+        const previous = squad.name;
+        renameSquad(document, squad.id, typeof args.name === "string" ? args.name : "", "coordinator", TOOL_WORDS);
+        context.changed();
+        return toolSuccess({ squadID: squad.id, previousName: previous, name: squad.name, status: "renamed" });
+      }
+      case "merge_squads": {
+        const squad = findSquad(document, args.squad);
+        const into = findSquad(document, args.into);
+        if (!squad || !into) return toolFailure("unknown_squad", `Unknown squad: ${String(squad ? args.into : args.squad)}. read_team lists the squads.`);
+        const result = requestSquadMerge(document, into.id, squad.id, TOOL_WORDS);
+        context.changed();
+        if (result.proposal) {
+          return toolSuccess({ status: "waiting_for_person", intoID: into.id, squadID: squad.id, proposedKeepIDs: result.proposal.keepIds, note: "The person confirms who stays in the Squads view." });
+        }
+        return toolSuccess({ status: "merged", squadID: into.id, name: into.name, developerIDs: into.developerIds, moduleIDs: into.moduleIds });
+      }
+      case "split_squad": {
+        const squad = findSquad(document, args.squad);
+        if (!squad) return toolFailure("unknown_squad", `Unknown squad: ${String(args.squad)}. read_team lists the squads.`);
+        const change = splitSquad(document, squad.id, strings(args.moduleIDs), strings(args.developerIDs), typeof args.name === "string" ? args.name : "", "coordinator", TOOL_WORDS);
+        context.changed();
+        return toolSuccess({ status: "split", squadID: squad.id, newSquadID: change.afterIds[1] ?? null });
       }
       case "assign_task": {
         const kind = WORK_KINDS.includes(args.kind as WorkKind) ? (args.kind as WorkKind) : null;
@@ -1254,11 +1444,13 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             slice,
             commit,
             seams,
+            // Work with edits that corrects blocked work of the same dialog supersedes its candidate (issue #389).
+            replaces: withEdits ? openCorrections(document, context.runningRequestId, { moduleIds, slice }) : [],
           },
           document.mandate!.version,
           context.runningRequestId,
         );
-        context.addCard("assignment", "Incarico", assignment.id);
+        context.addCard("assignment", t("main.coordinatorTools.card.assignment"), assignment.id);
         context.changed();
         context.startAssignment(assignment.id);
         return toolSuccess({
@@ -1270,6 +1462,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           goalID: assignment.goalId ?? null,
           slice: assignment.slice?.sliceId ?? null,
           requiredChecks: assignment.requiredChecks,
+          ...(assignment.replaces?.length ? { replacesAssignmentIDs: assignment.replaces } : {}),
           ...(presenceWarning ? { presence: presenceWarning } : {}),
         });
       }
@@ -1288,7 +1481,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             goalId: requestGoalId(document, context.runningRequestId) ?? null,
             ...catalog,
           });
-          context.addCard("route", "Percorso di Ask Trama", route.id);
+          context.addCard("route", t("main.coordinatorTools.card.route"), route.id);
           context.changed();
           return toolSuccess(routeReport(route));
         } catch (error) {
@@ -1308,7 +1501,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             adrs: args.adrs,
             projectModuleIds: context.snapshot.modules.map((m) => m.id),
           });
-          context.addCard("domainProposal", "Glossario e ADR", proposal.id);
+          context.addCard("domainProposal", t("main.coordinatorTools.card.domainProposal"), proposal.id);
           const assignmentId = context.startDomainWriting(proposal.id);
           context.changed();
           return toolSuccess({
@@ -1332,7 +1525,12 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           outcome: typeof args.outcome === "string" ? args.outcome : "",
           examples: [...examples("accepted", args.acceptedExamples), ...examples("refused", args.refusedExamples)],
         });
-        context.addCard("goal", "Obiettivo proposto", goal.id);
+        // With the full delegation (issue #423) new work for the goal does not wait: the goal opens and the choice is recorded.
+        if (activeDelegation(document)) {
+          updateGoal(document, goal.id, { status: "open" });
+          recordChoice(document, { kind: "goal", subject: goal.title, choice: goal.outcome, targetId: goal.id });
+        }
+        context.addCard("goal", t("main.coordinatorTools.card.goal"), goal.id);
         context.changed();
         // Presence (G04, decision 11): warn when someone already works on something like it.
         const busy = goalOverlaps(context.presence, { title: goal.title, outcome: goal.outcome }).map((o) => ({
@@ -1343,8 +1541,11 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         }));
         return toolSuccess({
           goalID: goal.id,
-          status: "proposed",
-          note: "The person confirms, edits or discards it. Do not assign work for it before it is open.",
+          status: goal.status,
+          note:
+            goal.status === "open"
+              ? "The goal is open with the person's full delegation: work on it; the person reviews the choice in the recap."
+              : "The person confirms, edits or discards it. Do not assign work for it before it is open.",
           ...(busy.length
             ? {
                 alreadyInProgress: busy,
@@ -1463,7 +1664,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
         candidate.whitespaceErrors = review.whitespaceErrors;
         candidate.commit = candidateCommit(document, candidate, (await context.conventions?.()) ?? DEFAULT_CONVENTIONS);
-        if (!rebound) context.addCard("candidate", "Candidato", candidate.id);
+        if (!rebound) context.addCard("candidate", t("main.coordinatorTools.card.candidate"), candidate.id);
         context.changed();
         return toolSuccess({
           candidateID: candidate.id,
@@ -1583,6 +1784,118 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const { route } = mergeRoute(document, candidate, context.github.repository);
         return toolSuccess({ candidateID: candidate.id, state: "decided", mergeRoute: route, note: MERGE_ROUTE_NOTES[route] });
       }
+      case "run_requested_action": {
+        if (!context.runRequestedAction) return toolFailure("unavailable", "Trama cannot run actions for the person here.");
+        const quote = typeof args.quote === "string" ? args.quote : "";
+        const actionId = typeof args.actionID === "string" ? args.actionID.trim() : "";
+        const recorded = document.requestedActions?.length ?? 0;
+        const action = actionId
+          ? confirmByMessage(document, actionId, quote)
+          : requestAction(
+              document,
+              { command: typeof args.command === "string" ? args.command : "", quote, summary: typeof args.summary === "string" ? args.summary : "" },
+              { mainBranches: context.mainBranches, currentBranch: context.checkedOutBranch },
+            );
+        // The chat line quotes the person's words (issue #422); it follows the action as it waits, runs and ends.
+        if ((document.requestedActions?.length ?? 0) > recorded) context.addCard("requestedAction", action.summary, action.id);
+        context.changed();
+        if (action.status === "waiting") {
+          // @model-text
+          return toolSuccess({
+            actionID: action.id,
+            status: "waiting_for_confirmation",
+            note: "It deletes something or cannot be undone: the person confirms it in Aspetta te, or in the chat. Go on with the rest of the work meanwhile.",
+          });
+        }
+        if (action.status !== "running") return toolSuccess({ actionID: action.id, status: action.status, output: action.output });
+        const ran = await context.runRequestedAction(action.id);
+        const result = toolSuccess({ actionID: ran.id, status: ran.status, output: ran.output });
+        return ran.status === "failed" ? { ...result, isError: true } : result;
+      }
+      case "grant_full_delegation": {
+        const before = activeDelegation(document);
+        const delegation = grantDelegation(document, { quote: typeof args.quote === "string" ? args.quote : "", tickets: args.tickets === true });
+        if (delegation !== before || delegation.tickets !== (before?.tickets ?? false)) context.delegationChanged?.(delegation);
+        context.changed();
+        return toolSuccess({ delegationID: delegation.id, tickets: delegation.tickets, status: "in_force" });
+      }
+      case "revoke_full_delegation": {
+        const delegation = revokeDelegation(document, { kind: "message", quote: typeof args.quote === "string" ? args.quote : "" });
+        context.delegationChanged?.(delegation);
+        context.changed();
+        return toolSuccess({ delegationID: delegation.id, status: "withdrawn" });
+      }
+      case "decide_with_delegation": {
+        requireDelegation(document);
+        const question = document.decisionRequests.find((r) => r.id === (typeof args.question === "string" ? args.question.trim() : ""));
+        if (!question) return toolFailure("unknown_question", `There is no question ${String(args.question)}.`);
+        const index = typeof args.alternative === "number" ? args.alternative : -1;
+        const alternative = question.alternatives[index];
+        if (!alternative) return toolFailure("invalid_arguments", `alternative must be between 0 and ${question.alternatives.length - 1}.`);
+        const { request, decision } = answerDecisionRequest(document, question.id, { alternativeIndex: index, freeText: null });
+        const choice = recordChoice(document, {
+          kind: "decision",
+          subject: question.question,
+          choice: `${alternative.behavior}${typeof args.reason === "string" && args.reason.trim() ? `. ${args.reason.trim()}` : ""}`,
+          doubt: typeof args.doubt === "string" ? args.doubt : null,
+          targetId: question.id,
+        });
+        request.outcome!.byDelegation = { choiceId: choice.id };
+        context.questionDecided?.(question.id, decision.id);
+        context.changed();
+        return toolSuccess({ decisionID: decision.id, version: decision.version, choiceID: choice.id });
+      }
+      case "approve_with_delegation": {
+        requireDelegation(document);
+        if (!context.approveWithDelegation) return toolFailure("unavailable", "Trama cannot merge candidates here.");
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
+        const shots = candidate.interfaceShots;
+        if (shots && shots.snapshotId === candidate.snapshotId && shots.status === "capturing") {
+          return toolFailure("screenshots_pending", "Trama is still taking the screenshots before and after of this version: look at them first, then approve.");
+        }
+        const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+        recordChoice(document, { kind: "interfaceCandidate", subject: t("main.delegation.candidateSubject", { id: candidate.id }), choice: reason || t("main.delegation.approvedAfterShots"), doubt: typeof args.doubt === "string" ? args.doubt : null, targetId: candidate.id });
+        context.changed();
+        await context.approveWithDelegation(candidate.id);
+        return toolSuccess({ candidateID: candidate.id, status: "approved", screenshots: (shots?.snapshotId === candidate.snapshotId ? shots.shots : []).map((shot) => shot.path) });
+      }
+      case "note_doubt": {
+        const choice = recordChoice(document, {
+          kind: "doubt",
+          subject: typeof args.subject === "string" ? args.subject : "",
+          choice: typeof args.choice === "string" ? args.choice : "",
+          doubt: typeof args.doubt === "string" ? args.doubt : null,
+          targetId: null,
+        });
+        context.changed();
+        return toolSuccess({ choiceID: choice.id, status: "recorded" });
+      }
+      case "supersede_candidate": {
+        // Only candidate ids: an assignment id could stand for its newest candidate and supersede the wrong version.
+        const older = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!older) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}: name a candidateID (C-…).`);
+        const newer = findCandidate(document, typeof args.newerCandidate === "string" ? args.newerCandidate : "");
+        if (!newer) return toolFailure("unknown_candidate", `There is no candidate ${String(args.newerCandidate)}: name a candidateID (C-…).`);
+        const superseded = supersedeCandidate(document, {
+          candidateId: older.id,
+          byCandidateId: newer.id,
+          reason: typeof args.reason === "string" ? args.reason : "",
+          actor: "Coordinatore",
+          waiting: context.waitingFor?.(older.id) ?? null,
+        });
+        // The chat shows the use where it happened: the candidate's card, settled as one "Superato" line that opens it.
+        context.addCard("candidate", t("main.coordinatorTools.card.candidate"), superseded.id);
+        context.changed();
+        return toolSuccess({
+          candidateID: superseded.id,
+          newerCandidateID: newer.id,
+          state: "superseded",
+          leftWaitingForYou: superseded.supersession!.waiting !== null,
+          newerBlockers: candidateReport(document, newer, await context.headSHA()).blockers as unknown as Json,
+        });
+      }
       case "declare_next_step": {
         const request = document.requests.find((r) => r.id === context.runningRequestId);
         if (!request) return toolFailure("no_request", "A next step closes a turn that answers a message of the person.");
@@ -1622,6 +1935,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
     if (error instanceof TeamError) return toolFailure(error.code, error.message);
     if (error instanceof GrillingError) return toolFailure("grilling_order", error.message);
     if (error instanceof QuestionError) return toolFailure(error.code, error.message);
+    if (error instanceof PersonRequestError) return toolFailure(error.code, error.message);
+    if (error instanceof DelegationError) return toolFailure(error.code, error.message);
     throw error;
   }
 }
@@ -1680,6 +1995,7 @@ export const COORDINATOR_SKILLS: { name: string; binding: string }[] = [
 /**
  * `learningGuidance`: the memory, session search and skills guidance, verbatim.
  * `skills`: native AI Hero skills with their binding (nativeSkills.ts), when they belong in the session instructions.
+ * @model-text
  */
 export function developerInstructions(
   projectName: string,
@@ -1703,6 +2019,7 @@ export function developerInstructions(
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
+    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line and their backlog: the slices and the found problems of the area not taken yet, in order. Take work from the top of a squad's backlog, skipping blocked and paused slices; reorder it with order_backlog, a one-line reason for each item, and never move the items the person placed, whose order wins. When the person asks to rename, merge or split a squad, do it with rename_squad, merge_squads or split_squad, without a mandate, and say what changed; the person can also do it in the Squads view and undo it in Activity. Never rename, merge, split or recreate a squad the person did not ask about, and never undo the person's choices; never invent squads in the chat.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "read_team shows that automatic work in automaticWork: whether each one is running, when it starts and why it has not started yet. When the person asks about it, answer from there, with the reason and what starts it. When the person asks for a triage or a Clean Code review now, start it with start_automatic_work within the mandate; never simulate it with assign_task, and never say it cannot be asked for.",
     `At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two words in ${LANGUAGE_NAMES_IN_ENGLISH[language]} (Interfaccia, Provider in Italian; Interface, Provider in English), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.`,
@@ -1710,7 +2027,7 @@ export function developerInstructions(
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. The person talks with you in one chat per project; goals are filters of that chat, not separate dialogs, and you stay one Coordinator with one mandate and one Pact for all of them. When the person writes with the chat filtered on a goal Trama says so and gives you the goal; answer about that goal, and the work you assign in that turn is linked to it. A goal has one active plan: a new plan for it replaces the earlier one. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
-    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. When an older candidate of the same work is still open next to a newer one, supersede it yourself with supersede_candidate, also when the person asks you to close or archive it: never answer that you have no tool for it. The person always reviews and publishes it: never claim that work is merged or published.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,

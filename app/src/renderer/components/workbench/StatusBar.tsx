@@ -18,6 +18,7 @@ import { BranchDivergencePanel } from "@/components/chat/BranchDivergenceNotice"
 import { FocusPanel, focusOverlaps } from "@/components/chat/FocusBar";
 import { ReferenceText } from "@/components/chat/ReferenceText";
 import { OverlapBadge } from "@/components/OverlapNotice";
+import { useWaiting } from "@/components/WaitingView";
 import { Spinner } from "@/components/Spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -87,9 +88,10 @@ function FocusItem({ open, onToggle }: { open: boolean; onToggle: () => void }) 
  */
 function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React.ReactNode }) {
   const t = useT();
-  const setInspector = useUi((s) => s.setInspector);
+  const openActivity = useUi((s) => s.openActivity);
   const openDialog = useUi((s) => s.openDialog);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
+  const waiting = useWaiting();
   const take = (action: StatusLineAction) => {
     if (action.goalId === dialogGoalId) return runNextStep(action, action.requestId);
     // The move's card is in the task's dialog: Trama opens it first, then brings the card into view.
@@ -97,6 +99,8 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
     window.setTimeout(() => runNextStep(action, action.requestId), 120);
   };
   if (!line) return <div className="flex min-w-0 flex-1 items-center justify-end">{focus}</div>;
+  // A move that answers an item of Aspetta te is taken there (issue #331): the line says it, the button is in the view.
+  const action = line.action && !(line.action.actor === "person" && waiting.some((item) => item.targetId === line.action!.targetId)) ? line.action : null;
   const icon =
     line.paused && line.state !== "working" ? (
       <IconPlayerPause className="size-3 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />
@@ -133,7 +137,7 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
       </div>
       {focus}
       <Tooltip label={t("workbench.status.activity")}>
-        <button type="button" className={ITEM} aria-label={t("workbench.status.activity")} onClick={() => setInspector({ kind: "activity" })}>
+        <button type="button" className={ITEM} aria-label={t("workbench.status.activity")} onClick={() => openActivity()}>
           <IconListDetails className="size-3.5" stroke={1.8} />
         </button>
       </Tooltip>
@@ -160,10 +164,10 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
           {t("workbench.status.stop")}
         </button>
       ) : null}
-      {line.action ? (
+      {action ? (
         // The person's move: text, not a filled button, since the one filled button of the window is Aspetta te's.
-        <button type="button" className={cn(ITEM, "font-medium text-[var(--color-text-accent)]")} onClick={() => take(line.action!)}>
-          {line.action.label}
+        <button type="button" className={cn(ITEM, "font-medium text-[var(--color-text-accent)]")} onClick={() => take(action)}>
+          {action.label}
         </button>
       ) : null}
     </div>
@@ -275,7 +279,7 @@ export function StatusBar() {
           ) : null}
           {popup === "divergence" && divergence ? (
             <StatusPopup side="start">
-              <BranchDivergencePanel divergence={divergence} onDone={() => setPopup(null)} />
+              <BranchDivergencePanel divergence={divergence} filesOpen onDone={() => setPopup(null)} />
             </StatusPopup>
           ) : null}
         </>

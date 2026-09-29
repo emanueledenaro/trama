@@ -13,7 +13,7 @@ import { useState } from "react";
 import { READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import { readableFailure } from "@shared/providerFailure";
 import { formatDuration } from "@shared/timeline";
-import type { TechnicalStep, WorkRow } from "@shared/technicalSteps";
+import { stepKind, type TechnicalStep, type WorkRow } from "@shared/technicalSteps";
 import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
 import { AgentName } from "@/components/AgentIdentity";
@@ -37,10 +37,11 @@ function stepIcon(step: TechnicalStep) {
   const { title, tone } = step;
   if (title === READ_OUTSIDE_SCOPE_TITLE) return <IconShieldLock className="text-destructive" />;
   if (tone === "error") return <IconAlertTriangle className="text-destructive" />;
-  if (title.startsWith("Strumento") || title.includes(":")) return <IconTool />;
-  if (title === "Ragionamento") return <IconBrain />;
-  if (title.startsWith("Modifica")) return <IconFileText />;
-  if (title === "Messaggio inviato al Coordinatore" || title.startsWith("Nota")) return <IconBolt />;
+  const kind = stepKind(title);
+  if (kind === "tool") return <IconTool />;
+  if (kind === "reasoning") return <IconBrain />;
+  if (kind === "edit") return <IconFileText />;
+  if (kind === "note") return <IconBolt />;
   return <IconTerminal2 />;
 }
 
@@ -95,10 +96,11 @@ export function useWorkSpecialist(row: WorkRow) {
 }
 
 /** Who worked and for how long, as the chat line and Activity both say it. */
-export function WorkLabel({ row }: { row: WorkRow }) {
+export function WorkLabel({ row, avatar = true }: { row: WorkRow; avatar?: boolean }) {
   const specialist = useWorkSpecialist(row);
-  // The specialist's identity leads the label (W15): avatar, name and tag in its color.
-  const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
+  // The specialist's identity leads the label (W15): avatar, name and tag in its color. A row of Activity shows the
+  // avatar in its own column, so the label leaves it out there.
+  const who = specialist ? <AgentName agent={specialist} avatar={avatar} size={32} className="mr-1" /> : null;
   const label = row.running
     ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
     : row.durationMs !== null

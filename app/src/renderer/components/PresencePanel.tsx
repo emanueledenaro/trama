@@ -1,5 +1,5 @@
 import type { PresenceView } from "@shared/presence";
-import { Toggle } from "@/components/settings/SettingsView";
+import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { act } from "@/lib/store";
 

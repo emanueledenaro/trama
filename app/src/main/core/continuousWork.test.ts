@@ -17,7 +17,10 @@ import {
   recordRound,
   setPaused,
   stalledMove,
+  ticketMove,
 } from "./continuousWork";
+import { grantDelegation, revokeDelegation } from "./fullDelegation";
+import { setPersonLanguage } from "./personLanguage";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
@@ -412,6 +415,13 @@ describe("closingConfirmation: the generic question at the end of a reply (W04)"
     expect(closingConfirmation("Il test fallisce su Orders. Perché il pagamento resta aperto?")).toBeNull();
     expect(closingConfirmation("")).toBeNull();
   });
+
+  it("finds the same question in an English reply", () => {
+    expect(closingConfirmation("I read the Orders module.\n\nDo you want me to prepare the plan?")).toBe("Do you want me to prepare the plan?");
+    expect(closingConfirmation("The plan is ready. Shall I proceed with the assignment?")).toBe("Shall I proceed with the assignment?");
+    expect(closingConfirmation("Here is the recap. Let me know if it works.")).toBe("Let me know if it works.");
+    expect(closingConfirmation("The test fails on Orders. Why does the payment stay open?")).toBeNull();
+  });
 });
 
 describe("confirmationFeedback: Trama tells the Coordinator about its closing question (W04)", () => {
@@ -445,6 +455,16 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
     move.createdAt = new Date(Date.UTC(2026, 8, 25, 10, 5)).toISOString();
     return { document, assignment, move };
   }
+
+  it("gives the reason in the person's language (issue #301)", () => {
+    setPersonLanguage("en");
+    try {
+      const { document, assignment } = ended();
+      expect(stalledMove(document, "r5")?.reason).toBe(`The automatic move did not succeed: assignment ${assignment.id} is finished but its candidate was not declared.`);
+    } finally {
+      setPersonLanguage("it");
+    }
+  });
 
   it("says the candidate was not declared when the checks were never run", () => {
     const { document, assignment } = ended();
@@ -557,5 +577,57 @@ describe("confirmationFeedback: options in the text send the Coordinator back to
     request(document, "r2");
     expect(confirmationFeedback(document, "r2")).toBeNull();
     expect(choicesWithoutCard(document, "r1", options)).toBeNull();
+  });
+});
+
+describe("the full delegation keeps the work going (issue #423)", () => {
+  function delegated(tickets = false) {
+    const document = emptyDocument("p");
+    document.events.push({
+      id: "E-person",
+      sequence: 1,
+      origin: "person",
+      requestId: null,
+      createdAt: "2026-09-29T01:00:00.000Z",
+      content: { type: "personMessage", text: "Fai tutto tu, io vado a dormire", moduleId: null, moduleName: null, composer: true },
+    });
+    grantDelegation(document, { quote: "fai tutto tu, io vado", tickets }, new Date("2026-09-29T01:00:00.000Z"));
+    return document;
+  }
+
+  it("decides the open questions with the delegation instead of waiting for the person", () => {
+    const document = delegated();
+    request(document, "r1");
+    const question = grill(document, "r1");
+    mandate(document, ["plan"]);
+    expect(moveOf(document, "r1")).toBe("decideWithDelegation");
+    // The move lists the questions with the ids the tool takes and the Coordinator's own recommendation.
+    const section = automaticMoveSection("decideWithDelegation", null, document);
+    expect(section).toContain(`- ${question.id}: Chi vede la revisione? (alternative 0: Solo il supporto; 1: Anche il cliente; consigliata 1)`);
+    // A round does not repeat the decision the latest automatic turn already tried.
+    request(document, "r2", { step: { move: "decideWithDelegation", by: "trama" } });
+    expect(moveOf(document, "r2", "round")).toBeNull();
+  });
+
+  it("leaves the questions to the person without the delegation, or once it is withdrawn", () => {
+    const document = delegated();
+    request(document, "r1");
+    grill(document, "r1");
+    mandate(document, ["plan"]);
+    revokeDelegation(document, { kind: "view" });
+    expect(moveOf(document, "r1")).toBeNull();
+  });
+
+  it("takes the next issue only with the tickets, a mandate and no open work", () => {
+    const issue = { number: 42, title: "Annullo degli ordini" };
+    const withoutTickets = delegated(false);
+    mandate(withoutTickets, ["plan"]);
+    expect(ticketMove(withoutTickets, issue, free, null)).toBeNull();
+    const document = delegated(true);
+    expect(ticketMove(document, issue, free, null)).toBeNull();
+    mandate(document, ["plan"]);
+    expect(ticketMove(document, issue, free, { model: "gpt-6-luna", effort: "high" })).toMatchObject({ move: "takeTicket", goalId: null, model: "gpt-6-luna" });
+    expect(ticketMove(document, issue, { ...free, paused: true }, null)).toBeNull();
+    expect(ticketMove(document, null, free, null)).toBeNull();
   });
 });

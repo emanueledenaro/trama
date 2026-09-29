@@ -70,7 +70,11 @@ async function interruptOnceSentOrQuit(document: ProjectDocument, requestId: str
 
 const automaticRequests = (document: ProjectDocument) => document.requests.filter((r) => r.step?.by === "trama");
 
+/** What Trama asked the host about the computer's sleep (issue #423), in order. */
+const keepAwake: boolean[] = [];
+
 async function setup() {
+  keepAwake.length = 0;
   const data = await mkdtemp(join(tmpdir(), "trama-data-"));
   const project = await mkdtemp(join(tmpdir(), "trama-project-"));
   await cp(join(root, "resources/DemoProject"), project, { recursive: true });
@@ -86,6 +90,7 @@ async function setup() {
     aiHeroResourceDirectory: join(root, "resources/AIHero"),
       demoResourceDirectory: join(root, "resources/DemoProject"),
     codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    setKeepAwake: (awake) => void keepAwake.push(awake),
   });
   await controller.start();
   await until(() => state?.codex.account?.kind === "chatgpt");
@@ -408,7 +413,7 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
-  it("reorders the context once past the threshold instead of warning (ADR 0018)", async () => {
+  it("reorders the context once past the threshold instead of warning (ADR 0019)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
     const thread = project.document.coordinator.threadId;
@@ -1855,6 +1860,79 @@ describe("TramaController", () => {
     // The fake server forgets threads, so Trama starts a new one and says so.
     expect(project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextNotice")).toBe(true);
   });
+
+  it("runs the banned action the person typed, and asks their yes before a deletion (issue #422)", async () => {
+    const { project: projectPath } = await setup();
+    const { execFileSync } = await import("node:child_process");
+    const run = (args: string[], cwd = projectPath) => execFileSync("git", args, { cwd, encoding: "utf8" });
+    const remote = await mkdtemp(join(tmpdir(), "trama-remote-"));
+    run(["init", "-q", "--bare", "-b", "main"], remote);
+    run(["init", "-q", "-b", "main"]);
+    run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"]);
+    run(["remote", "add", "origin", remote]);
+    run(["push", "-q", "origin", "main:main", "main:feature/old"]);
+    const document = controller!.snapshot.project!.document;
+
+    await controller!.send("[richiesta:git tag v9.9.9|metti il tag v9.9.9 sul commit attuale|Creo il tag v9.9.9] Metti il tag v9.9.9 sul commit attuale", null, null, null);
+    const typed = document.events.filter((e) => e.content.type === "personMessage").at(-1)!;
+    expect(typed.content).toMatchObject({ composer: true });
+    expect(document.requestedActions).toMatchObject([{ ban: "tagOrRelease", status: "done", request: { eventId: typed.id } }]);
+    expect(run(["tag", "-l"]).trim()).toBe("v9.9.9");
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "requestedAction")).toBe(true);
+
+    await controller!.send("[richiesta:git push origin --delete feature/old|cancella il branch remoto feature/old|Cancello feature/old] Cancella il branch remoto feature/old", null, null, null);
+    const deletion = document.requestedActions!.at(-1)!;
+    expect(deletion).toMatchObject({ ban: "deleteRemoteRef", status: "waiting" });
+    expect(waitingForYou(document).map((item) => item.key)).toContain(`confirmation:${deletion.id}`);
+    expect(run(["branch", "--list", "feature/old"], remote).trim()).toBe("feature/old");
+
+    await controller!.confirmRequestedAction(deletion.id);
+    expect(deletion).toMatchObject({ status: "done", confirmation: { by: "button" } });
+    expect(run(["branch", "--list", "feature/old"], remote).trim()).toBe("");
+    // The Coordinator hears the yes as the person's choice, which Trama wrote: it asks for nothing by itself.
+    const choice = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
+    expect(choice).toMatchObject({ text: "Confermo: Cancello feature/old" });
+    expect(choice).not.toHaveProperty("composer");
+    expect(activityLog(document.requests, document.events, [], [], [], [], [], "it", document.requestedActions).filter((e) => e.kind === "requested")).toHaveLength(2);
+  });
+
+
+  it("works on its own with the full delegation, keeps the computer awake and tells the person when they come back (issue #423)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[delega:fai tutto tu in automatico] Stanotte fai tutto tu in automatico", null, null, null);
+    expect(document.delegations).toMatchObject([{ revokedAt: null, request: { quote: "fai tutto tu in automatico" } }]);
+    // The delegation brings a mandate over every module and action: the whole cycle is the Coordinator's.
+    expect(document.mandate).toMatchObject({ status: "granted", authorizedActions: expect.arrayContaining(["plan", "executeInWorktree", "integrateCandidate"]) });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "delegation" && e.content.title === "granted")).toBe(true);
+
+    // A grilling question waits for the person: with the delegation the Coordinator answers it with its recommendation.
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    await until(() => document.decisionRequests.length > 0 && document.decisionRequests.every((q) => q.outcome !== null), 20_000);
+    expect(document.decisionRequests[0]!.outcome).toMatchObject({ byDelegation: { choiceId: expect.any(String) } });
+    expect(document.delegatedChoices?.filter((c) => c.kind === "decision").length).toBe(document.decisionRequests.length);
+    expect(document.requests.some((r) => r.step?.by === "trama" && r.step.move === "decideWithDelegation")).toBe(true);
+    expect(keepAwake.at(-1)).toBe(true);
+
+    // The person comes back after a while: the recap says what the Coordinator decided, with the doubt.
+    controller!.personAway(Date.now() - 60_000);
+    controller!.personReturned(30_000);
+    const recap = document.recap?.recaps.at(-1);
+    expect(recap).toMatchObject({ reason: "return" });
+    expect(recap?.delegated?.[0]).toMatchObject({ kind: "decision", doubt: "Non so se vale anche per gli ordini pagati con un buono" });
+    expect(document.events.findLast((e) => e.content.type === "card" && e.content.kind === "recap")?.content).toMatchObject({ title: "Mentre non c'eri" });
+    // A short absence, or nothing new, writes no recap.
+    controller!.personAway(Date.now() - 1_000);
+    controller!.personReturned(30_000);
+    expect(document.recap?.recaps.at(-1)).toBe(recap);
+
+    // Withdrawn from the Mandate view: the chat says so, and the computer may sleep again.
+    controller!.revokeDelegation();
+    expect(document.delegations?.[0]?.revokedBy).toEqual({ kind: "view" });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "delegation" && e.content.title === "revoked")).toBe(true);
+    expect(keepAwake.at(-1)).toBe(false);
+  });
+
 });
 
 describe("the branch divergence notice (issue #390)", () => {
@@ -2084,5 +2162,53 @@ describe("initializeRepository", () => {
     await initializeRepository(project);
     expect((await git(["rev-parse", "--abbrev-ref", "HEAD"], project)).trim()).toBe("main");
     expect((await git(["log", "--format=%s"], project)).trim()).toBe("chore: start the project");
+  });
+});
+
+describe("the controller's texts in English (issue #301)", () => {
+  afterEach(async () => {
+    const { setPersonLanguage } = await import("./core/personLanguage");
+    setPersonLanguage("it");
+  });
+
+  it("explains an unavailable provider in the person's language", async () => {
+    const { providerUnavailableReason } = await import("./controller");
+    const { setPersonLanguage } = await import("./core/personLanguage");
+    const until = "2026-09-28T15:30:00.000Z";
+    const blocked = { kind: "blocked" as const, message: "You've hit your usage limit.", until };
+    expect(providerUnavailableReason("codex", blocked)).toContain(
+      ` Si sblocca il ${new Date(until).toLocaleString("it-IT")}. Puoi aspettare o scegliere un altro provider.`,
+    );
+    setPersonLanguage("en");
+    expect(providerUnavailableReason("codex", blocked)).toMatch(/^ChatGPT is blocked: it has (a temporary limit|used up the plan's quota)\. /);
+    expect(providerUnavailableReason("codex", blocked)).toContain(
+      `It unlocks on ${new Date(until).toLocaleString("en-US")}. You can wait or choose another provider.`,
+    );
+    expect(providerUnavailableReason("codex", { kind: "signedOut" })).toBe("Connect ChatGPT from Connections to talk with the Coordinator.");
+    expect(providerUnavailableReason("codex", { kind: "unsupported", type: "apiKey" })).toBe(
+      "Trama accepts only a ChatGPT account; Codex uses an account of type apiKey.",
+    );
+  });
+
+  it("names a network failure in English", async () => {
+    const { describeFailure } = await import("./controller");
+    const { setPersonLanguage } = await import("./core/personLanguage");
+    setPersonLanguage("en");
+    expect(describeFailure("getaddrinfo ENOTFOUND api.example.com")).toBe(
+      "Network unreachable: getaddrinfo ENOTFOUND api.example.com. Trama tries again when the network is back and the person resumes the work.",
+    );
+  });
+
+  it("writes errors and Activity rows in English once the person chooses it", async () => {
+    await setup();
+    await controller!.updateSettings({ language: "en" });
+    await expect(controller!.retryRequest("missing")).rejects.toThrow("This turn can no longer be repeated.");
+    expect(() => controller!.deleteQueuedMessage("missing")).toThrow("The message has already left or is no longer in the queue.");
+    await controller!.pauseContinuousWork(true);
+    expect(controller!.snapshot.project!.document.events.at(-1)!.content).toMatchObject({
+      type: "activity",
+      title: "Coordinator paused",
+      detail: "No automatic move, Round or automatic work starts until you resume the Coordinator.",
+    });
   });
 });

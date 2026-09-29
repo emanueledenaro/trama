@@ -1,7 +1,9 @@
 import { type Candidate, type CandidateCommit, type CandidateReport, type CommitConventions, isOpenQuestion, type ProjectDocument, type QualityItem, type SpecialistAssignment } from "@shared/domain";
+import type { MessageKey } from "@shared/i18n";
 import { DEFAULT_CONVENTIONS, deriveCommitScope, deriveCommitType, formatCommitMessage, validateCommitMessage } from "./conventions";
 import { assignmentSlice } from "./implementation";
 import { containsExcludedComponent } from "./repositoryScanner";
+import { personLanguage, t } from "./personLanguage";
 import { findAssignment } from "./team";
 import { pushAuthorization, pushRefusal } from "./push";
 import { workRequests } from "./workPhase";
@@ -88,32 +90,33 @@ export function candidateCommit(
   };
 }
 
-const SECRET_PATTERNS: [RegExp, string][] = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "chiave privata"],
-  [/\b(?:ghp_|gho_|ghs_|ghu_|github_pat_)[A-Za-z0-9_]{16,}/, "token GitHub"],
-  [/\bsk-[A-Za-z0-9_-]{20,}/, "chiave API"],
-  [/\bAKIA[0-9A-Z]{16}\b/, "chiave AWS"],
-  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/, "token Slack"],
-  [/\bAIza[0-9A-Za-z_-]{30,}/, "chiave Google"],
-  [/\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*[=:]\s*["'][A-Za-z0-9/+_.-]{16,}["']/, "credenziale assegnata"],
+const SECRET_PATTERNS: [RegExp, MessageKey][] = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "main.quality.secret.privateKey"],
+  [/\b(?:ghp_|gho_|ghs_|ghu_|github_pat_)[A-Za-z0-9_]{16,}/, "main.quality.secret.githubToken"],
+  [/\bsk-[A-Za-z0-9_-]{20,}/, "main.quality.secret.apiKey"],
+  [/\bAKIA[0-9A-Z]{16}\b/, "main.quality.secret.awsKey"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/, "main.quality.secret.slackToken"],
+  [/\bAIza[0-9A-Za-z_-]{30,}/, "main.quality.secret.googleKey"],
+  [/\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)\s*[=:]\s*["'][A-Za-z0-9/+_.-]{16,}["']/, "main.quality.secret.assignedCredential"],
 ];
 
 /** The findings of each candidate already scanned: the standard is computed at every refresh of the window. */
-const scanned = new WeakMap<object, { diff: string; changedFiles: string[]; findings: string[] }>();
+const scanned = new WeakMap<object, { diff: string; changedFiles: string[]; language: string; findings: string[] }>();
 
-/** Secrets in the lines the candidate adds, and sensitive files among the ones it changes. */
+/** Secrets in the lines the candidate adds, and sensitive files among the ones it changes, in the person's language. */
 export function secretFindings(candidate: Pick<Candidate, "diff" | "changedFiles">): string[] {
   const known = scanned.get(candidate);
-  if (known && known.diff === candidate.diff && known.changedFiles === candidate.changedFiles) return known.findings;
+  const language = personLanguage();
+  if (known && known.diff === candidate.diff && known.changedFiles === candidate.changedFiles && known.language === language) return known.findings;
   const findings = scanDiff(candidate);
-  scanned.set(candidate, { diff: candidate.diff, changedFiles: candidate.changedFiles, findings });
+  scanned.set(candidate, { diff: candidate.diff, changedFiles: candidate.changedFiles, language, findings });
   return findings;
 }
 
 function scanDiff(candidate: Pick<Candidate, "diff" | "changedFiles">): string[] {
   const findings: string[] = [];
   for (const path of candidate.changedFiles) {
-    if (containsExcludedComponent(path.split("/").filter((c) => c !== ".gitignore"))) findings.push(`file sensibile ${path}`);
+    if (containsExcludedComponent(path.split("/").filter((c) => c !== ".gitignore"))) findings.push(t("main.quality.sensitiveFile", { path }));
   }
   let file = "";
   for (const line of candidate.diff.split("\n")) {
@@ -123,7 +126,7 @@ function scanDiff(candidate: Pick<Candidate, "diff" | "changedFiles">): string[]
     }
     if (!line.startsWith("+")) continue;
     for (const [pattern, label] of SECRET_PATTERNS) {
-      if (pattern.test(line)) findings.push(`${label} in ${file || "un file"}`);
+      if (pattern.test(line)) findings.push(t("main.quality.secretIn", { label: t(label), file: file || t("main.quality.aFile") }));
     }
   }
   return [...new Set(findings)];
@@ -144,85 +147,90 @@ export function openPactQuestions(document: ProjectDocument, candidate: Candidat
     .map((r) => r.id);
 }
 
-const BLOCKER_WORDS: Record<string, string> = {
-  BASE_CHANGED: "la base del progetto è cambiata",
-  DECISION_CHANGED: "una decisione è cambiata",
-  UNRESOLVED_CHOICE: "c'è una scelta non risolta",
-  EXTERNAL_EFFECT_UNSUPPORTED: "c'è un effetto esterno non supportato",
-  EVIDENCE_MISSING: "una verifica non è stata eseguita",
-  EVIDENCE_STALE: "una verifica non vale più",
-  CHECK_FAILED: "una verifica non è passata",
-  GATE_BLOCKED: "un revisore ha un rilievo bloccante",
-  GATE_RUNNING: "i revisori sono ancora al lavoro",
-  GATE_FAILED: "una figura non ha finito la revisione",
-  REMOTE_CONFLICT: "c'è un conflitto con il lavoro su GitHub",
-  CLOUD_CHECK_FAILED: "il lavoro della sessione cloud non ha superato i controlli sul Mac",
-  WORKTREE_CONFLICT: "c'è un conflitto con il lavoro di un altro incarico",
-  SEMANTIC_CONFLICT: "insieme al lavoro di un altro incarico una verifica non passa",
+const BLOCKER_WORDS: Record<string, MessageKey> = {
+  BASE_CHANGED: "main.quality.blocker.BASE_CHANGED",
+  DECISION_CHANGED: "main.quality.blocker.DECISION_CHANGED",
+  UNRESOLVED_CHOICE: "main.quality.blocker.UNRESOLVED_CHOICE",
+  EXTERNAL_EFFECT_UNSUPPORTED: "main.quality.blocker.EXTERNAL_EFFECT_UNSUPPORTED",
+  EVIDENCE_MISSING: "main.quality.blocker.EVIDENCE_MISSING",
+  EVIDENCE_STALE: "main.quality.blocker.EVIDENCE_STALE",
+  CHECK_FAILED: "main.quality.blocker.CHECK_FAILED",
+  GATE_BLOCKED: "main.quality.blocker.GATE_BLOCKED",
+  GATE_RUNNING: "main.quality.blocker.GATE_RUNNING",
+  GATE_FAILED: "main.quality.blocker.GATE_FAILED",
+  REMOTE_CONFLICT: "main.quality.blocker.REMOTE_CONFLICT",
+  CLOUD_CHECK_FAILED: "main.quality.blocker.CLOUD_CHECK_FAILED",
+  WORKTREE_CONFLICT: "main.quality.blocker.WORKTREE_CONFLICT",
+  WORKTREE_CHANGED: "main.quality.blocker.WORKTREE_CHANGED",
+  SEMANTIC_CONFLICT: "main.quality.blocker.SEMANTIC_CONFLICT",
 };
+
+const blockerWords = (code: string) => (Object.hasOwn(BLOCKER_WORDS, code) ? t(BLOCKER_WORDS[code]!) : code);
 
 /** Each condition of the quality standard, in order, with what is missing and how to fix it. */
 export function qualityGate(document: ProjectDocument, candidate: Candidate, report: CandidateReport, repository: string | null): QualityItem[] {
   const assignment = findAssignment(document, candidate.assignmentId);
   const items: QualityItem[] = [];
-  const blockers = [...new Set(report.blockers.map((b) => BLOCKER_WORDS[b.code] ?? b.code))];
+  const blockers = [...new Set(report.blockers.map((b) => blockerWords(b.code)))];
   items.push(
     blockers.length
-      ? { code: "VERIFIED", passed: false, detail: `Non è verificato: ${blockers.join(", ")}.`, fix: "Chiedi al Coordinatore di correggere il lavoro e di verificare un nuovo candidato." }
-      : { code: "VERIFIED", passed: true, detail: `Tutte le ${candidate.requiredChecks.length} verifiche richieste sono passate nella sandbox.`, fix: null },
+      ? { code: "VERIFIED", passed: false, detail: t("main.quality.verified.missing", { blockers: blockers.join(", ") }), fix: t("main.quality.verified.fix") }
+      : { code: "VERIFIED", passed: true, detail: t("main.quality.verified.passed", { count: candidate.requiredChecks.length }), fix: null },
   );
   const commit = candidate.commit ?? (assignment ? candidateCommit(document, candidate) : null);
-  const problems = commit ? validateCommitMessage(commit.message, commit.conventions) : ["Trama non trova l'incarico del candidato."];
+  const problems = commit ? validateCommitMessage(commit.message, commit.conventions) : [t("main.quality.commit.noAssignment")];
   items.push(
     problems.length
-      ? { code: "COMMIT_MESSAGE", passed: false, detail: problems.join(" "), fix: "Chiedi al Coordinatore di correggere il messaggio con set_commit_message." }
+      ? { code: "COMMIT_MESSAGE", passed: false, detail: problems.join(" "), fix: t("main.quality.commit.fix") }
       : {
           code: "COMMIT_MESSAGE",
           passed: true,
-          detail: `${commit!.message.split("\n")[0]}${commit!.conventions.sources.length ? ` (regole da ${commit!.conventions.sources.join(", ")})` : " (Conventional Commits 1.0.0)"}`,
+          detail: commit!.conventions.sources.length
+            ? t("main.quality.commit.rulesFrom", { header: commit!.message.split("\n")[0]!, sources: commit!.conventions.sources.join(", ") })
+            : `${commit!.message.split("\n")[0]} (Conventional Commits 1.0.0)`,
           fix: null,
         },
   );
   const secrets = secretFindings(candidate);
   items.push(
     secrets.length
-      ? { code: "NO_SECRETS", passed: false, detail: `Trovato: ${secrets.join(", ")}.`, fix: "Togli il segreto o il file dal lavoro e dichiara un nuovo candidato; una chiave esposta va anche revocata." }
-      : { code: "NO_SECRETS", passed: true, detail: "Nessun segreto né file sensibile nelle modifiche.", fix: null },
+      ? { code: "NO_SECRETS", passed: false, detail: t("main.quality.secrets.found", { secrets: secrets.join(", ") }), fix: t("main.quality.secrets.fix") }
+      : { code: "NO_SECRETS", passed: true, detail: t("main.quality.secrets.none"), fix: null },
   );
   const whitespace = candidate.whitespaceErrors;
   items.push(
     whitespace === undefined
-      ? { code: "DIFF_CHECK", passed: false, detail: "git diff --check non è stato eseguito su questo candidato.", fix: "Chiedi al Coordinatore di dichiarare un nuovo candidato: Trama lo controlla alla dichiarazione." }
+      ? { code: "DIFF_CHECK", passed: false, detail: t("main.quality.diffCheck.notRun"), fix: t("main.quality.diffCheck.notRunFix") }
       : whitespace.length
-        ? { code: "DIFF_CHECK", passed: false, detail: whitespace.slice(0, 3).join("; "), fix: "Togli gli spazi in fondo alle righe e i marcatori di conflitto, poi dichiara un nuovo candidato." }
-        : { code: "DIFF_CHECK", passed: true, detail: "git diff --check è pulito.", fix: null },
+        ? { code: "DIFF_CHECK", passed: false, detail: whitespace.slice(0, 3).join("; "), fix: t("main.quality.diffCheck.fix") }
+        : { code: "DIFF_CHECK", passed: true, detail: t("main.quality.diffCheck.clean"), fix: null },
   );
   const issue = assignment ? relatedIssue(document, assignment) : null;
   const slice = assignment ? assignmentSlice(document, assignment) : null;
   items.push(
     issue
-      ? { code: "ISSUE_LINKED", passed: true, detail: `Collegato alla issue #${issue}.`, fix: null }
+      ? { code: "ISSUE_LINKED", passed: true, detail: t("main.quality.issue.linked", { issue: String(issue) }), fix: null }
       : repository && slice
         ? {
             code: "ISSUE_LINKED",
             passed: false,
-            detail: `La fetta ${slice.ticket.id} non ha ancora la sua issue su GitHub.`,
-            fix: `Pubblica su GitHub le fette del piano ${slice.plan.id}, poi riapri la pull request.`,
+            detail: t("main.quality.issue.missing", { slice: slice.ticket.id }),
+            fix: t("main.quality.issue.missingFix", { plan: slice.plan.id }),
           }
-        : { code: "ISSUE_LINKED", passed: true, detail: "Il lavoro non ha una issue da collegare.", fix: null },
+        : { code: "ISSUE_LINKED", passed: true, detail: t("main.quality.issue.none"), fix: null },
   );
   const open = assignment ? openPactQuestions(document, candidate, assignment) : [];
   items.push(
     open.length
-      ? { code: "PACT_SETTLED", passed: false, detail: `Domande del Patto ancora aperte: ${open.join(", ")}.`, fix: "Rispondi alle domande aperte o ritirale con un motivo." }
-      : { code: "PACT_SETTLED", passed: true, detail: "Nessuna decisione del Patto è rimasta aperta.", fix: null },
+      ? { code: "PACT_SETTLED", passed: false, detail: t("main.quality.pact.open", { questions: open.join(", ") }), fix: t("main.quality.pact.openFix") }
+      : { code: "PACT_SETTLED", passed: true, detail: t("main.quality.pact.settled"), fix: null },
   );
   // Publishing pushes a branch: only a mandate that grants pull requests allows it, whoever asks (issue #273).
   const refusal = pushRefusal(pushAuthorization(document.mandate));
   items.push(
     refusal
-      ? { code: "MANDATE", passed: false, detail: refusal, fix: "Concedi o correggi il mandato con l'azione Aprire pull request, poi prepara la pull request." }
-      : { code: "MANDATE", passed: true, detail: "Il mandato permette di aprire pull request.", fix: null },
+      ? { code: "MANDATE", passed: false, detail: refusal, fix: t("main.quality.mandate.fix") }
+      : { code: "MANDATE", passed: true, detail: t("main.quality.mandate.allowed"), fix: null },
   );
   return items;
 }

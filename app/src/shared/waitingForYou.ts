@@ -2,6 +2,9 @@ import { type CandidateReport, isOpenQuestion, pendingMandateRequest, type Proje
 import { fixedBanInfo } from "./fixedBans";
 import { workingGoals } from "./goals";
 import { workRequests } from "./grilling";
+import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
+import { requestedActionName } from "./requestedActions";
+import { blockedReviews, candidateHeld } from "./reviewLoop";
 
 /**
  * "Aspetta te" (issue #240): everything in a project that waits for the person, in one place. Trama derives the items
@@ -21,7 +24,8 @@ export type WaitingKind =
   | "route"
   | "candidate"
   | "memory"
-  | "fixedBan";
+  | "fixedBan"
+  | "confirmation";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
@@ -57,6 +61,8 @@ export interface WaitingSources {
   memoryProposals?: WaitingMemoryProposal[];
   /** The current verdict of each candidate, as the main process computed it. */
   candidateReports?: Record<string, CandidateReport>;
+  /** The interface language of the texts Trama writes here; Italian when absent. */
+  language?: Language;
 }
 
 /**
@@ -246,6 +252,23 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
     if (!report || report.state === "superseded") continue;
     // A merge the Coordinator stopped on a destructive change waits below as its own item, with its consequences (issue #41).
     if (candidate.merge?.status === "stopped" && candidate.merge.stop) continue;
+    // Work the review stopped too many times in a row (issue #389): Trama no longer sends it back, the person decides.
+    if (candidateHeld(document, candidate)) {
+      const held = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId)!;
+      const reviews = blockedReviews(document, held);
+      const language = sources.language ?? DEFAULT_LANGUAGE;
+      items.push({
+        key: `candidate:${candidate.id}`,
+        kind: "candidate",
+        targetId: candidate.id,
+        label: translate(language, "reviewLoop.label"),
+        title: translate(language, "reviewLoop.title", { objective: oneLine(held.objective), count: reviews.length }),
+        goalId: candidate.goalId ?? null,
+        askedAt: reviews.at(-1)!.finishedAt!,
+        blocks: heldWork(document, sources, held.requestId),
+      });
+      continue;
+    }
     const settled = report.state === "verified" || report.state === "decided";
     const stopped = settled ? candidate.merge?.status === "stopped" : report.blockers.some((b) => PERSON_BLOCKERS.includes(b.code));
     if (!stopped) {
@@ -297,6 +320,22 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
     });
   }
 
+  // An action the person asked for that deletes something or cannot be undone (issue #422): it runs only after their yes.
+  for (const action of (document.requestedActions ?? []).filter((a) => a.status === "waiting")) {
+    const language = sources.language ?? DEFAULT_LANGUAGE;
+    const name = requestedActionName(action, language);
+    items.push({
+      key: `confirmation:${action.id}`,
+      kind: "confirmation",
+      targetId: action.id,
+      label: translate(language, "requestedAction.waiting.label"),
+      title: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${oneLine(action.summary)}`,
+      goalId: null,
+      askedAt: action.confirmation?.askedAt ?? action.requestedAt,
+      blocks: 0,
+    });
+  }
+
   for (const proposal of sources.memoryProposals ?? []) {
     items.push({
       key: `memory:${proposal.id}`,
@@ -328,6 +367,80 @@ export function waitingSummary(count: number): string | null {
 export function blocksText(blocks: number): string {
   if (blocks <= 0) return "Non ferma il lavoro";
   return blocks === 1 ? "Ferma 1 parte del lavoro" : `Ferma ${blocks} parti del lavoro`;
+}
+
+/** What the person did with an item that waited for them. */
+export type DecidedOutcome = "answered" | "withdrawn" | "granted" | "corrected" | "rejected" | "confirmed" | "approved" | "seen";
+
+/** An item the person decided, for the closed "Decise oggi" list at the end of Aspetta te (issue #331). */
+export interface DecidedItem {
+  key: string;
+  kind: WaitingKind;
+  targetId: string;
+  /** The question or the proposal in one line, as it waited; empty when the record has no text, for the view to name it. */
+  title: string;
+  outcome: DecidedOutcome;
+  decidedAt: string;
+}
+
+const sameDay = (iso: string, now: Date) => {
+  const date = new Date(iso);
+  return !Number.isNaN(date.getTime()) && date.toDateString() === now.toDateString();
+};
+
+/**
+ * The items the person decided on the day of `now`, the latest first. Like the list, it reads only the records of the
+ * project document: answered or withdrawn questions, answered mandate requests, confirmed teams, candidates the person
+ * approved or refused and refused actions they saw. Pure.
+ */
+export function decidedToday(document: ProjectDocument, now: Date): DecidedItem[] {
+  const items: DecidedItem[] = [];
+  const push = (item: DecidedItem) => {
+    if (sameDay(item.decidedAt, now)) items.push(item);
+  };
+  for (const question of document.decisionRequests) {
+    const title = oneLine(question.question);
+    if (question.outcome) push({ key: `question:${question.id}`, kind: "question", targetId: question.id, title, outcome: "answered", decidedAt: question.outcome.answeredAt });
+    else if (question.withdrawal) push({ key: `question:${question.id}`, kind: "question", targetId: question.id, title, outcome: "withdrawn", decidedAt: question.withdrawal.withdrawnAt });
+  }
+  for (const request of document.mandateRequests) {
+    const kind = request.resolution?.kind;
+    // A superseded request was replaced by a newer one, and a revoked one is the old way of declining: not a decision of today's list.
+    if (kind !== "granted" && kind !== "corrected" && kind !== "rejected") continue;
+    push({
+      key: `mandate:${request.id}`,
+      kind: "mandate",
+      targetId: request.id,
+      title: oneLine(request.reason),
+      outcome: kind,
+      decidedAt: request.resolution!.resolvedAt,
+    });
+  }
+  for (const proposal of document.team.proposals) {
+    const resolution = proposal.resolution;
+    if (!resolution || resolution.kind === "superseded") continue;
+    const title = oneLine(proposal.summary ?? "") || proposal.members.map((m) => m.name).join(", ");
+    push({ key: `team:${proposal.id}`, kind: "team", targetId: proposal.id, title, outcome: resolution.kind, decidedAt: resolution.resolvedAt });
+  }
+  for (const candidate of document.candidates) {
+    const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+    const title = oneLine(assignment?.objective ?? "");
+    const rejection = candidate.humanRejection;
+    if (rejection) push({ key: `candidate:${candidate.id}`, kind: "candidate", targetId: candidate.id, title, outcome: "rejected", decidedAt: rejection.at });
+    else if (candidate.humanApproval) push({ key: `candidate:${candidate.id}`, kind: "candidate", targetId: candidate.id, title, outcome: "approved", decidedAt: candidate.humanApproval.at });
+  }
+  for (const refusal of document.fixedBanRefusals ?? []) {
+    if (!refusal.acknowledgedAt) continue;
+    push({
+      key: `fixedBan:${refusal.id}`,
+      kind: "fixedBan",
+      targetId: refusal.id,
+      title: `${fixedBanInfo(refusal.ban).label}: ${oneLine(refusal.action)}`,
+      outcome: "seen",
+      decidedAt: refusal.acknowledgedAt,
+    });
+  }
+  return items.sort((a, b) => Date.parse(b.decidedAt) - Date.parse(a.decidedAt) || a.key.localeCompare(b.key));
 }
 
 /** The item a chat card stands for while it waits, or null when the card no longer waits for the person. */

@@ -183,7 +183,8 @@ describe("independent movement (W08)", () => {
     const { document } = project(tickets);
     document.settings = { parallelDevelopers: 2 };
     expect(picked(pickSlices(document, input())).map((p) => p.sliceId)).toEqual(["S1", "S2"]);
-    expect(pickSlices(document, input())).toEqual([]);
+    // Nothing more starts, and the ready slice says why (A10).
+    expect(waiting(pickSlices(document, input()))).toEqual(["S3: Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera."]);
     document.settings = { parallelDevelopers: 3 };
     expect(picked(pickSlices(document, input())).map((p) => p.sliceId)).toEqual(["S3"]);
   });
@@ -217,7 +218,8 @@ describe("independent movement (W08)", () => {
     document.team.specialists.find((s) => s.name === "Bruno")!.moduleIds = [];
     const outcomes = pickSlices(document, input());
     expect(picked(outcomes).map((p) => p.sliceId)).toEqual(["S1"]);
-    expect(waiting(outcomes)).toEqual([expect.stringMatching(/^S2: Aspetta che finisca A-[0-9A-F]+, che lavora sugli stessi moduli\.$/)]);
+    // Named by the developer and the work, never by id (A10, U05).
+    expect(waiting(outcomes)).toEqual([expect.stringMatching(/^S2: Aspetta che (Ada|Bruno) finisca «S1 Fetta 1»: lavora sugli stessi moduli\.$/)]);
     const other = project([ticket(1, [], "Sources/Orders")]).document;
     const presence = {
       others: [

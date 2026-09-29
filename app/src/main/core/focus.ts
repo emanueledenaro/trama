@@ -1,6 +1,7 @@
 import type { FocusTask, FocusView, ProjectDocument, TaskFocus } from "@shared/domain";
 import { projectGoals, workingGoals } from "@shared/goals";
 import { DomainError } from "./pact";
+import { t } from "./personLanguage";
 import { PHASE_LABELS, workRequests, workState } from "./workPhase";
 
 /**
@@ -14,13 +15,13 @@ import { PHASE_LABELS, workRequests, workState } from "./workPhase";
  * Title of the project's work outside the goals when it serves no goal. The first message is never the title
  * (issue #241): it is often a request already met, or words for the Coordinator rather than a name for the work.
  */
-export const PROJECT_WORK_TITLE = "Lavoro del progetto";
+export const projectWorkTitle = () => t("main.focus.projectWork");
 
 /** How many queued tasks the Coordinator reads by name. */
 const QUEUE_IN_PROMPT = 5;
 
 /** Label of a task that has no work yet. */
-export const NOT_STARTED_LABEL = "da avviare";
+export const notStartedLabel = () => t("main.focus.notStarted");
 
 /**
  * The goal the project dialog's work serves, when its assignments name one: the work is named after the goal, not after
@@ -57,7 +58,7 @@ function describe(document: ProjectDocument, requestId: string | null) {
   const waiting = state?.moves.find((m) => m.actor === "person") ?? null;
   return {
     phase,
-    phaseLabel: phase ? PHASE_LABELS[phase] : NOT_STARTED_LABEL,
+    phaseLabel: phase ? PHASE_LABELS[phase] : notStartedLabel(),
     // The bar and the queue speak to the person: the reason without ids, branches or files (issue #241).
     blocker: state?.why ?? state?.blocker ?? null,
     // The person's move shows even when the work is blocked: it is often what unblocks it, as a pending mandate.
@@ -89,7 +90,7 @@ export function openTasks(document: ProjectDocument): OpenTask[] {
       tasks.push({
         id,
         goalId: null,
-        title: servedGoalTitle(document, latest.id) ?? PROJECT_WORK_TITLE,
+        title: servedGoalTitle(document, latest.id) ?? projectWorkTitle(),
         createdAt: first.createdAt,
         ...described,
       });
@@ -131,7 +132,7 @@ export function focusView(document: ProjectDocument): FocusView {
 
 function requireOpenTask(document: ProjectDocument, taskId: string): OpenTask {
   const task = openTasks(document).find((t) => t.id === taskId);
-  if (!task) throw new DomainError(`Il task ${taskId} non è aperto: è chiuso o non esiste.`);
+  if (!task) throw new DomainError(t("main.focus.taskNotOpen", { id: taskId }));
   return task;
 }
 
@@ -159,7 +160,7 @@ export function focusTask(document: ProjectDocument, taskId: string): void {
 export function pauseTask(document: ProjectDocument, taskId: string): void {
   requireOpenTask(document, taskId);
   const focus = current(document);
-  if (focus.pausedTaskIds.includes(taskId)) throw new DomainError(`Il task ${taskId} è già in pausa.`);
+  if (focus.pausedTaskIds.includes(taskId)) throw new DomainError(t("main.focus.taskAlreadyPaused", { id: taskId }));
   document.focus = {
     taskId: focus.taskId === taskId ? null : focus.taskId,
     pausedTaskIds: [...focus.pausedTaskIds, taskId],
@@ -172,7 +173,7 @@ export function pauseTask(document: ProjectDocument, taskId: string): void {
 export function resumeTask(document: ProjectDocument, taskId: string): void {
   requireOpenTask(document, taskId);
   const focus = current(document);
-  if (!focus.pausedTaskIds.includes(taskId)) throw new DomainError(`Il task ${taskId} non è in pausa.`);
+  if (!focus.pausedTaskIds.includes(taskId)) throw new DomainError(t("main.focus.taskNotPaused", { id: taskId }));
   document.focus = {
     taskId: focus.taskId,
     pausedTaskIds: focus.pausedTaskIds.filter((id) => id !== taskId),
@@ -180,8 +181,10 @@ export function resumeTask(document: ProjectDocument, taskId: string): void {
 }
 
 /** How the Coordinator reads a task's name: a goal's title, or the project's work outside the goals named as such. */
+// @model-text: the Coordinator's turn input.
 const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del progetto fuori dagli obiettivi");
 
+// @model-text: the Coordinator's turn input.
 const taskLine = (task: FocusTask) =>
   `${promptName(task)} (${task.id}), fase ${task.phaseLabel}${task.blocker ? `, bloccato: ${task.blocker}` : ""}${task.waitingFor ? `, aspetta la persona: ${task.waitingFor}` : ""}`;
 
@@ -190,6 +193,7 @@ const taskLine = (task: FocusTask) =>
  * message of `requestId` is about the focus. When it is not, the Coordinator answers and brings the conversation
  * back to the task in focus. Null when the project has no open task.
  */
+// @model-text: the Coordinator's turn input.
 export function focusText(document: ProjectDocument, requestId: string): string | null {
   const view = focusView(document);
   if (!view.focus) return null;

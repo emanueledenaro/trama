@@ -1,5 +1,7 @@
-import type { AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
+import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
 import { problemActivity } from "./problems";
+import { requestedActionEntries } from "./requestedActions";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -9,21 +11,24 @@ import { problemActivity } from "./problems";
 
 /**
  * How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, or failed on an error.
- * A step the Coordinator took for the person (A06) is made, or corrected by the person.
+ * A step the Coordinator took for the person (A06) is made, or corrected by the person. A change of the person to the
+ * squads (A11) is made, or undone.
  */
-export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed" | "corrected";
+export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed" | "corrected" | "undone";
 
 export interface ActivityEntry {
   /** The request of the move, or the round's id. */
   id: string;
   /**
    * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), a person's
-   * step the Coordinator took within the mandate (A06), or Trama's merge of a candidate (issue #247).
+   * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), a change of the
+   * person to the squads (A11), a candidate the Coordinator declared superseded by a newer one of the same work
+   * (issue #421), or an action a fixed ban stops that Trama did because the person asked for it (issue #422).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede" | "requested";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
-  /** The move; null for a round. */
+  /** The move; null for a round and for the squads the Coordinator formed (A10). */
   move: NextMove | null;
   /** What started the move, in the person's words ("dopo una verifica rossa"); null for a round or an older record. */
   trigger: string | null;
@@ -42,6 +47,38 @@ export interface ActivityEntry {
   issue?: { number: number; url: string } | null;
   /** The pull request a merge names (issue #247); absent for the other entries. */
   pullRequest?: { number: number; url: string } | null;
+  /** The person's message that asked for the action, with the words quoted (issue #422); absent for the other entries. */
+  personMessage?: { eventId: string; quote: string } | null;
+  /** The change to the squads the entry tells (A11), which the view words in the person's language; absent otherwise. */
+  squadChange?: SquadChange;
+}
+
+/**
+ * The person's changes to the squads (A11), made from the Squads view or through the Coordinator, and whether they
+ * were undone. `label` and `detail` are the Italian record; the view words them from `squadChange`. Pure.
+ */
+export function squadChangeEntries(changes: SquadChange[]): ActivityEntry[] {
+  const labels: Record<SquadChange["kind"], string> = { rename: "Squadra rinominata", merge: "Squadre unite", split: "Squadra divisa" };
+  const details: Record<SquadChange["kind"], (c: SquadChange) => string> = {
+    rename: (c) => `${c.names.from} si chiama ora ${c.names.to}.`,
+    merge: (c) => `${c.names.other} si è unita a ${c.names.to}.`,
+    split: (c) => `Da ${c.names.from} nasce la squadra ${c.names.other}.`,
+  };
+  return changes.map((change) => ({
+    id: change.id,
+    kind: "squad",
+    requestId: null,
+    move: null,
+    trigger: null,
+    label: labels[change.kind],
+    goalId: null,
+    startedAt: change.at,
+    endedAt: change.undoneAt,
+    outcome: change.undoneAt ? "undone" : "done",
+    detail: details[change.kind](change),
+    toolErrors: [],
+    squadChange: change,
+  }));
 }
 
 /**
@@ -76,6 +113,35 @@ export function mergeActivityEntries(candidates: Pick<Candidate, "id" | "goalId"
   });
 }
 
+/**
+ * The candidates the Coordinator declared superseded by a newer candidate of the same work (issue #421), with the reason
+ * and the "Aspetta te" item that left the list with it. Pure.
+ */
+export function supersessionActivityEntries(candidates: Pick<Candidate, "id" | "goalId" | "supersession">[], language: Language = DEFAULT_LANGUAGE): ActivityEntry[] {
+  return candidates.flatMap((candidate): ActivityEntry[] => {
+    const supersession = candidate.supersession;
+    if (!supersession) return [];
+    const detail = translate(language, "supersession.activity.detail", { id: candidate.id, by: supersession.byCandidateId, reason: supersession.reason });
+    const waiting = supersession.waiting ? ` ${translate(language, "supersession.activity.waiting", { item: `${supersession.waiting.label}, ${supersession.waiting.title}` })}` : "";
+    return [
+      {
+        id: `supersede:${candidate.id}`,
+        kind: "supersede",
+        requestId: null,
+        move: null,
+        trigger: null,
+        label: translate(language, "supersession.activity.label"),
+        goalId: candidate.goalId ?? null,
+        startedAt: supersession.at,
+        endedAt: null,
+        outcome: "done",
+        detail: `${detail}${waiting}`,
+        toolErrors: [],
+      },
+    ];
+  });
+}
+
 export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
   running: "In corso",
   done: "Fatta",
@@ -83,14 +149,19 @@ export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
   stopped: "Fermata",
   failed: "Errore",
   corrected: "Corretto",
+  undone: "Annullata",
 };
 
-/** The steps the Coordinator takes for the person within the mandate (A06), as Activity and the recap name them. */
-export const AUTONOMOUS_STEP_LABELS: Record<DelegableMove, string> = {
+/**
+ * The steps the Coordinator takes for the person within the mandate (A06), and the squads it forms after the study
+ * (A10), as Activity and the recap name them.
+ */
+export const AUTONOMOUS_STEP_LABELS: Record<AutonomousMove, string> = {
   confirmUnderstanding: "Comprensione confermata dal Coordinatore",
   confirmTeam: "Team confermato dal Coordinatore",
   confirmSeams: "Seam confermati dal Coordinatore",
   confirmSlices: "Fette confermate dal Coordinatore",
+  formSquads: "Squadre formate dal Coordinatore",
 };
 
 /** Whether a request is a turn Trama started by itself with continuous work (W04), not a message of the person. */
@@ -131,8 +202,9 @@ export const ROUND_LABEL = "Giro del Coordinatore";
 
 /**
  * The automatic moves, the rounds with an outcome, the steps of the found problems, the person's steps the Coordinator
- * took and Trama's merges of the project, newest first, from the requests, the move lines Trama recorded, the rounds,
- * the problems, the steps and the candidates. Pure.
+ * took, Trama's merges, the person's changes to the squads and the actions the person asked for, newest first, from
+ * the requests, the move lines Trama recorded, the rounds, the problems, the steps, the candidates, the squad changes and
+ * the requested actions. Pure.
  */
 export function activityLog(
   requests: CoordinatorRequest[],
@@ -140,7 +212,10 @@ export function activityLog(
   rounds: RoundRecord[] = [],
   problems: FoundProblem[] = [],
   steps: AutonomousStep[] = [],
-  candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[] = [],
+  candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest" | "supersession">[] = [],
+  squadChanges: SquadChange[] = [],
+  language: Language = DEFAULT_LANGUAGE,
+  requestedActions: RequestedAction[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -188,7 +263,7 @@ export function activityLog(
       id: step.id,
       kind: "step",
       requestId: step.requestId,
-      move: step.move,
+      move: step.move === "formSquads" ? null : step.move,
       trigger: null,
       label: AUTONOMOUS_STEP_LABELS[step.move],
       goalId: step.goalId,
@@ -200,8 +275,10 @@ export function activityLog(
     }),
   );
   const found = problemActivity(problems);
-  const merged = mergeActivityEntries(candidates);
-  if (!done.length && !found.length && !taken.length && !merged.length) return moves;
+  const merged = [...mergeActivityEntries(candidates), ...supersessionActivityEntries(candidates, language)];
+  const changed = squadChangeEntries(squadChanges);
+  const requested = requestedActionEntries(requestedActions, language);
+  if (!done.length && !found.length && !taken.length && !merged.length && !changed.length && !requested.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done, ...found, ...taken, ...merged].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found, ...taken, ...merged, ...changed, ...requested].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

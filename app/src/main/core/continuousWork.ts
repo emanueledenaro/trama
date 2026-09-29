@@ -1,7 +1,12 @@
 import type { NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
+import { activeDelegation } from "@shared/delegation";
+import { candidateSuperseded } from "@shared/conflictScope";
+import { touchesInterface } from "@shared/interfaceChange";
 import { focusView } from "./focus";
 import { isActive } from "./team";
 import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
+import { type MessageKey, translate } from "@shared/i18n";
+import { t } from "./personLanguage";
 
 export { BLOCK_LABELS } from "./workPhase";
 
@@ -21,6 +26,16 @@ export type { WorkEvent } from "@shared/domain";
  * mandate the Coordinator takes the understanding, the team, the seams and the slices by itself (A06, `autonomousCycle`).
  */
 const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"];
+
+/**
+ * The person's moves the Coordinator takes with the full delegation (issue #423): a product decision, and a candidate
+ * that waits for the person's ok (the interface, or a choice it leaves open). The mandate and the team are covered by
+ * the full mandate the delegation brings.
+ */
+const DELEGATION_DECIDES: NextMove[] = ["answerQuestions", "reviewCandidate"];
+
+/** Whether the work waits for a choice of the person the full delegation lets the Coordinator make. */
+const delegatedHolds = (state: Pick<WorkState, "moves">): boolean => state.moves.some((m) => m.actor === "person" && DELEGATION_DECIDES.includes(m.move));
 
 /** Events of the work that come from outside a single request: Trama weighs every open dialog of the project. */
 export const PROJECT_EVENTS: WorkEvent[] = ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "round"];
@@ -89,6 +104,12 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   // A block waits for the person, except the technical ones the Coordinator resolves by itself within the mandate (A06, Q3),
   // whatever event brought it: a red check, a conflict between worktrees, an assignment that stopped.
   if (state.phase === "blocked" && !state.block && !RESOLVES_BLOCKS.includes(event)) return null;
+  // With the full delegation (issue #423) the Coordinator decides what waits for the person, first: it unblocks the rest.
+  if (activeDelegation(document) && delegatedHolds(state)) {
+    // The round does not repeat a decision the latest automatic turn of the dialog already tried: a new event does.
+    if (event === "round" && latest.step?.by === "trama" && latest.step.move === "decideWithDelegation") return null;
+    return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
+  }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
   const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
   const option = state.moves.find((m) => m.actor === "coordinator");
@@ -151,6 +172,29 @@ export function projectMove(document: ProjectDocument, event: WorkEvent, guards:
   return null;
 }
 
+/**
+ * With the full delegation and "fai tutti i ticket" (issue #423), the move that takes the next open issue when the
+ * project has no open work left, or null. Pure: the issue comes from `nextTicket`, which the caller passes.
+ */
+export function ticketMove(
+  document: ProjectDocument,
+  issue: { number: number; title: string } | null,
+  guards: ContinuationGuards,
+  latest: { model: string | null; effort: string | null } | null,
+): AutomaticMove | null {
+  if (!issue || !guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
+  if (!activeDelegation(document)?.tickets || !mandateGranted(document) || hasOpenWork(document)) return null;
+  // @model-text: the message asks the Coordinator for the move.
+  return {
+    move: "takeTicket",
+    label: COORDINATOR_MOVES.takeTicket.label,
+    message: `Con la delega piena prendi la issue #${issue.number} «${issue.title}»: leggila con read_issues, trasformala in lavoro e portala fino all'unione, senza la persona.`,
+    goalId: null,
+    model: latest?.model ?? null,
+    effort: latest?.effort ?? null,
+  };
+}
+
 /** Records a round that did something, for Activity (A05). Keeps the latest KEPT_ROUNDS. */
 export function recordRound(document: ProjectDocument, round: { id: string; at: string; detail: string; requestId: string | null }): void {
   const record = (document.continuousWork ??= { paused: false, changedAt: null, rounds: [] });
@@ -167,13 +211,15 @@ export function setPaused(document: ProjectDocument, paused: boolean, at: string
 }
 
 
-/** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. */
-export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null): string {
+/** What the Coordinator reads in a turn Trama started: the move, and that the person did not write it. @model-text */
+export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["block"] = null, document: ProjectDocument | null = null): string {
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
     "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
     ...(block ? [blockSection(block)] : []),
+    ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
+    ...(move === "takeTicket" ? [TAKE_TICKET] : []),
     ...(move === "verifyCandidate"
       ? [
           "Le verifiche girano su un candidato, non su un incarico: per un incarico concluso senza candidato chiama prima declare_candidate, poi verify_candidate con il candidateID che restituisce. La fase del lavoro qui sopra elenca gli incarichi e i candidati.",
@@ -182,7 +228,37 @@ export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["
   ].join("\n");
 }
 
-/** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. */
+/** What deciding with the full delegation means (issue #423): the Coordinator's own recommendation, recorded with its doubt. @model-text */
+const DECIDE_WITH_DELEGATION =
+  "La persona ti ha dato la delega piena: decidi tu quello che aspetta lei. Per ogni domanda di prodotto aperta scegli la risposta che consiglieresti e registrala con decide_with_delegation, con il dubbio se ne hai uno. Per un candidato che aspetta il suo ok guarda le schermate prima e dopo e approvalo con approve_with_delegation, o fallo correggere. Poi vai avanti con il lavoro. Non chiedere nulla alla persona: le conferme di cancellazione restano sue.";
+
+/**
+ * What waits for the person that the delegation lets the Coordinator decide, with the ids its tools take: the open
+ * product questions with their alternatives and the recommended one, and the candidates that wait for the person's ok.
+ * @model-text
+ */
+function waitingChoices(document: ProjectDocument): string[] {
+  const questions = document.decisionRequests
+    .filter((q) => !q.outcome && !q.withdrawal)
+    .map((q) => {
+      const options = q.alternatives.map((a, index) => `${index}: ${a.behavior}`).join("; ");
+      const recommended = q.grilling?.recommendedIndex ?? null;
+      return `- ${q.id}: ${q.question} (alternative ${options}${recommended !== null ? `; consigliata ${recommended}` : ""})`;
+    });
+  const candidates = document.candidates
+    .filter((c) => touchesInterface(c.changedFiles) && !c.humanApproval && !c.humanRejection && !c.pullRequest?.mergedAt && !candidateSuperseded(document, c))
+    .map((c) => `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`);
+  return [
+    ...(questions.length ? ["Domande di prodotto aperte:", ...questions] : []),
+    ...(candidates.length ? ["Candidati che aspettano l'ok della persona:", ...candidates] : []),
+  ];
+}
+
+/** What taking an open issue means (issue #423): the whole cycle without the person, doubts written down. @model-text */
+const TAKE_TICKET =
+  "Porta la issue fino all'unione come faresti con una richiesta della persona: comprensione, piano, fette, incarichi, verifiche e unione. Un dubbio non ti ferma: scegli la strada che consiglieresti e scrivila con note_doubt.";
+
+/** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. @model-text */
 const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
   checkFailed:
     "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi assegna allo stesso sviluppatore, o a un altro libero, la correzione con assign_task: stessa fetta, stessi moduli, le verifiche che devono passare.",
@@ -192,6 +268,7 @@ const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
     "Leggi con read_team perché l'incarico si è fermato, poi riassegnalo con assign_task, allo stesso sviluppatore o a un altro libero, con le istruzioni per superare il motivo.",
 };
 
+/** @model-text */
 function blockSection(block: NonNullable<RequestStep["block"]>): string {
   return [
     `Blocco tecnico da risolvere: ${block.blocker}`,
@@ -211,35 +288,35 @@ export function blockOutcome(document: ProjectDocument, requestId: string): { re
   const state = workState(document, request.id);
   const resolved = state.phase !== "blocked" || state.blocker !== block.blocker;
   return resolved
-    ? { resolved, detail: `${block.why} Il Coordinatore ha sbloccato il lavoro: ora è in ${state.phase ? PHASE_NAMES[state.phase] : "attesa"}.` }
-    : { resolved, detail: `${block.why} Il Coordinatore non l'ha risolto in questo turno: ci riprova al prossimo evento o giro.` };
+    ? { resolved, detail: t("main.continuousWork.unblocked", { why: block.why, phase: t(state.phase ? PHASE_NAMES[state.phase] : "main.continuousWork.phase.none") }) }
+    : { resolved, detail: t("main.continuousWork.stillBlocked", { why: block.why }) };
 }
 
-const PHASE_NAMES: Record<NonNullable<WorkState["phase"]>, string> = {
-  clarification: "chiarimento",
-  spec: "spec",
-  slices: "fette",
-  execution: "esecuzione",
-  verification: "verifica",
-  candidate: "attesa di unione",
-  merged: "unione fatta",
-  blocked: "blocco",
+const PHASE_NAMES: Record<NonNullable<WorkState["phase"]>, MessageKey> = {
+  clarification: "main.continuousWork.phase.clarification",
+  spec: "main.continuousWork.phase.spec",
+  slices: "main.continuousWork.phase.slices",
+  execution: "main.continuousWork.phase.execution",
+  verification: "main.continuousWork.phase.verification",
+  candidate: "main.continuousWork.phase.candidate",
+  merged: "main.continuousWork.phase.merged",
+  blocked: "main.continuousWork.phase.blocked",
 };
 
 /** The Activity line of a block's outcome (A06): what was blocked, and whether the Coordinator resolved it. */
 export function blockOutcomeActivity(block: NonNullable<RequestStep["block"]>, outcome: { resolved: boolean; detail: string }) {
   return {
     type: "activity" as const,
-    title: outcome.resolved ? `Blocco risolto dal Coordinatore: ${BLOCK_KIND_NAMES[block.kind]}` : `Blocco ancora aperto: ${BLOCK_KIND_NAMES[block.kind]}`,
+    title: t(outcome.resolved ? "main.continuousWork.blockResolved" : "main.continuousWork.blockOpen", { kind: t(BLOCK_KIND_NAMES[block.kind]) }),
     detail: outcome.detail,
     tone: outcome.resolved ? ("info" as const) : ("error" as const),
   };
 }
 
-const BLOCK_KIND_NAMES: Record<TechnicalBlock, string> = {
-  checkFailed: "verifica rossa",
-  worktreeConflict: "conflitto tra lavori",
-  stalledAssignment: "incarico fermo",
+const BLOCK_KIND_NAMES: Record<TechnicalBlock, MessageKey> = {
+  checkFailed: "main.continuousWork.block.checkFailed",
+  worktreeConflict: "main.continuousWork.block.worktreeConflict",
+  stalledAssignment: "main.continuousWork.block.stalledAssignment",
 };
 
 /** A Coordinator move Trama started that the turn did not make, and why, in the person's words (issue #204). */
@@ -261,16 +338,16 @@ export function stalledMove(document: ProjectDocument, requestId: string): Stall
   const state = workState(document, request.id);
   if (!state.moves.some((m) => m.actor === "coordinator" && m.move === move)) return null;
   const reason = stallReason(document, request.id, request.createdAt, move, state);
-  return reason ? { move, reason: `La mossa automatica non è riuscita: ${reason}`.slice(0, 240) } : null;
+  return reason ? { move, reason: t("main.continuousWork.moveFailed", { reason }).slice(0, 240) } : null;
 }
 
 function stallReason(document: ProjectDocument, requestId: string, since: string, move: CoordinatorMove, state: WorkState): string | null {
   switch (move) {
     case "preparePlan":
-      return document.plans.some((p) => p.requestId === requestId) ? null : "il Coordinatore non ha avviato il piano.";
+      return document.plans.some((p) => p.requestId === requestId) ? null : t("main.continuousWork.stall.noPlan");
     case "assignWork": {
       const assigned = document.team.specialists.some((s) => s.assignments.some((a) => a.requestId === requestId));
-      return assigned ? null : "il Coordinatore non ha assegnato il lavoro.";
+      return assigned ? null : t("main.continuousWork.stall.noAssignment");
     }
     case "verifyCandidate": {
       const targets = state.verification;
@@ -282,26 +359,33 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
         const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
         if (!assignment?.requestId || !work?.has(assignment.requestId)) return false;
         const times = [candidate.declaredAt, candidate.technicalReview?.at, ...Object.values(candidate.evidence).map((e) => e.recordedAt)];
-        return times.some((t) => t !== undefined && t >= since);
+        return times.some((time) => time !== undefined && time >= since);
       });
       if (moved) return null;
       if (targets.undeclared.length) {
         const [first, ...others] = targets.undeclared;
         return others.length
-          ? `gli incarichi ${targets.undeclared.join(", ")} sono conclusi ma i loro candidati non sono stati dichiarati.`
-          : `l'incarico ${first} è concluso ma il suo candidato non è stato dichiarato.`;
+          ? t("main.continuousWork.stall.undeclaredMany", { ids: targets.undeclared.join(", ") })
+          : t("main.continuousWork.stall.undeclaredOne", { id: first! });
       }
-      return `le verifiche di ${targets.unverified.join(", ")} non sono partite.`;
+      return t("main.continuousWork.stall.unverified", { ids: targets.unverified.join(", ") });
     }
     case "answerQuestion":
       // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
+      return null;
+    case "decideWithDelegation":
+      // With the delegation (issue #423) the Coordinator decides what waits for the person: a choice still open is a stall.
+      return delegatedHolds(state) ? t("main.delegation.stalled") : null;
+    case "takeTicket":
       return null;
   }
 }
 
 /**
  * Openings of a generic confirmation question: the Coordinator asks leave to go on instead of going on
- * ("Vuoi che prepari il piano?", "Procedo?", "Fammi sapere se..."). A product question is a card, not one of these.
+ * ("Vuoi che prepari il piano?", "Procedo?", "Fammi sapere se..."), in Italian and in English, the languages the
+ * Coordinator writes to the person in. A product question is a card, not one of these. @model-text: patterns that read
+ * the Coordinator's replies.
  */
 const GENERIC_CONFIRMATION = [
   /^(vuoi|volete|preferisci|preferite|desideri) che\b/i,
@@ -313,7 +397,13 @@ const GENERIC_CONFIRMATION = [
   /^(confermi|confermate)\b/i,
   /^fammi sapere\b/i,
   /^dimmi (se|tu)\b/i,
+  /^(do you want|would you like) me to\b/i,
+  /^(can|may|should|shall) i (proceed|go ahead|continue|start|go on|begin)\b/i,
+  /^let me know\b/i,
 ];
+
+/** The closing sentences that ask leave without a question mark. @model-text: a pattern that reads the Coordinator's replies. */
+const ASKS_WITHOUT_MARK = /^fammi sapere\b|^dimmi (se|tu)\b|^let me know\b/i;
 
 /**
  * The generic confirmation question that closes a Coordinator reply (W04), or null: the last sentence of the text,
@@ -326,13 +416,13 @@ export function closingConfirmation(text: string): string | null {
   // The last sentence: what follows the last full stop, exclamation or question mark before the end.
   const sentence = (last.match(/[^.!?\n]+[.!?]*\s*$/)?.[0] ?? last).replace(/^[\s>#-]+/, "").trim();
   if (!sentence) return null;
-  const asks = sentence.endsWith("?") || /^fammi sapere\b|^dimmi (se|tu)\b/i.test(sentence);
+  const asks = sentence.endsWith("?") || ASKS_WITHOUT_MARK.test(sentence);
   return asks && GENERIC_CONFIRMATION.some((pattern) => pattern.test(sentence)) ? sentence : null;
 }
 
 /** A line that opens a numbered or lettered option: "1. ", "2) ", "a) ", "**1.** ". */
 const OPTION_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:\d{1,2}|[a-c])[.)](?:\*\*)?\s+\S/i;
-/** How the reply asks the person to pick one of those options in the text. */
+/** How the reply asks the person to pick one of those options in the text. @model-text: a pattern that reads the Coordinator's replies. */
 const PICK_IN_TEXT =
   /\b(?:rispondimi|rispondi|rispondete|scrivimi|dimmi) (?:con|solo)\b|\b(?:scegli|scegliete|indica|indicami)\b|\bdimmi (?:tra|fra|quale|quali|il numero|l'opzione|un'opzione)\b|\b(?:quale|quali|cosa|che cosa)\b[^.?!\n]{0,40}\bprefer(?:isci|ite)\b/i;
 
@@ -365,7 +455,7 @@ export function choicesWithoutCard(document: ProjectDocument, requestId: string,
 /**
  * What the Coordinator reads when its previous reply in the dialog of `requestId` closed with a generic confirmation
  * question (W04), or asked the person to pick numbered options in the text (issue #228): what it wrote, and the
- * card that belongs there. Null otherwise.
+ * card that belongs there. Null otherwise. @model-text
  */
 export function confirmationFeedback(document: ProjectDocument, requestId: string): string | null {
   const index = document.requests.findIndex((r) => r.id === requestId);
@@ -390,8 +480,8 @@ export function confirmationFeedback(document: ProjectDocument, requestId: strin
   ].join("\n");
 }
 
-/** The line the chat shows for an automatic move, also read back in the history. */
-export const AUTOMATIC_MOVE_DETAIL = "Mossa del Coordinatore avviata da Trama dentro il mandato, senza chiederti conferma.";
+/** The line the chat shows for an automatic move, also read back in the history, in the person's language. */
+export const automaticMoveDetail = (): string => t("main.continuousWork.automaticMoveDetail");
 
 /** What Trama read on GitHub at one moment: the open issues and the open pull requests. */
 export interface GitHubReading {

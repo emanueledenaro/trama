@@ -1,11 +1,13 @@
-import { IconBrain, IconFileDiff, IconHourglass, IconMessageCircle, IconSettings, IconShieldCheck, IconUsersGroup } from "@tabler/icons-react";
+import { IconBrain, IconFileDiff, IconFolders, IconHourglass, IconSettings, IconShieldCheck, IconUsersGroup } from "@tabler/icons-react";
 import type * as React from "react";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { useWaiting } from "@/components/WaitingView";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
-import { type SideBarView, VIEW_LABELS } from "@/lib/workbench";
+import { CONVERSATION_TAB, type SideBarView, VIEW_LABELS } from "@/lib/workbench";
+import { useSplitEditor } from "./EditorArea";
 
 function ActivityButton({
   label,
@@ -52,7 +54,7 @@ function ActivityButton({
 
 /**
  * The activity bar (issue #330, ADR 0018): a column of icons on the left that chooses what the window shows.
- * Projects on top, then the conversation and the five views of the project, Settings at the bottom. The one badge
+ * Projects on top, then the Coordinator's conversation and the five views of the project, Settings at the bottom. The one badge
  * counts what waits for the person. The icon of the open view closes the side bar, as in VS Code.
  */
 export function ActivityBar() {
@@ -62,7 +64,10 @@ export function ActivityBar() {
   const stored = useUi((s) => s.sideBarView);
   const mainView = useUi((s) => s.mainView);
   const openView = useUi((s) => s.openView);
-  const setMainView = useUi((s) => s.setMainView);
+  const focusTab = useUi((s) => s.focusTab);
+  // A detail tab covers the main tab in a narrow window, or never when the details sit beside it.
+  const split = useSplitEditor();
+  const covered = useUi((s) => s.editorFocus === "detail" && s.activeDetail !== null) && !split;
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
   const focusComposer = useUi((s) => s.focusComposer);
@@ -79,7 +84,6 @@ export function ActivityBar() {
       {icon}
     </ActivityButton>
   );
-  const initial = (project?.isDemo ? t("workbench.title.demoProject") : (project?.name ?? "T")).trim().charAt(0).toLowerCase() || "t";
   return (
     <nav
       aria-label={t("workbench.views")}
@@ -87,29 +91,22 @@ export function ActivityBar() {
       className="app-sidebar-surface flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)]"
     >
       <ActivityButton label={t("workbench.view.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
-        <span
-          className={cn(
-            "flex size-7 items-center justify-center rounded-md text-ui-sm font-semibold",
-            project ? "bg-[var(--sidebar-selected)] text-[var(--color-text-accent)]" : "bg-[var(--color-background-button-secondary)] text-muted-foreground",
-          )}
-          aria-hidden
-        >
-          {initial}
-        </span>
+        <IconFolders className="size-5" stroke={1.6} />
       </ActivityButton>
       {project ? (
         <>
           <div className="h-1.5" />
           <ActivityButton
             label={t("workbench.view.conversation")}
-            active={mainView === "dialog" && !sidebarOpen}
+            active={mainView === "dialog" && !covered && !sidebarOpen}
             onClick={() => {
-              if (mainView === "settings") closeSettings();
-              if (mainView !== "dialog") setMainView("dialog");
+              // The conversation's tab comes forward; Progetti, Impostazioni and the details keep their tabs (issue #336).
+              focusTab(CONVERSATION_TAB);
               focusComposer();
             }}
           >
-            <IconMessageCircle className="size-5" stroke={1.6} />
+            {/* Trama's mark in one tint, like the other icons: the conversation is with the Coordinator. */}
+            <TramaMark variant="mono" size={20} />
           </ActivityButton>
           {view("waiting", <IconHourglass className="size-5" stroke={1.6} />, waiting)}
           {view("work", <IconFileDiff className="size-5" stroke={1.6} />)}
@@ -121,8 +118,8 @@ export function ActivityBar() {
       <span className="flex-1" />
       <ActivityButton
         label={t("workbench.view.settings")}
-        active={mainView === "settings"}
-        onClick={() => (mainView === "settings" ? closeSettings() : openSettings("general"))}
+        active={mainView === "settings" && !covered}
+        onClick={() => (mainView === "settings" && !covered ? closeSettings() : openSettings("general"))}
       >
         <IconSettings className="size-5" stroke={1.6} />
       </ActivityButton>

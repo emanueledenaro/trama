@@ -10,7 +10,7 @@ import { activeAssignments } from "./team";
 import { workState, workStateText } from "./workPhase";
 
 /**
- * The context summary (ADR 0018): what the Coordinator needs to go on in a new session, written by Trama from its own
+ * The context summary (ADR 0019): what the Coordinator needs to go on in a new session, written by Trama from its own
  * records, never by the model. Trama writes it when the Coordinator's context passes the project's threshold and hands it
  * to the new session with the study and the memory. The person reads another view of the same records in Activity and
  * in the chat: plain sections, without the framing written for the model. Pure.
@@ -37,17 +37,20 @@ const oneLine = (text: string, limit: number) => {
 
 const clip = (text: string) => (text.length > VERBATIM_LIMIT ? `${text.slice(0, VERBATIM_LIMIT)}…` : text);
 
+// @model-text: part of the Coordinator's brief.
 function goalsSection(document: ProjectDocument): string[] {
   const goals = workingGoals(document);
   if (!goals.length) return ["## Obiettivi", "Nessun obiettivo aperto."];
   return ["## Obiettivi", ...goals.map((g) => `- ${g.id} (${g.status === "proposed" ? "proposto" : "aperto"}): ${g.title}. Risultato atteso: ${oneLine(g.outcome, 300)}`)];
 }
 
+// @model-text: part of the Coordinator's brief.
 function pactSection(document: ProjectDocument): string[] {
   if (!document.decisions.length) return ["## Decisioni del Patto", "Nessuna decisione registrata."];
   return ["## Decisioni del Patto", ...document.decisions.map((d) => `- ${d.id} v${d.version}: ${oneLine(d.value, 300)}`)];
 }
 
+// @model-text: part of the Coordinator's brief.
 function mandateSection(document: ProjectDocument): string[] {
   const mandate = document.mandate;
   if (mandate?.status !== "granted") return [];
@@ -58,22 +61,26 @@ function mandateSection(document: ProjectDocument): string[] {
   return lines;
 }
 
+// @model-text: part of the Coordinator's brief.
 function assignmentLine(document: ProjectDocument, assignment: SpecialistAssignment): string {
   const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId);
   const update = assignment.lastUpdate ? ` Ultimo aggiornamento: ${oneLine(assignment.lastUpdate, 300)}` : "";
   return `- ${assignment.id} (${specialist?.name ?? assignment.specialistId}, ${assignment.status}): ${oneLine(assignment.objective, 300)}.${update}`;
 }
 
+// @model-text: part of the Coordinator's brief.
 function assignmentsSection(document: ProjectDocument): string[] {
   const active = activeAssignments(document);
   return ["## Incarichi in corso", ...(active.length ? active.map((a) => assignmentLine(document, a)) : ["Nessun incarico in corso."])];
 }
 
+// @model-text: part of the Coordinator's brief.
 function waitingSection(waiting: WaitingItem[]): string[] {
   if (!waiting.length) return ["## Richieste che aspettano la persona", "Nessuna."];
   return ["## Richieste che aspettano la persona", ...waiting.map((item) => `- ${item.targetId} (${item.label}): ${item.title}`)];
 }
 
+// @model-text: part of the Coordinator's brief.
 function routeAndGrillingSection(document: ProjectDocument, requestId: string | null): string[] {
   const lines: string[] = [];
   const route = (document.routes ?? []).findLast((r) => r.status === "started");
@@ -86,6 +93,7 @@ function routeAndGrillingSection(document: ProjectDocument, requestId: string | 
   return lines.length ? ["## Percorso e grilling", ...lines] : [];
 }
 
+// @model-text: part of the Coordinator's brief.
 function exchangeLine(event: ConversationEvent, limit: number | null): string | null {
   const content = event.content;
   const text = content.type === "personMessage" ? content.text : content.type === "coordinatorText" ? content.text : null;
@@ -94,6 +102,7 @@ function exchangeLine(event: ConversationEvent, limit: number | null): string | 
   return `${who}: ${limit === null ? clip(text) : oneLine(text, limit)}`;
 }
 
+// @model-text: part of the Coordinator's brief.
 function exchangesSection(document: ProjectDocument): string[] {
   const exchanges = document.events.filter((e) => e.content.type === "personMessage" || e.content.type === "coordinatorText");
   if (!exchanges.length) return ["## Ultimi scambi", "La conversazione è vuota."];
@@ -110,7 +119,7 @@ function exchangesSection(document: ProjectDocument): string[] {
   return lines;
 }
 
-/** The summary Trama hands to the Coordinator's new session. */
+/** The summary Trama hands to the Coordinator's new session. @model-text */
 export function contextSummary({ document, waiting, headSHA }: ContextSummaryInput): string {
   const requestId = document.requests.at(-1)?.id ?? null;
   const focus = requestId ? focusText(document, requestId) : null;
@@ -140,7 +149,7 @@ export interface PersonSummaryInput extends ContextSummaryInput {
 }
 
 /**
- * The same records for the person (ADR 0018): goals, Pact decisions, mandate, assignments, candidates and what waits
+ * The same records for the person (ADR 0019): goals, Pact decisions, mandate, assignments, candidates and what waits
  * for them, as plain sections in their language. No framing for the model, no ids, no tool names.
  */
 export function personSummary({ document, waiting, candidateStates = {}, language = DEFAULT_LANGUAGE }: PersonSummaryInput): string {

@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { chmod, lstat, mkdir, open, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AppSettings, MonitorState, ProjectDocument, RecentProject } from "@shared/domain";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type { OnboardingState } from "@shared/onboarding";
 import { normalizeDocument } from "./document";
+import { t } from "./personLanguage";
 
 const MAXIMUM_RECENT_PROJECTS = 20;
 const MAXIMUM_IMAGES = 8;
@@ -45,9 +46,23 @@ async function writeNow(path: string, contents: string): Promise<void> {
 /** Reads after the writes already asked for on the same path: a save still in flight is the latest state, not the file. */
 async function readJson<T>(path: string): Promise<T | null> {
   await pendingWrites.get(path);
-  if (!existsSync(path)) return null;
-  if ((await lstat(path)).isSymbolicLink()) throw new Error(`Il file di stato è un collegamento simbolico: ${path}`);
-  return JSON.parse(await readFile(path, "utf8")) as T;
+  // One open, refusing a symbolic link, and the read from the same handle: nothing can swap the file in between.
+  // Windows has no O_NOFOLLOW: there the link is refused just before the open.
+  if (constants.O_NOFOLLOW === undefined && existsSync(path) && (await lstat(path)).isSymbolicLink()) throw new Error(t("main.storage.symlink", { path }));
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    if (code === "ELOOP") throw new Error(t("main.storage.symlink", { path }));
+    throw error;
+  }
+  try {
+    return JSON.parse(await handle.readFile("utf8")) as T;
+  } finally {
+    await handle.close();
+  }
 }
 
 export class AppStorage {
@@ -111,21 +126,21 @@ export class AppStorage {
       return {
         document: null,
         writable: false,
-        error: `Lo stato del progetto non è leggibile e resta invariato in ${path}. ${(error as Error).message}`,
+        error: t("main.storage.unreadable", { path, detail: (error as Error).message }),
       };
     }
   }
 
   /** Stores composer images inside Trama's folder and returns their absolute paths. */
   async saveAttachments(projectId: string, images: ImageAttachmentInput[]): Promise<string[]> {
-    if (images.length > MAXIMUM_IMAGES) throw new Error(`Puoi allegare al massimo ${MAXIMUM_IMAGES} immagini per messaggio.`);
+    if (images.length > MAXIMUM_IMAGES) throw new Error(t("main.storage.tooManyImages", { max: MAXIMUM_IMAGES }));
     const directory = join(this.root, "Attachments", createHash("sha256").update(projectId).digest("hex").slice(0, 16));
     const paths: string[] = [];
     for (const image of images) {
       const extension = IMAGE_EXTENSIONS[image.mimeType];
-      if (!extension) throw new Error(`Formato immagine non supportato: ${image.name}.`);
+      if (!extension) throw new Error(t("main.storage.unsupportedImage", { name: image.name }));
       const data = Buffer.from(image.dataBase64, "base64");
-      if (data.length === 0 || data.length > MAXIMUM_IMAGE_BYTES) throw new Error(`L'immagine ${image.name} supera 10 MB o è vuota.`);
+      if (data.length === 0 || data.length > MAXIMUM_IMAGE_BYTES) throw new Error(t("main.storage.imageTooLarge", { name: image.name }));
       const path = join(directory, `${randomUUID()}.${extension}`);
       await mkdir(directory, { recursive: true });
       await writeFile(path, data, { mode: 0o600 });
