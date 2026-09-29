@@ -3027,14 +3027,14 @@ await closePanels();
 await page.setViewportSize({ width: 1280, height: 820 });
 // The person drives each step here, so Trama's automatic moves (W04, checked above) stay off.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
-const candidateProject = await mkdtemp(join(tmpdir(), "trama-ui-candidato-"));
+const candidateProject = await mkdtemp(join(tmpdir(), "Negozio-ordini-"));
 await cp(resolve("resources/DemoProject"), candidateProject, { recursive: true });
 const gitIn = (...args) => execFileSync("git", ["-C", candidateProject, ...args], { stdio: "ignore" });
 gitIn("init", "-q", "-b", "main");
 gitIn("add", ".");
 gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
-await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
+await page.getByTestId("dialog-title").filter({ hasText: "Negozio-ordini" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
 // Issue #244: the project mandate waits at the opening. Here the person writes a narrower mandate of their own.
 const declinedMandate = await openWaiting("mandate");
@@ -3284,6 +3284,58 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Issue #331: the candidate's card opens in Aspetta te, in the side bar. At its narrowest the reviewers' rows stay
+// readable: name, tag and badge never overlap, a few letters of the name always show, the badge stays whole and
+// inside the row (under the name when there is no room beside it). 1280x800, light and dark.
+{
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openView("Aspetta te");
+  const gate = page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-waiting-kind="candidate"][data-open="true"] [data-testid="candidate-gate"]');
+  await gate.waitFor();
+  const sash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
+  const sashBox = await sash.boundingBox();
+  await page.mouse.move(sashBox.x + sashBox.width / 2, 400);
+  await page.mouse.down();
+  await page.mouse.move(sashBox.x + sashBox.width / 2 - 400, 400, { steps: 8 });
+  await page.mouse.up();
+  await page.mouse.move(900, 500);
+  await page.waitForTimeout(400);
+  const narrowest = Number(await sash.getAttribute("aria-valuenow"));
+  if (narrowest !== Number(await sash.getAttribute("aria-valuemin"))) throw new Error(`The side bar is not at its narrowest: ${narrowest}px`);
+  const rowProblems = () =>
+    gate.getByTestId("gate-review").evaluateAll((rows) => {
+      const problems = [];
+      const overlap = (a, b) => a && b && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      for (const row of rows) {
+        const role = row.dataset.role;
+        const head = row.querySelector('[data-testid="gate-review-head"]').getBoundingClientRect();
+        const name = row.querySelector('[data-testid="agent-name"]');
+        const tag = row.querySelector('[data-testid="agent-tag"]');
+        const badge = row.querySelector('[data-testid="gate-review-outcome"] > :last-child');
+        const boxes = { name: name?.getBoundingClientRect(), tag: tag?.getBoundingClientRect(), badge: badge.getBoundingClientRect() };
+        if (name && boxes.name.width < 16) problems.push(`${role}: the name shows ${Math.round(boxes.name.width)}px`);
+        if (overlap(boxes.name, boxes.tag)) problems.push(`${role}: name and tag overlap`);
+        if (overlap(boxes.name, boxes.badge)) problems.push(`${role}: name and badge overlap`);
+        if (overlap(boxes.tag, boxes.badge)) problems.push(`${role}: tag and badge overlap`);
+        if (tag && boxes.tag.right > head.right + 0.5) problems.push(`${role}: the tag leaves the row`);
+        if (boxes.badge.left < head.left - 0.5 || boxes.badge.right > head.right + 0.5) problems.push(`${role}: the badge leaves the row`);
+        if (badge.scrollWidth > badge.clientWidth + 1) problems.push(`${role}: the badge is cut`);
+      }
+      return problems;
+    });
+  await gate.evaluate((node) => node.scrollIntoView({ block: "center" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    const problems = await rowProblems();
+    if (problems.length) throw new Error(`Reviewer rows in a narrow side bar (${dark ? "dark" : "light"}): ${problems.join("; ")}`);
+    await shot(`18e3-candidate-gate-narrow-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  await sash.dblclick();
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+  await page.setViewportSize(viewport);
+}
 // W10: a blocking finding goes back to the developer. Ada's note leaves a key in the diff: Trama's scan finds it for
 // Sicurezza and no model receives the diff, so the other figures do not start. The green light is refused, and the
 // finding reaches Ada in her work, where she resumes it.
