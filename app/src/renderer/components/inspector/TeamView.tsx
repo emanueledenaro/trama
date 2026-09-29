@@ -27,7 +27,7 @@ import { discussionState, minutesLeft, squadDiscussions } from "@shared/discussi
 import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, teamMoments } from "@shared/roster";
 import { developersOutsideSquads, sharedRoleMembers, squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
 import { assignmentStatus, candidateStatus } from "@shared/states";
-import { agentBrief, type MemberSign, memberSign, openWork, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
+import { agentBrief, type MemberSign, memberSign, openWork, squadArea, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
 import { AgentAvatar, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
 import { type ModelChoice, ModelPicker } from "@/components/chat/ModelPicker";
@@ -237,14 +237,15 @@ function PersonRow({ specialist, dutyOnHover = false, short = false, testId }: {
 
 const byIds = (specialists: Specialist[], ids: string[]) => ids.flatMap((id) => specialists.filter((s) => s.id === id && s.status !== "removed"));
 
-/** One squad (A10): its area and the slices done on the first line, its status line, then the lead, the developers and the QA. */
+/** One squad (A10): its name, its area unless the name says it, and the slices done on the first line; its status line; then the lead, the developers and the QA. */
 function SquadGroup({ squad }: { squad: Squad }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const document = project.document;
   const specialists = document.team.specialists;
   const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id);
-  const area = modules.length ? modules.join(", ") : t("teams.squad.wholeProject");
+  // A squad named after its area says the name once: "app", not "app app" (UI wave of 29 September).
+  const area = squadArea(squad, modules, t("teams.squad.wholeProject"));
   const slices = squadSlices(document, project.sliceViews, squad);
   const backlog = project.backlogs?.find((b) => b.squadId === squad.id);
   const [edit, setEdit] = useState<SquadEdit | null>(null);
@@ -255,10 +256,16 @@ function SquadGroup({ squad }: { squad: Squad }) {
     <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="squad" data-squad={squad.name} data-squad-id={squad.id}>
       <div className="flex min-w-0 items-center gap-1">
         <p className="min-w-0 flex-1 truncate px-2 text-ui-sm text-muted-foreground" title={hover} data-testid="squad-header">
-          <span className="font-medium text-foreground">{squad.name}</span>
+          <span className="font-medium text-foreground" data-testid="squad-name">
+            {squad.name}
+          </span>
           <Sep />
-          {area}
-          <Sep />
+          {area ? (
+            <>
+              <span data-testid="squad-area">{area}</span>
+              <Sep />
+            </>
+          ) : null}
           {slices.total ? t("teams.squad.slices", { done: slices.done, count: slices.total }) : t("teams.squad.noSlices")}
         </p>
         <SquadMenu squad={squad} onEdit={setEdit} />

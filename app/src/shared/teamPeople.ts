@@ -112,6 +112,17 @@ export function squadSlices(
   return { done, total: keys.size };
 }
 
+/**
+ * The area a squad's header names after the squad: its modules, or `wholeProject` for a squad without modules. Null
+ * when the area only repeats the squad's name, as for a squad named after its one area ("app" on the area app, the
+ * name Trama gives when it forms the squads), so the header says the name once.
+ */
+export function squadArea(squad: Pick<Squad, "name">, moduleNames: string[], wholeProject: string): string | null {
+  const area = moduleNames.length ? moduleNames.join(", ") : wholeProject;
+  const key = (name: string) => name.trim().toLocaleLowerCase();
+  return key(area) === key(squad.name) ? null : area;
+}
+
 /** The part a person has in the squads: lead, developer, dedicated QA, shared role, or a developer outside squads. */
 export type SquadPart = "lead" | "developer" | "qa" | "shared" | "outside" | "unformed";
 

@@ -453,6 +453,27 @@ const workBarPlace = async (where, expected) => {
     throw new Error(`The work bar lies over ${where}: ${JSON.stringify(layout)}`);
   }
 };
+// UI wave of 29 September: the header of a squad named after its area says the name once ("app", not "app app"), as
+// Trama names the squads it forms; a squad whose name differs from its areas still names them. Returns the headers.
+const squadHeadersNameOnce = async (where) => {
+  const headers = await page
+    .getByTestId("side-bar")
+    .getByTestId("squad")
+    .evaluateAll((squads) =>
+      squads.map((squad) => ({
+        name: squad.dataset.squad,
+        area: squad.querySelector('[data-testid="squad-area"]')?.textContent.trim() ?? null,
+        text: squad.querySelector('[data-testid="squad-header"]').textContent.replace(/\s+/g, " ").trim(),
+      })),
+    );
+  if (!headers.length) throw new Error(`No squad in ${where}`);
+  const key = (value) => value.trim().toLocaleLowerCase();
+  for (const { name, area, text } of headers) {
+    if (area !== null && key(area) === key(name)) throw new Error(`The header of ${name} repeats its name as its area in ${where}: ${text}`);
+    if (area === null && key(text).startsWith(`${key(name)} ${key(name)} `)) throw new Error(`The header of ${name} says its name twice in ${where}: ${text}`);
+  }
+  return headers;
+};
 // The wave on the interface's priorities (29 September 2026): a view of the side bar at its narrowest (240 px, the sash
 // moved from the keyboard) and at its widest, light and dark, then back to the normal width and the look it had.
 const sideBarWidthNow = () => page.getByRole("separator", { name: /Larghezza della barra laterale/ }).getAttribute("aria-valuenow");
@@ -1218,6 +1239,15 @@ const teamPanel = page.getByTestId("side-bar");
 const firstSquad = teamPanel.getByTestId("squad").first();
 await firstSquad.waitFor({ timeout: 20_000 });
 await firstSquad.getByTestId("squad-status").getByText(/^Libera/).waitFor();
+// UI wave of 29 September: the squad takes the name of Ada's area, Orders, and its header said "Orders Orders". Now
+// the name shows once, with the side bar narrow and wide, light and dark.
+{
+  const headers = await squadHeadersNameOnce("Squadre after the study");
+  if (!headers.some((header) => header.area === null)) throw new Error(`No squad named after its area shows its name once: ${JSON.stringify(headers)}`);
+  await sideBarEnds("52f-squads-name-once", async (end) => {
+    await squadHeadersNameOnce(`Squadre with the side bar ${end}`);
+  });
+}
 await firstSquad.getByRole("button", { name: /^Ada/ }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').filter({ hasText: "[Capo]" }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
@@ -7413,6 +7443,12 @@ const squadsSide = page.getByTestId("side-bar");
 const squadNamed = (name) => squadsSide.locator(`[data-testid="squad"][data-squad="${name}"]`);
 await squadNamed("Ordini").waitFor({ timeout: 20_000 });
 await squadNamed("Catalogo").waitFor();
+// Named apart from their areas, these squads still name them in their header (UI wave of 29 September).
+{
+  const headers = await squadHeadersNameOnce("the squads project");
+  const areaOf = (name) => headers.find((header) => header.name === name)?.area;
+  if (areaOf("Ordini") !== "Orders, Payments" || areaOf("Catalogo") !== "Catalog") throw new Error(`A squad's header lost its areas: ${JSON.stringify(headers)}`);
+}
 const squadMenu = async (name, item) => {
   const menu = await openMenu(squadNamed(name).getByTestId("squad-menu"));
   if (item) await menu.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();

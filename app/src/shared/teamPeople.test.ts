@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Candidate, ProjectDocument, Specialist, SpecialistAssignment, Squad } from "./domain";
 import type { PresenceView } from "./presence";
 import { translator } from "./i18n";
-import { agentBrief, memberSign, squadPart, squadSlices, teamSummary } from "./teamPeople";
+import { agentBrief, memberSign, squadArea, squadPart, squadSlices, teamSummary } from "./teamPeople";
 
 const person = (id: string, extra: Partial<Specialist> = {}): Specialist =>
   ({
@@ -145,6 +145,20 @@ describe("squadSlices", () => {
     ]);
     const views = { P1: [{ id: "S1", state: "done" as const }, { id: "S2", state: "working" as const }] };
     expect(squadSlices(document, views, squad)).toEqual({ done: 1, total: 2 });
+  });
+});
+
+describe("squadArea", () => {
+  it("leaves out the area when it only repeats the squad's name, as for the squads Trama names after their area", () => {
+    expect(squadArea({ name: "scripts" }, ["scripts"], "tutto il progetto")).toBeNull();
+    expect(squadArea({ name: "App" }, [" app "], "tutto il progetto")).toBeNull();
+    expect(squadArea({ name: "Tutto il progetto" }, [], "tutto il progetto")).toBeNull();
+  });
+
+  it("names the area when it says something the name does not", () => {
+    expect(squadArea({ name: "Ordini" }, ["Orders", "Payments"], "tutto il progetto")).toBe("Orders, Payments");
+    expect(squadArea({ name: "app" }, ["app", "hooks"], "tutto il progetto")).toBe("app, hooks");
+    expect(squadArea({ name: "Prodotto" }, [], "tutto il progetto")).toBe("tutto il progetto");
   });
 });
 
