@@ -282,22 +282,17 @@ function BacklogList({ backlog }: { backlog: SquadBacklogView }) {
           >
             <span className="w-4 shrink-0 pt-px text-right text-ui-sm tabular-nums text-muted-foreground">{index + 1}</span>
             <span className="min-w-0 flex-1">
-              <span className="flex min-w-0 items-center gap-1.5 text-ui-sm text-foreground">
-                {item.label ? <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{item.label}</span> : null}
-                {item.kind === "problem" ? <span className="shrink-0 text-ui-xs text-warning">{t("teams.backlog.problem")}</span> : null}
-                <span className="min-w-0 truncate" title={name}>
+              <span className="flex min-w-0 items-start gap-1.5 text-ui-sm text-foreground">
+                {item.label ? <span className="shrink-0 pt-px font-mono text-[11px] text-muted-foreground">{item.label}</span> : null}
+                {item.kind === "problem" ? <span className="shrink-0 pt-px text-ui-xs text-warning">{t("teams.backlog.problem")}</span> : null}
+                <span className="line-clamp-2 min-w-0 break-words" title={name}>
                   {item.title}
                 </span>
-                {item.issue ? <span className="shrink-0 text-ui-xs text-muted-foreground">#{item.issue.number}</span> : null}
+                {item.issue ? <span className="shrink-0 pt-px text-ui-xs text-muted-foreground">#{item.issue.number}</span> : null}
               </span>
+              {/* The person's place is the reason of an item they moved; the Coordinator's stays on hover. */}
               <span className="block truncate text-ui-xs text-muted-foreground" data-testid="backlog-reason" title={backlogReason(t, item.reason)}>
-                {item.placedByPerson ? (
-                  <>
-                    {t("teams.backlog.placed")}
-                    <Sep />
-                  </>
-                ) : null}
-                {backlogReason(t, item.reason)}
+                {item.placedByPerson ? t("teams.backlog.placed") : backlogReason(t, item.reason)}
               </span>
             </span>
             <div className="cta-row shrink-0">

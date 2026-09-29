@@ -3174,8 +3174,12 @@ if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a s
 // Given back to the Coordinator's order, S2 is on top again, so the free developer takes S2 below.
 {
   await openView("Squadre");
-  const backlog = teamPanel.getByTestId("squad-backlog").filter({ has: page.getByTestId("squad-backlog-toggle").filter({ hasText: /in cima S2 / }) });
-  await backlog.waitFor({ timeout: 20_000 });
+  // The window was opened again since the Squads view was first checked: the side bar of this one.
+  const squadsBar = page.getByTestId("side-bar");
+  await squadsBar.getByTestId("squad-backlog").filter({ hasText: /in cima S2 / }).waitFor({ timeout: 20_000 });
+  // Fixed by position: once open, the toggle no longer names the top item.
+  const backlogIndex = (await squadsBar.getByTestId("squad-backlog").allInnerTexts()).findIndex((text) => /in cima S2 /.test(text));
+  const backlog = squadsBar.getByTestId("squad-backlog").nth(backlogIndex);
   await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
   await backlog.getByTestId("squad-backlog-toggle").click();
   const backlogKeys = () => backlog.getByTestId("backlog-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-key")?.split(":").at(-1)));
