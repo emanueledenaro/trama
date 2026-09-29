@@ -11,7 +11,7 @@ import { ACTIVITY_OUTCOME_LABELS, type ActivityOutcome, activityLog } from "@sha
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
 import { LANGUAGES, type MessageKey, translate } from "@shared/i18n";
-import { t } from "./personLanguage";
+import { personLanguage, t } from "./personLanguage";
 
 export { asksForRecap, RECAP_COMMAND, recapTitle } from "@shared/recap";
 
@@ -190,16 +190,7 @@ function requestedLine(entry: { label: string; outcome: ActivityOutcome; detail:
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
-  const entries = activityLog(
-    document.requests,
-    document.events,
-    document.continuousWork?.rounds ?? [],
-    [],
-    document.autonomousSteps ?? [],
-    document.candidates,
-    [],
-    document.requestedActions ?? [],
-  )
+  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [], document.candidates, [], personLanguage(), document.requestedActions ?? [])
     .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({

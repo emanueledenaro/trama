@@ -41,7 +41,7 @@ describe("how an action the person asked for reads (issue #422)", () => {
       personMessage: { eventId: "E1", quote: "sistema tu la situazione al meglio" },
     });
     expect(entry!.detail).toContain("git push --force origin feature/x");
-    const log = activityLog([], [], [], [], [], [], [], [action({ status: "failed", output: "rejected" })], "en");
+    const log = activityLog([], [], [], [], [], [], [], "en", [action({ status: "failed", output: "rejected" })]);
     expect(log).toMatchObject([{ kind: "requested", label: "At your request: a force push", outcome: "failed" }]);
     expect(log[0]!.detail).toContain("rejected");
   });

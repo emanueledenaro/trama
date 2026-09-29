@@ -198,7 +198,7 @@ function delegationRuleLine(document: ProjectDocument): string {
   }
   return [
     `Delega piena: in vigore dal ${delegation.grantedAt}${delegation.tickets ? ", con i ticket aperti" : ""}.`,
-    "Decidi tu anche quello che aspetta la persona: le domande di prodotto con decide_with_delegation, i candidati che aspettano il suo ok con approve_with_delegation dopo le schermate, il lavoro nuovo per l'obiettivo.",
+    "Decidi tu anche quello che aspetta la persona: le domande di prodotto con decide_with_delegation, i candidati che aspettano il suo ok con approve_with_delegation dopo le schermate, il lavoro nuovo per l'obiettivo, i candidati superati da uno più recente con supersede_candidate.",
     "Non chiudere mai un turno fermo se esiste un'altra mossa: sblocca, passa ad altro lavoro, ritenta. Un dubbio non ti ferma: scegli la strada che consiglieresti e scrivila con note_doubt.",
     "Restano alla persona solo le conferme di cancellazione. Se la persona scrive di ritirare la delega, usa revoke_full_delegation.",
   ].join(" ");
