@@ -1,10 +1,12 @@
 import {
   IconArchive,
   IconArchiveOff,
+  IconArrowsSort,
   IconChevronRight,
   IconEye,
   IconFileText,
   IconHourglass,
+  IconLanguage,
   IconPencil,
   IconPin,
   IconPinnedOff,
@@ -18,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { curatorRunLine } from "@shared/curatorReport";
 import { DEFAULT_LEARNING_SETTINGS, type LearnedSkillView, type LearningReviewRun, type LearningSettings, type LearningView, type MemoryStoreView, type PracticeView } from "@shared/domain";
 import type { MessageKey } from "@shared/i18n";
+import { nearlyFull, noteLanguage } from "@shared/memoryNotes";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
@@ -109,9 +112,43 @@ function UsageLine({ store }: { store: MemoryStoreView }) {
   return (
     <div className="mb-2">
       <div className="h-1 overflow-hidden rounded-full bg-[var(--color-border)]">
-        <div className={percent >= 90 ? "h-full bg-[var(--color-text-destructive,#d33)]" : "h-full bg-[var(--color-text-accent)]"} style={{ width: `${percent}%` }} />
+        <div className={nearlyFull(store) ? "h-full bg-[var(--color-text-destructive,#d33)]" : "h-full bg-[var(--color-text-accent)]"} style={{ width: `${percent}%` }} />
       </div>
       <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.usage", { chars: store.chars, limit: store.limit })}</p>
+    </div>
+  );
+}
+
+/**
+ * A nearly full section says what to do, not only in red (critique of 29 September 2026): Riordina starts a review of
+ * that section whose changes wait for the person in Aspetta te; while it runs, or while its proposal waits, the line
+ * says so and leads there.
+ */
+function TidyLine({ target, store }: { target: "memory" | "user"; store: MemoryStoreView }) {
+  const t = useT();
+  const learning = useUi((s) => s.app?.learning ?? null);
+  const setInspector = useUi((s) => s.setInspector);
+  if (!learning || !store.enabled || !nearlyFull(store)) return null;
+  const pending = learning.proposals.find((p) => p.target === target);
+  const running = learning.reviews.some((r) => r.status === "running");
+  const state = pending ? "waiting" : running ? "running" : "full";
+  return (
+    <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="memory-tidy" data-state={state}>
+      <p className="min-w-0 flex-1 text-ui-xs text-muted-foreground">{t(`memory.tidy.${state}`)}</p>
+      {state === "running" ? null : (
+        <div className="cta-row shrink-0">
+          {pending ? (
+            <Button size="xs" variant="ghost" onClick={() => setInspector({ kind: "waiting", key: `memory:${pending.id}` })}>
+              {t("memory.tidy.open")}
+            </Button>
+          ) : (
+            <Button size="xs" variant="outline" aria-label={t(`memory.tidy.actionLabel.${target}`)} onClick={() => void act("learning:review", { focus: "", tidy: target })}>
+              <IconArrowsSort stroke={1.8} />
+              {t("memory.tidy.action")}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -135,6 +172,7 @@ function MemorySection({ title, addLabel, target, store, empty }: { title: strin
     >
       {!store.enabled ? <p className="mb-2 text-ui-xs text-muted-foreground">{t("memory.off")}</p> : null}
       <UsageLine store={store} />
+      <TidyLine target={target} store={store} />
       {adding !== null ? (
         <div className="mb-2 space-y-2">
           <TextArea autoFocus aria-label={addLabel} value={adding} onChange={(e) => setAdding(e.target.value)} placeholder={t("memory.addPlaceholder")} className="min-h-12" />
@@ -166,10 +204,21 @@ function MemoryEntry({ target, entry }: { target: "memory" | "user"; entry: stri
       if (result?.success) setEditing(null);
       else if (result?.error) useUi.getState().setToast(result.error);
     });
+  // The note stays as the person wrote it; the view only says when it is in another language (29 September 2026).
+  const language = noteLanguage(entry);
+  const foreign = language !== null && language !== t.language ? language : null;
   if (editing === null)
     return (
-      <div className="flex items-start gap-2 py-1.5 text-ui-sm" data-testid="memory-entry">
-        <p className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/90">{entry}</p>
+      <div className="flex items-start gap-2 py-1.5 text-ui-sm" data-testid="memory-entry" data-language={language ?? undefined}>
+        <div className="min-w-0 flex-1">
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/90">{entry}</p>
+          {foreign ? (
+            <p className="mt-0.5 flex items-center gap-1 text-ui-xs text-muted-foreground" title={t("memory.language.note")} data-testid="memory-entry-language">
+              <IconLanguage className="size-3 shrink-0" stroke={1.8} aria-hidden />
+              {t(`memory.language.${foreign}`)}
+            </p>
+          ) : null}
+        </div>
         <IconAction label={t("memory.edit")} onClick={() => setEditing(entry)}>
           <IconPencil stroke={1.8} />
         </IconAction>

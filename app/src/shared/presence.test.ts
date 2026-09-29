@@ -8,8 +8,10 @@ import {
   parsePresenceRecord,
   presenceEntries,
   presenceFreshness,
+  presenceLines,
   presenceMode,
   type PresenceRecord,
+  type PresenceView,
   presenceUser,
   shouldProposeConsent,
   shouldReproposeConsent,
@@ -135,5 +137,35 @@ describe("consent (decision 6)", () => {
     expect(presenceMode({ hasRemote: true, consent: { ...shared, paused: true }, canShare: true })).toBe("readOnly");
     expect(presenceMode({ hasRemote: true, consent: shared, canShare: false })).toBe("readOnly");
     expect(presenceMode({ hasRemote: true, consent: null, canShare: true })).toBe("readOnly");
+  });
+});
+
+describe("presence lines (Squadre, Impostazioni)", () => {
+  const view = (overrides: Partial<PresenceView> = {}): PresenceView => ({
+    mode: "shared",
+    consent: { ...emptyConsent(), choice: "shared" },
+    canShare: true,
+    message: null,
+    self: null,
+    others: [],
+    refreshedAt: null,
+    publishedAt: null,
+    ...overrides,
+  });
+
+  it("says the read-only state once, in the main process's words, when the remote refuses the push", () => {
+    const readOnly = view({ mode: "readOnly", canShare: false, message: "Hai solo la lettura su questo remoto: vedi la presenza dei colleghi senza condividere la tua." });
+    expect(presenceLines(t, readOnly)).toEqual(["Hai solo la lettura su questo remoto: vedi la presenza dei colleghi senza condividere la tua."]);
+    expect(presenceLines(t, view({ mode: "readOnly", canShare: false }))).toEqual(["Hai solo la lettura: vedi i colleghi senza condividere la tua presenza."]);
+  });
+
+  it("keeps one line without a remote, and a message that adds something under the status", () => {
+    expect(presenceLines(t, view({ mode: "local", message: "Il progetto non ha un remoto: la presenza resta su questo computer." }))).toHaveLength(1);
+    expect(presenceLines(t, view({ message: "Il remoto non risponde." }))).toEqual([
+      "Condividi branch, percorsi dei file toccati e lavoro in corso, mai il contenuto dei file.",
+      "Il remoto non risponde.",
+    ]);
+    expect(presenceLines(t, null)).toEqual(["Trama sta leggendo la presenza."]);
+    expect(presenceLines(translator("en"), view({ consent: { ...emptyConsent(), choice: "shared", paused: true } }))).toEqual(["Paused: colleagues only see when they last saw you."]);
   });
 });

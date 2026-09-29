@@ -115,6 +115,7 @@ export const chatIt = {
   "chat.card.assignment.readOnly": "Sola lettura",
   "chat.card.assignment.checks": "Verifiche: {checks}",
   "chat.card.assignment.result": "Risultato",
+  "chat.card.assignment.detail": "Dettaglio dell'incarico",
   "chat.card.assignment.stop": "Ferma",
   "chat.card.assignment.resume": "Riprendi",
 

@@ -8,6 +8,7 @@ import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderMo
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
+import { tidyFocus } from "@shared/memoryNotes";
 import { mentionContextBlock } from "@shared/mentions";
 import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -8522,7 +8523,7 @@ export class TramaController {
    * transcript and may only write memory and skills. One pass at a time per project; the conversation
    * never waits for it. `focus` comes from the person, and makes the pass attended.
    */
-  async runLearningReview(project: ActiveProjectState, scope: ReviewScope, focus: string | null = null): Promise<void> {
+  async runLearningReview(project: ActiveProjectState, scope: ReviewScope, focus: string | null = null, options: { attended?: boolean } = {}): Promise<void> {
     if (this.learningReviews.has(project.id) || this.quitting) return;
     const learning = this.learningFor(project);
     const document = project.document;
@@ -8559,7 +8560,7 @@ export class TramaController {
         prompt: `${transcript}\n\n${reviewPrompt(scope, learning.memoryAvailable, focus)}`,
         maxToolCalls: REVIEW_MAX_TOOL_CALLS,
         timeoutMs: 600_000,
-        attended: focus !== null,
+        attended: options.attended ?? focus !== null,
         signal: controller.signal,
         calls,
       });
@@ -8795,6 +8796,20 @@ export class TramaController {
     const project = this.requireProject();
     const learning = this.learningFor(project);
     await this.runLearningReview(project, { memory: learning.memoryAvailable, skills: true }, focus.trim());
+  }
+
+  /**
+   * Riordina on a nearly full section of Memoria (critique of 29 September 2026): a review of that section only, with
+   * its entries and the person's language in the focus. It runs unattended, so its replacements and removals wait in
+   * Aspetta te as one proposal and the notes stay as the person wrote them until the person applies it.
+   */
+  async tidyLearnedMemory(target: "memory" | "user"): Promise<void> {
+    if (target !== "memory" && target !== "user") throw new DomainError(`Unknown memory section: ${String(target)}.`);
+    const project = this.requireProject();
+    const learning = this.learningFor(project);
+    if (!learning.memoryAvailable) return;
+    const store = learning.view(this.coordinatorLearning(project.document))[target];
+    await this.runLearningReview(project, { memory: true, skills: false }, tidyFocus(target, store, personLanguage()), { attended: false });
   }
 
   async curatorAction(action: "run" | "dryRun" | "pause" | "resume" | "rollback", backupId: string | null = null): Promise<void> {

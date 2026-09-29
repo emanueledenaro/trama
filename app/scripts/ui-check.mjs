@@ -419,6 +419,36 @@ const primaryLast = async (row, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// The wave on the interface's priorities (29 September 2026): a view of the side bar at its narrowest (240 px, the sash
+// moved from the keyboard) and at its widest, light and dark, then back to the normal width and the look it had.
+const sideBarWidthNow = () => page.getByRole("separator", { name: /Larghezza della barra laterale/ }).getAttribute("aria-valuenow");
+const sideBarEnds = async (name, check = async () => {}) => {
+  const look = await lookOf();
+  const sash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
+  for (const end of ["narrow", "wide"]) {
+    if (end === "narrow") {
+      await sash.focus();
+      await page.keyboard.press("Shift+ArrowLeft");
+      for (let tries = 0; (await sideBarWidthNow()) !== "240"; tries++) {
+        if (tries > 20) throw new Error(`The side bar does not reach its narrowest width for ${name}: ${await sideBarWidthNow()}`);
+        await page.waitForTimeout(100);
+      }
+    } else {
+      await sash.focus();
+      await page.keyboard.press("Home");
+      await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
+    }
+    await page.waitForTimeout(400);
+    await noHorizontalScroll(`${name}, side bar ${end}`);
+    await check(end);
+    for (const dark of [false, true]) {
+      await setLookTo(look.provider, dark);
+      await shot(`${name}-${end}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await page.getByTestId("side-bar").getByRole("button", { name: "Larghezza normale" }).click();
+  await setLookTo(look.provider, look.dark);
+};
 const sizes = [
   ["wide", 1280, 820],
   ["narrow", 720, 640],
@@ -1122,6 +1152,15 @@ await firstSquad.getByTestId("squad-status").getByText(/^Libera/).waitFor();
 await firstSquad.getByRole("button", { name: /^Ada/ }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').filter({ hasText: "[Capo]" }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
+// Critique of 29 September: the lead is one short row and the duty every squad's lead and QA share stays on hover.
+{
+  const lead = firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]');
+  if ((await lead.getAttribute("data-short")) !== "true") throw new Error("The squad's lead is not a short row");
+  if (await teamPanel.getByText("Divide il lavoro dell'area della sua squadra", { exact: false }).count()) throw new Error("The squad lead's duty is still written in the Squads view");
+  if (!/Divide il lavoro dell'area della sua squadra/.test((await lead.getAttribute("title")) ?? "")) throw new Error("The squad lead's duty is not on hover");
+  const leadLines = await lead.evaluate((row) => Math.round(row.getBoundingClientRect().height));
+  if (leadLines > 40) throw new Error(`The squad's lead takes more than one line: ${leadLines}px`);
+}
 // Issue #333: who works now is on top, in view at 1280x800 without scrolling. Each person is one row with the bot, the
 // name, the role's tag, what it does now and the sign; the ids stay on hover; the shared roles wait closed, with their
 // count. The view and the person of the squad, narrow and wide, Codex and Claude, light and dark.
@@ -1134,7 +1173,9 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
   const rows = teamPanel.locator('[data-testid="team-developer"], [data-testid="team-figure"]');
   for (const row of await rows.all()) {
     if (!(await row.getByTestId("agent-bot").count())) throw new Error("A person of the squad has no bot");
-    if (!(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
+    // Critique of 29 September: the squad's lead is one short row; it says what it does beside its name only when busy.
+    const short = (await row.getAttribute("data-short")) === "true";
+    if (!short && !(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
     const sign = await row.getByTestId("member-sign").getAttribute("data-sign");
     if (!["working", "waiting", "free", "stopped"].includes(sign)) throw new Error(`A person of the squad has no sign: ${sign}`);
   }
@@ -1162,6 +1203,11 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.waitFor();
     if ((await detailPane().getAttribute("aria-label")) !== "Persona della squadra") throw new Error("The detail is not titled Persona della squadra");
     await detail.getByTestId("specialist-now").waitFor();
+    // Critique of 29 September 2026: the page opens on its summary, and the settings come before the work.
+    await detail.getByTestId("specialist-brief").getByTestId("brief-next").waitFor();
+    if (!(await detail.evaluate((el) => el.querySelector('[data-testid="specialist-settings"]').compareDocumentPosition(el.querySelector('[data-testid="specialist-now"]')) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+      throw new Error("The person's settings do not come before the work");
+    }
     const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
     if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
     for (const fold of ["Perché è nella squadra", "Quando interviene"]) {
@@ -1568,6 +1614,53 @@ const noteActions = await memoryView.getByTestId("memory-entry").locator(".cta-r
 if (noteActions.join("|") !== "Togli|Annulla|Salva") throw new Error(`The note editor's buttons: ${noteActions.join(", ")}`);
 await memoryView.getByTestId("memory-entry").getByRole("button", { name: "Togli" }).click();
 await addedNote.waitFor({ state: "detached", timeout: 10_000 });
+// Critique of 29 September 2026: a nearly full section says what to do (Riordina, whose changes wait in Aspetta te), and
+// a note in another language than the person's says so and stays as it was written. The profile is filled to 94% of
+// its limit with the person's own notes, one of them in English, and emptied of them afterwards.
+{
+  const profileNow = async () => (await page.evaluate(() => window.trama.getState())).learning.user;
+  const profileNote = async (action, text) => {
+    const result = await page.evaluate(([what, note]) => window.trama.invoke("learning:memory", { target: "user", action: what, content: note, oldText: note }), [action, text]);
+    if (!result?.success) throw new Error(`A note of the profile was not ${action === "add" ? "added" : "removed"}: ${result?.error}`);
+  };
+  const englishNote = "Wants short answers and one step at a time, with the recommended option already marked on the card.";
+  await profileNote("add", englishNote);
+  const before = await profileNow();
+  const room = Math.floor(before.limit * 0.94) - before.chars - 3;
+  if (room < 40) throw new Error(`The profile has no room for the test of Riordina: ${before.chars} of ${before.limit}`);
+  const filler = "La persona legge le spiegazioni sul telefono tra un cliente e l'altro, quindi preferisce frasi brevi e un passaggio alla volta. ";
+  const italianNote = filler.repeat(Math.ceil(room / filler.length)).slice(0, room).trim();
+  await profileNote("add", italianNote);
+  const tidy = memoryView.locator('[data-testid="memory-tidy"][data-state="full"]');
+  const tidyButton = tidy.getByRole("button", { name: "Riordina il tuo profilo" });
+  await tidyButton.waitFor({ timeout: 10_000 });
+  if ((await tidyButton.innerText()).trim() !== "Riordina") throw new Error("The action of a nearly full profile does not read Riordina");
+  const english = memoryView.locator('[data-testid="memory-entry"][data-language="en"]').filter({ hasText: "Wants short answers" });
+  await english.getByTestId("memory-entry-language").getByText("In inglese").waitFor();
+  if (!(await english.innerText()).includes(englishNote)) throw new Error("A note in another language changed its words");
+  if (await memoryView.getByTestId("memory-entry").filter({ hasText: "La persona legge le spiegazioni" }).getByTestId("memory-entry-language").count()) {
+    throw new Error("A note in the person's language is marked as in another language");
+  }
+  await tidy.scrollIntoViewIfNeeded();
+  await sideBarEnds("54-memory-profile-full");
+  // Riordina starts a review of the profile the person asked for; what it changes becomes a proposal, never a rewrite.
+  const reviewsBefore = (await page.evaluate(() => window.trama.getState())).learning.reviews.length;
+  await tidyButton.click();
+  for (let tries = 0; ; tries++) {
+    const learning = (await page.evaluate(() => window.trama.getState())).learning;
+    if (learning.reviews.length > reviewsBefore && learning.reviews[0].trigger === "person" && learning.reviews[0].status !== "running") break;
+    if (tries > 120) throw new Error("Riordina did not run a review of the profile");
+    await page.waitForTimeout(250);
+  }
+  if (!(await memoryView.getByTestId("memory-entry").filter({ hasText: englishNote }).count())) throw new Error("Riordina rewrote a note without the person's yes");
+  // The proposals of this review and the notes of the test leave, so the rest of the run finds Memoria as before.
+  for (const id of (await page.evaluate(() => window.trama.getState())).learning.proposals.map((p) => p.id)) {
+    await page.evaluate((proposal) => window.trama.invoke("learning:proposal", { id: proposal, approve: false }), id);
+  }
+  await profileNote("remove", italianNote);
+  await profileNote("remove", englishNote);
+  await tidy.waitFor({ state: "detached", timeout: 10_000 });
+}
 // Skills: Apri, Fissa and Archivia are icons with a tooltip and a name; Elimina keeps its text.
 const learnedSkill = memoryView.getByTestId("learned-skill").filter({ hasText: "release-flow" });
 for (const name of ["Apri", "Fissa", "Archivia"]) await learnedSkill.getByRole("button", { name, exact: true }).waitFor();
@@ -1987,6 +2080,8 @@ await shot("09-mandate");
   const rulesBar = page.getByTestId("side-bar");
   for (const id of ["mandate-where", "mandate-can", "fixed-bans"]) await rulesBar.getByTestId(id).waitFor();
   if (!/Orders/.test(await rulesBar.getByTestId("mandate-where").innerText())) throw new Error("Dove does not name the modules of the mandate");
+  // Critique of 29 September 2026: Mai is a short list, one fixed ban per line, not a dense sentence.
+  if ((await rulesBar.getByTestId("fixed-bans").getByTestId("fixed-ban").count()) !== 6) throw new Error("Mai does not list the six fixed bans one per line");
   for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
     if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
   }
@@ -2019,6 +2114,14 @@ await shot("09-mandate");
     }
   }
   await page.setViewportSize({ width: 1280, height: 820 });
+  // The three tabs with the side bar at its narrowest and widest (29 September 2026).
+  await setLookTo(rulesLook.provider, rulesLook.dark);
+  await openView("Regole", "Mandato");
+  await sideBarEnds("53a-rules-mandate");
+  await openView("Regole", "Patto");
+  await sideBarEnds("53b-rules-pact");
+  await openView("Regole", "Standard");
+  await sideBarEnds("53c-rules-standard");
   // Cambia il mandato open: each button opens its form, nothing changes until the form is confirmed.
   await openView("Regole", "Mandato");
   await openSection("Cambia il mandato");
@@ -3144,9 +3247,12 @@ await openView("Squadre");
 const boardPanel = page.getByTestId("side-bar");
 const githubOnly = boardPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
 await githubOnly.getByText("#12 Annullo degli ordini dal riepilogo").waitFor({ timeout: 20_000 });
-await githubOnly.getByText("feature/annullo-ordini").waitFor();
+if (!((await githubOnly.getByTestId("group-branches").getAttribute("title")) ?? "").includes("feature/annullo-ordini")) throw new Error("The colleague's branch is not on the hover of their row");
 await githubOnly.getByText(/^su GitHub/).waitFor();
-await boardPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
+// The branches nobody explains are one line with their number; their names stay on hover (critique of 29 September).
+const otherBranches = boardPanel.getByTestId("group-other-branches");
+await otherBranches.getByText(/branch su GitHub, senza pull request né presenza$/).waitFor();
+if (!((await otherBranches.getAttribute("title")) ?? "").includes("spike/vecchio-checkout")) throw new Error("The other branches are not on the hover of their line");
 await boardPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
 await shot("15b-group-follow");
 await openView("Lavoro");
@@ -3272,7 +3378,8 @@ const assignmentCards = page.locator('.chat-card:not([data-testid="settled-card"
 const cardAssignment = (card) => recordId(card, "A");
 
 // V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
-await send("[assegna] [lento]");
+// "[con-decisioni]" gives the work the Pact decision just recorded, so the person's page lists it (29 September 2026).
+await send("[assegna] [lento] [con-decisioni]");
 const slowCard = assignmentCards.first();
 await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
 // Q01: the branch follows Conventional Branch and stays recognizable as Trama's work.
@@ -3289,6 +3396,54 @@ await stoppedTurn.scrollIntoViewIfNeeded();
 await shot("18a-specialist-stopped");
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await closePanels();
+// Critique of 29 September 2026: a stopped person is on top of Squadre, above the squads, and their page opens on a
+// summary (what it does, what holds it up, the next move), then the settings, then the work with its details folded
+// and its Pact decisions one per line.
+{
+  await openView("Squadre");
+  const attention = page.getByTestId("side-bar").getByTestId("squads-attention");
+  const stoppedAda = attention.locator('[data-testid="attention-person"][data-sign="stopped"]').filter({ hasText: "Ada" });
+  await stoppedAda.waitFor({ timeout: 20_000 });
+  // Above the squads and the lists of people, right under the summary's first lines.
+  const firstGroupTop = await page
+    .getByTestId("side-bar")
+    .locator('[data-testid="squad"], [data-testid="team-developer"], [data-testid="team-figure"]')
+    .first()
+    .evaluate((el) => el.getBoundingClientRect().top);
+  if ((await attention.evaluate((el) => el.getBoundingClientRect().bottom)) > firstGroupTop) throw new Error("Who is stopped is not above the squads");
+  await sideBarEnds("52a-squads-attention");
+  await stoppedAda.click();
+  const adaPage = detailPane().getByTestId("specialist");
+  const brief = adaPage.getByTestId("specialist-brief");
+  await brief.waitFor();
+  if ((await brief.getAttribute("data-sign")) !== "stopped") throw new Error("The summary of a stopped person does not say it is stopped");
+  await brief.getByTestId("brief-doing").getByText("Documenta l'annullamento").waitFor();
+  await brief.getByTestId("brief-blocker").getByText("Fermato dalla persona").waitFor();
+  await brief.getByTestId("brief-next").getByText("Riprendilo dalla scheda qui sotto, o chiedi al Coordinatore.").waitFor();
+  const tops = await adaPage.evaluate((el) => ["specialist-brief", "specialist-settings", "specialist-now"].map((id) => el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top));
+  if (!(tops[0] < tops[1] && tops[1] < tops[2])) throw new Error(`The person's page is not summary, settings and work in this order: ${tops}`);
+  const adaNow = adaPage.getByTestId("specialist-now");
+  const detailToggle = adaNow.getByTestId("assignment-detail-toggle");
+  if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
+  if (await adaNow.getByTestId("assignment-contract").count()) throw new Error("The assignment's contract shows before the person opens its details");
+  await adaNow.getByRole("button", { name: "Riprendi" }).waitFor();
+  await themeShots("52b-person-stopped");
+  await detailToggle.click();
+  const reliedOn = adaNow.getByTestId("contract-decisions");
+  await reliedOn.getByTestId("contract-decision").first().waitFor();
+  // One decision per line: each row starts at the list's left edge.
+  const decisionLefts = await reliedOn.getByTestId("contract-decision").evaluateAll((rows) => rows.map((row) => Math.round(row.getBoundingClientRect().left)));
+  if (new Set(decisionLefts).size !== 1) throw new Error(`The Pact decisions of the work are not one per line: ${decisionLefts}`);
+  await reliedOn.scrollIntoViewIfNeeded();
+  await themeShots("52c-person-stopped-detail");
+  await page.setViewportSize({ width: 720, height: 820 });
+  await page.waitForTimeout(300);
+  await noHorizontalScroll("person stopped at 720 px");
+  await adaPage.getByTestId("specialist-brief").scrollIntoViewIfNeeded();
+  await themeShots("52d-person-stopped-narrow");
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await closePanels();
+}
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
@@ -4471,13 +4626,18 @@ await openView("Squadre");
 const presencePanel = page.getByTestId("group-board");
 const rows = presencePanel.locator('[data-testid="group-row"]');
 const adaRow = rows.filter({ hasText: "Ada (tu)" });
-await adaRow.getByText("feature/carrello").waitFor({ timeout: 10_000 });
+// Critique of 29 September: what a person works on comes first; the branches and the files are one line each, a single
+// branch by its name and several by their number, with every name on hover.
+const hoverOf = async (row, id) => (await row.getByTestId(id).getAttribute("title", { timeout: 10_000 })) ?? "";
+if (!(await hoverOf(adaRow, "group-branches")).includes("feature/carrello")) throw new Error("Ada's branch is not on her row");
 const beaRow = rows.filter({ hasText: "Bea" }).and(page.locator('[data-kind="person"]'));
-await beaRow.getByText("feature/rimborsi").waitFor({ timeout: 10_000 });
-await beaRow.getByText(/anche su/).waitFor();
-await beaRow.getByText("fix/iva-rimborsi").waitFor();
-await beaRow.getByText("Rimborsi parziali").waitFor();
-await beaRow.getByText("src/payments.js").waitFor();
+await beaRow.getByTestId("group-branches").getByText("2 branch", { exact: true }).waitFor({ timeout: 10_000 });
+const beaBranches = await hoverOf(beaRow, "group-branches");
+if (!beaBranches.startsWith("feature/rimborsi (attivo)") || !beaBranches.includes("fix/iva-rimborsi")) throw new Error(`Bea's branches on hover: ${beaBranches}`);
+await beaRow.getByTestId("group-task").getByText("Rimborsi parziali").waitFor();
+await beaRow.getByTestId("group-files").getByText("1 file toccato", { exact: true }).waitFor();
+if ((await hoverOf(beaRow, "group-files")) !== "src/payments.js") throw new Error("Bea's files are not on the hover of their line");
+if (await presencePanel.locator(".font-mono").evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().height > 24))) throw new Error("A branch name wraps over more than one line in Chi lavora su cosa");
 await beaRow.getByText("attivo ora").waitFor();
 const liaRow = rows.and(page.locator('[data-kind="agent"]')).filter({ hasText: "Lia" });
 await liaRow.getByTestId("agent-tag").getByText("[Interfaccia]").waitFor();
@@ -4525,6 +4685,12 @@ for (const provider of ["codex", "claudeAgent"]) {
   }
 }
 await setLookTo(groupLook.provider, groupLook.dark);
+// Critique of 29 September 2026: at the side bar's narrowest, every branch name stays on one line.
+await presencePanel.scrollIntoViewIfNeeded();
+await sideBarEnds("52e-squads-who-works", async (end) => {
+  const wrapped = await presencePanel.locator('[data-testid="group-branches"], [data-testid="group-files"], [data-testid="group-task"]').evaluateAll((lines) => lines.filter((line) => line.getBoundingClientRect().height > 20).length);
+  if (wrapped) throw new Error(`${wrapped} lines of Chi lavora su cosa wrap with the side bar ${end}`);
+});
 // A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
 await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
 await page.waitForTimeout(400);

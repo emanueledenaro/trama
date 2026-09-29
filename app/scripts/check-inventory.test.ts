@@ -21,8 +21,8 @@ describe("testsOf", () => {
 
 describe("uiCheckOf", () => {
   it("reads the screenshots of every helper and the messages of the checks", () => {
-    const source = `await shot("01-a"); await themeShots(\`15a-\${x}\`); await seamShots("logo", "logo"); throw new Error("No mark");`;
-    expect(uiCheckOf(source)).toEqual({ shots: ["shot:01-a", "themeShots:15a-${x}", "seamShots:logo"], checks: ["No mark"] });
+    const source = `await shot("01-a"); await themeShots(\`15a-\${x}\`); await sideBarEnds("52a-b"); await seamShots("logo", "logo"); throw new Error("No mark");`;
+    expect(uiCheckOf(source)).toEqual({ shots: ["shot:01-a", "themeShots:15a-${x}", "sideBarEnds:52a-b", "seamShots:logo"], checks: ["No mark"] });
   });
 });
 

@@ -1,5 +1,5 @@
 import { IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
-import type { PresenceView } from "@shared/presence";
+import { presenceLines, type PresenceView } from "@shared/presence";
 import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
@@ -10,14 +10,16 @@ import { act } from "@/lib/store";
  * (decision 6). The picture of who works on what is in the Gruppo view (G02).
  */
 
-export function presenceStatusLine(view: PresenceView | null | undefined): string {
-  if (!view) return "Trama sta leggendo la presenza.";
-  if (view.mode === "local") return "Senza remoto la presenza mostra solo te e i tuoi agenti, su questo computer.";
-  const consent = view.consent;
-  if (consent?.choice === "shared" && consent.paused) return "In pausa: i colleghi vedono solo quando ti hanno visto l'ultima volta.";
-  if (consent?.choice === "shared" && view.canShare === false) return "Hai solo la lettura: vedi i colleghi senza condividere la tua presenza.";
-  if (consent?.choice === "shared") return "Condividi branch, percorsi dei file toccati e lavoro in corso, mai il contenuto dei file.";
-  return "Non condividi la tua presenza: vedi quella dei colleghi che la condividono.";
+/** What the person does with the presence and why sharing does not work, one sentence each and never the same twice. */
+export function PresenceStatus({ view }: { view: PresenceView | null | undefined }) {
+  const t = useT();
+  const [status, message] = presenceLines(t, view);
+  return (
+    <>
+      {status}
+      {message ? <span className="mt-1 block text-foreground/80">{message}</span> : null}
+    </>
+  );
 }
 
 export function PresenceControls({
