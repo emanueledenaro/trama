@@ -34,14 +34,14 @@ function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   }, [theme]);
 }
 
-/** The window glass takes the light of the Coordinator's provider in the project's chat, steady. */
+/** The accents follow the Coordinator's provider in the project's chat; the surface and the glass stay neutral (issue #457). */
 function useProviderTheme() {
   const project = useUi((s) => s.app?.project ?? null);
   useEffect(() => {
     const provider: ProviderId | null = project
       ? (chatComposer(project.document).selectedProvider ?? project.document.coordinator.threadProvider ?? "codex")
       : null;
-    // The provider's theme (index.css) sets the light, accent, surfaces and primary button of the whole app.
+    // The provider's theme (index.css) sets only the accents of the whole app: accent text, primary button, focus ring, selection.
     if (provider) document.documentElement.dataset.provider = provider;
     else delete document.documentElement.dataset.provider;
   }, [project]);
