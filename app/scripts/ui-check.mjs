@@ -3889,13 +3889,22 @@ await openView("Squadre");
 // W16: the agent of a colleague who is idle sleeps: same body and color, eyes closed, and Z's rising above it.
 const liaBot = liaRow.getByTestId("agent-bot");
 if ((await liaBot.getAttribute("data-move")) !== "sleep") throw new Error("An idle colleague's agent does not sleep");
-const sleeping = await liaBot.evaluate((bot) => ({
-  shape: bot.dataset.shape,
-  zzz: getComputedStyle(bot.querySelector('[data-part="zzz"]')).display,
-  risingZ: bot.querySelectorAll(".bot-z").length,
-  moving: bot.getAnimations({ subtree: true }).filter((a) => a.effect?.target?.classList?.contains("bot-z")).length,
-}));
-if (!sleeping.shape || sleeping.zzz === "none" || sleeping.risingZ !== 3 || sleeping.moving !== 3) throw new Error(`The sleeping bot has no rising Z's: ${JSON.stringify(sleeping)}`);
+// The Z's move only on a bot in view (data-live, set by an observer after the view opens) and without reduced motion.
+// One reading right after the view opens can come before the animations start: the check reads the bot every 250 ms
+// for up to 5 s and passes when one reading shows the three Z's rising.
+await page.emulateMedia({ reducedMotion: "no-preference" });
+await liaRow.locator('[data-testid="agent-bot"][data-live]').waitFor({ timeout: 5_000 }).catch(() => {});
+const sleepingNow = () =>
+  liaBot.evaluate((bot) => ({
+    shape: bot.dataset.shape,
+    zzz: getComputedStyle(bot.querySelector('[data-part="zzz"]')).display,
+    risingZ: bot.querySelectorAll(".bot-z").length,
+    moving: bot.getAnimations({ subtree: true }).filter((a) => a.effect?.target?.classList?.contains("bot-z")).length,
+  }));
+const risesNow = (reading) => Boolean(reading.shape) && reading.zzz !== "none" && reading.risingZ === 3 && reading.moving === 3;
+let sleeping = await sleepingNow();
+for (const end = Date.now() + 5_000; !risesNow(sleeping) && Date.now() < end; sleeping = await sleepingNow()) await page.waitForTimeout(250);
+if (!risesNow(sleeping)) throw new Error(`The sleeping bot has no rising Z's: ${JSON.stringify(sleeping)}`);
 await shot("16a-presence-group");
 const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
