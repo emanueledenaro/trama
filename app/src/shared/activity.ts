@@ -1,4 +1,5 @@
 import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, SquadChange, WorkEvent } from "./domain";
+import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
 import { problemActivity } from "./problems";
 
 /**
@@ -19,10 +20,11 @@ export interface ActivityEntry {
   id: string;
   /**
    * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), a person's
-   * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), or a change of the
-   * person to the squads (A11).
+   * step the Coordinator took within the mandate (A06), Trama's merge of a candidate (issue #247), a change of the
+   * person to the squads (A11), or a candidate the Coordinator declared superseded by a newer one of the same work
+   * (issue #421).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge" | "squad";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round and for the squads the Coordinator formed (A10). */
@@ -108,6 +110,35 @@ export function mergeActivityEntries(candidates: Pick<Candidate, "id" | "goalId"
   });
 }
 
+/**
+ * The candidates the Coordinator declared superseded by a newer candidate of the same work (issue #421), with the reason
+ * and the "Aspetta te" item that left the list with it. Pure.
+ */
+export function supersessionActivityEntries(candidates: Pick<Candidate, "id" | "goalId" | "supersession">[], language: Language = DEFAULT_LANGUAGE): ActivityEntry[] {
+  return candidates.flatMap((candidate): ActivityEntry[] => {
+    const supersession = candidate.supersession;
+    if (!supersession) return [];
+    const detail = translate(language, "supersession.activity.detail", { id: candidate.id, by: supersession.byCandidateId, reason: supersession.reason });
+    const waiting = supersession.waiting ? ` ${translate(language, "supersession.activity.waiting", { item: `${supersession.waiting.label}, ${supersession.waiting.title}` })}` : "";
+    return [
+      {
+        id: `supersede:${candidate.id}`,
+        kind: "supersede",
+        requestId: null,
+        move: null,
+        trigger: null,
+        label: translate(language, "supersession.activity.label"),
+        goalId: candidate.goalId ?? null,
+        startedAt: supersession.at,
+        endedAt: null,
+        outcome: "done",
+        detail: `${detail}${waiting}`,
+        toolErrors: [],
+      },
+    ];
+  });
+}
+
 export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
   running: "In corso",
   done: "Fatta",
@@ -177,8 +208,9 @@ export function activityLog(
   rounds: RoundRecord[] = [],
   problems: FoundProblem[] = [],
   steps: AutonomousStep[] = [],
-  candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[] = [],
+  candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest" | "supersession">[] = [],
   squadChanges: SquadChange[] = [],
+  language: Language = DEFAULT_LANGUAGE,
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -238,7 +270,7 @@ export function activityLog(
     }),
   );
   const found = problemActivity(problems);
-  const merged = mergeActivityEntries(candidates);
+  const merged = [...mergeActivityEntries(candidates), ...supersessionActivityEntries(candidates, language)];
   const changed = squadChangeEntries(squadChanges);
   if (!done.length && !found.length && !taken.length && !merged.length && !changed.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.

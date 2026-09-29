@@ -1259,6 +1259,23 @@ export interface Candidate {
   commit?: CandidateCommit;
   /** What `git diff --check` reported on the candidate's snapshot (Q01); absent in candidates declared before it. */
   whitespaceErrors?: string[];
+  /**
+   * The Coordinator declared the candidate superseded by a newer candidate of the same work (issue #421): it is not
+   * merged and not compared with other work, and it stays in the history. `waiting` is the "Aspetta te" item it had,
+   * which left the list with the reason. Absent for a candidate replaced by rule (conflictScope.ts).
+   */
+  supersession?: CandidateSupersession;
+}
+
+export interface CandidateSupersession {
+  /** The newer candidate of the same work. */
+  byCandidateId: string;
+  /** Why, in the person's words. */
+  reason: string;
+  actor: string;
+  at: string;
+  /** The label and the title of the "Aspetta te" item the candidate had when it was superseded; null when it had none. */
+  waiting: { label: string; title: string } | null;
 }
 
 /**
@@ -1639,6 +1656,8 @@ export interface ProjectDocument {
   problems?: ProblemLedger;
   /** The conversations between agents (W07), oldest first; absent before the first one. */
   agentThreads?: AgentThread[];
+  /** The order of each squad's backlog (A13): the Coordinator's and the person's; absent before the first one. */
+  backlog?: BacklogLedger;
 }
 
 /**
@@ -1767,6 +1786,25 @@ export interface ProblemLedger {
   /** The records already read, as `failure:<id>` or `gate:<id>:<check or finding>`, so each is read once. */
   seen: string[];
   items: FoundProblem[];
+}
+
+/**
+ * The order of one squad's backlog (A13, Q20). The Coordinator orders it, with a reason for each item; the person moves
+ * items, and the position they chose wins: the Coordinator's new order and the new items fill the other places.
+ * `squadId` null is the backlog of the work no squad owns, as before the squads are formed.
+ */
+export interface SquadBacklogOrder {
+  squadId: string | null;
+  /** The Coordinator's last order, by item key, with its reason; items it did not list follow Trama's own rule. */
+  coordinator: { key: string; reason: string }[];
+  orderedAt: string | null;
+  /** The places the person chose, 0-based, by item key. */
+  person: { key: string; position: number; at: string }[];
+}
+
+/** The order of the squads' backlogs (A13). */
+export interface BacklogLedger {
+  squads: SquadBacklogOrder[];
 }
 
 /** The person's steps the project mandate lets the Coordinator take by itself (A06, Q1). */
@@ -2113,6 +2151,8 @@ export interface ActiveProjectState {
   nextSteps: Record<string, NextStepView>;
   /** Where each slice of an approved breakdown stands, by plan id (M05); computed by the main process. */
   sliceViews?: Record<string, SliceView[]>;
+  /** Each squad's backlog in order (A13), computed by the main process; absent before the first computation. */
+  backlogs?: import("./backlog").SquadBacklogView[];
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
   /**

@@ -932,6 +932,18 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(verified.isError ? `Rifiutato: ${verified.content[0].text}` : `Ho eseguito di nuovo ${recheckMatch[2]} su ${recheckMatch[1]}.`);
         return;
       }
+      // [superato:<older>:<newer>] declares the older candidate superseded by the newer one of the same work (issue #421).
+      const supersedeMatch = text.match(/\[superato:(C-[0-9A-F]+):(C-[0-9A-F]+)\]/);
+      if (supersedeMatch) {
+        const superseded = await callTool(threadId, "supersede_candidate", {
+          candidate: supersedeMatch[1],
+          newerCandidate: supersedeMatch[2],
+          reason: "È una versione vecchia dello stesso lavoro, ripresa nel candidato più recente",
+        });
+        toolDone("supersede_candidate", superseded);
+        finish(superseded.isError ? `Rifiutato: ${superseded.content[0].text}` : `Ho chiuso il candidato ${supersedeMatch[1]}: lo sostituisce ${supersedeMatch[2]}.`);
+        return;
+      }
       // [candidato:<assignment>:<decision>] verifies git_status; [candidato:<assignment>:<decision>:<check>] that check, and
       // with "tutte" every required check.
       const candidateMatch = text.match(/\[candidato:(A-[0-9A-F]+):(D-[0-9A-F]+)(?::(\w+))?\]/);

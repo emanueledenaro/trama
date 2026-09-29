@@ -29,12 +29,14 @@ import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainE
 import { decideDiscussion, DiscussionError, escalateDiscussion, openDiscussion, requireDiscussion } from "./discussions";
 import { type Discussion, discussions } from "@shared/discussions";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
 import { squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
+import { recordCoordinatorOrder } from "@shared/backlog";
+import { backlogForTool, squadBacklogs } from "./backlog";
 import { renameSquad, requestSquadMerge, splitSquad } from "./squadChanges";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
@@ -435,6 +437,17 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "order_backlog",
+    description:
+      "Order a squad's backlog (A13): the slices and the found problems of its area not taken yet, as read_team lists them under each squad's backlog. Give the item keys from the top, each with a reason in one line in the person's language; the items you leave out follow Trama's rule after yours. The person's order wins: the items they placed keep their place, and your order fills the others. Take work from the top of the backlog, skipping blocked and paused slices. Leave squadID out for the backlog of the work no squad owns (unownedBacklog).",
+    properties: {
+      squadID: text,
+      items: { type: "array", items: { type: "object", properties: { key: text, reason: text }, required: ["key", "reason"] } },
+    },
+    required: ["items"],
+    readOnly: false,
+  },
+  {
     name: "rename_squad",
     description:
       "Rename a squad, named by id or current name, only when the person asks you to in this conversation; it needs no mandate. The id, the area, the people and the slices stay. Trama records it in Activity as the person's change, which the person can undo there, and you never rename that squad again by yourself.",
@@ -600,6 +613,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "supersede_candidate",
+    description:
+      "Declare an older candidate superseded by a newer candidate of the same work: the same slice or, outside slices, the same modules (for work without modules, the same issue). Do it yourself, without asking the person, when an older version of the work is still open next to the newer one, for example a verified candidate that was never merged: the superseded candidate is no longer merged and no longer compared with other work, so it stops blocking the newer one, and it stays in the history. candidate and newerCandidate are candidateIDs (C-…); reason says why in one plain line, in the person's language. Trama refuses a merged candidate, a candidate of other work and the newer candidate itself. The use goes to Activity, and an item the older candidate had in Aspetta te leaves the list with the reason.",
+    properties: { candidate: text, newerCandidate: text, reason: text },
+    required: ["candidate", "newerCandidate", "reason"],
+    readOnly: false,
+  },
+  {
     name: "propose_domain_docs",
     description:
       "Propose the glossary terms and ADRs of the domain-modeling skill, drawn from Pact decisions of the person (decisionIDs). You are read-only: Trama shows the proposal to the person as a card, and within the mandate (executeInWorktree on the modules of the files) the documentation and domain role writes it in its own worktree with the same skill; the result becomes a candidate. Outside the mandate the proposal waits, and the card says why. Each term follows CONTEXT-FORMAT.md: term, a definition of one or two sentences, the words to avoid. Each ADR follows ADR-FORMAT.md: title, a body of one to three sentences, and consideredOptions and consequences only when they add value. contextPath defaults to CONTEXT.md; the ADRs go to docs/adr next to it, with the next number.",
@@ -751,6 +772,8 @@ export interface ToolContext {
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
   /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
   candidateCleared?(candidateId: string): void;
+  /** The "Aspetta te" item of a candidate now, if it has one (issue #421). */
+  waitingFor?(candidateId: string): { label: string; title: string } | null;
   headSHA(): Promise<string | null>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
@@ -1162,6 +1185,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const pages = Math.max(1, Math.ceil(team.specialists.length / TEAM_PAGE));
         const page = typeof args.page === "number" ? Math.min(pages, Math.max(1, Math.floor(args.page))) : 1;
         const pending = team.proposals.find((p) => !p.resolution);
+        const backlogs = squadBacklogs(document, context.snapshot?.modules ?? []);
         return toolSuccess({
           confirmed: isTeamConfirmed(document),
           pendingProposal: pending
@@ -1180,9 +1204,12 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             qaID: squad.qaId,
             developerIDs: squad.developerIds,
             status: squadStatusLine(document, squad),
+            // The squad's backlog (A13), from the top: take work from there, skipping blocked and paused slices.
+            backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json,
             // The person renamed, merged or split it (A11): leave it as it is.
             changedByPerson: Boolean(squad.touchedAt),
           })),
+          unownedBacklog: backlogForTool(backlogs.find((b) => b.squadId === null) ?? { squadId: null, items: [] }) as unknown as Json,
           squadLimits: squadLimits(document) as unknown as Json,
           automaticWork: (context.automaticWork?.() ?? []).map((w) => ({
             work: w.kind,
@@ -1263,6 +1290,25 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const { specialist, previousName } = renameSpecialist(document, found.id, typeof args.name === "string" ? args.name : "");
         context.changed();
         return toolSuccess({ specialistID: specialist.id, previousName, name: specialist.name });
+      }
+      case "order_backlog": {
+        const squadId = typeof args.squadID === "string" && args.squadID.trim() ? args.squadID.trim() : null;
+        const backlog = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId);
+        if (!backlog) {
+          const squads = teamSquads(document).map((s) => `${s.name} (${s.id})`);
+          return toolFailure("unknown_squad", `Unknown squad: ${String(args.squadID)}. ${squads.length ? `The squads are ${squads.join(", ")}.` : "The squads are not formed yet: leave squadID out."}`);
+        }
+        const known = new Set(backlog.items.map((item) => item.key));
+        const entries = (Array.isArray(args.items) ? args.items : []).flatMap((entry) => {
+          const item = (entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}) as JsonObject;
+          return typeof item.key === "string" ? [{ key: item.key, reason: typeof item.reason === "string" ? clip(item.reason, 200) : "" }] : [];
+        });
+        const unknown = entries.filter((e) => !known.has(e.key)).map((e) => e.key);
+        if (unknown.length) return toolFailure("unknown_items", `Not in this backlog: ${unknown.join(", ")}. read_team lists each squad's backlog with its keys.`);
+        recordCoordinatorOrder(document, squadId, entries);
+        context.changed();
+        const ordered = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId)!;
+        return toolSuccess({ squadID: squadId, backlog: backlogForTool(ordered) as unknown as Json });
       }
       case "rename_squad": {
         const squad = findSquad(document, args.squad);
@@ -1769,6 +1815,30 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const { route } = mergeRoute(document, candidate, context.github.repository);
         return toolSuccess({ candidateID: candidate.id, state: "decided", mergeRoute: route, note: MERGE_ROUTE_NOTES[route] });
       }
+      case "supersede_candidate": {
+        // Only candidate ids: an assignment id could stand for its newest candidate and supersede the wrong version.
+        const older = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!older) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}: name a candidateID (C-…).`);
+        const newer = findCandidate(document, typeof args.newerCandidate === "string" ? args.newerCandidate : "");
+        if (!newer) return toolFailure("unknown_candidate", `There is no candidate ${String(args.newerCandidate)}: name a candidateID (C-…).`);
+        const superseded = supersedeCandidate(document, {
+          candidateId: older.id,
+          byCandidateId: newer.id,
+          reason: typeof args.reason === "string" ? args.reason : "",
+          actor: "Coordinatore",
+          waiting: context.waitingFor?.(older.id) ?? null,
+        });
+        // The chat shows the use where it happened: the candidate's card, settled as one "Superato" line that opens it.
+        context.addCard("candidate", t("main.coordinatorTools.card.candidate"), superseded.id);
+        context.changed();
+        return toolSuccess({
+          candidateID: superseded.id,
+          newerCandidateID: newer.id,
+          state: "superseded",
+          leftWaitingForYou: superseded.supersession!.waiting !== null,
+          newerBlockers: candidateReport(document, newer, await context.headSHA()).blockers as unknown as Json,
+        });
+      }
       case "declare_next_step": {
         const request = document.requests.find((r) => r.id === context.runningRequestId);
         if (!request) return toolFailure("no_request", "A next step closes a turn that answers a message of the person.");
@@ -1891,7 +1961,7 @@ export function developerInstructions(
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
-    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line. When the person asks to rename, merge or split a squad, do it with rename_squad, merge_squads or split_squad, without a mandate, and say what changed; the person can also do it in the Squads view and undo it in Activity. Never rename, merge, split or recreate a squad the person did not ask about, and never undo the person's choices; never invent squads in the chat.",
+    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line and their backlog: the slices and the found problems of the area not taken yet, in order. Take work from the top of a squad's backlog, skipping blocked and paused slices; reorder it with order_backlog, a one-line reason for each item, and never move the items the person placed, whose order wins. When the person asks to rename, merge or split a squad, do it with rename_squad, merge_squads or split_squad, without a mandate, and say what changed; the person can also do it in the Squads view and undo it in Activity. Never rename, merge, split or recreate a squad the person did not ask about, and never undo the person's choices; never invent squads in the chat.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "read_team shows that automatic work in automaticWork: whether each one is running, when it starts and why it has not started yet. When the person asks about it, answer from there, with the reason and what starts it. When the person asks for a triage or a Clean Code review now, start it with start_automatic_work within the mandate; never simulate it with assign_task, and never say it cannot be asked for.",
     `At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two words in ${LANGUAGE_NAMES_IN_ENGLISH[language]} (Interfaccia, Provider in Italian; Interface, Provider in English), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.`,
@@ -1899,7 +1969,7 @@ export function developerInstructions(
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. The person talks with you in one chat per project; goals are filters of that chat, not separate dialogs, and you stay one Coordinator with one mandate and one Pact for all of them. When the person writes with the chat filtered on a goal Trama says so and gives you the goal; answer about that goal, and the work you assign in that turn is linked to it. A goal has one active plan: a new plan for it replaces the earlier one. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
-    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. When an older candidate of the same work is still open next to a newer one, supersede it yourself with supersede_candidate, also when the person asks you to close or archive it: never answer that you have no tool for it. The person always reviews and publishes it: never claim that work is merged or published.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,
