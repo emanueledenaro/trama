@@ -393,6 +393,17 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
   });
 });
 
+describe("a Coordinator that always helps the person", () => {
+  it("answers the person at any moment and unblocks the work, never saying it cannot or leaving every candidate to the person", () => {
+    const instructions = developerInstructions("Demo");
+    expect(instructions).toContain("Never answer the person that you cannot do something or that they must wait");
+    expect(instructions).toContain("unblock it yourself within the mandate, or say what you are already doing to unblock it");
+    // Trama merges with the Coordinator's green light (ADR 0017): the person is not the one who publishes every candidate.
+    expect(instructions).not.toContain("The person always reviews and publishes it");
+    expect(instructions).toContain("Trama publishes and merges it with your green light");
+  });
+});
+
 describe("the size of the reading tools", () => {
   it("caps what a reading tool returns and says how to ask for the rest", async () => {
     const document = emptyDocument("p");

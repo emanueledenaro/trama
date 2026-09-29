@@ -217,7 +217,7 @@ export function automaticMoveSection(move: CoordinatorMove, block: RequestStep["
   return [
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
-    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se una strada è chiusa, prendi un'altra strada con i tuoi strumenti o con il team. Se resta ferma solo per qualcosa che spetta alla persona, scrivi in una riga cosa manca e cosa fai intanto. La persona può fermare il turno.",
     ...(block ? [blockSection(block)] : []),
     ...(move === "decideWithDelegation" ? [DECIDE_WITH_DELEGATION, ...(document ? waitingChoices(document) : [])] : []),
     ...(move === "takeTicket" ? [TAKE_TICKET] : []),
