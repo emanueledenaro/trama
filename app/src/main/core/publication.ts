@@ -6,7 +6,7 @@ import { git, runProcess } from "./process";
 import { fixedPushRefusal, pushAuthorization, pushBranch, type PushRecord, pushRefusal, PushRefusedError } from "./push";
 import { candidateTrailer } from "./quality";
 import { redactSensitiveData, repositoryLocator } from "./redaction";
-import { reviewWorktree } from "./workspace";
+import { differentFrom, mergeState, reviewWorktree } from "./workspace";
 
 /**
  * @model-text: the pull request body is project content written into the repository, in the project's language.
@@ -115,13 +115,20 @@ export async function publishCandidate(input: {
     await git(["log", "--format=%H", "--fixed-strings", `--grep=${marker}`, `--grep=${legacyMarker}`, `${workspace.baseSHA}..HEAD`], root)
   ).trim();
   if (!committed) {
+    // A realignment left as a merge in progress (MERGE_HEAD) is committed as that merge, with both parents: a reset
+    // would drop the merge and turn it into a copy of the other branch's changes, and the conflict would come back.
+    const merge = await mergeState(root);
+    if (merge.unmergedFiles.length) throw new Error(t("main.publication.unmergedFiles", { files: merge.unmergedFiles.join(", ") }));
     // The index holds only the candidate: a file the specialist staged, a sensitive one included, is left out.
-    await git(["reset", "--quiet", "--mixed", "HEAD"], root, false);
+    if (!merge.mergeHead) await git(["reset", "--quiet", "--mixed", "HEAD"], root, false);
     await git(["add", "--", ...input.candidate.changedFiles], root, false);
     const staged = (await git(["diff", "--cached", "--name-only", "-z", "--no-renames", "HEAD"], root)).split("\0").filter(Boolean);
-    const extra = staged.filter((path) => !input.candidate.changedFiles.includes(path));
+    const outside = staged.filter((path) => !input.candidate.changedFiles.includes(path));
+    // In a merge, a file the other branch brought as it is belongs to the merge, even one a candidate leaves out.
+    const extra = merge.mergeHead ? await differentFrom(root, merge.mergeHead, outside) : outside;
     if (extra.length) throw new Error(t("main.publication.extraFiles", { files: extra.join(", ") }));
-    await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", message], root, false);
+    // Work already committed in the worktree, as a merge the Coordinator concluded, leaves nothing to commit.
+    if (staged.length || merge.mergeHead) await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", message], root, false);
   }
   await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush, mainBranches: [input.baseBranch] });
   // The commit Trama pushed: the only head a merge of this candidate accepts (issue #247).

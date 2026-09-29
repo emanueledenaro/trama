@@ -1834,6 +1834,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The commit message does not carry the candidate marker ({marker}).",
   "main.publication.extraFiles":
     "The index contains files outside the candidate: {files}.",
+  "main.publication.unmergedFiles":
+    "The merge in the working copy still has files in conflict: {files}. Resolve them before the commit.",
   "main.publication.pullRequestClosed":
     "Pull request #{number} of this branch is already closed: the new candidate needs a new assignment.",
   "main.publication.createFailed":

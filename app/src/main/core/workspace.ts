@@ -121,6 +121,28 @@ export function isSensitive(path: string): boolean {
   return containsExcludedComponent(path.split("/").filter((c) => c !== ".gitignore"));
 }
 
+/**
+ * Whether a merge is in progress in the worktree, as a realignment with the main branch the developer left without a
+ * commit: the commit it merges (MERGE_HEAD) and the files still in conflict. Read only.
+ */
+export async function mergeState(root: string): Promise<{ mergeHead: string | null; unmergedFiles: string[] }> {
+  const head = await runProcess("git", [...GIT_SAFE_OPTIONS, "rev-parse", "-q", "--verify", "MERGE_HEAD"], { cwd: root, env: gitEnvironment(true) });
+  const mergeHead = head.exitCode === 0 ? head.stdout.trim() || null : null;
+  if (!mergeHead) return { mergeHead: null, unmergedFiles: [] };
+  const unmergedFiles = [...new Set((await git(["diff", "--name-only", "-z", "--diff-filter=U"], root)).split("\0").filter(Boolean))];
+  return { mergeHead, unmergedFiles };
+}
+
+/** The staged `paths` whose content differs from the one they have in `commit`. */
+export async function differentFrom(root: string, commit: string, paths: string[]): Promise<string[]> {
+  const different: string[] = [];
+  for (const path of paths) {
+    const result = await runProcess("git", [...GIT_SAFE_OPTIONS, "diff", "--cached", "--quiet", commit, "--", path], { cwd: root, env: gitEnvironment(true) });
+    if (result.exitCode !== 0) different.push(path);
+  }
+  return different;
+}
+
 /** What the worktree changed against its base: tracked and untracked files, sensitive paths excluded. */
 export async function reviewWorktree(session: WorktreeSession): Promise<WorkspaceReview> {
   const root = session.worktreeRoot;

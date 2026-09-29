@@ -1894,6 +1894,8 @@ export const mainIt = {
     "Il messaggio di commit non porta il marcatore del candidato ({marker}).",
   "main.publication.extraFiles":
     "L'indice contiene file fuori dal candidato: {files}.",
+  "main.publication.unmergedFiles":
+    "Il merge nella copia di lavoro ha ancora file in conflitto: {files}. Vanno risolti prima del commit.",
   "main.publication.pullRequestClosed":
     "La pull request #{number} di questo branch è già chiusa: il nuovo candidato richiede un nuovo incarico.",
   "main.publication.createFailed":
