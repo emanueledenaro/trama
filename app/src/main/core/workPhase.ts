@@ -1,4 +1,4 @@
-import { ITALIAN } from "@shared/i18n";
+import { ITALIAN, LANGUAGES, translate } from "@shared/i18n";
 import { blockerText } from "@shared/plainLanguage";
 import type {
   Candidate,
@@ -545,7 +545,8 @@ function assignedWork(
       };
     }
     if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
-      moves.assignWork();
+      // Work the person stopped waits for their word: no automatic move takes it up again before they write.
+      if (!stoppedByPerson(document, assignment)) moves.assignWork();
       const failed = assignment.status === "failed";
       const blocker = !failed
         ? t("main.workPhase.blockerStopped", { id: assignment.id })
@@ -664,6 +665,20 @@ function assignedWork(
     return { phase: "candidate", blocker: null };
   }
   return { phase: "merged", blocker: null };
+}
+
+/** The name Trama records for the person who stops a developer's work, in every language: a record keeps its language. */
+const PERSON_ACTORS = LANGUAGES.map((language) => translate(language, "main.controller.personActor"));
+
+/**
+ * Whether the person stopped this work and has not written in its dialog since: their stop is a choice, so the work waits
+ * for their word instead of starting again by itself.
+ */
+function stoppedByPerson(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
+  const stop = assignment.stops.at(-1);
+  if (assignment.status !== "stopped" || !stop || !PERSON_ACTORS.includes(stop.requestedBy)) return false;
+  const goalId = document.requests.find((r) => r.id === assignment.requestId)?.goalId ?? null;
+  return !document.requests.some((r) => (r.goalId ?? null) === goalId && r.step?.by !== "trama" && r.createdAt > stop.requestedAt);
 }
 
 /**
