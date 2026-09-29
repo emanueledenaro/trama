@@ -24,7 +24,7 @@ export function BranchDivergencePanel({ divergence, onDone, filesOpen = false }:
         <div className="flex min-w-[12rem] flex-1 items-start gap-2">
           <IconGitBranch className="mt-0.5 size-4 shrink-0 text-warning" stroke={1.8} />
           <p className="min-w-0 text-ui-sm text-foreground/90" data-testid="branch-divergence-text">
-            {divergenceSummary(divergence)}
+            {divergenceSummary(t, divergence)}
           </p>
         </div>
         <div className="cta-row ml-auto">
@@ -35,7 +35,7 @@ export function BranchDivergencePanel({ divergence, onDone, filesOpen = false }:
           <Button
             size="xs"
             onClick={() => {
-              askCoordinator(divergenceQuestion(divergence));
+              askCoordinator(divergenceQuestion(t, divergence));
               onDone();
             }}
           >

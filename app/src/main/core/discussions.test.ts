@@ -5,6 +5,7 @@ import type { RepositoryModule } from "@shared/repository";
 import { discussionModelSetting, discussionState, discussions, minutesLeft, squadDiscussions } from "@shared/discussions";
 import { teamSquads } from "@shared/squads";
 import { waitingForYou } from "@shared/waitingForYou";
+import { translator } from "@shared/i18n";
 import {
   chairOf,
   closeOverdueDiscussions,
@@ -159,7 +160,7 @@ describe("discussions between agents (A12)", () => {
     expect(request.fromDiscussion).toEqual({ threadId: thread.id });
     expect(thread.discussion).toMatchObject({ status: "waitingPerson", decisionRequestId: request.id });
     expect(thread.messages.at(-1)).toMatchObject({ event: { kind: "toPerson", decisionRequestId: request.id } });
-    const item = waitingForYou(document).find((i) => i.targetId === request.id)!;
+    const item = waitingForYou(translator("it"), document).find((i) => i.targetId === request.id)!;
     expect(item).toMatchObject({ kind: "question", label: "Discussione tra agenti", title: "Un ordine annullato torna nel carrello?", blocks: 0 });
     // Neither the chair nor the time box close it between agents.
     expect(() => decideDiscussion(document, thread.id, { decision: "Torna nel carrello", by: chairOf(thread), how: "agreed" }, at(4))).toThrow(/product choice/);
@@ -171,7 +172,7 @@ describe("discussions between agents (A12)", () => {
     answerDecisionRequest(document, request.id, { alternativeIndex: 1, freeText: null }, at(40));
     expect(discussionAnswered(document, request, at(40))).toBe(thread);
     expect(thread.discussion.outcome).toMatchObject({ decision: "Il carrello resta vuoto", by: { kind: "person" }, how: "person" });
-    expect(waitingForYou(document).some((i) => i.targetId === request.id)).toBe(false);
+    expect(waitingForYou(translator("it"), document).some((i) => i.targetId === request.id)).toBe(false);
   });
 
   it("closes a discussion whose product question the person withdrew, with the reason", () => {

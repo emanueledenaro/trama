@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentThreadAuthor, AgentThreadMessage, Specialist } from "@shared/domain";
-import { findAgentThread, threadParticipants } from "@shared/agentThreads";
+import { authorName, findAgentThread, threadParticipants } from "@shared/agentThreads";
 import { type Discussion, type DiscussionState, discussionState, isDiscussion, minutesLeft } from "@shared/discussions";
 import type { MessageKey, Translate } from "@shared/i18n";
 import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
@@ -43,11 +43,9 @@ export function DiscussionStateChip({ state, className }: { state: DiscussionSta
   );
 }
 
-const authorLabel = (t: Translate, author: AgentThreadAuthor, specialists: readonly Specialist[], forwarded = false): string => {
-  if (author.kind === "coordinator") return t("thread.author.coordinator");
-  if (author.kind === "person") return forwarded ? t("thread.author.forwarded") : t("thread.author.person");
-  return specialists.find((s) => s.id === author.specialistId)?.name ?? author.specialistId;
-};
+/** The author's name; the person's message in a discussion reads as passed on by the Coordinator (Q32). */
+const authorLabel = (t: Translate, author: AgentThreadAuthor, specialists: readonly Specialist[], forwarded = false): string =>
+  author.kind === "person" && forwarded ? t("thread.author.forwarded") : authorName(t, author, specialists);
 
 /**
  * A conversation between agents (W07): every message with its author, as Trama recorded it. A discussion between agents
@@ -70,7 +68,7 @@ export function AgentThreadView({ id }: { id: string }) {
         <InspectorSection title={t("thread.section")}>
           <p className="text-ui text-foreground">{thread.title}</p>
           <p className="mt-0.5 text-ui-sm text-muted-foreground">
-            {threadParticipants(thread, specialists)}
+            {threadParticipants(t, thread, specialists)}
             <Sep />
             <button type="button" className="underline-offset-2 hover:underline" onClick={() => setInspector({ kind: "specialist", id: thread.specialistIds[0]! })}>
               {t("thread.openDeveloper")}
@@ -138,7 +136,7 @@ function DiscussionHeader({ thread, specialists }: { thread: Discussion; special
               <span className="flex size-5 items-center justify-center">
                 <TramaMark size={16} />
               </span>
-              <span className="min-w-0 truncate text-foreground">{t("thread.author.coordinator")}</span>
+              <span className="min-w-0 truncate text-foreground">{t("shared.thread.coordinator")}</span>
               <span className="ml-auto shrink-0 text-ui-xs text-muted-foreground">{t("discussion.chairTag")}</span>
             </li>
           ) : null}

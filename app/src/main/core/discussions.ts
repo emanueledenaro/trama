@@ -11,7 +11,7 @@ import type {
 } from "@shared/domain";
 import type { ProviderModel } from "@shared/codex";
 import { DEFAULT_TIME_BOX, type Discussion, isDiscussion, isDiscussionReason, MAX_TIME_BOX, MIN_TIME_BOX } from "@shared/discussions";
-import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, type Language, translate, translator } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { squadOf } from "@shared/squads";
@@ -376,7 +376,7 @@ export function discussionPrompt(document: ProjectDocument, thread: Discussion, 
     if (author.kind === "person") return "La persona (tramite il Coordinatore)";
     const specialist = document.team.specialists.find((s) => s.id === author.specialistId);
     if (!specialist) return author.specialistId;
-    return `${specialist.name} (${specialist.role === "developer" ? "sviluppatore" : roleProfile(specialist.role).name})`;
+    return `${specialist.name} (${specialist.role === "developer" ? "sviluppatore" : roleProfile(translator("it"), specialist.role).name})`;
   };
   const state = thread.discussion;
   const assignment = thread.assignmentId ? findAssignment(document, thread.assignmentId) : null;

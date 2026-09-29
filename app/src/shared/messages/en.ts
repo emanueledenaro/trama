@@ -1,9 +1,11 @@
 // The English catalog (issue #301): the same keys and placeholders as `it.ts`, in plain English.
 import type { it } from "./it";
 import { mainEn } from "./main.en";
+import { sharedEn } from "./shared.en";
 
 export const en: Record<keyof typeof it, string> = {
   ...mainEn,
+  ...sharedEn,
   // Time
   "time.now": "now",
   "time.minutes": "{count}m",
@@ -64,6 +66,60 @@ export const en: Record<keyof typeof it, string> = {
   "language.description":
     "The language of the interface and of the messages from the Coordinator and the agents. Code, commits and project documents follow the project's own rules.",
   "language.welcomeHint": "Choose the language for Trama. You can change it at any time in Settings.",
+
+  // Application menu (B10, issue #345); "menu.about" is with the settings' About
+  "menu.settings": "Settings…",
+  "menu.services": "Services",
+  "menu.hide": "Hide Trama",
+  "menu.hideOthers": "Hide Others",
+  "menu.showAll": "Show All",
+  "menu.quit": "Quit Trama",
+  "menu.exit": "Exit",
+  "menu.file": "File",
+  "menu.file.mnemonic": "&File",
+  "menu.openProject": "Open Project…",
+  "menu.openDemo": "Open Example Project",
+  "menu.createProject": "Create Project…",
+  "menu.refreshProject": "Refresh Project",
+  "menu.preferences": "Preferences",
+  "menu.closeWindow": "Close Window",
+  "menu.edit": "Edit",
+  "menu.edit.mnemonic": "&Edit",
+  "menu.undo": "Undo",
+  "menu.redo": "Redo",
+  "menu.cut": "Cut",
+  "menu.copy": "Copy",
+  "menu.paste": "Paste",
+  "menu.pasteAndMatchStyle": "Paste and Match Style",
+  "menu.delete": "Delete",
+  "menu.selectAll": "Select All",
+  "menu.view": "View",
+  "menu.view.mnemonic": "&View",
+  "menu.toggleSidebar": "Show or Hide the Side Bar",
+  "menu.togglePanel": "Show or Hide the Activity Panel",
+  "menu.toggleSplitEditor": "Show the Details Beside or Over the Conversation",
+  "menu.splitNeedsWidth": "Widen the window to show the details beside the conversation.",
+  "menu.focusComposer": "Write to the Coordinator",
+  "menu.resetZoom": "Actual Size",
+  "menu.zoomIn": "Zoom In",
+  "menu.zoomOut": "Zoom Out",
+  "menu.fullScreen": "Full Screen",
+  "menu.devTools": "Developer Tools",
+  "menu.window": "Window",
+  "menu.window.mnemonic": "&Window",
+  "menu.minimize": "Minimize",
+  "menu.minimize.other": "Minimize",
+  "menu.zoom": "Zoom",
+  "menu.front": "Bring All to Front",
+  "menu.help": "Help",
+  "menu.help.mnemonic": "&Help",
+  "menu.welcome": "Welcome to Trama",
+  "menu.guide": "Getting Started",
+  "menu.exercises": "Exercises on the Example Project",
+  "menu.documentation": "Documentation",
+  "menu.reportIssue": "Report an Issue on GitHub",
+  "menu.notices": "Third-Party Notices",
+  "menu.needsProject": "Open or create a project to use this item.",
 
   // Welcome (B02)
   "welcome.title": "Welcome to Trama",
@@ -1353,14 +1409,11 @@ export const en: Record<keyof typeof it, string> = {
   "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
 
   // Discussions between agents (A12, issue #252)
-  "waiting.label.discussion": "Discussion between agents",
   "thread.missing": "This conversation between agents no longer exists.",
   "thread.section": "Conversation",
   "thread.openDeveloper": "Open the developer",
   "thread.readOnlyNote": "Conversations between agents are always visible and stay in the project's history. To tell an agent something, write to the Coordinator, who passes it on.",
   "thread.messages": "Messages ({count})",
-  "thread.author.coordinator": "Coordinator",
-  "thread.author.person": "You",
   "thread.author.forwarded": "You, through the Coordinator",
   "discussion.section": "Discussion",
   "discussion.reason.estimate": "Estimate and split of the work",

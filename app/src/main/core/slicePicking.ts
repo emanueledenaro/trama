@@ -133,7 +133,7 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
     }
     const full = squadLimitProblem(document, developer);
     if (full) {
-      waiting(squadLimitText(full));
+      waiting(squadLimitText(t, full));
       continue;
     }
     const chosen = providerFor(developer, earlier, input);

@@ -23,6 +23,9 @@ import {
 } from "./problems";
 import { doneSince } from "./recap";
 import { beginTurn, endTurn } from "./team";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute));
 const runner = { provider: "codex" as const, model: "gpt-6-luna", modelReason: "Il modello più leggero del catalogo." };
@@ -287,11 +290,11 @@ describe("found problems (A08)", () => {
     redTest(document, "h1", 1);
     const [problem] = collectProblems(document, null, at(2));
     recordIssueFailure(problem!, "La issue non è stata aperta: limite di richieste.", at(2));
-    expect(problemActivity([problem!])).toMatchObject([{ kind: "problem", outcome: "stalled", label: expect.stringContaining("Issue non aperta") }]);
+    expect(problemActivity(t, [problem!])).toMatchObject([{ kind: "problem", outcome: "stalled", label: expect.stringContaining("Issue non aperta") }]);
 
     recordProblemIssue(problem!, issue(12), true, at(3));
     problem!.placement = { kind: "backlog", at: at(4).toISOString(), reason: "Nessun incarico lavora su questo problema: resta nel backlog." };
-    const entries = activityLog(document.requests, document.events, [], document.problems!.items);
+    const entries = activityLog(t, document.requests, document.events, [], document.problems!.items);
     expect(entries.map((e) => e.label)).toEqual(["La issue #12 va nel backlog", `Aperta la issue #12: ${problem!.title}`]);
     expect(entries[0]).toMatchObject({ issue: { number: 12 }, trigger: problem!.evidence.label });
 

@@ -1,5 +1,5 @@
 import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
-import { DEFAULT_LANGUAGE, type Language, translate } from "./i18n";
+import type { MessageKey, Translate } from "./i18n";
 import { problemActivity } from "./problems";
 import { requestedActionEntries } from "./requestedActions";
 
@@ -55,14 +55,14 @@ export interface ActivityEntry {
 
 /**
  * The person's changes to the squads (A11), made from the Squads view or through the Coordinator, and whether they
- * were undone. `label` and `detail` are the Italian record; the view words them from `squadChange`. Pure.
+ * were undone, in the language of `t`. Pure.
  */
-export function squadChangeEntries(changes: SquadChange[]): ActivityEntry[] {
-  const labels: Record<SquadChange["kind"], string> = { rename: "Squadra rinominata", merge: "Squadre unite", split: "Squadra divisa" };
+export function squadChangeEntries(t: Translate, changes: SquadChange[]): ActivityEntry[] {
+  const labels: Record<SquadChange["kind"], MessageKey> = { rename: "activity.squad.rename", merge: "activity.squad.merge", split: "activity.squad.split" };
   const details: Record<SquadChange["kind"], (c: SquadChange) => string> = {
-    rename: (c) => `${c.names.from} si chiama ora ${c.names.to}.`,
-    merge: (c) => `${c.names.other} si è unita a ${c.names.to}.`,
-    split: (c) => `Da ${c.names.from} nasce la squadra ${c.names.other}.`,
+    rename: (c) => t("activity.squad.renameDetail", { from: c.names.from, to: c.names.to }),
+    merge: (c) => t("activity.squad.mergeDetail", { other: c.names.other ?? "", to: c.names.to }),
+    split: (c) => t("activity.squad.splitDetail", { from: c.names.from, other: c.names.other ?? "" }),
   };
   return changes.map((change) => ({
     id: change.id,
@@ -70,7 +70,7 @@ export function squadChangeEntries(changes: SquadChange[]): ActivityEntry[] {
     requestId: null,
     move: null,
     trigger: null,
-    label: labels[change.kind],
+    label: t(labels[change.kind]),
     goalId: null,
     startedAt: change.at,
     endedAt: change.undoneAt,
@@ -85,14 +85,16 @@ export function squadChangeEntries(changes: SquadChange[]): ActivityEntry[] {
  * Trama's merges of candidates (issue #247): merged, or stopped by a fixed ban or by the mandate, or refused by GitHub.
  * A merge that waits for the checks of its pull request, or that runs, is not in Activity yet. Pure.
  */
-export function mergeActivityEntries(candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[]): ActivityEntry[] {
+export function mergeActivityEntries(t: Translate, candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[]): ActivityEntry[] {
   return candidates.flatMap((candidate): ActivityEntry[] => {
     const merge = candidate.merge;
     if (!merge || merge.status === "running" || merge.status === "waiting") return [];
     const pull = candidate.pullRequest;
-    const authority = merge.by === "coordinator" ? "con il via libera del Coordinatore" : "con il tuo ok";
+    const authority = t(merge.by === "coordinator" ? "shared.activity.merge.byCoordinator" : "shared.activity.merge.byPerson");
     const label =
-      merge.status === "merged" ? `Candidato unito ${authority}` : merge.status === "stopped" ? "Unione del candidato fermata" : "Unione del candidato non riuscita";
+      merge.status === "merged"
+        ? t("shared.activity.merge.merged", { authority })
+        : t(merge.status === "stopped" ? "shared.activity.merge.stopped" : "shared.activity.merge.failed");
     return [
       {
         id: `merge:${candidate.id}`,
@@ -105,7 +107,12 @@ export function mergeActivityEntries(candidates: Pick<Candidate, "id" | "goalId"
         startedAt: merge.at,
         endedAt: null,
         outcome: merge.status === "merged" ? "done" : merge.status === "stopped" ? "stopped" : "stalled",
-        detail: merge.status === "merged" ? `Candidato ${candidate.id}${pull ? `, pull request #${pull.number}` : ""}.` : `Candidato ${candidate.id}: ${merge.detail ?? ""}`.trim(),
+        detail:
+          merge.status === "merged"
+            ? pull
+              ? t("shared.activity.merge.detailWithPull", { id: candidate.id, number: String(pull.number) })
+              : t("shared.activity.merge.detail", { id: candidate.id })
+            : t("shared.activity.merge.detailWithReason", { id: candidate.id, reason: merge.detail ?? "" }).trim(),
         toolErrors: [],
         pullRequest: pull ? { number: pull.number, url: pull.url } : null,
       },
@@ -117,12 +124,12 @@ export function mergeActivityEntries(candidates: Pick<Candidate, "id" | "goalId"
  * The candidates the Coordinator declared superseded by a newer candidate of the same work (issue #421), with the reason
  * and the "Aspetta te" item that left the list with it. Pure.
  */
-export function supersessionActivityEntries(candidates: Pick<Candidate, "id" | "goalId" | "supersession">[], language: Language = DEFAULT_LANGUAGE): ActivityEntry[] {
+export function supersessionActivityEntries(t: Translate, candidates: Pick<Candidate, "id" | "goalId" | "supersession">[]): ActivityEntry[] {
   return candidates.flatMap((candidate): ActivityEntry[] => {
     const supersession = candidate.supersession;
     if (!supersession) return [];
-    const detail = translate(language, "supersession.activity.detail", { id: candidate.id, by: supersession.byCandidateId, reason: supersession.reason });
-    const waiting = supersession.waiting ? ` ${translate(language, "supersession.activity.waiting", { item: `${supersession.waiting.label}, ${supersession.waiting.title}` })}` : "";
+    const detail = t("supersession.activity.detail", { id: candidate.id, by: supersession.byCandidateId, reason: supersession.reason });
+    const waiting = supersession.waiting ? ` ${t("supersession.activity.waiting", { item: `${supersession.waiting.label}, ${supersession.waiting.title}` })}` : "";
     return [
       {
         id: `supersede:${candidate.id}`,
@@ -130,7 +137,7 @@ export function supersessionActivityEntries(candidates: Pick<Candidate, "id" | "
         requestId: null,
         move: null,
         trigger: null,
-        label: translate(language, "supersession.activity.label"),
+        label: t("supersession.activity.label"),
         goalId: candidate.goalId ?? null,
         startedAt: supersession.at,
         endedAt: null,
@@ -142,27 +149,13 @@ export function supersessionActivityEntries(candidates: Pick<Candidate, "id" | "
   });
 }
 
-export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
-  running: "In corso",
-  done: "Fatta",
-  stalled: "Non riuscita",
-  stopped: "Fermata",
-  failed: "Errore",
-  corrected: "Corretto",
-  undone: "Annullata",
-};
+export const activityOutcomeLabel = (t: Translate, outcome: ActivityOutcome): string => t(`shared.activity.outcome.${outcome}`);
 
 /**
  * The steps the Coordinator takes for the person within the mandate (A06), and the squads it forms after the study
  * (A10), as Activity and the recap name them.
  */
-export const AUTONOMOUS_STEP_LABELS: Record<AutonomousMove, string> = {
-  confirmUnderstanding: "Comprensione confermata dal Coordinatore",
-  confirmTeam: "Team confermato dal Coordinatore",
-  confirmSeams: "Seam confermati dal Coordinatore",
-  confirmSlices: "Fette confermate dal Coordinatore",
-  formSquads: "Squadre formate dal Coordinatore",
-};
+export const autonomousStepLabel = (t: Translate, move: AutonomousMove): string => t(`shared.activity.step.${move}`);
 
 /** Whether a request is a turn Trama started by itself with continuous work (W04), not a message of the person. */
 export const isAutomaticMove = (request: Pick<CoordinatorRequest, "step"> | undefined | null): boolean => request?.step?.by === "trama";
@@ -186,19 +179,7 @@ function outcomeOf(request: CoordinatorRequest): { outcome: ActivityOutcome; det
 }
 
 /** What started an automatic move, in the person's words, for Activity (A05). */
-export const TRIGGER_LABELS: Record<WorkEvent, string> = {
-  turnEnded: "Dopo un turno del Coordinatore",
-  planEnded: "Dopo la fine di un piano",
-  assignmentEnded: "Dopo la fine di un incarico",
-  checkFailed: "Dopo una verifica rossa",
-  worktreeConflict: "Dopo un conflitto tra worktree",
-  issueOpened: "Dopo una issue nuova",
-  pullRequestCommented: "Dopo un commento su una pull request",
-  round: "Nel giro periodico",
-};
-
-/** The name a round has in Activity. */
-export const ROUND_LABEL = "Giro del Coordinatore";
+export const triggerLabel = (t: Translate, trigger: WorkEvent): string => t(`shared.activity.trigger.${trigger}`);
 
 /**
  * The automatic moves, the rounds with an outcome, the steps of the found problems, the person's steps the Coordinator
@@ -207,6 +188,7 @@ export const ROUND_LABEL = "Giro del Coordinatore";
  * the requested actions. Pure.
  */
 export function activityLog(
+  t: Translate,
   requests: CoordinatorRequest[],
   events: ConversationEvent[],
   rounds: RoundRecord[] = [],
@@ -214,7 +196,6 @@ export function activityLog(
   steps: AutonomousStep[] = [],
   candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest" | "supersession">[] = [],
   squadChanges: SquadChange[] = [],
-  language: Language = DEFAULT_LANGUAGE,
   requestedActions: RequestedAction[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
@@ -233,7 +214,7 @@ export function activityLog(
       kind: "move",
       requestId: request.id,
       move: request.step!.move,
-      trigger: request.step!.trigger ? TRIGGER_LABELS[request.step!.trigger] : null,
+      trigger: request.step!.trigger ? triggerLabel(t, request.step!.trigger) : null,
       label: labels.get(request.id) ?? request.text,
       goalId: request.goalId ?? null,
       startedAt: request.createdAt,
@@ -249,7 +230,7 @@ export function activityLog(
       requestId: round.requestId,
       move: null,
       trigger: null,
-      label: ROUND_LABEL,
+      label: t("shared.activity.round"),
       goalId: null,
       startedAt: round.at,
       endedAt: null,
@@ -265,19 +246,19 @@ export function activityLog(
       requestId: step.requestId,
       move: step.move === "formSquads" ? null : step.move,
       trigger: null,
-      label: AUTONOMOUS_STEP_LABELS[step.move],
+      label: autonomousStepLabel(t, step.move),
       goalId: step.goalId,
       startedAt: step.at,
       endedAt: null,
       outcome: step.correction ? "corrected" : "done",
-      detail: step.correction ? `${step.summary} Correzione: ${step.correction.note}` : step.summary,
+      detail: step.correction ? t("shared.activity.correction", { summary: step.summary, note: step.correction.note }) : step.summary,
       toolErrors: [],
     }),
   );
-  const found = problemActivity(problems);
-  const merged = [...mergeActivityEntries(candidates), ...supersessionActivityEntries(candidates, language)];
-  const changed = squadChangeEntries(squadChanges);
-  const requested = requestedActionEntries(requestedActions, language);
+  const found = problemActivity(t, problems);
+  const merged = [...mergeActivityEntries(t, candidates), ...supersessionActivityEntries(t, candidates)];
+  const changed = squadChangeEntries(t, squadChanges);
+  const requested = requestedActionEntries(requestedActions, t.language);
   if (!done.length && !found.length && !taken.length && !merged.length && !changed.length && !requested.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
   return [...moves, ...done, ...found, ...taken, ...merged, ...changed, ...requested].sort((a, b) => b.startedAt.localeCompare(a.startedAt));

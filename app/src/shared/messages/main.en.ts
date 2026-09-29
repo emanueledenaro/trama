@@ -676,6 +676,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.duties.diagnosisLineNotReproduced": "Diagnosis: bug not reproduced",
   "main.duties.architectureLineProposals":
     "Architecture review: {count} proposals to decide",
+  "main.duties.architectureLineProposals.one":
+    "Architecture review: one proposal to decide",
   "main.duties.architectureLineNothing":
     "Architecture review: nothing to report",
 
@@ -1722,51 +1724,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.candidates.notVerified": "The candidate is not verified: {codes}.",
 
   // MARK: Repository, GitHub, menu, memory and learning
-  // App menu and dialogs (main.ts)
+  // Dialogs of main.ts; the application menu's labels are the "menu.*" keys of the interface catalogs (issue #345)
   "main.dialog.openProject": "Open Project",
   "main.dialog.chooseFolder": "Choose the folder",
   "main.dialog.chooseCloneFolder": "Choose where to clone the project",
-  "main.menu.settings": "Settings…",
-  "main.menu.hide": "Hide Trama",
-  "main.menu.hideOthers": "Hide Others",
-  "main.menu.showAll": "Show All",
-  "main.menu.quitTrama": "Quit Trama",
-  "main.menu.file": "File",
-  "main.menu.openProject": "Open Project…",
-  "main.menu.openDemo": "Open Example Project",
-  "main.menu.createProject": "Create a Project…",
-  "main.menu.refreshProject": "Refresh Project",
-  "main.menu.closeWindow": "Close Window",
-  "main.menu.quit": "Quit",
-  "main.menu.edit": "Edit",
-  "main.menu.undo": "Undo",
-  "main.menu.redo": "Redo",
-  "main.menu.cut": "Cut",
-  "main.menu.copy": "Copy",
-  "main.menu.paste": "Paste",
-  "main.menu.selectAll": "Select All",
-  "main.menu.view": "View",
-  "main.menu.focusComposer": "Write to the Coordinator",
-  "main.menu.toggleSidebar": "Toggle Sidebar",
-  "main.menu.toggleInspector": "Show Details",
-  "main.menu.map": "Map",
-  "main.menu.pact": "Pact",
-  "main.menu.mandate": "Mandate",
-  "main.menu.issues": "Issues",
-  "main.menu.team": "Team",
-  "main.menu.work": "Work",
-  "main.menu.group": "Group",
-  "main.menu.memory": "Memory",
-  "main.menu.resetZoom": "Actual Size",
-  "main.menu.zoomIn": "Zoom In",
-  "main.menu.zoomOut": "Zoom Out",
-  "main.menu.fullScreen": "Full Screen",
-  "main.menu.devTools": "Developer Tools",
-  "main.menu.window": "Window",
-  "main.menu.help": "Help",
-  "main.menu.welcome": "Welcome to Trama",
-  "main.menu.guide": "Getting Started",
-  "main.menu.exercises": "Exercises on the Example Project",
   // Merge and push (merge.ts, push.ts)
   "main.merge.noRemote":
     "The project has no GitHub remote: Trama does not open or merge the pull request.",

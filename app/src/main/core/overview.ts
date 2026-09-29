@@ -35,7 +35,7 @@ export function summarizeProject(
   // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision. The
   // counts come from the list of Aspetta te (issue #390), so the overview never shows what the project does not.
   const reports = Object.fromEntries(document.candidates.flatMap((candidate, index) => (input.candidateReports[index] ? [[candidate.id, input.candidateReports[index]]] : [])));
-  const waiting = waitingForYou(document, { candidateReports: reports });
+  const waiting = waitingForYou(t, document, { candidateReports: reports });
   const count = (kind: WaitingKind) => waiting.filter((item) => item.kind === kind).length;
   const openDecisions = count("question");
   const openMandates = count("mandate");

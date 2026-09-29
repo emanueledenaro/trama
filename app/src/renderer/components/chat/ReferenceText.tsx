@@ -2,6 +2,7 @@ import { plainText } from "@shared/plainLanguage";
 import { lookupReference, type Reference, type ReferenceIndex, referenceText, referenceTitle, splitReferences } from "@shared/references";
 import { unknownReferenceTitle } from "@/lib/remarkReferences";
 import { openReference, useRecord, useReferenceIndex } from "@/lib/references";
+import { useT } from "@/lib/i18n";
 
 export function ReferenceButton({ reference, children }: { reference: Reference; children: React.ReactNode }) {
   return (
@@ -62,8 +63,9 @@ function linked(text: string, index: ReferenceIndex, before: string, key: string
  * backticks shows as code, or as the name of what it cites, never with the backticks.
  */
 export function ReferenceText({ text, links = true }: { text: string; links?: boolean }) {
+  const t = useT();
   const index = useReferenceIndex();
-  const stretches = plainText(text).split(/`([^`\n]+)`/);
+  const stretches = plainText(t, text).split(/`([^`\n]+)`/);
   if (!index) return <>{stretches.map((stretch, position) => (position % 2 ? <code key={position} className="plain-code">{stretch}</code> : stretch))}</>;
   let before = "";
   return (

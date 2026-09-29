@@ -1,4 +1,5 @@
 import type { ProjectDocument } from "./domain";
+import type { Translate } from "./i18n";
 
 /**
  * Ask Trama (M07): AI Hero's ask-trama skill (upstream ask-matt) picks a route through the skills, and Trama starts
@@ -48,54 +49,45 @@ export interface AskTramaRoute {
 }
 
 /**
- * The skills of ask-trama that have a Trama flow, with the flow in the person's words (issue #130). Every other skill
- * the package carries runs as itself in the Coordinator's session.
+ * The skills of ask-trama that have a Trama flow (issue #130). Every other skill the package carries runs as itself in
+ * the Coordinator's session.
  */
-export const TRAMA_FLOWS: Readonly<Record<string, string>> = {
-  "grill-with-docs": "Grilling prima del piano, con glossario e ADR",
-  grilling: "Grilling prima del piano",
-  "domain-modeling": "Glossario e ADR dalle decisioni del Patto",
-  "to-spec": "Piano scritto come spec",
-  "to-tickets": "Fette verticali del piano",
-  implement: "Incarico a uno sviluppatore, con implement e tdd",
-  tdd: "Incarico a uno sviluppatore, con implement e tdd",
-  "code-review": "Revisione del candidato ed esame approfondito",
-  triage: "Triage delle issue, dal ruolo Bug triage e debugger",
-  "diagnosing-bugs": "Diagnosi di un difetto, dal ruolo Bug triage e debugger",
-  "improve-codebase-architecture": "Revisione dell'architettura, dal ruolo Clean Code",
-};
+export const FLOW_SKILLS = [
+  "grill-with-docs",
+  "grilling",
+  "domain-modeling",
+  "to-spec",
+  "to-tickets",
+  "implement",
+  "tdd",
+  "code-review",
+  "triage",
+  "diagnosing-bugs",
+  "improve-codebase-architecture",
+] as const;
+type FlowSkill = (typeof FLOW_SKILLS)[number];
+const hasFlow = (skill: string): skill is FlowSkill => (FLOW_SKILLS as readonly string[]).includes(skill);
+
+/** The Trama flow of a skill in the person's words, or null when the skill has none. */
+export const flowLabel = (t: Translate, skill: string): string | null => (hasFlow(skill) ? t(`shared.flow.${skill}`) : null);
 
 /** ask-trama's commands that are phase boundaries in Trama, not steps of a route. */
 export const BOUNDARY_COMMANDS: Readonly<Record<string, PhaseBoundary>> = { clear: "clear", compact: "compact", handoff: "handoff" };
 
-export const ROUTE_PATH_LABELS: Record<RoutePath, string> = {
-  mainFlow: "Flusso principale",
-  onRamp: "Ingresso nel flusso principale",
-  codebaseHealth: "Salute del codice",
-  vocabulary: "Vocabolario",
-  standalone: "Strumento isolato",
-  precondition: "Preparazione",
-};
+export const routePathLabel = (t: Translate, path: RoutePath): string => t(`shared.routePath.${path}`);
 
 /** What each boundary means in Trama (issue #130): the Coordinator's session, a new one, a summary or a read-only specialist. */
-export const BOUNDARY_LABELS: Record<PhaseBoundary, { label: string; detail: string }> = {
-  continue: { label: "Continua", detail: "Il Coordinatore resta nella sessione di adesso." },
-  clear: { label: "Nuova sessione", detail: "Il Coordinatore apre una sessione nuova con lo studio e la memoria, senza la conversazione." },
-  handoff: { label: "Passaggio di consegne", detail: "Il Coordinatore apre una sessione nuova e riceve la trascrizione della conversazione scritta da Trama." },
-  subagent: { label: "Sessione separata", detail: "Il lavoro va a una sessione separata gestita da Trama; la sessione del Coordinatore non cambia." },
-  compact: { label: "Riassunto", detail: "Il Coordinatore apre una sessione nuova e riceve la trascrizione della conversazione scritta da Trama." },
-};
+export const boundaryLabel = (t: Translate, boundary: PhaseBoundary): { label: string; detail: string } => ({
+  label: t(`shared.boundary.${boundary}`),
+  detail: t(`shared.boundary.${boundary}.detail`),
+});
 
-export const STEP_KIND_LABELS: Record<RouteStepKind, string> = {
-  flow: "Flusso di Trama",
-  skill: "Skill nel Coordinatore",
-  unavailable: "Non ancora disponibile in Trama",
-};
+export const stepKindLabel = (t: Translate, kind: RouteStepKind): string => t(`shared.stepKind.${kind}`);
 
 /** How Trama runs `skill`: its flow, the skill itself when bundled, otherwise not at all. */
 export function stepKind(skill: string, bundled: readonly string[]): RouteStepKind {
   if (!bundled.includes(skill)) return "unavailable";
-  return TRAMA_FLOWS[skill] ? "flow" : "skill";
+  return hasFlow(skill) ? "flow" : "skill";
 }
 
 /** The step Trama starts on confirmation: the first one it can run. */

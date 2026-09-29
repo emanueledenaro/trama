@@ -1,5 +1,6 @@
 import type { ActivityEntry } from "./activity";
 import type { FoundProblem, ProjectDocument } from "./domain";
+import type { Translate } from "./i18n";
 
 /**
  * The problems the Coordinator found outside the work in progress (A08), as the person reads them: the backlog items
@@ -18,7 +19,7 @@ export const openedForProblem = (document: Pick<ProjectDocument, "problems">, nu
  * The steps of the found problems in Activity (A08), newest first: the issue opened or found already open, an issue
  * that could not be opened, and where the problem went after the triage. Pure.
  */
-export function problemActivity(problems: FoundProblem[]): ActivityEntry[] {
+export function problemActivity(t: Translate, problems: FoundProblem[]): ActivityEntry[] {
   const entries: ActivityEntry[] = [];
   const base = {
     kind: "problem" as const,
@@ -36,14 +37,10 @@ export function problemActivity(problems: FoundProblem[]): ActivityEntry[] {
         id: `${problem.id}:issue`,
         issue,
         trigger: problem.evidence.label,
-        label: problem.issue.opened
-          ? `Aperta la issue #${problem.issue.number}: ${problem.title}`
-          : `Collegata la issue #${problem.issue.number}, già aperta: ${problem.title}`,
+        label: t(problem.issue.opened ? "shared.problem.issueOpened" : "shared.problem.issueLinked", { number: String(problem.issue.number), title: problem.title }),
         startedAt: problem.issue.at,
         outcome: "done",
-        detail: problem.issue.opened
-          ? "Nessuna issue aperta descriveva lo stesso problema."
-          : "Una issue aperta descriveva già lo stesso problema: il Coordinatore non ne apre un'altra.",
+        detail: t(problem.issue.opened ? "shared.problem.issueOpenedDetail" : "shared.problem.issueLinkedDetail"),
       });
     } else if (problem.issueFailure) {
       entries.push({
@@ -51,10 +48,10 @@ export function problemActivity(problems: FoundProblem[]): ActivityEntry[] {
         id: `${problem.id}:failure`,
         issue: null,
         trigger: problem.evidence.label,
-        label: `Issue non aperta: ${problem.title}`,
+        label: t("shared.problem.issueFailed", { title: problem.title }),
         startedAt: problem.issueFailure.at,
         outcome: "stalled",
-        detail: `${problem.issueFailure.message} Il Coordinatore riprova al prossimo giro.`,
+        detail: t("shared.problem.issueFailedDetail", { message: problem.issueFailure.message }),
       });
     }
     const placement = problem.placement;
@@ -67,11 +64,11 @@ export function problemActivity(problems: FoundProblem[]): ActivityEntry[] {
         label:
           placement.kind === "assignment"
             ? problem.issue
-              ? `La issue #${problem.issue.number} è assegnata all'incarico ${placement.assignmentId}`
-              : `Il problema ${problem.id} è assegnato all'incarico ${placement.assignmentId}`
+              ? t("shared.problem.issueAssigned", { number: String(problem.issue.number), assignment: placement.assignmentId })
+              : t("shared.problem.assigned", { id: problem.id, assignment: placement.assignmentId })
             : problem.issue
-              ? `La issue #${problem.issue.number} va nel backlog`
-              : `Nel backlog di Trama: ${problem.title}`,
+              ? t("shared.problem.issueBacklog", { number: String(problem.issue.number) })
+              : t("shared.problem.backlog", { title: problem.title }),
         startedAt: placement.at,
         outcome: "done",
         detail: placement.reason,

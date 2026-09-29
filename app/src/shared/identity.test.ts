@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentColor, Specialist } from "./domain";
 import { AGENT_PALETTE, agentTag, freeAgentColor, isAgentColor, tagFromCompetence } from "./identity";
+import { translator } from "./i18n";
+
+const t = translator("it");
 
 const css = readFileSync(join(import.meta.dirname, "../renderer/index.css"), "utf8");
 
@@ -69,11 +72,11 @@ describe("agent identity (W15)", () => {
   });
 
   it("shortens a competence into a tag, and prefers the agent's own", () => {
-    expect(tagFromCompetence("Interfaccia")).toBe("Interfaccia");
-    expect(tagFromCompetence("Provider AI, account e modelli.")).toBe("Provider AI");
-    expect(tagFromCompetence("Componenti dell'interfaccia React con Tailwind")).toBe("Componenti");
-    expect(tagFromCompetence("  ")).toBe("Sviluppo");
-    expect(agentTag({ tag: " Regressioni ", competence: "x" })).toBe("Regressioni");
-    expect(agentTag({ tag: "", competence: "Swift" })).toBe("Swift");
+    expect(tagFromCompetence(t, "Interfaccia")).toBe("Interfaccia");
+    expect(tagFromCompetence(t, "Provider AI, account e modelli.")).toBe("Provider AI");
+    expect(tagFromCompetence(t, "Componenti dell'interfaccia React con Tailwind")).toBe("Componenti");
+    expect(tagFromCompetence(t, "  ")).toBe("Sviluppo");
+    expect(agentTag(t, { tag: " Regressioni ", competence: "x" })).toBe("Regressioni");
+    expect(agentTag(t, { tag: "", competence: "Swift" })).toBe("Swift");
   });
 });

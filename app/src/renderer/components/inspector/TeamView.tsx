@@ -20,17 +20,17 @@ import type { BacklogItem, BacklogReason, SquadBacklogView } from "@shared/backl
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment, Squad } from "@shared/domain";
 import { findGoal } from "@shared/goals";
-import type { MessageKey, Translate } from "@shared/i18n";
+import { LANGUAGES, type MessageKey, type Translate, translator } from "@shared/i18n";
 import { PROVIDERS } from "@shared/providers";
-import { AGENT_PALETTE } from "@shared/identity";
+import { AGENT_PALETTE, colorName } from "@shared/identity";
 import { agentThreadsByRecent, threadParticipants } from "@shared/agentThreads";
 import { discussionState, minutesLeft, squadDiscussions } from "@shared/discussions";
-import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, TEAM_MOMENTS } from "@shared/roster";
+import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, teamMoments } from "@shared/roster";
 import { developersOutsideSquads, sharedRoleMembers, squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
-import { candidateStatus } from "@shared/states";
+import { assignmentStatus, candidateStatus } from "@shared/states";
 import { type MemberSign, memberSign, squadPart, squadSlices, teamSummary } from "@shared/teamPeople";
 import { AgentAvatar, AgentTag, agentStyle } from "@/components/AgentIdentity";
-import { ASSIGNMENT_STATUS, AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
+import { AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -184,10 +184,10 @@ function PersonRow({ specialist }: { specialist: Specialist }) {
     sign !== "free" || specialist.assignments.length
       ? sign === "free"
         ? t("teams.sign.free")
-        : specialistLine(document, specialist)
+        : specialistLine(t, document, specialist)
       : specialist.role === "developer"
         ? t("teams.sign.free")
-        : (roleDuties(specialist.role)[0]?.task ?? t("teams.sign.free"));
+        : (roleDuties(t, specialist.role)[0]?.task ?? t("teams.sign.free"));
   return (
     <button
       type="button"
@@ -248,7 +248,7 @@ function SquadGroup({ squad }: { squad: Squad }) {
       {edit === "merge" ? <MergeSquad squad={squad} onDone={done} /> : null}
       {edit === "split" ? <SplitSquad squad={squad} onDone={done} /> : null}
       <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground" data-testid="squad-status">
-        <ReferenceText text={squadStatusLine(document, squad)} links={false} />
+        <ReferenceText text={squadStatusLine(t, document, squad)} links={false} />
       </p>
       <div className="mt-1 flex flex-col">
         {byIds(specialists, [squad.leadId, ...squad.developerIds, squad.qaId]).map((s) => (
@@ -787,10 +787,10 @@ export function SpecialistView({ id }: { id: string }) {
       </Fold>
       <Fold open={dutiesOpen} onToggle={toggleDuties} title={t("teams.person.duties")}>
         <div className="flex flex-col gap-1.5">
-          {roleDuties(specialist.role).map((duty) => (
+          {roleDuties(t, specialist.role).map((duty) => (
             <div key={duty.moment}>
               <span className="block text-ui text-foreground/90">
-                {TEAM_MOMENTS.find((m) => m.moment === duty.moment)!.label}
+                {teamMoments(t).find((m) => m.moment === duty.moment)!.label}
                 <Sep />
                 {duty.task}
               </span>
@@ -889,7 +889,7 @@ function AssignmentRow({ assignment, done = false }: { assignment: SpecialistAss
   const candidate = useAssignmentCandidate(assignment.id);
   const [open, setOpen] = useState(false);
   const report = candidate ? project.candidateReports[candidate.id] : undefined;
-  const state = report ? candidateStatus(report) : ASSIGNMENT_STATUS[assignment.status];
+  const state = report ? candidateStatus(t, report) : assignmentStatus(t, assignment.status);
   const goal = assignment.goalId ? (findGoal(project.document, assignment.goalId)?.title ?? null) : null;
   const hover = [
     assignment.id,
@@ -917,7 +917,7 @@ function AssignmentRow({ assignment, done = false }: { assignment: SpecialistAss
             </span>
             {done ? (
               <span className="block truncate text-ui-xs text-muted-foreground" data-testid="assignment-row-outcome">
-                <ReferenceText text={assignmentLine(project.document, assignment)} links={false} />
+                <ReferenceText text={assignmentLine(t, project.document, assignment)} links={false} />
                 <Sep />
                 {formatRelativeTime(assignment.updatedAt)}
               </span>
@@ -956,7 +956,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
   const [name, setName] = useState(specialist.name);
   const next = name.trim();
   const taken = specialists.some((s) => s.id !== specialist.id && s.status !== "removed" && nameKey(s.name) === nameKey(next));
-  const fixedName = FIXED_ROLES.some((role) => nameKey(roleProfile(role).name) === nameKey(next));
+  const fixedName = FIXED_ROLES.some((role) => LANGUAGES.some((language) => nameKey(roleProfile(translator(language), role).name) === nameKey(next)));
   const unchanged = next === specialist.name;
   const save = () => void act("specialist:rename", { specialistId: specialist.id, name: next }).then(onDone);
   return (
@@ -998,12 +998,12 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
         {AGENT_PALETTE.map((entry) => {
           const selected = entry.color === specialist.color;
           return (
-            <Tooltip key={entry.color} label={entry.label}>
+            <Tooltip key={entry.color} label={colorName(t, entry.color)}>
               <button
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                aria-label={entry.label}
+                aria-label={colorName(t, entry.color)}
                 data-testid="agent-color"
                 className={cn(
                   "agent-identity inline-flex size-10 items-center justify-center rounded-full transition-shadow",
@@ -1094,7 +1094,7 @@ function SpecialistThreads({ specialistId }: { specialistId: string }) {
             <span className="min-w-0 flex-1 truncate text-foreground/90">
               <ReferenceText text={thread.title} links={false} />
             </span>
-            <span className="max-w-[40%] shrink-0 truncate text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
+            <span className="max-w-[40%] shrink-0 truncate text-ui-xs text-muted-foreground">{threadParticipants(t, thread, document.team.specialists)}</span>
           </button>
         ))}
       </div>

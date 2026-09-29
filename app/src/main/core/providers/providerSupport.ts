@@ -370,7 +370,7 @@ export function usageLimitError(
 ): ProviderError | null {
   if (!parsed) return null;
   const detail = raw.trim();
-  const failure = classifyProviderFailure(detail, { provider: label });
+  const failure = classifyProviderFailure(t, detail, { provider: label });
   const temporary = failure.kind === "temporaryLimit" && !parsed.until;
   const sentence = t(temporary ? "main.provider.temporaryLimit" : "main.provider.usageLimit", { provider: label });
   const message = `${sentence}${detail ? ` ${detail}` : ""}`;

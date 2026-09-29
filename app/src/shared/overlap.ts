@@ -4,6 +4,7 @@
  * conflict is a real conflict. Trama informs and prepares the message to the colleague; it never blocks anyone
  * (decision 10). Pure functions, shared by the main process and the renderer.
  */
+import { formatList, type Translate } from "./i18n";
 import type { PresenceEntry, PresenceTask } from "./presence";
 
 export type OverlapLevel = "module" | "file" | "conflict";
@@ -94,7 +95,7 @@ export interface OverlapPullRequest {
 
 const RANK: Record<OverlapMark["level"], number> = { touched: 0, module: 1, file: 2, conflict: 3 };
 
-export const OVERLAP_LABEL: Record<OverlapLevel, string> = { module: "Stesso modulo", file: "Stesso file", conflict: "Conflitto" };
+export const overlapLabel = (t: Translate, level: OverlapLevel): string => t(`shared.overlap.${level}`);
 
 /** Finds the module of a path: the module that lists it, else the module whose folder holds it. */
 export function moduleLocator(modules: OverlapModule[]): (path: string) => OverlapModule | null {
@@ -203,83 +204,92 @@ export function mapMarks(others: PresenceEntry[], modules: OverlapModule[], item
 }
 
 /** "righe 3-5 e 12" */
-export function linesLabel(ranges: LineRange[]): string {
+export function linesLabel(t: Translate, ranges: LineRange[]): string {
   const parts = ranges.map((r) => (r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`));
   if (!parts.length) return "";
-  const joined = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} e ${parts.at(-1)}`;
-  return `${ranges.length === 1 && ranges[0]!.start === ranges[0]!.end ? "riga" : "righe"} ${joined}`;
+  const single = ranges.length === 1 && ranges[0]!.start === ranges[0]!.end;
+  return t(single ? "shared.overlap.line" : "shared.overlap.lines", { lines: formatList(t.language, parts) });
 }
 
-function filesLabel(files: string[], lines: Record<string, LineRange[]> = {}, limit = 3): string {
-  const shown = files.slice(0, limit).map((f) => (lines[f]?.length ? `${f} (${linesLabel(lines[f]!)})` : f));
+function filesLabel(t: Translate, files: string[], lines: Record<string, LineRange[]> = {}, limit = 3): string {
+  const shown = files.slice(0, limit).map((f) => (lines[f]?.length ? `${f} (${linesLabel(t, lines[f]!)})` : f));
   const rest = files.length - shown.length;
-  const joined = shown.length > 1 ? `${shown.slice(0, -1).join(", ")} e ${shown.at(-1)}` : (shown[0] ?? "");
-  return rest > 0 ? `${joined} e altri ${rest}` : joined;
+  const joined = formatList(t.language, shown);
+  return rest > 0 ? t("shared.overlap.andMore", { files: joined, count: rest }) : joined;
 }
 
-const modulesLabel = (item: OverlapItem) => item.modules.map((m) => m.name).join(", ") || "lo stesso modulo";
+const modulesLabel = (t: Translate, item: OverlapItem) => item.modules.map((m) => m.name).join(", ") || t("shared.overlap.sameModule");
 
 /** Who is on the other side, in words: "Bea" or "Pixel, agente di Bea". */
-export function colleagueLabel(colleague: OverlapColleague): string {
-  return colleague.agent ? `${colleague.agent.name}, agente di ${colleague.name}` : colleague.name;
+export function colleagueLabel(t: Translate, colleague: OverlapColleague): string {
+  return colleague.agent ? t("shared.overlap.agentOf", { agent: colleague.agent.name, name: colleague.name }) : colleague.name;
 }
 
 /** One line for the focus bar, the map and the chat. */
-export function overlapSummary(item: OverlapItem): string {
-  const who = colleagueLabel(item.colleague);
-  const mine = item.mine ? ` (come ${item.mine})` : "";
+export function overlapSummary(t: Translate, item: OverlapItem): string {
+  const who = colleagueLabel(t, item.colleague);
+  const mine = item.mine ? ` ${t("shared.overlap.as", { mine: item.mine })}` : "";
   switch (item.level) {
     case "module":
-      return `${who} lavora anche nel modulo ${modulesLabel(item)}${mine}.`;
+      return t("shared.overlap.summary.module", { who, modules: modulesLabel(t, item), mine });
     case "file":
-      return `${who} tocca anche ${filesLabel(item.files)}${mine}.`;
+      return t("shared.overlap.summary.file", { who, files: filesLabel(t, item.files), mine });
     case "conflict":
-      return `Conflitto con ${who} in ${filesLabel(item.files, item.lines)}${mine}.`;
+      return t("shared.overlap.summary.conflict", { who, files: filesLabel(t, item.files, item.lines), mine });
   }
 }
 
 /**
  * The message to the colleague (decision 10), ready to send as a comment on their pull request or to copy into the
- * team's channel. Only the person sends it.
+ * team's channel. Only the person sends it, in the language of the interface.
  */
-export function colleagueMessage(item: OverlapItem, self: { name: string; branch: string | null }): string {
+export function colleagueMessage(t: Translate, item: OverlapItem, self: { name: string; branch: string | null }): string {
   const first = item.colleague.name.split(/\s+/)[0] || item.colleague.name;
   const where =
     item.level === "module"
-      ? `i nostri lavori passano dallo stesso modulo, ${modulesLabel(item)}`
-      : `i nostri lavori toccano gli stessi file: ${filesLabel(item.files, {}, 6)}`;
+      ? t("shared.overlap.message.sameModule", { modules: modulesLabel(t, item) })
+      : t("shared.overlap.message.sameFiles", { files: filesLabel(t, item.files, {}, 6) });
   const task = item.colleague.task ? ` ("${item.colleague.task.title}")` : "";
+  const branch = item.colleague.branch;
   const branches = [
-    self.branch ? (item.mine ? `il mio agente ${item.mine} è su ${self.branch}` : `io sono su ${self.branch}`) : null,
-    item.colleague.branch ? `${item.colleague.agent ? `il tuo agente ${item.colleague.agent.name} è` : "tu sei"} su ${item.colleague.branch}${task}` : null,
+    self.branch
+      ? item.mine
+        ? t("shared.overlap.message.myAgent", { agent: item.mine, branch: self.branch })
+        : t("shared.overlap.message.me", { branch: self.branch })
+      : null,
+    branch
+      ? item.colleague.agent
+        ? t("shared.overlap.message.yourAgent", { agent: item.colleague.agent.name, branch, task })
+        : t("shared.overlap.message.you", { branch, task })
+      : null,
   ].filter((part): part is string => Boolean(part));
-  const lines = [`Ciao ${first}, sono ${self.name}. Con Trama vedo che ${where}.`];
+  const lines = [t("shared.overlap.message.hello", { first, name: self.name, where })];
   if (branches.length) {
     const sentence = branches.join(", ");
     lines.push(`${sentence[0]!.toUpperCase()}${sentence.slice(1)}.`);
   }
   if (item.level === "conflict") {
-    lines.push(`Una prova di unione tra i nostri branch dà conflitto in ${filesLabel(item.files, item.lines, 6)}.`);
-    lines.push("Ci sentiamo per decidere chi cambia cosa prima di unire?");
+    lines.push(t("shared.overlap.message.probe", { files: filesLabel(t, item.files, item.lines, 6) }));
+    lines.push(t("shared.overlap.message.beforeMerge"));
   } else {
-    lines.push("Ci sentiamo per decidere chi tocca cosa, così evitiamo un conflitto?");
+    lines.push(t("shared.overlap.message.avoid"));
   }
   return lines.join("\n");
 }
 
 /** What the Coordinator says in the chat, at the start of a task, while working or before merging. */
-export function coordinatorNotice(item: OverlapItem, moment: "start" | "working"): { title: string; text: string } {
-  const summary = overlapSummary(item);
+export function coordinatorNotice(t: Translate, item: OverlapItem, moment: "start" | "working"): { title: string; text: string } {
+  const summary = overlapSummary(t, item);
   const tail = item.pullRequest
-    ? `Ho preparato un commento per la sua pull request #${item.pullRequest.number}: lo invii tu, se ti va.`
-    : "Ho preparato un messaggio da copiare nel canale del team: lo invii tu, se ti va.";
+    ? t("shared.overlap.notice.pull", { number: String(item.pullRequest.number) })
+    : t("shared.overlap.notice.channel");
   if (moment === "start") {
-    return { title: "Prima di iniziare", text: `${summary} Il lavoro può partire comunque; conviene parlarne prima. ${tail}` };
+    return { title: t("shared.overlap.notice.startTitle"), text: t("shared.overlap.notice.start", { summary, tail }) };
   }
   if (item.level === "conflict") {
-    return { title: "Conflitto con un collega", text: `${summary} La prova di unione lo conferma. Nessun lavoro è fermo. ${tail}` };
+    return { title: t("shared.overlap.notice.conflictTitle"), text: t("shared.overlap.notice.conflict", { summary, tail }) };
   }
-  return { title: "Stessi file di un collega", text: `${summary} Per ora non c'è un conflitto confermato. ${tail}` };
+  return { title: t("shared.overlap.notice.filesTitle"), text: t("shared.overlap.notice.files", { summary, tail }) };
 }
 
 /** Level of the strongest item, for the badges. */

@@ -104,6 +104,13 @@ const openSharedRoles = async () => {
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
   await page.getByTestId("side-bar").getByTestId("shared-roles").waitFor();
 };
+// The application menu (issue #345): an item by its id, clicked as the person would; and the label of an item.
+const clickMenu = (id) => app.evaluate(({ Menu }, itemId) => Menu.getApplicationMenu().getMenuItemById(itemId).click(), id);
+const menuLabel = (id) => app.evaluate(({ Menu }, itemId) => Menu.getApplicationMenu().getMenuItemById(itemId)?.label ?? null, id);
+const menuLabelBecomes = async (id, label, timeout = 5_000) => {
+  for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(100)) if ((await menuLabel(id)) === label) return;
+  throw new Error(`The menu item ${id} is "${await menuLabel(id)}", not "${label}"`);
+};
 // The work in focus and the queue open from the status bar (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
   if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("status-focus").click({ timeout });
@@ -380,6 +387,8 @@ await languageChoice.getByRole("radio", { name: "English" }).click();
 await welcome.getByRole("heading", { name: "Welcome to Trama" }).waitFor();
 await welcome.getByRole("button", { name: "Set up", exact: true }).waitFor();
 if ((await page.evaluate(() => document.documentElement.lang)) !== "en") throw new Error("The page language did not follow the choice");
+// The application menu follows the language too (issue #345).
+await menuLabelBecomes("view:waiting", "Waiting for you");
 await primaryLast(welcome.locator(".cta-row").last(), "Welcome in English");
 for (const [label, theme] of themes) {
   await setTheme(theme);
@@ -394,6 +403,7 @@ await welcome.getByRole("button", { name: "Back" }).click();
 await welcome.getByRole("button", { name: "Back" }).click();
 await languageChoice.getByRole("radio", { name: "Italiano" }).click();
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
+await menuLabelBecomes("view:waiting", "Aspetta te");
 await welcome.getByRole("button", { name: "Configura", exact: true }).click();
 // The configuration starts at the first step still open: the fake Codex account already completes the provider.
 await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
@@ -626,6 +636,43 @@ await shot("02-demo-study");
   await page.waitForFunction(() => document.querySelector('[role="separator"][aria-label^="Larghezza della barra laterale"]')?.getAttribute("aria-valuenow") === "300");
   await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
   await page.setViewportSize({ width: 1280, height: 820 });
+}
+// Issue #345: each item of the View menu opens its view of the activity bar. The items are found by their command, the
+// same whatever the platform and the language call the menu.
+{
+  const sideBar = page.getByTestId("side-bar");
+  for (const [name, view] of Object.entries(VIEWS)) {
+    await clickMenu(`view:${view}`);
+    await page.locator(`[data-testid="side-bar"][data-view="${view}"]`).waitFor();
+    if ((await activityBar().getByRole("button", { name, exact: true }).getAttribute("aria-pressed")) !== "true") throw new Error(`The View menu's ${name} does not press its icon`);
+  }
+  // The menu opens a view, it does not close it as its icon does.
+  await clickMenu("view:memory");
+  await page.waitForTimeout(300);
+  if ((await sideBar.getAttribute("data-view")) !== "memory") throw new Error("The View menu closed the view it should open");
+  // The conversation with the Coordinator, the first view of the activity bar: its tab and the composer.
+  await clickMenu("view:conversation");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Messaggio al Coordinatore");
+  // The Activity panel under the editor (issue #337), the side bar and the composer, as Cmd/Ctrl+J, B and L.
+  await clickMenu("togglePanel");
+  await page.getByTestId("bottom-panel").waitFor();
+  await clickMenu("togglePanel");
+  await page.getByTestId("bottom-panel").waitFor({ state: "detached" });
+  // The side bar stays open on Memoria beside the panel and the conversation: the menu closes it and opens it again.
+  await clickMenu("toggleSidebar");
+  await sideBar.waitFor({ state: "detached" });
+  await clickMenu("toggleSidebar");
+  await page.locator('[data-testid="side-bar"][data-view="memory"]').waitFor();
+  await clickMenu("toggleSidebar");
+  await sideBar.waitFor({ state: "detached" });
+  await clickMenu("focusComposer");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Messaggio al Coordinatore");
+  // Impostazioni… opens the Settings tab of the editor (issue #336).
+  await clickMenu("settings");
+  const settingsTab = page.locator('[data-testid="editor-tab"][data-tab="settings"]');
+  await settingsTab.waitFor();
+  await settingsTab.getByRole("button", { name: /^Chiudi / }).click();
+  await settingsTab.waitFor({ state: "detached" });
 }
 // Issue #292: at the start only the goal the Coordinator proposed waits for the person, in the summary, in the sidebar
 // counter and as a reference in the chat.
@@ -2241,6 +2288,15 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
   }
 }
 await setLookTo(startLook.provider, startLook.dark);
+// Issue #345: on Windows and Linux the menu's Informazioni su Trama brings the settings' About into view.
+if (process.platform !== "darwin") {
+  await settings.getByTestId("language-choice").scrollIntoViewIfNeeded();
+  await clickMenu("about");
+  await page.waitForFunction(() => {
+    const box = document.querySelector('[data-testid="about-trama"]')?.getBoundingClientRect();
+    return Boolean(box) && box.top >= 0 && box.bottom <= window.innerHeight;
+  });
+}
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();
 await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
@@ -3502,6 +3558,11 @@ await closePanels();
   await page.getByTestId("split-editor-toggle").click();
   await page.locator('[data-testid="editor-area"][data-split="false"][data-covered="true"]').waitFor();
   await page.getByTestId("split-editor-toggle").click();
+  await page.locator('[data-testid="editor-area"][data-split="true"]').waitFor();
+  // Issue #345: the View menu's item does the same as the title bar's switch.
+  await clickMenu("toggleSplitEditor");
+  await page.locator('[data-testid="editor-area"][data-split="false"][data-covered="true"]').waitFor();
+  await clickMenu("toggleSplitEditor");
   await page.locator('[data-testid="editor-area"][data-split="true"]').waitFor();
   await closePanels();
   await page.setViewportSize({ width: 1280, height: 820 });
@@ -6287,6 +6348,26 @@ await closePanels();
 await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
+// Issue #301, the shared texts: in English the moves of Activity, their outcomes, the states of the cards and the
+// pause of the status line read in English at once, without a restart, and fit the layout; back in Italian they read
+// as before. The screenshots of the pull request are docs/images/issue-301/shared-en-light.png and -dark.png.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.waitForFunction(() => document.documentElement.lang === "en");
+const sharedActivity = page.getByTestId("activity-log");
+await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with your OK" }).first().waitFor({ timeout: 20_000 });
+await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with the Coordinator's green light" }).first().waitFor();
+if (await sharedActivity.getByText(/Candidato unito|Fatta$|Non riuscita$/).count()) throw new Error("Activity keeps Italian texts in English");
+await page.getByTestId("status-line").getByRole("button", { name: /^(Pause the Coordinator|Resume the Coordinator)$/ }).first().waitFor();
+await noHorizontalScroll("shared texts in English");
+// No English label of Activity spills out of its row.
+const spilled = await sharedActivity.evaluate((log) =>
+  [...log.querySelectorAll("li")].filter((row) => row.scrollWidth > row.clientWidth + 1).map((row) => row.textContent?.slice(0, 80)),
+);
+if (spilled.length) throw new Error(`Activity rows spill out in English: ${spilled.join(" | ")}`);
+await themeShots("301-shared-en");
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.waitForFunction(() => document.documentElement.lang === "it");
+await sharedActivity.locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).first().waitFor();
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await closePanels();
 

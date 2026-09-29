@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ITALIAN } from "@shared/i18n";
 import type { PlanSlicing, ProjectDocument, SliceTicket, WorkPlan } from "@shared/domain";
 import type { RepositoryModule } from "@shared/repository";
 import { activityLog } from "@shared/activity";
@@ -104,7 +105,7 @@ describe("squads by product area (A10)", () => {
     const formation = formSquads(document, MODULES, at(1))!;
     const step = recordSquadFormation(document, formation, at(1));
     expect(step).toMatchObject({ move: "formSquads", summary: "Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e QA (QA dedicato)." });
-    const entry = activityLog([], [], [], [], document.autonomousSteps).find((e) => e.id === step.id)!;
+    const entry = activityLog(ITALIAN, [], [], [], [], document.autonomousSteps).find((e) => e.id === step.id)!;
     expect(entry).toMatchObject({ kind: "step", label: "Squadre formate dal Coordinatore", outcome: "done", move: null });
     expect(doneSince(document, null).map((f) => f.text)).toContain("Squadre formate dal Coordinatore: Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e QA (QA dedicato).");
     expect(formSquads(document, MODULES, at(2))).toBeNull();
@@ -272,7 +273,7 @@ describe("the squads' limits (A10, Q22, Q29)", () => {
     const cloud = work(document, "Ada", "Sources/Catalog", "cloud");
     expect(cloud.cloud?.status).toBe("working");
     expect(() => work(document, "Bruno", "Sources/Checkout")).toThrow(/1 squad is already at work/);
-    expect(squadStatusLine(document, teamSquads(document)[0]!)).toBe("Ada lavora a Lavoro di Ada in una sessione cloud.");
+    expect(squadStatusLine(ITALIAN, document, teamSquads(document)[0]!)).toBe("Ada lavora a Lavoro di Ada in una sessione cloud.");
   });
 
   it("keeps the project's limit apart from the squads' own, growing with the squads up to nine", () => {

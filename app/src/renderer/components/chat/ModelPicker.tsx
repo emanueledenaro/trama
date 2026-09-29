@@ -9,6 +9,7 @@ import { PickerHeader, PickerList, PickerNote, PickerOption, PickerPopup, Picker
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 
 export const EFFORT_LABELS: Record<string, string> = {
   minimal: "Minimo",
@@ -45,6 +46,7 @@ export function ModelPicker({
   busy: boolean;
   fastMode: boolean;
 }) {
+  const t = useT();
   const providers = useUi((s) => s.app!.providers);
   const [open, setOpen] = useState(false);
   const [browsing, setBrowsing] = useState<ProviderId>(selectedProvider);
@@ -145,7 +147,7 @@ export function ModelPicker({
           {!usable ? (
             <PickerNote>
               {account?.kind === "blocked"
-                ? failureSummary(account.message, descriptor?.name)
+                ? failureSummary(t, account.message, descriptor?.name)
                 : descriptor?.signInCommand
                   ? `Collegalo dal terminale con ${descriptor.signInCommand}.`
                   : "Collegalo dalle impostazioni."}
@@ -170,7 +172,7 @@ export function ModelPicker({
           )}
         </PickerList>
 
-        {coordinatorUnavailableReason(browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(browsing)}</p> : null}
+        {coordinatorUnavailableReason(t, browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(t, browsing)}</p> : null}
 
         {modelMissing && browsing === selectedProvider ? (
           <p className="px-4 pb-2 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>

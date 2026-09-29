@@ -3,8 +3,8 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileBinary, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { type ContextUsage, contextNoticeDetail, contextReading, invalidContextUsage } from "@shared/contextReading";
-import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
+import { type ContextUsage, contextReading, invalidContextUsage } from "@shared/contextReading";
+import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, readOutsideScopeTitle, toolRefusedTitle, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
@@ -261,7 +261,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, formatDateTime, isLanguage, type Language, languageFromSystem, type MessageKey, translate, translator } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, formatDateTime, ITALIAN, isLanguage, type Language, languageFromSystem, type MessageKey, translate, type Translate, translator } from "@shared/i18n";
 import { personLanguage, setPersonLanguage, t } from "./core/personLanguage";
 import { curatorRunLine, curatorRunView } from "@shared/curatorReport";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
@@ -341,7 +341,7 @@ import {
   suiteChecks,
   usesCodeReview,
 } from "./core/gate";
-import { blockingFindings, GATE_STATUS, latestGate } from "@shared/gate";
+import { blockingFindings, gateStatus, latestGate } from "@shared/gate";
 import { fixedBanInfo } from "@shared/fixedBans";
 import { interfaceFiles } from "@shared/interfaceChange";
 import { roleProfile } from "@shared/roster";
@@ -451,7 +451,7 @@ import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
-import { ASK_TRAMA_SKILL, BOUNDARY_LABELS, findRoute } from "@shared/askTrama";
+import { ASK_TRAMA_SKILL, boundaryLabel, findRoute } from "@shared/askTrama";
 import {
   automaticWorkStatus,
   concludeDuty,
@@ -613,7 +613,7 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
       return account.message;
     case "blocked": {
       // The account keeps the provider's text for the technical detail; the person reads its class (P10).
-      const failure = classifyProviderFailure(account.message, { provider: name });
+      const failure = classifyProviderFailure(t, account.message, { provider: name });
       const blocked = t(failure.kind === "temporaryLimit" ? "main.controller.providerBlockedTemporaryLimit" : "main.controller.providerBlockedQuotaExhausted", { name });
       const until = account.until ?? failure.until;
       const unlocks = until ? t("main.controller.providerUnlocksAt", { date: formatDateTime(personLanguage(), until) }) : null;
@@ -699,7 +699,7 @@ export async function initializeRepository(root: string): Promise<void> {
 /** A failure message the person can act on: network problems are named as such (C11). */
 export function describeFailure(message: string): string {
   // A provider's JSON body never reaches a card: its class in plain words, the raw text stays in the logs (P10).
-  if (containsJson(message)) return failureSummary(message);
+  if (containsJson(message)) return failureSummary(t, message);
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|getaddrinfo|network|offline|fetch failed/i.test(message)) {
     return t("main.controller.networkUnreachable", { message });
   }
@@ -801,6 +801,11 @@ export class TramaController {
       gitHubCli: { ...UNKNOWN_GITHUB_CLI },
     };
     this.state.codex = this.state.providers.codex;
+  }
+
+  /** The texts of the interface language the person chose, for what Trama shows as the shared modules compute it. */
+  private get t(): Translate {
+    return translator(this.state.language);
   }
 
   get snapshot(): AppState {
@@ -917,7 +922,7 @@ export class TramaController {
     project.backlogs = squadBacklogs(project.document, project.snapshot.modules);
     project.focus = focusView(project.document);
     project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project));
-    project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
+    project.waiting = waitingForYou(this.t, project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
@@ -1115,7 +1120,6 @@ export class TramaController {
       sliceViews: views,
       candidateReports: reports,
       memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined,
-      language: this.state.language,
     };
   }
 
@@ -1144,7 +1148,7 @@ export class TramaController {
       runningRequestId: project.runningRequestId,
       sources,
     });
-    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(recap, this.state.language), detail: null, referenceId: recap.id }, null, now, null, goalId);
+    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(this.t, recap), detail: null, referenceId: recap.id }, null, now, null, goalId);
     return recap;
   }
 
@@ -1784,7 +1788,7 @@ export class TramaController {
     if (!divergence && !before) return;
     project.document.branchDivergence = divergence;
     if (divergence && !before) {
-      this.notify(t("main.controller.branchDivergenceNotifyTitle"), divergenceSummary(divergence), this.state.settings.sounds === true);
+      this.notify(t("main.controller.branchDivergenceNotifyTitle"), divergenceSummary(t, divergence), this.state.settings.sounds === true);
     }
     this.changedIn(project);
   }
@@ -1841,7 +1845,7 @@ export class TramaController {
         id: specialist.id,
         name: specialist.name,
         color: specialist.color,
-        tag: agentTag(specialist),
+        tag: agentTag(this.t, specialist),
         worktreeRoot: assignment.workspace!.worktreeRoot,
         branch: assignment.workspace!.branch,
         baseSHA: assignment.workspace!.baseSHA,
@@ -2000,7 +2004,7 @@ export class TramaController {
     let conflict = false;
     for (const item of view.items) {
       if (item.level === "module" || notices.includes(item.id)) continue;
-      const notice = coordinatorNotice(item, "working");
+      const notice = coordinatorNotice(this.t, item, "working");
       appendEvent(document, "coordinator", { type: "card", kind: "overlap", title: notice.title, detail: notice.text, referenceId: item.id });
       notices.push(item.id);
       changed = true;
@@ -2024,7 +2028,7 @@ export class TramaController {
         });
         const item = found[0];
         if (!item) continue;
-        const notice = coordinatorNotice(item, "start");
+        const notice = coordinatorNotice(this.t, item, "start");
         appendEvent(document, "coordinator", { type: "card", kind: "overlap", title: notice.title, detail: notice.text, referenceId: item.id }, assignment.requestId);
       }
     }
@@ -2384,7 +2388,7 @@ export class TramaController {
     if (!this.state.providers[provider].account) await this.refreshProvider(provider);
     // The person may have opened another project meanwhile: its own attempt owns the runtime now.
     if (this.state.project !== project) return;
-    const reason = coordinatorUnavailableReason(provider) ?? providerUnavailableReason(provider, this.state.providers[provider].account);
+    const reason = coordinatorUnavailableReason(this.t, provider) ?? providerUnavailableReason(provider, this.state.providers[provider].account);
     if (reason) {
       project.phase = { kind: "unavailable", message: reason };
       this.publish();
@@ -2597,7 +2601,7 @@ export class TramaController {
           this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
           // A refusal during the study is visible too (issue #228).
-          appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
+          appendEvent(document, "trama", { type: "activity", title: toolRefusedTitle(this.t), detail: toolRefusedDetail(event), tone: "error" }, null);
           this.changed();
         } else if (event.type === "providerRepaired") {
           const entry = providerRepairEntry(this.state.language, event);
@@ -2799,7 +2803,8 @@ export class TramaController {
         document.coordinator.practicesSent = practices;
       }
       // The real ids the Coordinator may cite, when they changed since the thread last received them (issue #277).
-      const listing = referenceListing(this.referenceIndex(project));
+      // The listing is text for the Coordinator: its names stay in Italian whatever the interface language.
+      const listing = referenceListing(this.referenceIndex(project, ITALIAN));
       if ((listing ?? null) !== (document.coordinator.referencesSent ?? null)) {
         if (listing) sections.push(listing);
         document.coordinator.referencesSent = listing;
@@ -2926,7 +2931,7 @@ export class TramaController {
       request.state = interrupted ? "interrupted" : "failed";
       request.completedAt = new Date().toISOString();
       request.failure = message;
-      const failure = interrupted ? null : classifyProviderFailure(message, { provider: providerName(activeProvider) });
+      const failure = interrupted ? null : classifyProviderFailure(this.t, message, { provider: providerName(activeProvider) });
       appendEvent(
         document,
         "trama",
@@ -3735,10 +3740,10 @@ export class TramaController {
         return;
       }
       case "readOutsideScope":
-        activity(READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
+        activity(readOutsideScopeTitle(this.t), readOutsideScopeDetail(event), "error");
         return;
       case "toolRefused":
-        activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
+        activity(toolRefusedTitle(this.t), toolRefusedDetail(event), "error");
         return;
       case "providerRepaired": {
         const entry = providerRepairEntry(this.state.language, event);
@@ -4069,8 +4074,8 @@ export class TramaController {
         {
           type: "card",
           kind: "contextNotice",
-          title: t("main.controller.routeBoundaryTitle", { label: BOUNDARY_LABELS[route.boundary].label, route: route.id }),
-          detail: BOUNDARY_LABELS[route.boundary].detail,
+          title: t("main.controller.routeBoundaryTitle", { label: boundaryLabel(t, route.boundary).label, route: route.id }),
+          detail: boundaryLabel(t, route.boundary).detail,
           referenceId: null,
         },
         null,
@@ -5146,10 +5151,10 @@ export class TramaController {
               this.specialistActivity(project, assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
               return;
             case "readOutsideScope":
-              this.specialistActivity(project, assignmentId, key, READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
+              this.specialistActivity(project, assignmentId, key, readOutsideScopeTitle(this.t), readOutsideScopeDetail(event), "error");
               return;
             case "toolRefused":
-              this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
+              this.specialistActivity(project, assignmentId, key, toolRefusedTitle(this.t), toolRefusedDetail(event), "error");
               return;
             case "providerRepaired": {
               const entry = providerRepairEntry(this.state.language, event);
@@ -5227,7 +5232,7 @@ export class TramaController {
           this.state.settings.sounds === true,
         );
         this.scheduleProviderWait(provider);
-      } else if (classifyProviderFailure(outcome.message).kind === "temporaryLimit" && isUsableAccount(account)) {
+      } else if (classifyProviderFailure(this.t, outcome.message).kind === "temporaryLimit" && isUsableAccount(account)) {
         // A temporary limit (P10): the assignment waits a growing time, then resumes like after a block.
         const streak = (this.rateLimitStreak.get(provider) ?? 0) + 1;
         this.rateLimitStreak.set(provider, streak);
@@ -6178,7 +6183,7 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: t("main.controller.gateReviewersTitle", { candidate: candidateId, status: GATE_STATUS[gate.status].label.toLowerCase() }),
+        title: t("main.controller.gateReviewersTitle", { candidate: candidateId, status: gateStatus(t, gate.status).label.toLowerCase() }),
         detail: review.summary, tone: gate.status === "passed" ? "tool" : "error" },
       requestId,
     );
@@ -6335,7 +6340,7 @@ export class TramaController {
     for (const review of gate.reviews) {
       const blocking = blockingFindings(review);
       if (!blocking.length) continue;
-      const reviewer = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed")?.name ?? roleProfile(review.role).name;
+      const reviewer = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed")?.name ?? roleProfile(this.t, review.role).name;
       appendEvent(
         document,
         "specialist",
@@ -6932,7 +6937,7 @@ export class TramaController {
       const readiness = mergeReadiness(document, candidate, report, route, { head: branch, base: project.snapshot.branch ?? "main" });
       if (readiness.kind === "banned") {
         const by: MergeAuthority = route === "coordinator" ? "coordinator" : "person";
-        recordMerge(document, candidate, by, "stopped", fixedBanInfo(readiness.ban).reason);
+        recordMerge(document, candidate, by, "stopped", fixedBanInfo(this.t, readiness.ban).reason);
         recordFixedBanRefusal(document, { ban: readiness.ban, action: mergeAction(candidate, branch), by: { kind: "trama" } });
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "banned", ban: readiness.ban }, by));
         this.changedIn(project);
@@ -7926,7 +7931,7 @@ export class TramaController {
     let changed = false;
     for (const id of EXERCISE_IDS) {
       if (completed[id]) continue;
-      if (isComplete(exerciseSteps(id, project.document, { providerReady: hasUsableProvider(this.state) }))) {
+      if (isComplete(exerciseSteps(this.t, id, project.document, { providerReady: hasUsableProvider(this.state) }))) {
         completed[id] = new Date().toISOString();
         changed = true;
       }
@@ -8027,8 +8032,8 @@ export class TramaController {
    * starts at the last study card, which opens each thread, so earlier threads are searchable.
    */
   /** The records, repository and GitHub reading of the project the Coordinator's ids are checked against (issue #277). */
-  private referenceIndex(project: ActiveProjectState): ReferenceIndex {
-    return buildReferenceIndex({ document: project.document, modules: project.snapshot.modules, github: project.github });
+  private referenceIndex(project: ActiveProjectState, t: Translate = this.t): ReferenceIndex {
+    return buildReferenceIndex(t, { document: project.document, modules: project.snapshot.modules, github: project.github });
   }
 
   private coordinatorLearning(document: ProjectDocument) {

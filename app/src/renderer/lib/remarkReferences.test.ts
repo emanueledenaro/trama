@@ -7,13 +7,16 @@ import type { Candidate, SpecialistAssignment, Specialist } from "@shared/domain
 import { buildReferenceIndex } from "@shared/references";
 import { emptyDocument } from "../../main/core/document";
 import { remarkReferences } from "./remarkReferences";
+import { translator } from "@shared/i18n";
+
+const t = translator("it");
 
 const document = emptyDocument("p");
 document.team.specialists = [
   { id: "S-33333333", name: "Luca", origin: "coordinator", competence: "Swift", assignments: [{ id: "A-11111111", objective: "Ordini in revisione" } as SpecialistAssignment] } as unknown as Specialist,
 ];
 document.candidates = [{ id: "C-55555555", assignmentId: "A-11111111", specialistId: "S-33333333", baseSHA: "0123456789abcdef", technicalReview: null, pullRequest: null } as unknown as Candidate];
-const index = buildReferenceIndex({
+const index = buildReferenceIndex(t, {
   document,
   modules: [{ id: "Sources/Orders", name: "Orders", summary: "", relativePath: "Sources/Orders", files: [{ id: "f", relativePath: "Sources/Orders/Cancel.swift", lineCount: 1, contentHash: "" }], dependencies: [], symbol: "folder" }],
   github: { repository: "o/r", status: "ready", message: null, issues: [{ number: 13, title: "Annullo", state: "open", body: "", url: "https://github.com/o/r/issues/13", author: null, labels: [], updatedAt: "" }], snapshot: null, events: [] },
