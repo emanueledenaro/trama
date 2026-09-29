@@ -9,7 +9,7 @@ import { grantMandate } from "./pact";
 import { doneSince } from "./recap";
 import { type PickOutcome, pickSlices } from "./slicePicking";
 import { formSquads, plannedAreas, recordSquadFormation, WHOLE_PRODUCT_SQUAD } from "./squads";
-import { assign, type AssignmentOrder, beginCloudWork, completeTeam, confirmTeam, developers, endTurn, findSpecialist, proposeTeam, TeamError } from "./team";
+import { assign, type AssignmentOrder, beginCloudWork, completeTeam, confirmTeam, developers, endTurn, findSpecialist, proposeTeam, recordWorkspace, TeamError } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 28, 10, minute));
 
@@ -239,6 +239,36 @@ describe("squad size and ownership (A10, review of #306)", () => {
     expect(() => assign(realigned().document, order(["Sources/Catalog"], { issueNumber: 7 }), 1, "r2", at(5))).not.toThrow();
     // New work of the catalog in another dialog belongs to its squad.
     expect(() => assign(realigned().document, order(["Sources/Catalog"]), 1, "r2", at(5))).toThrow("belongs to squad Catalogo");
+  });
+
+  it("lets a developer of another squad take over work already begun, in its own working copy", () => {
+    const document = project([
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Checkout"],
+    ]);
+    formSquads(document, MODULES, at(1));
+    const ada = work(document, "Ada", "Sources/Catalog");
+    recordWorkspace(document, ada.id, { sourceRoot: "/tmp/p", worktreeRoot: "/tmp/w-ada", branch: "feature/catalogo", baseSHA: "base" }, at(6));
+    endTurn(document, ada.id, null, { kind: "failed", message: "Il provider ha chiuso la sessione." }, at(7));
+    const handOver = (extra: Partial<AssignmentOrder>): AssignmentOrder => ({
+      specialist: "Bruno",
+      kind: "agreedTicket",
+      objective: ada.objective,
+      issueNumber: null,
+      exercise: null,
+      moduleIds: ["Sources/Catalog"],
+      dependencies: [],
+      model: "gpt-6-luna",
+      tools: ["edits"],
+      requiredChecks: ["git_status"],
+      instructions: "Continua il lavoro di Ada",
+      ...extra,
+    });
+    // New work of the catalog, in a working copy of its own, stays the squad's.
+    expect(() => assign(document, handOver({ replaces: [ada.id] }), document.mandate!.version, "r1", at(8))).toThrow("belongs to squad Catalogo");
+    // The work Ada began goes on in her working copy with Bruno (resume_assignment): the mandate is the check.
+    const handed = assign(document, handOver({ replaces: [ada.id], workspace: ada.workspace }), document.mandate!.version, "r1", at(8));
+    expect(handed.workspace).toEqual(ada.workspace);
   });
 
   it("counts the developers outside squads as one more squad in the project's capacity", () => {
