@@ -450,6 +450,8 @@ export interface AssignmentOrder {
   selfPicked?: boolean;
   /** The earlier assignments this work corrects (issue #389); the caller finds them with openCorrections. */
   replaces?: string[];
+  /** The working copy the work continues in, that of the work it corrects or takes over; null to prepare a new one. */
+  workspace?: WorktreeSession | null;
 }
 
 function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
@@ -524,7 +526,7 @@ export function assign(
       requiredChecks: cleaned(order.requiredChecks),
       instructions,
       mandateVersion,
-      workspace: null,
+      workspace: order.workspace ? { ...order.workspace } : null,
       ...(order.slice ? { slice: order.slice } : {}),
       ...(order.commit ? { commit: order.commit } : {}),
       ...(order.seams ? { seams: order.seams } : {}),
@@ -901,17 +903,94 @@ export function findingsCannotReturn(document: ProjectDocument, assignment: Spec
   if (assignment.status !== "stopped" && assignment.status !== "failed") {
     return new TeamError("cannot_resume", `Assignment ${assignment.id} is not completed.`);
   }
+  const stopper = stoppedBy(assignment);
+  if (stopper && stopper !== "Trama") {
+    return new TeamError("cannot_resume", `Assignment ${assignment.id} was stopped by ${stopper}: it resumes only on their request.`);
+  }
+  return decisionUnderReview(document, assignment);
+}
+
+/** Who asked for the stop that holds the work now; null when the work is not stopped or stopped by itself, as an interruption. */
+export function stoppedBy(assignment: SpecialistAssignment): string | null {
+  if (assignment.status !== "stopped") return null;
   const stop = assignment.stops.at(-1);
   const turn = assignment.turns.at(-1);
-  const lastStop = stop?.confirmedAt && (!turn || turn.startedAt <= stop.confirmedAt) ? stop : null;
-  if (assignment.status === "stopped" && lastStop && lastStop.requestedBy !== "Trama") {
-    return new TeamError("cannot_resume", `Assignment ${assignment.id} was stopped by ${lastStop.requestedBy}: it resumes only on their request.`);
-  }
+  // A turn that started after the stop took the work up again: that stop is behind it.
+  return stop?.confirmedAt && (!turn || turn.startedAt <= stop.confirmedAt) ? stop.requestedBy : null;
+}
+
+/** The actors whose stop is not the person's: Trama itself and the Coordinator. */
+const TRAMA_ACTORS = ["Trama", "Coordinatore"];
+
+/** Work that relies on a Pact decision under review waits for the answer. */
+function decisionUnderReview(document: ProjectDocument, assignment: SpecialistAssignment): TeamError | null {
   const reviewed = Object.keys(assignment.decisionVersions ?? {}).filter((id) =>
     document.decisionRequests.some((r) => isOpenQuestion(r) && r.revisesDecisionId === id),
   );
-  if (reviewed.length) return new TeamError("decision_under_review", `Decision ${reviewed.join(", ")} of assignment ${assignment.id} is under review.`);
-  return null;
+  return reviewed.length ? new TeamError("decision_under_review", `Decision ${reviewed.join(", ")} of assignment ${assignment.id} is under review.`) : null;
+}
+
+/**
+ * The working copy a correction or a hand-over continues in: that of the latest work it replaces that still has one,
+ * with nobody at work in it. Null when there is none, and the work prepares its own.
+ */
+export function correctionWorktree(document: ProjectDocument, replaces: string[]): { workspace: WorktreeSession; assignmentId: string } | null {
+  const all = document.team.specialists.flatMap((s) => s.assignments);
+  const replaced = all
+    .filter((a) => replaces.includes(a.id) && a.workspace && !a.workspaceRemovedAt && !isActive(a))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1);
+  if (!replaced) return null;
+  const busy = all.some((a) => isActive(a) && a.workspace?.worktreeRoot === replaced.workspace!.worktreeRoot);
+  return busy ? null : { workspace: replaced.workspace!, assignmentId: replaced.id };
+}
+
+/**
+ * Why the Coordinator cannot take up `assignment` again in its working copy (resume_assignment), or null. Work at work
+ * or waiting for an answer is not resumed; merged work is done; work the person stopped resumes on their request.
+ */
+export function resumeProblem(document: ProjectDocument, assignment: SpecialistAssignment): TeamError | null {
+  if (isActive(assignment)) return new TeamError("assignment_running", `Assignment ${assignment.id} is still at work.`);
+  if (assignment.status === "paused") {
+    return new TeamError("waiting_for_answer", `Assignment ${assignment.id} waits for the answer to its question: answer it with answer_question and Trama resumes it.`);
+  }
+  if (!assignment.workspace || assignment.workspaceRemovedAt) {
+    return new TeamError("no_worktree", `Assignment ${assignment.id} has no working copy left: assign new work with assign_task.`);
+  }
+  if (document.candidates.some((c) => c.assignmentId === assignment.id && c.pullRequest?.mergedAt)) {
+    return new TeamError("already_merged", `Assignment ${assignment.id} is already merged: more work on it is new work, with assign_task.`);
+  }
+  const stopper = stoppedBy(assignment);
+  if (stopper && !TRAMA_ACTORS.includes(stopper)) {
+    return new TeamError("stopped_by_person", `The person stopped assignment ${assignment.id}: it resumes only when they ask. Tell them in one line why it should go on.`);
+  }
+  return decisionUnderReview(document, assignment);
+}
+
+/**
+ * The Coordinator resumes work in its own session and working copy (resume_assignment), with its instructions for the
+ * next turn: work that stopped, failed or ended with a candidate to correct. It waits like any resumed work while the
+ * developer is busy, while the squads are at their limit or while someone works on its modules.
+ */
+export function resumeWithInstructions(document: ProjectDocument, id: string, note: { text: string; reason: string }, now = new Date()): SpecialistAssignment {
+  const assignment = findAssignment(document, id);
+  if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+  const problem = resumeProblem(document, assignment);
+  if (problem) throw problem;
+  const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team: hand the work to another developer.`);
+  const current = currentAssignment(specialist);
+  if (current && current.id !== id && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}: hand the work to another developer.`);
+  requireSquadRoom(document, specialist);
+  requireIndependent(document, assignment.moduleIds, specialist.id);
+  specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
+  refreshDecisionVersions(document, id);
+  return updateAssignment(document, id, now, (a) => {
+    a.status = "preparing";
+    a.failure = null;
+    a.coordinatorNote = { text: required(note.text, "instructions"), reason: required(note.reason, "reason"), at: now.toISOString() };
+    a.lastUpdate = t("main.team.resumed", { model: a.model });
+  });
 }
 
 /**

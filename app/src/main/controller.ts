@@ -5103,7 +5103,10 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error(t("main.controller.stopBeforeTurn"));
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, t("main.controller.newSpecialistThreadTitle"), null, "info");
-      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
+      // Work that continues in the working copy of the work it replaces is told so (a correction, a hand-over).
+      const continues =
+        assignment.replaces?.find((id) => findAssignment(document, id)?.workspace?.worktreeRoot === assignment.workspace?.worktreeRoot) ?? null;
+      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions, continues));
       const prompt = [brief, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,

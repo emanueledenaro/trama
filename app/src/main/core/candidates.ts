@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { plainConflictReference } from "@shared/plainLanguage";
-import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
+import { candidateSuperseded, explainedByDivergence, replacedBy } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { blockingFindings, latestGate } from "@shared/gate";
 import { workRequests } from "@shared/grilling";
@@ -32,11 +32,12 @@ export function latestCandidate(document: ProjectDocument, assignmentId: string)
 }
 
 /**
- * The earlier work that new work in the dialog of `requestId` corrects (issue #389): a completed or failed assignment of
- * the same work, on the same slice or, outside slices, on one of the same modules, whose latest candidate is still
- * open and stopped by a check, the reviewers or a conflict. Its candidate is then superseded by the new work's, so the
- * two versions never collide. Work whose candidate is verified, approved or merged is not corrected: new work on its
- * modules is other work.
+ * The earlier work that new work in the dialog of `requestId` corrects (issue #389): an assignment of the same work,
+ * on the same slice or, outside slices, on one of the same modules, that ended, failed or was stopped, and whose latest
+ * candidate is still open and stopped by a check, the reviewers or a conflict. Work that failed or stopped before its
+ * first candidate is corrected too: the new work is another try at it. The earlier candidate is then superseded by the
+ * new work's, so the two versions never collide, and the new work continues in the earlier working copy. Work whose
+ * candidate is verified, approved or merged is not corrected: new work on its modules is other work.
  */
 export function openCorrections(
   document: ProjectDocument,
@@ -49,19 +50,27 @@ export function openCorrections(
     .flatMap((s) => s.assignments)
     .filter((earlier) => {
       if (earlier.requestId === null || !scope.has(earlier.requestId)) return false;
-      if (earlier.status !== "completed" && earlier.status !== "failed") return false;
+      if (earlier.status !== "completed" && earlier.status !== "failed" && earlier.status !== "stopped") return false;
       const same = earlier.slice || work.slice
         ? earlier.slice?.planId === work.slice?.planId && earlier.slice?.sliceId === work.slice?.sliceId
         : earlier.moduleIds.some((m) => work.moduleIds.includes(m));
       if (!same) return false;
       const candidate = latestCandidate(document, earlier.id);
-      if (!candidate || candidate.pullRequest || candidateSuperseded(document, candidate)) return false;
+      if (!candidate) return earlier.status !== "completed" && Boolean(earlier.workspace) && !earlier.workspaceRemovedAt && !replacedLater(document, earlier.id);
+      if (candidate.pullRequest || candidateSuperseded(document, candidate)) return false;
       const blockers = inspectCandidate(document, candidate, null);
       if (blockers.some((b) => !STILL_CHECKING.includes(b.code))) return true;
       // A gate that failed to finish asks for the review again, not for new work (as workPhase.ts).
       return candidate.technicalReview?.verdict === "changesRequested" && !blockers.some((b) => b.code === "GATE_FAILED");
     })
     .map((a) => a.id);
+}
+
+/** Whether later work already replaced assignment `id`: another try at it is not a correction of it any more. */
+function replacedLater(document: ProjectDocument, id: string): boolean {
+  const all = document.team.specialists.flatMap((s) => s.assignments);
+  const assignment = all.find((a) => a.id === id);
+  return !!assignment && all.some((later) => replacedBy(assignment, later));
 }
 
 /** Blockers that only wait for Trama's checks or reviewers: nothing to correct yet. */

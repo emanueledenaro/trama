@@ -262,11 +262,11 @@ const TAKE_TICKET =
 /** What resolving each technical block means (A06, Q3): the Coordinator does it by itself and the person is told afterwards. @model-text */
 const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
   checkFailed:
-    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi assegna allo stesso sviluppatore, o a un altro libero, la correzione con assign_task: stessa fetta, stessi moduli, le verifiche che devono passare.",
+    "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi fai correggere il lavoro nella stessa copia di lavoro con resume_assignment: allo stesso sviluppatore, o con specialist a un altro libero, con le verifiche che devono passare. Non aprire un incarico nuovo per lo stesso lavoro: ripartirebbe da una copia vuota.",
   worktreeConflict:
-    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi assegna con assign_task il riallineamento del lavoro più recente sul più vecchio, o sul branch principale, sugli stessi moduli.",
+    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi fai riallineare il lavoro più recente sul più vecchio, o sul branch principale, nella sua stessa copia di lavoro con resume_assignment.",
   stalledAssignment:
-    "Leggi con read_team perché l'incarico si è fermato, poi riassegnalo con assign_task, allo stesso sviluppatore o a un altro libero, con le istruzioni per superare il motivo.",
+    "Leggi con read_team perché l'incarico si è fermato, poi riprendilo nella stessa copia di lavoro con resume_assignment, allo stesso sviluppatore o con specialist a un altro libero, con le istruzioni per superare il motivo. Solo un incarico senza copia di lavoro si assegna di nuovo con assign_task.",
   reviewLoop:
     "Leggi con read_team i rilievi bloccanti dei revisori e la risposta dello sviluppatore, confrontali con il Patto, il mandato, le regole del progetto e i messaggi della persona, poi decidi con settle_review: con i revisori lo sviluppatore corregge, con lo sviluppatore i rilievi sono superati e porti il candidato fino all'unione con clear_candidate. Scrivi motivo e dubbio; non chiedere alla persona e non assegnare di nuovo lo stesso lavoro.",
 };

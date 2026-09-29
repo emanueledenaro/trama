@@ -800,6 +800,8 @@ export interface SpecialistAssignment {
   worktreeSnapshot?: { snapshotId: string; at: string } | null;
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /** The Coordinator resumed the work in its working copy with these instructions (resume_assignment); the latest, absent before any. */
+  coordinatorNote?: { text: string; reason: string; at: string } | null;
   /**
    * The earlier assignments this work corrects (issue #389): later work in the same dialog on their modules while
    * their candidate was still blocked. Their candidates are superseded by this work's; absent when it corrects nothing.

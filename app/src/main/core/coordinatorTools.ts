@@ -47,6 +47,7 @@ import {
   addSpecialist,
   assign,
   authorize,
+  correctionWorktree,
   currentAssignment,
   developers,
   findAssignment,
@@ -60,6 +61,8 @@ import {
   removeSpecialist,
   renameSpecialist,
   requestStop,
+  resumeProblem,
+  resumeWithInstructions,
   TeamError,
   usableChoice,
 } from "./team";
@@ -619,6 +622,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       "Settle a disagreement between a developer and the candidate reviewers when the gate stopped the same work again (the work phase says so): you decide, never the person, and no identical round starts. Read with read_team the blocking findings and the developer's answer first, and weigh them against the Pact, the mandate, the project's rules and what the person wrote. side findings: the reviewers are right, the developer resumes in the same worktree with the findings as your decision. side developer: the findings are overruled, the gate passes and you take the candidate to the merge with clear_candidate. Trama's own evidence (a failed check, a regression the guardian measured, a secret in the diff) cannot be overruled. reason says why in the person's words; doubt what you are not sure about, or omit it. The choice is recorded in Activity and in the recap.",
     properties: { candidate: text, side: { type: "string", enum: ["findings", "developer"] }, reason: text, doubt: text },
     required: ["candidate", "side", "reason"],
+    readOnly: false,
+  },
+  {
+    name: "resume_assignment",
+    description:
+      "Within the mandate (executeInWorktree), take up existing work again in its own working copy and branch instead of opening new work: work that stopped (Trama stopped it, or you did), failed, or ended with a candidate to correct. Its working copy keeps everything done so far, a resolved merge not committed yet included; new work with assign_task would start from an empty copy. assignment is the assignment (A-…) or its candidate (C-…). instructions says what to do now, in the developer's words; reason is one line for the person. Without specialist the same developer resumes in the same session. With specialist another developer takes over the same work in the same working copy and branch, and the earlier work is replaced. Trama refuses work still at work, work waiting for the answer to its question, merged work, work without a working copy, work that relies on a decision under review and work the person stopped.",
+    properties: { assignment: text, specialist: text, instructions: text, reason: text },
+    required: ["assignment", "instructions", "reason"],
     readOnly: false,
   },
   {
@@ -1557,6 +1568,10 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (commitScope && !/^[A-Za-z0-9][\w./-]*$/.test(commitScope)) return toolFailure("invalid_arguments", "commitScope is one noun without spaces or parentheses.");
         const commit: AssignmentCommit | null =
           commitType || commitScope !== null || args.hotfix === true ? { type: commitType, scope: commitScope, hotfix: args.hotfix === true } : null;
+        // Work with edits that corrects blocked work of the same dialog supersedes its candidate (issue #389) and goes
+        // on in its working copy, where a resolved merge or the work done so far already is.
+        const replaces = withEdits ? openCorrections(document, context.runningRequestId, { moduleIds, slice }) : [];
+        const continued = correctionWorktree(document, replaces);
         const assignment = assign(
           document,
           {
@@ -1585,8 +1600,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             slice,
             commit,
             seams,
-            // Work with edits that corrects blocked work of the same dialog supersedes its candidate (issue #389).
-            replaces: withEdits ? openCorrections(document, context.runningRequestId, { moduleIds, slice }) : [],
+            replaces,
+            workspace: continued?.workspace ?? null,
           },
           document.mandate!.version,
           context.runningRequestId,
@@ -1605,8 +1620,66 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           slice: assignment.slice?.sliceId ?? null,
           requiredChecks: assignment.requiredChecks,
           ...(assignment.replaces?.length ? { replacesAssignmentIDs: assignment.replaces } : {}),
+          ...(continued ? { worktree: { branch: continued.workspace.branch, continuesAssignmentID: continued.assignmentId } } : {}),
           ...(presenceWarning ? { presence: presenceWarning } : {}),
         });
+      }
+      case "resume_assignment": {
+        const named = typeof args.assignment === "string" ? args.assignment.trim() : "";
+        const assignment = findAssignment(document, named) ?? findAssignment(document, findCandidate(document, named)?.assignmentId ?? "");
+        if (!assignment) return toolFailure("unknown_assignment", `There is no assignment or candidate ${named}.`);
+        if (!needsWorktree(assignment)) return toolFailure("not_a_worktree", `${assignment.id} is read-only work: it has no working copy to resume.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        const instructions = typeof args.instructions === "string" ? args.instructions.trim() : "";
+        const reason = typeof args.reason === "string" ? clip(args.reason.trim(), 240) : "";
+        if (!instructions || !reason) return toolFailure("invalid_arguments", "instructions (what to do now, for the developer) and reason (one line for the person) are required.");
+        const problem = resumeProblem(document, assignment);
+        if (problem) return toolFailure(problem.code, problem.message);
+        const other = typeof args.specialist === "string" && args.specialist.trim() ? findSpecialist(document, args.specialist) : null;
+        if (typeof args.specialist === "string" && args.specialist.trim() && !other) return toolFailure("unknown_specialist", `Unknown specialist: ${args.specialist}.`);
+        if (!other || other.id === assignment.specialistId) {
+          resumeWithInstructions(document, assignment.id, { text: instructions, reason });
+          context.addCard("assignment", t("main.coordinatorTools.card.assignment"), assignment.id);
+          context.changed();
+          context.startAssignment(assignment.id);
+          return toolSuccess({ assignmentID: assignment.id, status: "resumed", branch: assignment.workspace!.branch });
+        }
+        if (isFixedRole(other.role)) return toolFailure("fixed_role", `${other.name} is a fixed role: hand the work to a developer.`);
+        // The other developer takes over the same work in the same working copy and branch: the earlier work is replaced.
+        const personal = other.chosenModel ? usableChoice(other.chosenModel, context.providers, true) : null;
+        const handed = assign(
+          document,
+          {
+            specialist: other.id,
+            kind: assignment.kind,
+            objective: assignment.objective,
+            issueNumber: assignment.issueNumber,
+            exercise: assignment.exercise,
+            moduleIds: assignment.moduleIds,
+            dependencies: assignment.dependencies.filter((id) => findAssignment(document, id)?.status === "completed"),
+            decisionIds: Object.keys(assignment.decisionVersions ?? {}),
+            model: personal?.model ?? assignment.model,
+            provider: personal?.provider ?? assignment.provider ?? "codex",
+            ...(personal?.effort ? { effort: personal.effort } : assignment.effort ? { effort: assignment.effort } : {}),
+            modelReason: personal ? t("main.coordinatorTools.personModel") : assignment.modelReason,
+            goalId: assignment.goalId ?? null,
+            tools: assignment.tools,
+            requiredChecks: assignment.requiredChecks,
+            instructions: `${instructions}\n\n${assignment.instructions}`,
+            slice: assignment.slice ?? null,
+            commit: assignment.commit ?? null,
+            ...(assignment.seams ? { seams: assignment.seams } : {}),
+            replaces: [assignment.id],
+            workspace: assignment.workspace,
+          },
+          document.mandate!.version,
+          context.runningRequestId ?? assignment.requestId,
+        );
+        context.addCard("assignment", t("main.coordinatorTools.card.assignment"), handed.id);
+        context.changed();
+        context.startAssignment(handed.id);
+        return toolSuccess({ assignmentID: handed.id, specialistID: other.id, status: "handedOver", replacesAssignmentID: assignment.id, branch: handed.workspace!.branch });
       }
       case "read_goals":
         return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });

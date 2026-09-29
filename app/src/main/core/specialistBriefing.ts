@@ -53,9 +53,17 @@ function decisionLines(assignment: SpecialistAssignment, decisions: PactDecision
   ];
 }
 
-/** The first message of an assignment's session. @model-text */
-export function openingInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
+/**
+ * The first message of an assignment's session. Work that continues in the working copy of the work it replaces is told
+ * so: what is there is the starting point, a merge in progress included. @model-text
+ */
+export function openingInput(assignment: SpecialistAssignment, decisions: PactDecision[] = [], continues: string | null = null): string {
   const lines = [`Incarico ${assignment.id}: ${assignment.objective}`];
+  if (continues && assignment.workspace) {
+    lines.push(
+      `Continui il lavoro dell'incarico ${continues} nella sua copia di lavoro, sul branch ${assignment.workspace.branch}: quello che trovi è il punto di partenza, compreso un merge già risolto e non ancora registrato. Non rifarlo da capo e non annullarlo.`,
+    );
+  }
   if (assignment.issueNumber) lines.push(`Issue #${assignment.issueNumber}.`);
   if (assignment.exercise) lines.push(`Esercizio: ${assignment.exercise}.`);
   lines.push(`Moduli nel perimetro: ${assignment.moduleIds.join(", ")}.`);
@@ -107,6 +115,10 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   // The candidate gate sent the work back (W10): the blocking findings, once, in the first turn after the return.
   const returned = gateReturnBriefing(assignment);
   if (returned.length) lines.push("", ...returned, "");
+  // The Coordinator took the work up again (resume_assignment): its instructions, once, in the first turn after.
+  const note = assignment.coordinatorNote;
+  const last = assignment.turns.at(-1);
+  if (note && !(last && last.startedAt > note.at)) lines.push("", `Il Coordinatore riprende il lavoro in questa copia di lavoro (${note.reason}). Istruzioni:`, note.text, "");
   lines.push("Continua da dove eri rimasto e riporta cosa hai fatto in questo turno.");
   if (assignment.seams) {
     const headings = Object.values(REPORT_HEADINGS).map((h) => `\`${h}\``).join(", ");
