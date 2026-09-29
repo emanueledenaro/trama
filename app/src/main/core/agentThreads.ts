@@ -18,6 +18,7 @@ import { isRegression } from "@shared/gate";
 import { shortId } from "@shared/ids";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { findAssignment, teamMembers } from "./team";
+import { t } from "./personLanguage";
 
 /**
  * The conversations between agents (W07, issue #144). The agents of a piece of work talk in threads of their own:
@@ -44,12 +45,13 @@ function member(document: ProjectDocument, role: TeamRole): Specialist | null {
 /** The conversation of this kind about the work, opened with its first message. */
 export function threadFor(document: ProjectDocument, kind: AgentThreadKind, assignment: SpecialistAssignment, now = new Date()): AgentThread {
   document.agentThreads ??= [];
-  const existing = document.agentThreads.find((t) => t.kind === kind && t.assignmentId === assignment.id);
+  const existing = document.agentThreads.find((thread) => thread.kind === kind && thread.assignmentId === assignment.id);
   if (existing) return existing;
   const role = COUNTERPART[kind];
   const counterpart = role ? member(document, role) : null;
   const at = now.toISOString();
-  const subject = assignment.slice ? `fetta ${assignment.slice.sliceId}` : `incarico ${assignment.id}`;
+  // The title is the person's, in their language; the messages below are the agents'.
+  const subject = assignment.slice ? t("main.agentThreads.sliceSubject", { slice: assignment.slice.sliceId }) : t("main.agentThreads.assignmentSubject", { id: assignment.id });
   const thread: AgentThread = {
     id: shortId("CH", randomUUID()),
     kind,
@@ -74,14 +76,14 @@ function post(thread: AgentThread, author: AgentThreadAuthor, text: string, now:
 
 const developer = (assignment: SpecialistAssignment): AgentThreadAuthor => ({ kind: "specialist", specialistId: assignment.specialistId });
 
-/** The developer asked the Coordinator with ask_coordinator (W06). */
+/** The developer asked the Coordinator with ask_coordinator (W06). @model-text: a message between agents. */
 export function recordQuestion(document: ProjectDocument, assignment: SpecialistAssignment, question: DeveloperQuestion, now = new Date()): AgentThread {
   const thread = threadFor(document, "question", assignment, now);
   post(thread, developer(assignment), question.context ? `${question.question}\n\nMi serve per: ${question.context}` : question.question, now);
   return thread;
 }
 
-/** The Coordinator's answer to a question: from facts, or the Pact card that hands it to the person. */
+/** The Coordinator's answer to a question: from facts, or the Pact card that hands it to the person. @model-text: a message between agents. */
 export function recordAnswer(document: ProjectDocument, assignment: SpecialistAssignment, question: DeveloperQuestion, now = new Date()): AgentThread | null {
   const answer = question.answer;
   if (!answer) return null;
@@ -95,7 +97,7 @@ export function recordAnswer(document: ProjectDocument, assignment: SpecialistAs
   return thread;
 }
 
-/** The person answered, or withdrew, the Pact card a question waited on: the answer reaches both agents through the card. */
+/** The person answered, or withdrew, the Pact card a question waited on: the answer reaches both agents through the card. @model-text */
 export function recordPersonAnswer(document: ProjectDocument, request: DecisionRequest, now = new Date()): AgentThread | null {
   if (!request.blocksWork) return null;
   const assignment = findAssignment(document, request.blocksWork.assignmentId);
@@ -111,12 +113,13 @@ function join(thread: AgentThread, specialistId: string): void {
   if (!thread.specialistIds.includes(specialistId)) thread.specialistIds.push(specialistId);
 }
 
+/** @model-text: a message between agents. */
 const findingLine = (f: GateFinding) => `- ${f.severity === "blocking" ? "Bloccante" : "Suggerimento"}: ${f.title}${f.file ? ` (${f.file})` : ""}${f.detail && f.detail !== f.title ? `. ${f.detail}` : ""}`;
 
 /**
  * The candidate gate ended (W10): each reviewer with findings tells the developer in the review conversation, and the
  * guardian tells it about a test that passed on the base and fails on the candidate, in the regression conversation.
- * A reviewer with nothing to report writes nothing.
+ * A reviewer with nothing to report writes nothing. @model-text: messages between agents.
  */
 export function recordGate(document: ProjectDocument, gate: CandidateGate, now = new Date()): AgentThread[] {
   const assignment = findAssignment(document, gate.assignmentId);

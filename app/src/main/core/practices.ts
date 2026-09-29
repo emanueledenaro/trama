@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Practice, PracticeEvidence, ProjectDocument } from "@shared/domain";
 import { shortId } from "@shared/ids";
+import { t } from "./personLanguage";
 import { writeAtomically } from "./storage";
 
 export class PracticeError extends Error {
@@ -22,26 +23,26 @@ export class PracticeError extends Error {
 export function problemEvidence(document: ProjectDocument, reference: string): PracticeEvidence | null {
   for (const candidate of document.candidates) {
     if (candidate.technicalReview?.verdict === "changesRequested" && reference === candidate.technicalReview.id) {
-      return { kind: "review", reference, summary: "Revisione tecnica con modifiche richieste" };
+      return { kind: "review", reference, summary: t("main.practices.evidence.review") };
     }
     for (const evidence of Object.values(candidate.evidence)) {
       if (evidence.result === "fail" && reference === `${candidate.id}:${evidence.check}`) {
-        return { kind: "regression", reference, summary: `Verifica ${evidence.check} non superata` };
+        return { kind: "regression", reference, summary: t("main.practices.evidence.check", { check: evidence.check }) };
       }
     }
   }
   for (const specialist of document.team.specialists) {
     for (const assignment of specialist.assignments) {
       if (assignment.id === reference && assignment.status === "failed") {
-        return { kind: "failure", reference, summary: "Incarico non riuscito" };
+        return { kind: "failure", reference, summary: t("main.practices.evidence.failure") };
       }
       if (assignment.id === reference && assignment.waitingForProvider) {
-        return { kind: "wait", reference, summary: "Incarico in attesa di un provider bloccato" };
+        return { kind: "wait", reference, summary: t("main.practices.evidence.wait") };
       }
     }
   }
   const conflict = document.conflicts?.find((c) => c.id === reference && c.classification === "conflict");
-  if (conflict) return { kind: "conflict", reference, summary: "Conflitto riprodotto con altro lavoro" };
+  if (conflict) return { kind: "conflict", reference, summary: t("main.practices.evidence.conflict") };
   return null;
 }
 
@@ -140,7 +141,7 @@ export function retirePractice(practices: Practice[], id: string, projectId: str
   const active = practice.adoptions.find((a) => a.projectId === projectId && !a.retiredAt);
   if (!active) throw new PracticeError("not_adopted", `Practice ${id} is not adopted in this project.`);
   active.retiredAt = now.toISOString();
-  active.retiredReason = reason.trim() || "Ritirata dalla persona";
+  active.retiredReason = reason.trim() || t("main.practices.retiredByPerson");
   if (!practice.adoptions.some((a) => !a.retiredAt)) practice.status = "retired";
   return practice;
 }
@@ -165,6 +166,7 @@ export function adoptedPractices(practices: Practice[], projectId: string): { id
   });
 }
 
+/** The adopted practices in the Coordinator's instructions. @model-text */
 export function practicesText(practices: Practice[], projectId: string): string | null {
   const adopted = adoptedPractices(practices, projectId);
   if (!adopted.length) return null;

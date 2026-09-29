@@ -2,6 +2,7 @@ import { candidateSuperseded } from "@shared/conflictScope";
 import type { Candidate, ConflictAssessment, ProjectDocument, SemanticHypothesis } from "@shared/domain";
 import { worktreeAssessmentCurrent } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
+import { t } from "./personLanguage";
 import { findAssignment } from "./team";
 
 /**
@@ -76,7 +77,7 @@ export function recordSemanticHypothesis(
     if (known.semantic.check !== input.check || known.semantic.scenario?.result === "notRun") {
       known.semantic = { ...known.semantic, check: input.check, scenario: null };
       known.classification = "hypothesis";
-      known.detail = PENDING;
+      known.detail = pending();
     }
     return { assessment: known, created: false };
   }
@@ -85,7 +86,7 @@ export function recordSemanticHypothesis(
   return { assessment, created: true };
 }
 
-const PENDING = "Trama prova lo scenario sul candidato combinato: finché non dà un risultato, è solo un'ipotesi.";
+const pending = (): string => t("main.semanticConflicts.pending");
 
 function hypothesis(mine: Candidate, other: Candidate, semantic: SemanticHypothesis, now: Date): ConflictAssessment {
   return {
@@ -98,7 +99,7 @@ function hypothesis(mine: Candidate, other: Candidate, semantic: SemanticHypothe
     otherSnapshotId: other.snapshotId,
     classification: "hypothesis",
     conflictingFiles: [],
-    detail: PENDING,
+    detail: pending(),
     checkedAt: now.toISOString(),
     semantic,
   };
@@ -167,21 +168,21 @@ export function settleScenario(
   const title = checkTitle(semantic.check);
   if (run.result === "pass") {
     assessment.classification = "hypothesis";
-    assessment.detail = `Sul candidato combinato ${title} passa: l'incompatibilità resta un'ipotesi.`;
+    assessment.detail = t("main.semanticConflicts.passes", { check: title });
     return;
   }
   if (run.result === "notRun") {
     assessment.classification = "hypothesis";
-    assessment.detail = `Lo scenario non è partito (${run.output.trim().split("\n").at(-1) || "motivo sconosciuto"}): l'incompatibilità resta un'ipotesi.`;
+    assessment.detail = t("main.semanticConflicts.notRun", { reason: run.output.trim().split("\n").at(-1) || t("main.semanticConflicts.unknownReason") });
     return;
   }
   const mine = document.candidates.find((c) => c.id === assessment.candidateId);
   const other = document.candidates.find((c) => c.id === assessment.otherCandidateId);
   if (passedAlone(mine, semantic.check) && passedAlone(other, semantic.check)) {
     assessment.classification = "semantic";
-    assessment.detail = `Ognuno passa ${title} da solo, ma sul candidato combinato fallisce: le due modifiche sono incompatibili.`;
+    assessment.detail = t("main.semanticConflicts.incompatible", { check: title });
     return;
   }
   assessment.classification = "hypothesis";
-  assessment.detail = `Sul candidato combinato ${title} fallisce, ma non è passato su entrambi da soli: il fallimento non prova l'incompatibilità.`;
+  assessment.detail = t("main.semanticConflicts.notProven", { check: title });
 }

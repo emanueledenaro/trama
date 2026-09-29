@@ -150,6 +150,7 @@ export function autoSummary(counts: TransitionCounts): string {
 
 // The curator prompt, copied from the third-party source listed in THIRD_PARTY_NOTICES.md and adapted
 // where it names kinds of protected skills, cron jobs and paths that do not exist in a Trama library.
+// @model-text: prompt for the curator model.
 export const CURATOR_REVIEW_PROMPT = `You are running as Trama's background skill CURATOR. This is an UMBRELLA-BUILDING consolidation pass, not a passive audit and not a duplicate-finder.
 
 The goal of the skill collection is a LIBRARY OF CLASS-LEVEL INSTRUCTIONS AND EXPERIENTIAL KNOWLEDGE. A collection of hundreds of narrow skills where each one captures one session's specific bug is a FAILURE of the library — not a feature. An agent searching skills matches on descriptions, not on exact names (note: long descriptions are truncated to 57 chars in the system prompt skill index — keep the trigger class in that window). One broad umbrella skill with labeled subsections beats five narrow siblings for discoverability, not the other way around.

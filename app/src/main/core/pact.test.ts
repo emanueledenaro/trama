@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { deriveTimelineRows, formatDuration } from "@shared/timeline";
 import { appendEvent, emptyDocument, recordReply, referencedPaths } from "./document";
@@ -8,12 +8,16 @@ import {
   createDecisionRequest,
   createMandateRequest,
   decide,
+  decisionMessage,
   DomainError,
   grantMandate,
+  mandateMessage,
+  mandateRejectionMessage,
   revokeMandate,
   withdrawalMessage,
   withdrawDecisionRequest,
 } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 
 describe("Pact", () => {
   it("increments the version of a decision and keeps its history", () => {
@@ -147,5 +151,45 @@ describe("timeline", () => {
     expect(formatDuration(2_500)).toBe("2,5 s");
     expect(formatDuration(12_000)).toBe("12 s");
     expect(formatDuration(65_000)).toBe("1m 5s");
+  });
+});
+
+describe("Pact texts in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes errors and the person's messages in the person's language", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    expect(() => decide(document, { id: null, value: " ", acceptedExample: "e", rationale: "r" })).toThrow("A decision needs a behavior, an example and a rationale.");
+    expect(() => revokeMandate(document, "no")).toThrow("There is no active mandate to revoke.");
+    const request = createDecisionRequest(document, {
+      requestId: null,
+      category: "product",
+      question: "Does the customer get an email?",
+      concreteCase: "Order 42",
+      alternatives: [
+        { behavior: "Yes", example: "Email sent", consequence: null },
+        { behavior: "No", example: "No email", consequence: null },
+      ],
+      revisesDecisionId: null,
+    });
+    const { decision } = answerDecisionRequest(document, request.id, { alternativeIndex: 0, freeText: null });
+    expect(decision.rationale).toBe("Answer to the question: Does the customer get an email?");
+    expect(decisionMessage(request, decision)).toBe(`I answered the question "Does the customer get an email?": Yes. It is decision ${decision.id}, version 1 of the Pact.`);
+    expect(mandateMessage("granted", 2)).toBe("I granted the mandate (version 2).");
+    expect(mandateMessage("revoked", null, "Too wide.")).toBe("I revoked the mandate. Reason: Too wide.");
+    const mandateRequest = createMandateRequest(document, {
+      requestId: null,
+      reason: "r",
+      objectives: ["o"],
+      priorities: [],
+      scopeModuleIds: ["m"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    });
+    expect(mandateRejectionMessage(document, mandateRequest, "not now")).toBe(`I turned down mandate proposal ${mandateRequest.id}. There is still no mandate. Reason: not now.`);
+    const withdrawn = createDecisionRequest(document, { ...request, question: "Which color?" });
+    withdrawDecisionRequest(document, withdrawn.id, "Later");
+    expect(withdrawalMessage(withdrawn)).toBe('I withdrew the question "Which color?". Reason: Later.');
   });
 });

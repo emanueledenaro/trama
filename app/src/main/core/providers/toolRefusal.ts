@@ -16,12 +16,14 @@ export function externalToolKind(tool: string, kind: string | null = null): Exte
   return "other";
 }
 
+// @model-text: the refusal texts below go to the agent, in the tool result or in its next prompt.
 const NO_TERMINAL = "Non chiedere alla persona di eseguire comandi nel terminale per leggere dati che Trama può leggere.";
 
 /**
  * The refusal in plain Italian: why the tool is blocked and which Trama tool does the job. `hostTools` are the
  * names the session reaches on Trama's server; empty when it has none.
  */
+// @model-text: the agent reads the refusal; the Activity row shows the same text.
 export function refusalReason(kind: ExternalToolKind, hostTools: readonly string[]): string {
   const has = (name: string) => hostTools.includes(name);
   const issues = has("read_issues")
@@ -78,6 +80,7 @@ export class ToolRefusals {
   }
 
   /** The note for the next prompt, once; null when nothing was refused. */
+  // @model-text: the note opens the agent's next prompt.
   takeNotice(): string | null {
     if (this.pending.size === 0) return null;
     const lines = [...this.pending].map(([tool, reason]) => `- ${tool}: ${reason}`);
