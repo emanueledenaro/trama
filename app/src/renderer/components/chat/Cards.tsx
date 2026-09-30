@@ -18,6 +18,7 @@ import {
   IconUsers,
   IconFocus2,
   IconLock,
+  IconPlayerPlay,
 } from "@tabler/icons-react";
 import { readableFailure } from "@shared/providerFailure";
 import {
@@ -915,7 +916,9 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
             {t("chat.card.assignment.stop")}
           </Button>
         ) : (
+          // Resume starts work again: icon and text, primary last (ADR 0018).
           <Button size="sm" variant="outline" onClick={() => void act("assignment:resume", { assignmentId })}>
+            <IconPlayerPlay />
             {t("chat.card.assignment.resume")}
           </Button>
         )}
@@ -936,6 +939,7 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
       {fold ? (
         <>
           {questions}
+          {actions}
           <button
             type="button"
             aria-expanded={showDetail}
@@ -962,17 +966,17 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
         <>
           {who}
           {objective}
-          {contract}
-          {where}
           {line}
           {failure}
-          {report}
           {questions}
+          {actions}
+          {contract}
+          {where}
+          {report}
           <ThreadLinks assignmentId={assignment.id} />
           {result}
         </>
       )}
-      {actions}
     </CardFrame>
   );
 }
@@ -1886,6 +1890,9 @@ export function PlanCard({ planId }: { planId: string }) {
                 <TextArea value={editing.example} onChange={(e) => setEditing({ ...editing, example: e.target.value })} className="mt-1 min-h-12" />
               </label>
               <div className="cta-row">
+                <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                  {t("chat.card.cancel")}
+                </Button>
                 <Button
                   size="sm"
                   onClick={() =>
@@ -1898,9 +1905,6 @@ export function PlanCard({ planId }: { planId: string }) {
                   }
                 >
                   {t("chat.card.plan.save")}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                  {t("chat.card.cancel")}
                 </Button>
               </div>
             </div>

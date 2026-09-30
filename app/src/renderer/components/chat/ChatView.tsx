@@ -235,7 +235,6 @@ function Timeline() {
     pinned.current = true;
   }, [project.id, goalId]);
 
-  const waiting = useWaiting().length > 0;
   const empty = rows.length === 0 && !studying && goalId === null;
   const offerFirstGoal = goalId === null && !empty && !studying && !hasConfirmedGoal(project.document.goals);
   return (
@@ -255,8 +254,8 @@ function Timeline() {
         {rows.map((row, index) => (
           <div key={row.id} className="px-1" data-anchors={rowAnchors(row).join(" ") || undefined}>
             {tags[index] ? <GoalTag goalId={tags[index]} /> : null}
-            {/* One filled button in the window (issue #338): Aspetta te's while something waits, else the last row's. */}
-            <FilledScope allowed={!waiting && index === rows.length - 1}>
+            {/* The window's one filled button is Aspetta te's (issue #338, ADR 0018): the chat has none, its primaries are outlined. */}
+            <FilledScope allowed={false}>
               <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
             </FilledScope>
           </div>
@@ -374,8 +373,8 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
                 {/* Over a covering tab the bar is the tab's own last row (CoverPane): here it would lie over the tab. */}
                 {cover ? null : <WorkBar placement="composer" />}
                 <div hidden={Boolean(cover)}>
-                  {/* "Collega un provider" in place of sending is the composer's primary: outlined while something waits. */}
-                  <FilledScope allowed={!waitingNow}>
+                  {/* "Collega un provider" in place of sending is the composer's primary: outlined, the window's one filled button is Aspetta te's. */}
+                  <FilledScope allowed={false}>
                     <Composer />
                   </FilledScope>
                 </div>
