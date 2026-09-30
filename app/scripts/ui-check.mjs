@@ -551,6 +551,30 @@ for (const row of stepRows.slice(1)) {
   if (row.status === "done" && row.optional) throw new Error(`The step ${row.id} says "facoltativo" beside Fatto`);
 }
 if (!stepRows.find((row) => row.id === "github").optional) throw new Error("GitHub, optional and to do, does not say so");
+// Design rules: a step done asks for nothing (a check and a small "Cambia", no "Fatto"); a step to do does not repeat its
+// state ("Da fare") beside the button that says what to do; the state is written only for checking, skipped, blocked.
+// Secondary actions are icons of 32 px with their name, the provider's text button aside.
+const stepChrome = await welcome.getByTestId("welcome-step").evaluateAll((nodes) =>
+  nodes
+    .filter((node) => node.dataset.step !== "language")
+    .map((node) => {
+      const button = node.firstElementChild.querySelector(":scope > button");
+      const rect = button.getBoundingClientRect();
+      return {
+        id: node.dataset.step,
+        status: node.dataset.status,
+        state: node.querySelector('[data-testid="welcome-step-status"]')?.textContent ?? null,
+        iconOnly: button.textContent.trim() === "" && Boolean(button.getAttribute("aria-label")),
+        height: Math.round(rect.height),
+      };
+    }),
+);
+for (const row of stepChrome) {
+  if (row.status === "done" && (row.state !== null || !row.iconOnly)) throw new Error(`A step done asks for something or repeats its state: ${JSON.stringify(row)}`);
+  if (row.status === "pending" && row.state !== null) throw new Error(`A step to do repeats its state: ${JSON.stringify(row)}`);
+  if (row.id !== "provider" && !row.iconOnly) throw new Error(`The action of the step ${row.id} is not an icon: ${JSON.stringify(row)}`);
+  if (row.height < 32) throw new Error(`The action of the step ${row.id} is under 32 px: ${JSON.stringify(row)}`);
+}
 await welcomeStep("language").getByTestId("language-choice").waitFor();
 // One filled button at most: the provider's, while it is to do.
 if ((await welcome.locator('button[data-variant="default"]').count()) > 1) throw new Error("The Benvenuto has more than one primary action");
@@ -610,6 +634,7 @@ await welcome.locator('[data-provider-row="codex"]').waitFor();
 await welcome.locator('[data-provider-row="claudeAgent"]').waitFor();
 if (await welcome.locator('[data-provider-row="cursor"]').count()) throw new Error("The other providers are not behind their toggle");
 await welcomeStep("provider").getByRole("button", { name: "Controlla di nuovo" }).waitFor();
+if ((await welcomeStep("provider").getByRole("button", { name: "Controlla di nuovo" }).innerText()).trim() !== "") throw new Error("Controlla di nuovo is not an icon");
 await shot("00b-welcome-provider");
 await welcome.getByRole("button", { name: /^Altri provider/ }).click();
 await welcome.locator('[data-provider-row="cursor"]').waitFor();
@@ -3293,7 +3318,10 @@ if (await page.getByTestId("welcome").count()) throw new Error("The welcome show
     throw new Error("Inizia offers the first goal only with a project of the person open");
   }
   await reopened.locator('[data-step="github"][data-status="done"]').waitFor({ timeout: 20_000 });
-  if ((await reopened.getAttribute("data-all-set")) === "true") await reopened.getByTestId("welcome-all-set").getByText("Tutto pronto.").waitFor();
+  if ((await reopened.getAttribute("data-all-set")) === "true") {
+    await reopened.getByTestId("welcome-all-set").getByText("Tutto pronto.").waitFor();
+    if (await reopened.getByTestId("welcome-setup").getByText(/su \d+ fatti/).count()) throw new Error("Configura counts the steps done beside Tutto pronto");
+  }
   const reopenedLook = await lookOf();
   for (const [width, height] of [
     [1280, 800],
