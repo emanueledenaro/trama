@@ -1,4 +1,4 @@
-import { IconRosetteDiscountCheck } from "@tabler/icons-react";
+import { IconHourglass, IconRosetteDiscountCheck } from "@tabler/icons-react";
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import { useWaiting } from "@/components/WaitingView";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import type { Candidate, CandidateState } from "@shared/domain";
 import { candidateState, candidateStatus, planStatus } from "@shared/states";
 import { waitingItemFor } from "@shared/waitingForYou";
 import { Badge } from "@/components/ui/field";
+import { Tooltip } from "@/components/ui/tooltip";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote } from "./Inspector";
 import { Fold, GroupLabel, META, ROW, ROW_MAIN } from "./WorkGroups";
@@ -45,7 +46,7 @@ function CandidateRow({ candidate, badge = true }: { candidate: Candidate; badge
 /**
  * The verified candidates at the top of Lavoro (UI wave of 29 September): the one thing the view sets apart, since a
  * verified candidate only waits for the person's decision. A row opens the candidate; while it waits in Aspetta te
- * the row takes the person there, with an outline button, since the window's one filled button is Aspetta te's.
+ * the row takes the person there, with an outline icon button, since the window's one filled button is Aspetta te's.
  */
 export function VerifiedCandidates() {
   const t = useT();
@@ -80,9 +81,11 @@ export function VerifiedCandidates() {
               </button>
               {item ? (
                 <div className="cta-row shrink-0">
-                  <Button size="xs" variant="outline" onClick={() => setInspector({ kind: "waiting", key: item.key })}>
-                    {t("waiting.reference.open")}
-                  </Button>
+                  <Tooltip label={t("waiting.reference.open")}>
+                    <Button size="icon" variant="outline" aria-label={t("waiting.reference.open")} onClick={() => setInspector({ kind: "waiting", key: item.key })}>
+                      <IconHourglass stroke={1.8} />
+                    </Button>
+                  </Tooltip>
                 </div>
               ) : null}
             </div>

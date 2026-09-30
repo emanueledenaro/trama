@@ -86,6 +86,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
           <button
             type="button"
             aria-label={t("chat.timeline.copyMessage")}
+            title={t("chat.timeline.copyMessage")}
             className="pointer-events-none rounded p-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 hover:text-foreground"
             onClick={() => {
               void navigator.clipboard.writeText(row.text);
@@ -113,7 +114,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
   const failed = failedSteps(row.activities);
   return (
-    <div className="chat-work-line mb-3 text-chat" data-testid="work-line" data-work={row.id}>
+    <div className="chat-work-line mb-4 text-chat" data-testid="work-line" data-work={row.id}>
       <button
         type="button"
         onClick={() => openActivity(row.id)}
@@ -200,6 +201,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
             type="button"
             className="rounded p-0.5 hover:text-foreground"
             aria-label={t("chat.timeline.copyReply")}
+            title={t("chat.timeline.copyReply")}
             onClick={() => {
               void navigator.clipboard.writeText(row.text ?? "");
               setCopied(true);

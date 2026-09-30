@@ -1,5 +1,5 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
-import { IconArchive, IconArrowLeft, IconMessageCircle, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
+import { IconArchive, IconArrowLeft, IconMessageCircle, IconPencil, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
 import { type GoalState, goalState } from "@shared/workOverview";
@@ -11,6 +11,7 @@ import { PROVIDERS } from "@shared/providers";
 import { assignmentStatus, candidateStatus } from "@shared/states";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
@@ -342,18 +343,29 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
           </p>
         ) : null}
         <div className="cta-row mt-3">
-          <Button size="sm" variant={dialogGoalId === goal.id ? "ghost" : "outline"} disabled={dialogGoalId === goal.id} onClick={() => openDialog(goal.id)}>
-            <IconMessageCircle /> {dialogGoalId === goal.id ? "Chat filtrata" : "Mostra nella chat"}
-          </Button>
+          {/* Showing the goal in the chat and archiving it are secondary: icons with a tooltip and a name. */}
+          <Tooltip label={dialogGoalId === goal.id ? t("goal.detail.filtered") : t("goal.detail.showInChat")}>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={dialogGoalId === goal.id ? t("goal.detail.filtered") : t("goal.detail.showInChat")}
+              disabled={dialogGoalId === goal.id}
+              onClick={() => openDialog(goal.id)}
+            >
+              <IconMessageCircle stroke={1.8} />
+            </Button>
+          </Tooltip>
           {empty ? (
             <Button size="sm" variant="ghost" onClick={() => setDeleting(goal)}>
               <IconTrash /> Elimina
             </Button>
           ) : null}
           {archived ? null : (
-            <Button size="sm" variant="ghost" onClick={() => setArchived(goal, true)}>
-              <IconArchive /> Archivia
-            </Button>
+            <Tooltip label={t("goal.detail.archive")}>
+              <Button size="icon" variant="ghost" aria-label={t("goal.detail.archive")} onClick={() => setArchived(goal, true)}>
+                <IconArchive stroke={1.8} />
+              </Button>
+            </Tooltip>
           )}
           {archived ? (
             <Button size="sm" onClick={() => setArchived(goal, false)}>
@@ -392,7 +404,15 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
         ) : null}
         <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
       </div>
-      <InspectorSection title="Risultato atteso" aside={!editing ? <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>Modifica</Button> : null}>
+      <InspectorSection title={t("goal.detail.expected")} aside={
+          !editing ? (
+            <Tooltip label={t("goal.detail.edit")}>
+              <Button size="icon" variant="ghost" aria-label={t("goal.detail.edit")} onClick={() => setEditing(true)}>
+                <IconPencil stroke={1.8} />
+              </Button>
+            </Tooltip>
+          ) : null
+        }>
         {editing ? (
           <GoalEditor goal={goal} onDone={() => setEditing(false)} />
         ) : (
