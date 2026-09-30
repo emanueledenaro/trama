@@ -550,6 +550,7 @@ export const it = {
   "audit.finding.tradeOffHint": "Il rilievo è un compromesso: diventa una domanda del Patto.",
   "audit.finding.assign": "Affida la correzione",
   "audit.finding.assignHint": "Uno sviluppatore libero corregge il rilievo, solo dentro il mandato.",
+  "audit.finding.proof": "Prova:",
   "audit.finding.issueLink": "Issue {number} su GitHub",
   "audit.finding.backlogLink": "Nel {backlog}, senza GitHub",
   "audit.finding.backlogName": "backlog di Trama",
