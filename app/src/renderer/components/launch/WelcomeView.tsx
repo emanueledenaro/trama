@@ -25,7 +25,8 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { providerStatus } from "@/components/settings/SettingsView";
 import { Spinner } from "@/components/Spinner";
-import { Button } from "@/components/ui/button";
+import { useWaiting } from "@/components/WaitingView";
+import { Button, FilledScope } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -48,7 +49,7 @@ const EXERCISE_COPY: Record<ExerciseId, { title: MessageKey; lead: MessageKey }>
 function Block({ id, title, aside, children }: { id: string; title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section aria-labelledby={`welcome-${id}`} data-testid={`welcome-${id}`} className="min-w-0">
-      <div className="flex min-h-7 items-center gap-2 pb-1.5">
+      <div className="flex min-h-8 items-center gap-2 pb-2">
         <h2 id={`welcome-${id}`} className="min-w-0 flex-1 text-ui font-medium text-foreground">
           {title}
         </h2>
@@ -67,7 +68,7 @@ function StartLink({ icon, label, hint, onClick, disabled }: { icon: React.React
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className="group/start flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] disabled:pointer-events-none disabled:opacity-50"
+        className="group/start flex min-h-8 w-full items-start gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] disabled:pointer-events-none disabled:opacity-50"
       >
         <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-[var(--color-text-accent)]">{icon}</span>
         <span className="min-w-0 flex-1">
@@ -79,6 +80,11 @@ function StartLink({ icon, label, hint, onClick, disabled }: { icon: React.React
   );
 }
 
+/**
+ * Inizia answers one question: how do I get to a project. The three other ways are rows; opening a folder is the action,
+ * on the right and last. It is the Benvenuto's one filled button while no project is open; with one open the window's
+ * filled button belongs to the work, so it is an outline.
+ */
 function StartBlock({ onClone }: { onClone: () => void }) {
   const t = useT();
   const app = useUi((s) => s.app)!;
@@ -89,18 +95,11 @@ function StartBlock({ onClone }: { onClone: () => void }) {
   return (
     <Block id="start" title={t("welcome.start.title")}>
       {app.loadingProject ? (
-        <p className="flex items-center gap-2 px-2 pb-1.5 text-ui-sm text-muted-foreground" role="status">
+        <p className="flex items-center gap-2 px-2 pb-2 text-ui-sm text-muted-foreground" role="status">
           <Spinner /> {t("welcome.start.opening", { name: app.loadingProject })}
         </p>
       ) : null}
       <ul className="space-y-0.5" data-testid="welcome-start-actions">
-        <StartLink
-          icon={<IconFolderOpen className="size-4" stroke={1.7} />}
-          label={t("welcome.start.open")}
-          hint={t("welcome.start.openHint")}
-          disabled={loading}
-          onClick={() => void act("project:openDialog", undefined)}
-        />
         <StartLink icon={<IconPlus className="size-4" stroke={1.7} />} label={t("welcome.start.create")} disabled={loading} onClick={() => setDialog("createProject")} />
         <StartLink icon={<IconBrandGithub className="size-4" stroke={1.7} />} label={t("welcome.start.clone")} disabled={loading} onClick={onClone} />
         <StartLink
@@ -119,6 +118,13 @@ function StartBlock({ onClone }: { onClone: () => void }) {
           />
         ) : null}
       </ul>
+      <div className="cta-row mt-4" data-testid="welcome-start-open">
+        <p className="mr-auto min-w-0 text-ui-xs text-muted-foreground">{t("welcome.start.openHint")}</p>
+        <Button variant={app.project ? "outline" : "default"} disabled={loading} onClick={() => void act("project:openDialog", undefined)}>
+          <IconFolderOpen className="size-4" stroke={1.7} />
+          {t("welcome.start.open")}
+        </Button>
+      </div>
     </Block>
   );
 }
@@ -401,6 +407,7 @@ const WELCOME_ORDER: Record<WelcomeStepId, number> = { language: 0, provider: 1,
 
 function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: WelcomeStepId | null; setOpen: (id: WelcomeStepId | null) => void }) {
   const t = useT();
+  const app = useUi((s) => s.app)!;
   const done = steps.filter((s) => s.status === "done").length;
   const providerPending = steps.find((s) => s.id === "provider")?.status !== "done";
   return (
@@ -415,8 +422,8 @@ function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: Welcom
             key={step.id}
             step={step}
             open={open === step.id}
-            // One filled button in the Benvenuto: the provider, the one step Trama needs, while nothing is unfolded.
-            primary={step.id === "provider" && providerPending && open === null}
+            // With a project open the Benvenuto's filled button is the provider, the one step Trama needs, while nothing is unfolded.
+            primary={step.id === "provider" && providerPending && open === null && Boolean(app.project)}
             onToggle={() => setOpen(open === step.id ? null : (step.id as WelcomeStepId))}
           />
         ))}
@@ -558,41 +565,45 @@ export function WelcomeView() {
     openStep("github");
   };
 
+  // Beside the conversation the window's one filled button is Aspetta te's while something waits (issue #338).
+  const waiting = useWaiting().length > 0;
   return (
-    <div
-      ref={root}
-      className="chat-pane-enter @container/welcome relative min-h-0 flex-1 overflow-y-auto"
-      data-testid="welcome"
-      data-all-set={allSet ? "true" : "false"}
-    >
-      <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 sm:px-8 @min-[900px]/welcome:pt-12">
-        <header className="flex items-center gap-4">
-          <WelcomeMark play={intro} />
-          <div className="min-w-0">
-            <h1 className="font-display text-[30px] leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-[34px]">
-              {t("welcome.title")}
-            </h1>
-            <p className="mt-1.5 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
-          </div>
-        </header>
-        {allSet ? (
-          <p className="mt-5 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
-            <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
-            <span className="font-medium">{t("welcome.allSet.title")}</span>
-            <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
-          </p>
-        ) : null}
-        <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-          <div className="flex min-w-0 flex-col gap-8">
-            <StartBlock onClone={clone} />
-            <RecentBlock />
-          </div>
-          <div className="flex min-w-0 flex-col gap-8">
-            <SetupBlock steps={steps} open={open} setOpen={setOpen} />
-            <LearnBlock />
+    <FilledScope allowed={!waiting}>
+      <div
+        ref={root}
+        className="chat-pane-enter @container/welcome relative min-h-0 flex-1 overflow-y-auto"
+        data-testid="welcome"
+        data-all-set={allSet ? "true" : "false"}
+      >
+        <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 sm:px-8 @min-[900px]/welcome:pt-12">
+          <header className="flex items-center gap-4">
+            <WelcomeMark play={intro} />
+            <div className="min-w-0">
+              <h1 className="font-display text-[30px] leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-[34px]">
+                {t("welcome.title")}
+              </h1>
+              <p className="mt-1.5 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
+            </div>
+          </header>
+          {allSet ? (
+            <p className="mt-5 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
+              <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
+              <span className="font-medium">{t("welcome.allSet.title")}</span>
+              <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
+            </p>
+          ) : null}
+          <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+            <div className="flex min-w-0 flex-col gap-8">
+              <StartBlock onClone={clone} />
+              <RecentBlock />
+            </div>
+            <div className="flex min-w-0 flex-col gap-8">
+              <SetupBlock steps={steps} open={open} setOpen={setOpen} />
+              <LearnBlock />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </FilledScope>
   );
 }
