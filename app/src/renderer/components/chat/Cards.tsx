@@ -1807,9 +1807,10 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : t("chat.card.candidate.title")} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       {whoLine}
       {supersededNote}
+      {/* What is missing comes first, as in the candidate's own tab: the reason is what the person came for. */}
+      {blockersField}
       {decisionsField}
       {checksFields}
-      {blockersField}
       {otherWork}
       {mergeLines}
       {actions}
