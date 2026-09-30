@@ -138,7 +138,7 @@ function FirstGoalPrompt() {
   return (
     <div
       className={cn(
-        "relative my-4 flex flex-wrap items-center gap-4 rounded-xl border px-3.5 py-3",
+        "relative my-4 flex flex-wrap items-center gap-4 rounded-xl border px-4 py-4",
         seam.shown ? "border-transparent" : "border-dashed border-[color:var(--color-border)]",
       )}
       data-testid="first-goal"
