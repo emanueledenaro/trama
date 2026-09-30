@@ -2752,6 +2752,11 @@ await themeShots("15c-status-line-paused");
       for (const dark of [false, true]) {
         await setLookTo(provider, dark);
         await shot(`38-button-rule-${width}x${height}-${provider}-${dark ? "dark" : "light"}`);
+        // Design rules, chat: no filled button in the timeline or in the composer, the window's one is Aspetta te's.
+        const chatFilled = await page
+          .locator('.chat-timeline-scroll button[data-variant="default"], form.chat-composer-surface button[data-variant="default"]')
+          .evaluateAll((buttons) => buttons.filter((b) => b.dataset.filled !== "false" && b.getBoundingClientRect().width > 0).map((b) => b.textContent.trim()));
+        if (chatFilled.length) throw new Error(`The chat has a filled button at ${width}x${height}: ${chatFilled.join(", ")}`);
       }
     }
   }
@@ -5060,6 +5065,8 @@ await app.close();
   await beside.waitFor({ state: "detached" });
   const connect = page.getByTestId("composer-connect-provider");
   await connect.waitFor();
+  // Design rules, chat: the composer's Collega is a primary drawn as an outline, the window has no filled button here.
+  if ((await connect.getAttribute("data-filled")) !== "false") throw new Error("The composer's Collega a provider is a filled button");
   if (await page.getByRole("button", { name: "Invia al Coordinatore" }).count()) throw new Error("The composer sends without a provider");
   const warning = page.getByTestId("status-setup");
   await warning.waitFor();
