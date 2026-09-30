@@ -443,6 +443,7 @@ export const it = {
   "focus.start.cancel": "Annulla",
   "focus.start.submit": "Avvia l'esame",
   "focus.summary": "Sintesi",
+  "focus.verdict": "Verdetto dell'esame",
   "focus.lens.report": "Rapporto della lente {lens}",
   "focus.column.progress": "Avanzamento",
   "focus.column.findings": "Rilievi",
@@ -549,6 +550,7 @@ export const it = {
   "audit.finding.tradeOffHint": "Il rilievo è un compromesso: diventa una domanda del Patto.",
   "audit.finding.assign": "Affida la correzione",
   "audit.finding.assignHint": "Uno sviluppatore libero corregge il rilievo, solo dentro il mandato.",
+  "audit.finding.proof": "Prova:",
   "audit.finding.issueLink": "Issue {number} su GitHub",
   "audit.finding.backlogLink": "Nel {backlog}, senza GitHub",
   "audit.finding.backlogName": "backlog di Trama",
@@ -854,6 +856,8 @@ export const it = {
   "architecture.strength.speculative": "ipotesi",
   // Memory view (issue #335)
   "memory.title": "Cosa ricorda il Coordinatore",
+  "memory.intro.toggle": "Cos'è questa memoria",
+  "memory.loading": "Sto caricando la memoria del progetto.",
   "memory.intro":
     "Note sul progetto, un profilo di come lavori e le procedure che funzionano, dette skill. Tutto resta nella cartella di Trama, mai nel repository, e qui puoi correggere o togliere ogni cosa. Sono note del Coordinatore: le decisioni restano quelle del Patto.",
   "memory.waiting": "{count} proposte aspettano te: {what}",
