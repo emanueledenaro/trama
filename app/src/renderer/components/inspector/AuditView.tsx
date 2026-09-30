@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
+import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
 export const STATUS_TEXT: Record<FocusAudit["status"], MessageKey> = {
@@ -112,7 +113,7 @@ function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; a
         <span className="text-ui-sm text-foreground">{finding.title}</span>
       </div>
       <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
-        Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</span> : evidenceLabel(t, evidence)}
+        {t("audit.finding.proof")} {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</span> : evidenceLabel(t, evidence)}
       </p>
       {evidence?.kind === "reproduction" ? <p className="whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p> : null}
       {finding.basis || finding.observed ? (
@@ -242,7 +243,7 @@ function Publication({ audit }: { audit: FocusAudit }) {
   const setInspector = useUi((s) => s.setInspector);
   const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
   return (
-    <div className="mt-3">
+    <div className="mt-4">
       <h5 className="mb-1 text-ui-sm font-medium text-muted-foreground">{t("audit.publication.title")}</h5>
       {audit.publication ? (
         <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
@@ -275,7 +276,7 @@ function AuditBody({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
   return (
     <>
       <Verdict audit={audit} />
-      <div className="mt-3 space-y-3">
+      <div className="mt-4 space-y-4">
         <div>
           <h5 className="mb-1 text-ui-sm font-medium text-muted-foreground">{t("audit.checks")}</h5>
           <div className="space-y-0.5" data-testid="focus-audit-checks">
@@ -370,7 +371,7 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
   }
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-4 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
       <div className="mb-2 flex items-center gap-2">
         <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
         {action}
@@ -403,7 +404,7 @@ function ScopedAuditSection({ audit }: { audit: FocusAudit }) {
   const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
   const running = isRunning(audit);
   return (
-    <section className="px-4 py-3" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
+    <section className="px-4 py-4" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
           {t("audit.title")} {focusTargetOf(t, audit.target)}
@@ -419,9 +420,11 @@ function ScopedAuditSection({ audit }: { audit: FocusAudit }) {
               <IconRotateClockwise /> {t("audit.again")}
             </Button>
           )}
-          <Button size="xs" onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
-            <IconFocus2 /> {t("focus.openFullScreen")}
-          </Button>
+          <Tooltip label={t("focus.openFullScreen")}>
+            <Button size="icon-sm" variant="outline" className="size-8" aria-label={t("focus.openFullScreen")} onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
+              <IconFocus2 />
+            </Button>
+          </Tooltip>
         </div>
       </div>
       <AuditBody audit={audit} checks={audit.checks.map((c) => c.check)} />

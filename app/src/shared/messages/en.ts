@@ -498,6 +498,7 @@ export const en: Record<keyof typeof it, string> = {
   "audit.finding.tradeOffHint": "The finding is a trade-off: it becomes a Pact question.",
   "audit.finding.assign": "Assign the fix",
   "audit.finding.assignHint": "A free developer fixes the finding, only within the mandate.",
+  "audit.finding.proof": "Proof:",
   "audit.finding.issueLink": "Issue {number} on GitHub",
   "audit.finding.backlogLink": "In {backlog}, without GitHub",
   "audit.finding.backlogName": "Trama's backlog",

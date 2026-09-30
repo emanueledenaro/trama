@@ -4081,6 +4081,11 @@ const auditVisibleText = await focusAudit.innerText();
 if (/Skill ricevute|git diff [0-9a-f]{7}|gpt-5\.5/.test(auditVisibleText)) throw new Error(`The examination shows technical lines to the person: ${auditVisibleText}`);
 const againButton = focusAudit.getByRole("button", { name: "Esamina di nuovo" });
 if (!(await againButton.locator("svg").count())) throw new Error("Esamina di nuovo has no icon");
+// Design rules: the examination has no filled button (the window's one is in Aspetta te), its blocks sit on the 16 px
+// step, and its findings read "Prova:" from the catalog.
+if (await focusAudit.locator('button[data-variant="default"]').count()) throw new Error("The examination has a filled button");
+const auditPadding = await focusAudit.evaluate((el) => getComputedStyle(el).paddingTop);
+if (auditPadding !== "16px") throw new Error(`The examination's blocks are not on the 16 px step: ${auditPadding}`);
 await focusAudit.evaluate((el) => el.querySelectorAll("details").forEach((d) => (d.open = true)));
 for (const check of ["swift_build", "swift_test"]) {
   await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
