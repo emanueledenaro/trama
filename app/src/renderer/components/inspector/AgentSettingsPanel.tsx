@@ -316,7 +316,8 @@ function NameField({ specialist, save }: { specialist: Specialist; save: Save })
     void save(() => window.trama.invoke("specialist:rename", { specialistId: specialist.id, name: next }));
   };
   const inputId = `${specialist.id}-name`;
-  const problem = taken ? t("teams.rename.taken") : fixedName ? t("teams.rename.fixedName") : null;
+  // A fixed role's name is also taken by that role: both reasons are said, each on its own line.
+  const problems = [taken ? t("teams.rename.taken") : null, fixedName ? t("teams.rename.fixedName") : null].filter((text) => text !== null);
   return (
     <div data-testid="rename-specialist">
       <label htmlFor={inputId} className="text-ui-xs text-muted-foreground">
@@ -326,7 +327,7 @@ function NameField({ specialist, save }: { specialist: Specialist; save: Save })
         id={inputId}
         className="mt-2"
         aria-label={t("teams.rename.label")}
-        aria-invalid={problem ? true : undefined}
+        aria-invalid={problems.length ? true : undefined}
         disabled={fixed}
         value={name}
         onChange={(event) => setName(event.target.value)}
@@ -339,10 +340,14 @@ function NameField({ specialist, save }: { specialist: Specialist; save: Save })
       />
       {fixed ? (
         <p className="mt-2 text-ui-xs text-muted-foreground">{t("teams.look.nameFixed")}</p>
-      ) : problem ? (
-        <p className="mt-2 text-ui-sm text-destructive" role="alert">
-          {problem}
-        </p>
+      ) : problems.length ? (
+        <div className="mt-2 flex flex-col gap-1" role="alert">
+          {problems.map((problem) => (
+            <p key={problem} className="text-ui-sm text-destructive">
+              {problem}
+            </p>
+          ))}
+        </div>
       ) : (
         <p className="mt-2 text-ui-xs text-muted-foreground" title={specialist.id}>
           {t("team.rename.followsName")}

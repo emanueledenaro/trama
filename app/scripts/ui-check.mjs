@@ -1320,7 +1320,8 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
       return { below: ask.top >= brief.bottom, right: Math.abs(row.right - ask.right) <= 1, text: el.querySelector("button").innerText.trim(), icon: Boolean(el.querySelector("button svg")) };
     });
     if (!askBox.below || !askBox.right || askBox.text !== "Chiedi" || !askBox.icon) throw new Error(`Ask is not right, under the summary, with icon and text: ${JSON.stringify(askBox)}`);
-    if (await detail.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The person's page has a filled button: the window has only the one of Aspetta te");
+    // The header, Ask and the settings have no filled button: the window's one is the one of Aspetta te.
+    if (await detail.locator('[data-testid="specialist-header"] button[data-variant="default"]:not([data-filled="false"]), [data-testid="specialist-ask"] button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The person's header or Ask has a filled button");
     // The model is written in a small note in the header, so the settings need not be opened to know it.
     await detail.getByTestId("specialist-header").getByTestId("specialist-model-note").getByText(/^Modello: /).waitFor();
     const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
@@ -1346,7 +1347,7 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await page.waitForTimeout(250);
     const gearHover = await gearStyle();
     if (gearHover.bg !== "rgba(0, 0, 0, 0)" || gearHover.border !== "0px" || gearHover.color === gearRest.color) throw new Error(`The gear does not only change color under the pointer: ${JSON.stringify([gearRest, gearHover])}`);
-    await page.getByRole("tooltip").getByText("Impostazioni dell'agente").waitFor();
+    await page.locator(".translucent-popup").getByText("Impostazioni dell'agente", { exact: true }).waitFor();
     await page.mouse.move(0, 0);
     if (await detail.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
     // UI wave of 29 September: at 1280x800 the tab covers the conversation and the work bar is its last row.
@@ -1432,6 +1433,7 @@ await agentPanel.waitFor();
 if ((await personTab.getByTestId("agent-settings-open").getAttribute("aria-expanded")) !== "true") throw new Error("The gear does not say the panel is open");
 if (await agentPanel.evaluate((el) => el.getBoundingClientRect().top < el.closest('[data-testid="specialist"]').querySelector('[data-testid="specialist-header"]').getBoundingClientRect().bottom)) throw new Error("The settings panel is not under the header");
 // Two parts, Modello and Aspetto, with a line between them; no Done and no Rename button.
+if (await agentPanel.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The settings panel has a filled button");
 await agentPanel.getByRole("heading", { name: "Modello", exact: true }).waitFor();
 await agentPanel.getByRole("heading", { name: "Aspetto", exact: true }).waitFor();
 if ((await agentPanel.locator("hr").count()) !== 1) throw new Error("The panel does not separate the model from the look with a line");

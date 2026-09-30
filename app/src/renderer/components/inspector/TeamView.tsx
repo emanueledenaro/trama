@@ -688,6 +688,11 @@ function AgentBriefRows({ specialist }: { specialist: Specialist }) {
  * and the look, saved as they change.
  */
 export function SpecialistView({ id }: { id: string }) {
+  // Keyed by the person, so the open panel, the removal step and the folds never carry over to the next person.
+  return <SpecialistPage key={id} id={id} />;
+}
+
+function SpecialistPage({ id }: { id: string }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const askCoordinator = useUi((s) => s.askCoordinator);
