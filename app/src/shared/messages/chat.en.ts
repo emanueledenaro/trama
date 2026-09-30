@@ -461,6 +461,7 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.view.intro": "{files} files in {count} modules. Write to the Coordinator to start.",
   "chat.view.intro.one": "{files} files in {count} module. Write to the Coordinator to start.",
   "chat.view.retry": "Try again",
+  "chat.view.write": "Write to the Coordinator",
   "chat.view.firstGoal": "Write the first goal",
   "chat.view.firstGoalHint": "Describe a result and a few examples you can check: the Coordinator discusses it with you in this chat, filtered on the goal. It does not grant a mandate.",
   "chat.view.queued": "Queued: it leaves when the Coordinator finishes",

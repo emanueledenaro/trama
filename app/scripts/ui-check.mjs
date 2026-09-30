@@ -449,6 +449,26 @@ const settingsRules = async (where) => {
   if (found.small.length) throw new Error(`${where}: click areas under 32 px in Impostazioni: ${found.small}`);
   if (found.left.length) throw new Error(`${where}: actions not on the right of their row: ${found.left}`);
 };
+// Design rules for Lavoro: an action that only opens or navigates is an icon (no text, an accessible name and a tooltip
+// on hover) with at least 32 px of use area; an action that starts work is an icon and a text; none is a filled button.
+const expectIconOnly = async (button, where) => {
+  const info = await button.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return { text: node.innerText.trim(), icon: Boolean(node.querySelector("svg")), label: node.getAttribute("aria-label"), width: box.width, height: box.height, filled: node.dataset.filled };
+  });
+  if (info.text || !info.icon || !info.label) throw new Error(`${where}: not an icon with an accessible name: ${JSON.stringify(info)}`);
+  if (info.width < 32 || info.height < 32) throw new Error(`${where}: the icon's use area is ${info.width}x${info.height}, under 32 px`);
+  await button.hover();
+  await page.locator(".translucent-popup").filter({ hasText: info.label }).first().waitFor({ timeout: 5_000 }).catch(() => {
+    throw new Error(`${where}: no tooltip on hover`);
+  });
+  await page.mouse.move(0, 0);
+};
+const expectIconAndText = async (button, where) => {
+  const info = await button.evaluate((node) => ({ text: node.innerText.trim(), icon: Boolean(node.querySelector("svg")), variant: node.dataset.variant, filled: node.dataset.filled }));
+  if (!info.text || !info.icon) throw new Error(`${where}: not an icon with a text: ${JSON.stringify(info)}`);
+  if (info.variant === "destructive") throw new Error(`${where}: a red button outside a confirmation`);
+};
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
@@ -581,6 +601,18 @@ const setTheme = async (theme) => {
 // Progetti and Impostazioni. It has four blocks: Inizia, Recenti, Configura and Impara.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.getByRole("heading", { name: block, exact: true }).waitFor();
+// Design rules: without recents Inizia comes first, and with reduced motion the page enters without animating.
+{
+  const order = await page.evaluate(() => ({
+    recent: document.querySelector('[data-testid="welcome-recent"]').getBoundingClientRect().top,
+    start: document.querySelector('[data-testid="welcome-start"]').getBoundingClientRect().top,
+  }));
+  if (order.start > order.recent) throw new Error(`Without recents, Inizia is not above Recenti: ${JSON.stringify(order)}`);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const entrance = await welcome.evaluate((node) => getComputedStyle(node).animationName);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  if (entrance !== "none") throw new Error(`The Benvenuto animates its entrance with reduced motion: ${entrance}`);
+}
 // Recenti, empty (design rules, four states): a message and the way to a first project, an outline: the filled button of
 // the Benvenuto is the one of Inizia. The message no longer repeats the ways to start.
 const recentEmpty = welcome.getByTestId("recent-empty");
@@ -822,13 +854,45 @@ if ((await page.getByTestId("welcome").count()) !== 1) throw new Error("More tha
 // and the Benvenuto gives way to the conversation (issue #354, decisions 5 and 9).
 const learn = welcome.getByTestId("welcome-learn");
 if ((await learn.getByTestId("welcome-exercise").count()) !== 4) throw new Error("Impara does not list the four exercises");
+// Design rules: the state of an exercise is its number or check and its button, not a word beside a button that says the
+// same; the button starts work, so it has an icon and its text, 32 px high, an outline (the filled button is Inizia's).
+const exerciseRows = await learn.getByTestId("welcome-exercise").evaluateAll((nodes) =>
+  nodes.map((node) => {
+    const button = node.querySelector("button");
+    return { text: node.textContent, height: Math.round(button.getBoundingClientRect().height), icon: Boolean(button.querySelector("svg")), variant: button.dataset.variant };
+  }),
+);
+for (const row of exerciseRows) {
+  if (/Da fare|In corso|Fatto/.test(row.text)) throw new Error(`An exercise repeats its state beside its button: ${row.text}`);
+  if (row.height < 32 || !row.icon || row.variant !== "outline") throw new Error(`An exercise button is not an icon and text outline of 32 px: ${JSON.stringify(row)}`);
+}
 await learn.getByRole("button", { name: "Inizia: Conosci il progetto" }).click();
 await page.getByRole("complementary", { name: "Esercizio" }).waitFor({ timeout: 20_000 });
 await welcome.waitFor({ state: "detached" });
+// The panel of the exercise: close and tabs are at least 32 px, close is an icon with its name, a step does not repeat
+// its state, and every text comes from the catalog (it answers to the language chosen).
+{
+  const panel = page.getByRole("complementary", { name: "Esercizio" });
+  const close = panel.getByRole("button", { name: "Chiudi l'esercizio" });
+  if ((await close.innerText()).trim() !== "") throw new Error("The close button of the exercise has a text beside its icon");
+  const sizes32 = await panel.locator('button[data-icon-button], [role="tab"]').evaluateAll((nodes) => nodes.map((node) => Math.round(Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height))));
+  if (sizes32.length < 5 || sizes32.some((size) => size < 32)) throw new Error(`Close or a tab of the exercise is under 32 px: ${sizes32}`);
+  if (/Da fare|Fatto/.test(await panel.getByRole("list", { name: "Passi dell'esercizio" }).innerText())) throw new Error("A step of the exercise repeats its state");
+  const panelButtons = await panel.getByRole("list", { name: "Passi dell'esercizio" }).locator("button").evaluateAll((nodes) => nodes.filter((node) => node.dataset.variant).map((node) => Math.round(node.getBoundingClientRect().height)));
+  if (panelButtons.some((height) => height < 32)) throw new Error(`An action of the exercise is under 32 px: ${panelButtons}`);
+}
 await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// Design rules, chat: the icon-only copy buttons of the timeline have a tooltip as well as a name, and a turn of work
+// is 16 px above the next block (16, 24 or 32 between blocks).
+{
+  const copy = await page.locator('.chat-timeline-scroll button[aria-label^="Copia "]').evaluateAll((buttons) => buttons.map((b) => [b.getAttribute("aria-label"), b.getAttribute("title")]));
+  for (const [name, title] of copy) if (title !== name) throw new Error(`The chat button "${name}" has no tooltip: ${title}`);
+  const margins = await page.locator('[data-testid="work-line"]').evaluateAll((lines) => lines.map((l) => getComputedStyle(l).marginBottom));
+  for (const margin of margins) if (margin !== "16px") throw new Error(`A turn of work is ${margin} above the next block, not 16px`);
+}
 // Issue #330: the window laid out as VS Code, following the prototype B of issue #314. The activity bar picks the view,
 // the side bar shows it attached, the conversation is the editor and the status bar says what happens now.
 {
@@ -1423,22 +1487,53 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.waitFor();
     if ((await detailPane().getAttribute("aria-label")) !== "Persona della squadra") throw new Error("The detail is not titled Persona della squadra");
     await detail.getByTestId("specialist-now").waitFor();
-    // Critique of 29 September 2026: the page opens on its summary, and the settings come before the work.
+    // Design of 30 September, agent screen: header, situation (what holds it up, next move, Ask), the work now, one
+    // list of assignments; the settings are a gear in the header, not a section of the page.
     await detail.getByTestId("specialist-brief").getByTestId("brief-next").waitFor();
-    if (!(await detail.evaluate((el) => el.querySelector('[data-testid="specialist-settings"]').compareDocumentPosition(el.querySelector('[data-testid="specialist-now"]')) & Node.DOCUMENT_POSITION_FOLLOWING))) {
-      throw new Error("The person's settings do not come before the work");
-    }
+    const order = await detail.evaluate((el) => ["specialist-header", "specialist-brief", "specialist-now", "specialist-assignments"].map((id) => el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top));
+    if (!(order[0] < order[1] && order[1] < order[2] && order[2] < order[3])) throw new Error(`The person's page is not header, situation, work and assignments in this order: ${order}`);
+    // "Sta facendo" repeated the title of the Now card: the summary has no such row.
+    if ((await detail.getByTestId("brief-doing").count()) || (await detail.getByText("Sta facendo", { exact: true }).count())) throw new Error("The summary still repeats what the Now card says");
+    // One list of assignments, the latest result first; no section of its own for it.
+    await detail.getByRole("heading", { name: /^Incarichi \(\d+\)$/ }).waitFor();
+    if (await detail.getByRole("heading", { name: "Ultimo risultato" }).count()) throw new Error("The last result still has a section of its own");
+    // The Ask button is on the right under the summary, with icon and text (it starts work), and it is not filled.
+    const askBox = await detail.getByTestId("specialist-ask").evaluate((el) => {
+      const ask = el.querySelector("button").getBoundingClientRect();
+      const brief = el.parentElement.querySelector('[data-testid="specialist-brief"]').getBoundingClientRect();
+      const row = el.getBoundingClientRect();
+      return { below: ask.top >= brief.bottom, right: Math.abs(row.right - ask.right) <= 1, text: el.querySelector("button").innerText.trim(), icon: Boolean(el.querySelector("button svg")) };
+    });
+    if (!askBox.below || !askBox.right || askBox.text !== "Chiedi" || !askBox.icon) throw new Error(`Ask is not right, under the summary, with icon and text: ${JSON.stringify(askBox)}`);
+    // The header, Ask and the settings have no filled button: the window's one is the one of Aspetta te.
+    if (await detail.locator('[data-testid="specialist-header"] button[data-variant="default"]:not([data-filled="false"]), [data-testid="specialist-ask"] button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The person's header or Ask has a filled button");
+    // The model is written in a small note in the header, so the settings need not be opened to know it.
+    await detail.getByTestId("specialist-header").getByTestId("specialist-model-note").getByText(/^Modello: /).waitFor();
     const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
     if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
     for (const fold of ["Perché è nella squadra", "Quando interviene"]) {
       if ((await detail.getByRole("button", { name: fold }).getAttribute("aria-expanded")) !== "false") throw new Error(`${fold} is not closed at first`);
     }
-    // Issue #455: the settings are in view, never folded, and the tab has no way back to the Squads view in its head.
-    await detail.getByTestId("specialist-settings").getByTestId("specialist-model-picker").waitFor();
-    // The look is one summary and one button in the settings; everything the person can change opens from it.
-    await detail.getByTestId("specialist-look").getByRole("button", { name: /^Personalizza l'aspetto di / }).waitFor();
-    if (await detail.getByTestId("specialist-look").getByRole("radiogroup").count()) throw new Error("The color palette is still spread in the settings");
+    // Modello e Aspetto are not in the page: the panel of the gear holds them, closed at first.
     if (await detail.getByRole("button", { name: "Colore", exact: true }).count()) throw new Error("The color still waits in a closed section");
+    if (await detail.getByTestId("specialist-settings").count()) throw new Error("The settings are still a section of the page");
+    if ((await detail.getByText("Personalizza aspetto").count()) || (await detail.getByTestId("agent-look-open").count())) throw new Error("The look still has its own button in the page");
+    if (await detail.getByTestId("agent-settings-panel").count()) throw new Error("The settings panel is open before the person asks");
+    // The gear is only an icon, with no box at rest and a color change under the pointer, with tooltip and name.
+    const gear = detail.getByTestId("agent-settings-open");
+    if ((await gear.getAttribute("aria-label")) !== "Impostazioni dell'agente" || (await gear.innerText()).trim()) throw new Error("The gear is not an icon named 'Impostazioni dell'agente'");
+    const gearStyle = () => gear.evaluate((el) => { const c = getComputedStyle(el); return { bg: c.backgroundColor, border: c.borderTopWidth, color: c.color, box: el.getBoundingClientRect() }; });
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(250);
+    const gearRest = await gearStyle();
+    if (gearRest.bg !== "rgba(0, 0, 0, 0)" || gearRest.border !== "0px") throw new Error(`The gear has a container at rest: ${JSON.stringify(gearRest)}`);
+    if (gearRest.box.width < 32 || gearRest.box.height < 32) throw new Error(`The gear is under 32 px: ${JSON.stringify(gearRest.box)}`);
+    await gear.hover();
+    await page.waitForTimeout(250);
+    const gearHover = await gearStyle();
+    if (gearHover.bg !== "rgba(0, 0, 0, 0)" || gearHover.border !== "0px" || gearHover.color === gearRest.color) throw new Error(`The gear does not only change color under the pointer: ${JSON.stringify([gearRest, gearHover])}`);
+    await page.locator(".translucent-popup").getByText("Impostazioni dell'agente", { exact: true }).waitFor();
+    await page.mouse.move(0, 0);
     if (await detail.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
     // UI wave of 29 September: at 1280x800 the tab covers the conversation and the work bar is its last row.
     await workBarPlace(`the person's tab at ${size}`, width === 1280 ? "tab" : "composer");
@@ -1501,50 +1596,93 @@ await expectNoRawIds(personTab.getByTestId("specialist-header"), "The specialist
 if ((await personTab.getByTestId("specialist").getAttribute("data-specialist-id")) !== developerId || (await personTab.getByTestId("specialist-header").getAttribute("title")) !== developerId) throw new Error(`The developer's id is not on hover: ${developerId}`);
 const personMenu = await openMenu(personTab.getByRole("button", { name: "Altre azioni", exact: true }));
 await personMenu.getByRole("menuitem", { name: "Togli dalla squadra" }).waitFor();
-await personMenu.getByRole("menuitem", { name: "Rinomina", exact: true }).click();
-const rename = personTab.getByTestId("rename-specialist");
-await rename.getByLabel("Nuovo nome").fill("Clean Code");
-await rename.getByText("È il nome di un ruolo fisso").waitFor();
-if (await rename.getByRole("button", { name: "Rinomina" }).isEnabled()) throw new Error("A fixed role's name can be chosen");
-await rename.getByLabel("Nuovo nome").fill("Giulia");
-const renameButtons = await rename.locator(".cta-row button").allTextContents();
-if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not the last call to action: ${renameButtons}`);
+// Design of 30 September: the menu keeps only the destructive actions; Rename moved into the settings panel.
+if ((await personMenu.getByRole("menuitem").count()) !== 1 || (await personMenu.getByRole("menuitem", { name: "Rinomina" }).count())) throw new Error("The menu of more actions has more than the destructive action");
+// Removing asks for the reason, and the full red is only in that confirm step.
+if (await personTab.locator('button[data-variant="destructive"]').count()) throw new Error("A destructive button shows before the confirm step");
+await personMenu.getByRole("menuitem", { name: "Togli dalla squadra" }).click();
+const removeStep = personTab.getByTestId("remove-specialist");
+await removeStep.getByRole("button", { name: /^Togli / }).waitFor();
+if (await removeStep.getByRole("button", { name: /^Togli / }).isEnabled()) throw new Error("Removing does not wait for the reason");
+if ((await removeStep.getByRole("button", { name: /^Togli / }).getAttribute("data-variant")) !== "destructive") throw new Error("The confirm step is not the destructive one");
+await removeStep.getByRole("button", { name: "Annulla" }).click();
+await removeStep.waitFor({ state: "detached" });
+// The settings panel opens under the header from the gear, and from the avatar too.
+const agentPanel = personTab.getByTestId("agent-settings-panel");
+await personTab.getByTestId("agent-settings-avatar").click();
+await agentPanel.waitFor();
+await personTab.getByTestId("agent-settings-avatar").click();
+await agentPanel.waitFor({ state: "detached" });
+await personTab.getByTestId("agent-settings-open").click();
+await agentPanel.waitFor();
+if ((await personTab.getByTestId("agent-settings-open").getAttribute("aria-expanded")) !== "true") throw new Error("The gear does not say the panel is open");
+if (await agentPanel.evaluate((el) => el.getBoundingClientRect().top < el.closest('[data-testid="specialist"]').querySelector('[data-testid="specialist-header"]').getBoundingClientRect().bottom)) throw new Error("The settings panel is not under the header");
+// Two parts, Modello and Aspetto, with a line between them; no Done and no Rename button.
+if (await agentPanel.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The settings panel has a filled button");
+await agentPanel.getByRole("heading", { name: "Modello", exact: true }).waitFor();
+await agentPanel.getByRole("heading", { name: "Aspetto", exact: true }).waitFor();
+if ((await agentPanel.locator("hr").count()) !== 1) throw new Error("The panel does not separate the model from the look with a line");
+if ((await agentPanel.getByRole("button", { name: "Fatto" }).count()) || (await agentPanel.getByRole("button", { name: "Rinomina" }).count())) throw new Error("The panel has a Done or Rename button: changes save at once");
+await agentPanel.getByTestId("agent-look-preview").getByText("Come si vede").waitFor();
+await agentPanel.getByTestId("agent-look-preview-chat").waitFor();
+await agentPanel.getByTestId("agent-look-preview-list").waitFor();
+// W13: the person renames the developer from the name field; a fixed role's name is refused, and the name saves on Enter.
+const nameField = agentPanel.getByLabel("Nuovo nome");
+await nameField.fill("Clean Code");
+await agentPanel.getByText("È il nome di un ruolo fisso").waitFor();
+await nameField.blur();
+await page.waitForTimeout(400);
+if (await personTab.getByRole("heading", { name: "Clean Code" }).count()) throw new Error("A fixed role's name can be chosen");
+await nameField.fill("Giulia");
 await shot("04e3-team-rename");
-await rename.getByRole("button", { name: "Rinomina" }).click();
+await nameField.press("Enter");
 await personTab.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
+await agentPanel.getByTestId("agent-settings-saved").getByText("Salvato").waitFor();
 // The id stays the same after the rename.
 await personTab.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // The tab takes the new name too.
 await page.locator('[data-testid="editor-tab"][data-selected="true"]').getByText("Giulia", { exact: true }).waitFor();
-// W15: the person picks another color; only the avatar and the tag take it. The color is in the settings, in view (issue #455).
-await personTab.getByTestId("agent-look-open").click();
-const lookPanel = page.getByRole("dialog");
-await lookPanel.getByTestId("agent-look-panel").waitFor();
-await lookPanel.getByTestId("agent-look-preview").waitFor();
-await lookPanel.getByRole("heading", { name: "Nome" }).waitFor();
+// W15: the person picks another color, as the bot in that color with its name on hover and as its accessible name; only the avatar and the tag take it.
+const colorGroup = agentPanel.getByRole("radiogroup");
+if ((await colorGroup.getAttribute("aria-labelledby")) === null) throw new Error("The color group has no name");
 await shot("04e4a-agent-look-panel");
-await lookPanel.getByRole("radio", { name: "Rame" }).click();
-await lookPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
+await agentPanel.getByRole("radio", { name: "Rame" }).click();
+await agentPanel.locator('[role="radio"][aria-checked="true"][aria-label="Rame"]').waitFor({ timeout: 20_000 });
+// The ring fades in and out with a transition: measure it once it has settled.
+await page.waitForTimeout(600);
+const chips = await colorGroup.getByRole("radio").evaluateAll((all) => all.map((el) => ({ name: el.getAttribute("aria-label") ?? "", bot: el.children.length > 0, height: el.getBoundingClientRect().height, ring: getComputedStyle(el).boxShadow, checked: el.getAttribute("aria-checked") })));
+if (chips.some((chip) => !chip.name || !chip.bot || chip.height < 32)) throw new Error(`A color lacks its bot, its accessible name or 32 px: ${JSON.stringify(chips)}`);
+// Only the chosen color has the ring.
+const chosenChips = chips.filter((chip) => chip.checked === "true");
+if (chosenChips.length !== 1 || chips.filter((chip) => chip.ring !== "none").length !== 1 || chosenChips[0].ring === "none") throw new Error(`Only the chosen color has the ring: ${JSON.stringify(chips)}`);
+await agentPanel.getByTestId("agent-settings-saved").getByText("Salvato").waitFor();
 await shot("04e4-team-color");
-await lookPanel.getByRole("button", { name: "Fatto" }).click();
-await lookPanel.waitFor({ state: "detached" });
-// The summary follows the color the person chose.
-await personTab.getByTestId("agent-look-summary").getByText("Colore: Rame").waitFor();
+// The panel closes with its X, with Escape and with the gear again, and it opens again on the saved color.
+await agentPanel.getByRole("button", { name: "Chiudi le impostazioni" }).click();
+await agentPanel.waitFor({ state: "detached" });
+await personTab.getByTestId("agent-settings-open").click();
+await agentPanel.waitFor();
+await agentPanel.locator('[role="radio"][aria-checked="true"][aria-label="Rame"]').waitFor();
+await page.keyboard.press("Escape");
+await agentPanel.waitFor({ state: "detached" });
+await personTab.getByTestId("agent-settings-open").click();
+await agentPanel.waitFor();
 // Issue #455: the head carries no way back; the squad stays written under the name.
 await personTab.getByTestId("specialist-squad").getByText(/^Squadra .+, sviluppatore\.$/).waitFor();
 if (await personTab.getByRole("button", { name: "Squadre", exact: true }).count()) throw new Error("The person's tab still shows the way back to the Squads view");
-// Issue #455: the person chooses the developer's model with the composer's picker; it holds for the next assignments.
-const agentSettings = personTab.getByTestId("specialist-settings");
-const agentModel = agentSettings.getByTestId("specialist-model-picker");
+// Issue #455: the person chooses the developer's model with the composer's picker, in the panel; it holds for the next assignments.
+const agentModel = agentPanel.getByTestId("specialist-model-picker");
 if (!(await agentModel.innerText()).includes("Sceglie il Coordinatore")) throw new Error(`The developer's model does not say the Coordinator chooses: ${await agentModel.innerText()}`);
+await personTab.getByTestId("specialist-header").getByTestId("specialist-model-note").getByText("Modello: scelto dal Coordinatore").waitFor();
 if ((await agentModel.getAttribute("aria-label")) !== "Provider, modello e sforzo di Giulia") throw new Error(`The developer's model picker is not named for Giulia: ${await agentModel.getAttribute("aria-label")}`);
 await agentModel.click();
 await page.getByRole("option", { name: /GPT-5\.5 Fast/ }).click();
 await agentModel.getByText("GPT-5.5 Fast").waitFor({ timeout: 20_000 });
-await agentSettings.getByText("Vale per i prossimi incarichi di Giulia. L'incarico in corso non cambia.").waitFor();
-const settingsButtons = await agentSettings.locator("button").allTextContents();
+await agentPanel.getByText("Vale per i prossimi incarichi di Giulia. L'incarico in corso non cambia.").waitFor();
+await personTab.getByTestId("specialist-header").getByTestId("specialist-model-note").getByText("Modello: GPT-5.5 Fast").waitFor();
+const settingsButtons = await agentPanel.locator("button").allTextContents();
 if (!settingsButtons.some((text) => text.trim() === "Lascia scegliere al Coordinatore")) throw new Error(`The developer's model cannot go back to the Coordinator: ${settingsButtons}`);
-await agentSettings.scrollIntoViewIfNeeded();
+await agentPanel.scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
   await shot(`04e5-agent-settings-${dark ? "dark" : "light"}`);
@@ -1558,8 +1696,14 @@ await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle re
 await personTab.getByText("Quando interviene").waitFor();
 // Reopening a person brings back their tab: the fixed role takes a tab of its own, Giulia's stays one.
 if ((await page.locator('[data-testid="editor-tab"][data-tab^="detail:specialist:"]').count()) !== 2) throw new Error("A person of the team opened in more than one tab");
-// Rename and Remove are in the menu of more actions (issue #333): a fixed role has no such menu.
+// Remove is in the menu of more actions (issue #333): a fixed role has no such menu. It still has the gear: its model and
+// color can change, and its name field is off with the note that the name does not change.
 if (await personTab.getByRole("button", { name: "Altre azioni", exact: true }).count()) throw new Error("A fixed role offers to leave the team");
+await personTab.getByTestId("agent-settings-open").click();
+const fixedPanel = personTab.getByTestId("agent-settings-panel");
+await fixedPanel.waitFor();
+if (!(await fixedPanel.getByLabel("Nuovo nome").isDisabled())) throw new Error("A fixed role's name field is on");
+await fixedPanel.getByText("È un ruolo fisso del team: il nome non cambia.").waitFor();
 await shot("04e2-team-fixed-role");
 // W16: at the detail's narrowest width, with a long name, the header keeps the name on one line and the status whole.
 // Issue #336: the narrowest is the tab over the conversation at 720 px, next to the side bar.
@@ -1584,12 +1728,12 @@ await shot("04e2b-specialist-narrow");
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("04e2c-specialist-narrow-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-// Issue #455: at the narrowest width the settings fit the tab: the model picker and the palette stay inside it.
-const narrowSettings = personTab.getByTestId("specialist-settings");
+// Issue #455: at the narrowest width the settings fit the tab: the model picker, the chips and the name stay inside it.
+const narrowSettings = personTab.getByTestId("agent-settings-panel");
 await narrowSettings.scrollIntoViewIfNeeded();
 const settingsFit = await narrowSettings.evaluate((el) => {
   const tab = el.closest('[data-testid="editor-detail"]').getBoundingClientRect();
-  const parts = [el.querySelector('[data-testid="specialist-model-picker"]'), el.querySelector('[data-testid="agent-look-open"]')].map((part) => part.getBoundingClientRect());
+  const parts = [el.querySelector('[data-testid="specialist-model-picker"]'), ...el.querySelectorAll('[role="radio"]'), el.querySelector("input")].map((part) => part.getBoundingClientRect());
   return { inside: parts.every((box) => box.left >= tab.left - 0.5 && box.right <= tab.right + 0.5), overflow: el.scrollWidth > el.clientWidth + 1 };
 });
 if (!settingsFit.inside || settingsFit.overflow) throw new Error(`The agent's settings do not fit the narrow tab: ${JSON.stringify(settingsFit)}`);
@@ -2052,6 +2196,8 @@ await shot("04k-domain-proposal-written");
   };
   await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 95 }));
   const reordersBefore = await page.getByTestId("context-rollover").count();
+  // Design rules, composer: under the threshold there is no meter. The turns so far are far from 85%, the threshold minus 10 points.
+  if (await page.getByTestId("context-meter").count()) throw new Error("The composer shows the context meter well under the threshold");
   await composer().fill("[pieno] Quanto contesto resta?");
   await page.keyboard.press("Enter");
   await page.getByText("[pieno] Quanto contesto resta?", { exact: true }).waitFor();
@@ -2697,6 +2843,9 @@ if ((await archivedRow.getByTestId("goal-state").allTextContents()).join("|") !=
 await shot("14e-goal-archived");
 await inspectorPanel.getByRole("button", { name: new RegExp(goalTitle) }).click();
 // Issue #336: the goal opens in its editor tab.
+// Design rules: editing the expected result is an icon; an archived goal offers Ripristina as text and no Archivia.
+await expectIconOnly(detailPane().getByRole("button", { name: "Modifica", exact: true }), "Obiettivo, Modifica");
+if (await detailPane().getByRole("button", { name: "Archivia", exact: true }).count()) throw new Error("An archived goal offers Archivia");
 await detailPane().getByRole("button", { name: "Ripristina" }).click();
 await openView("Progetti");
 await page.getByTestId("sidebar-goal").filter({ hasText: goalTitle }).waitFor();
@@ -3470,7 +3619,21 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   await thread.locator('[data-testid="agent-thread-message"][data-event="forwarded"]').getByText("Tu, tramite il Coordinatore").waitFor({ timeout: 20_000 });
   await expectNoRawIds(thread.getByTestId("discussion-header"), "The discussion's header");
   await discussionShots("b-discussion-waiting");
-  await header.getByRole("button", { name: "Apri la domanda" }).click();
+  // Design of 30 September: opening the question is a way to another view, so it is an icon with its tooltip and a name,
+  // and each participant's row is at least 32 px tall.
+  const openQuestion = header.getByTestId("discussion-open-question");
+  if ((await openQuestion.innerText()).trim() || (await openQuestion.getAttribute("aria-label")) !== "Apri la domanda") throw new Error("Opening the question is not an icon named 'Apri la domanda'");
+  const openBox = await openQuestion.boundingBox();
+  if (!openBox || openBox.width < 32 || openBox.height < 32) throw new Error(`Opening the question is under 32 px: ${JSON.stringify(openBox)}`);
+  await openQuestion.hover();
+  await page.locator(".translucent-popup").getByText("Apri la domanda", { exact: true }).waitFor();
+  await page.mouse.move(0, 0);
+  const participantHeights = await thread.getByTestId("discussion-participants").locator("li").evaluateAll((rows) => rows.map((row) => Math.round(row.getBoundingClientRect().height)));
+  if (participantHeights.some((height) => height < 32)) throw new Error(`A participant's row is under 32 px: ${participantHeights}`);
+  // The box that says the discussion waits is 16 px below what comes before it.
+  const waitingGap = await thread.getByTestId("discussion-waiting").evaluate((box) => Math.round(box.getBoundingClientRect().top - box.previousElementSibling.getBoundingClientRect().bottom));
+  if (waitingGap < 16) throw new Error(`The waiting box is ${waitingGap} px from what comes before it, not 16`);
+  await openQuestion.click();
   const question = squadPanel.locator('[data-testid="waiting-item"]').filter({ hasText: "Un ordine annullato torna nel carrello?" });
   await question.waitFor({ timeout: 20_000 });
   await question.getByTestId("decision-from-discussion").getByText(/^Dalla discussione tra agenti/).waitFor();
@@ -3619,6 +3782,13 @@ const issuesPanel = page.getByTestId("side-bar");
 await issuesPanel.getByTestId("work-issue").filter({ hasText: "Il pulsante Annulla non fa niente" }).getByText("nessun lavoro").waitFor({ timeout: 30_000 });
 await issuesPanel.getByRole("button", { name: /Il pulsante Annulla non fa niente/ }).click({ timeout: 30_000 });
 // Issue #336: the issue opens in its editor tab.
+{
+  // Design rules: Apri su GitHub is an icon, Chiedi has icon and text, and the primary of the row stays last.
+  const issueActions = detailPane().and(page.locator('[data-kind="issue"]')).locator(".cta-row");
+  await expectIconOnly(issueActions.getByRole("button", { name: "Apri su GitHub" }), "Issue, Apri su GitHub");
+  await expectIconAndText(issueActions.getByRole("button", { name: "Chiedi al Coordinatore", exact: true }), "Issue, Chiedi");
+  await primaryLast(issueActions, "Issue");
+}
 await detailPane().and(page.locator('[data-kind="issue"]')).getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
 await expectAsked("@issue:7 «Il pulsante Annulla non fa niente»", "Issue, Chiedi al Coordinatore");
 if (await page.getByRole("button", { name: "Invia al Coordinatore" }).isDisabled()) throw new Error("The question about the issue cannot be sent");
@@ -3727,6 +3897,9 @@ for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open 
 await themeShots("29b-context-rollover-summary");
 await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
 const meter = page.getByTestId("context-meter");
+// The reordered context is small: the meter is hidden far from the threshold, so the check lowers it to see the meter.
+if (await meter.count()) throw new Error("The meter shows right after the reorder, far from the threshold");
+await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 5 }));
 await meter.waitFor({ timeout: 30_000 });
 if (!/^\d+%$/.test((await meter.innerText()).trim())) throw new Error(`The meter shows more than the percent: ${await meter.innerText()}`);
 if (!/ su [\d.]+ token$/.test((await meter.getAttribute("title")) ?? "")) throw new Error("The meter has no tokens on hover");
@@ -3749,6 +3922,7 @@ const reordersSoFar = await page.getByTestId("context-rollover").count();
 await reorderNow.click();
 await page.getByTestId("context-rollover").nth(reordersSoFar).waitFor({ timeout: 30_000 });
 await page.keyboard.press("Escape").catch(() => undefined);
+await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 80 }));
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
@@ -3816,11 +3990,13 @@ await closePanels();
   const brief = adaPage.getByTestId("specialist-brief");
   await brief.waitFor();
   if ((await brief.getAttribute("data-sign")) !== "stopped") throw new Error("The summary of a stopped person does not say it is stopped");
-  await brief.getByTestId("brief-doing").getByText("Documenta l'annullamento").waitFor();
+  // What it does is the Now card; the summary does not repeat it.
+  await adaPage.getByTestId("specialist-now").getByTestId("assignment-detail-toggle").waitFor();
+  if (await brief.getByTestId("brief-doing").count()) throw new Error("The summary repeats what the Now card says");
   await brief.getByTestId("brief-blocker").getByText("Fermato dalla persona").waitFor();
   await brief.getByTestId("brief-next").getByText("Riprendilo dalla scheda qui sotto, o chiedi al Coordinatore.").waitFor();
-  const tops = await adaPage.evaluate((el) => ["specialist-brief", "specialist-settings", "specialist-now"].map((id) => el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top));
-  if (!(tops[0] < tops[1] && tops[1] < tops[2])) throw new Error(`The person's page is not summary, settings and work in this order: ${tops}`);
+  const tops = await adaPage.evaluate((el) => ["specialist-brief", "specialist-now", "specialist-assignments"].map((id) => el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top));
+  if (!(tops[0] < tops[1] && tops[1] < tops[2])) throw new Error(`The person's page is not summary, work and assignments in this order: ${tops}`);
   const adaNow = adaPage.getByTestId("specialist-now");
   const detailToggle = adaNow.getByTestId("assignment-detail-toggle");
   if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
@@ -5300,6 +5476,20 @@ if (await page.getByTestId("launch-intro").count()) throw new Error("The launch 
 await page.evaluate(() => window.trama.invoke("project:close", undefined));
 const recentPicker = page.getByTestId("welcome").getByTestId("welcome-recent");
 await recentPicker.waitFor();
+// Design rules, order by importance: who comes back finds Recenti above Inizia, in the same column, wide and narrow.
+{
+  const above = () =>
+    page.evaluate(() => {
+      const top = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? null;
+      return { recent: top("welcome-recent"), start: top("welcome-start") };
+    });
+  for (const [size, width, height] of sizes) {
+    await page.setViewportSize({ width, height });
+    const order = await above();
+    if (order.recent === null || order.start === null || order.recent >= order.start) throw new Error(`With recents, Recenti is not above Inizia ${size}: ${JSON.stringify(order)}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
 await recentPicker.getByTestId("recent-project").filter({ hasText: /collega attivo|colleghi attivi/ }).first().waitFor({ timeout: 20_000 });
 if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played again without a first launch");
 if ((await recentPicker.getByTestId("recent-project").count()) > 5) throw new Error("Recenti lists more than five projects");
@@ -5533,6 +5723,11 @@ await primaryLast(reviewWork.locator(".cta-row"), "Lavoro automatico");
 const startBox = await startReview.boundingBox();
 const workBox = await reviewWork.boundingBox();
 if (!startBox || !workBox || workBox.x + workBox.width - (startBox.x + startBox.width) > 2) throw new Error("Avvia ora la revisione is not on the right");
+// Design of 30 September: Avvia starts work, so it is an icon with its text, at least 32 px tall, and not filled.
+if (startBox.height < 32) throw new Error(`Avvia is under 32 px: ${startBox.height}`);
+if ((await startReview.innerText()).trim() !== "Avvia" || !(await startReview.locator("svg").count())) throw new Error("Avvia is not an icon with its text");
+if ((await startReview.evaluate((el) => getComputedStyle(el).backgroundColor)) !== "rgba(0, 0, 0, 0)") throw new Error("Avvia is filled: the window has only the one of Aspetta te");
+if ((await reviewWork.evaluate((el) => getComputedStyle(el).paddingTop)) !== "8px") throw new Error("A row of the automatic work is not on the 8 px grid");
 await reviewWork.scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
@@ -6040,6 +6235,7 @@ if (await workBranch.getByTestId("work-divergence-files").count()) throw new Err
 await workBranch.getByRole("button", { name: "Mostra i 18 file in conflitto" }).click();
 await workBranch.getByTestId("work-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
 await workBranch.locator(".cta-row").getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).waitFor();
+await expectIconAndText(workBranch.locator(".cta-row").getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }), "Lavoro, Chiedi come riallineare");
 const ownPull = workView.getByTestId("work-pull").filter({ hasText: "#42 Spese di spedizione per zona" });
 await ownPull.getByText(/Bozza · CI in corso/).waitFor({ timeout: 20_000 });
 if ((await ownPull.getByRole("button", { name: "Apri su GitHub" }).innerText()).trim()) throw new Error("Lavoro: Apri su GitHub is not an icon");
