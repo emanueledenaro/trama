@@ -5026,7 +5026,7 @@ if (recentSizes.length < 2 || recentSizes.some((size) => size < 32)) throw new E
 const recentPath = recentPicker.getByTestId("recent-project").first().locator(".truncate.font-mono");
 if ((await recentPath.evaluate((node) => getComputedStyle(node).textOverflow)) !== "ellipsis") throw new Error("A recent path is not truncated");
 await recentPath.hover();
-await page.getByRole("tooltip").filter({ hasText: (await recentPath.innerText()).trim() }).waitFor();
+await page.locator(".translucent-popup").filter({ hasText: (await recentPath.innerText()).trim() }).waitFor();
 await page.mouse.move(0, 0);
 await allProjects.click();
 await page.locator('[data-testid="side-bar"][data-view="projects"]').waitFor();
