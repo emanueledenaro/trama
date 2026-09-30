@@ -1,6 +1,6 @@
 import { IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import { presenceLines, type PresenceView } from "@shared/presence";
-import { Toggle } from "@/components/ui/toggle";
+import { SwitchArea } from "@/components/settings/SwitchArea";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { act } from "@/lib/store";
@@ -49,7 +49,7 @@ export function PresenceControls({
           {t("settings.presence.switch")}
         </span>
       ) : null}
-      <Toggle label={t("settings.presence.switch")} checked={sharing} onChange={(share) => void act("presence:consent", { share, proposal: null })} />
+      <SwitchArea label={t("settings.presence.switch")} checked={sharing} onChange={(share) => void act("presence:consent", { share, proposal: null })} />
     </div>
   );
 }
