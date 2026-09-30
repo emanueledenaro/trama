@@ -2573,6 +2573,19 @@ await shot("09-mandate");
   await sideBarEnds("53b-rules-pact");
   await openView("Regole", "Standard");
   await sideBarEnds("53c-rules-standard");
+  // Design rules (Standard): a compact list, a rule at least 32 px with its description on request, no filled button.
+  {
+    const standardBar = page.getByTestId("clean-code-settings");
+    const firstRule = standardBar.getByTestId("standard-rule").first();
+    const ruleBox = await firstRule.boundingBox();
+    if (!ruleBox || ruleBox.height < 32 || ruleBox.height > 40) throw new Error(`A rule of the Standard is ${ruleBox?.height}px high, not a compact 32 px row`);
+    if ((await firstRule.getAttribute("data-open")) !== "false") throw new Error("A rule of the Standard is open by default");
+    await firstRule.getByRole("button", { expanded: false }).first().click();
+    if ((await firstRule.getAttribute("data-open")) !== "true") throw new Error("A rule of the Standard does not open its description");
+    await firstRule.getByRole("button", { expanded: true }).first().click();
+    if ((await standardBar.getByTestId("standard-about").getAttribute("data-open")) !== "false") throw new Error("The explanation of the Standard is not closed by default");
+    if (await standardBar.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The Standard has a filled button");
+  }
   // Cambia il mandato open: each button opens its form, nothing changes until the form is confirmed.
   await openView("Regole", "Mandato");
   await openSection("Cambia il mandato");
@@ -4408,6 +4421,9 @@ await themeShots("18d5-standard-settings-link");
 await standardSettings.getByTestId("standard-open-rules").click();
 await page.locator('[data-testid="side-bar"][data-view="rules"]').getByRole("tab", { name: "Standard", selected: true }).waitFor();
 const rules = page.getByTestId("side-bar").getByTestId("clean-code-settings");
+// The long explanation is a closed section (design rules): it opens on request.
+if ((await rules.getByTestId("standard-about").getAttribute("data-open")) !== "false") throw new Error("Su questo standard is not closed by default");
+await rules.getByRole("button", { name: "Su questo standard" }).click();
 await rules.getByText(/Robert C\. Martin/).waitFor();
 const solid = rules.getByRole("switch", { name: "SOLID" });
 await solid.click();

@@ -1595,6 +1595,7 @@ export const it = {
   "rules.pact.demo.blocker.EVIDENCE_STALE": "Le verifiche si riferiscono a una versione precedente.",
   "rules.pact.demo.blocker.CHECK_NOT_RUN": "La decisione modificata richiede un nuovo scenario eseguibile.",
   "rules.standard.summary": "{on} regole attive su {total}",
+  "rules.standard.about": "Su questo standard",
   "settings.standard.moved": "Lo standard del codice vale per il progetto aperto: le regole e l'adattamento stanno in Regole, nella scheda Standard.",
   "settings.standard.open": "Apri in Regole",
   "settings.section.learning": "Apprendimento",

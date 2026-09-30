@@ -1593,6 +1593,7 @@ export const en: Record<keyof typeof it, string> = {
   "rules.pact.demo.blocker.EVIDENCE_STALE": "The checks refer to an earlier version.",
   "rules.pact.demo.blocker.CHECK_NOT_RUN": "The changed decision needs a new executable scenario.",
   "rules.standard.summary": "{on} of {total} rules on",
+  "rules.standard.about": "About this standard",
   "settings.standard.moved": "The code standard applies to the open project: the rules and the fit to the project are in Rules, on the Standard tab.",
   "settings.standard.open": "Open in Rules",
   "settings.section.learning": "Learning",
