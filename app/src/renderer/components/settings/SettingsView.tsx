@@ -32,13 +32,13 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button, FilledScope } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
-import { Toggle } from "@/components/ui/toggle";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
 import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
+import { SwitchArea } from "@/components/settings/SwitchArea";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { PresenceControls, PresenceStatus } from "@/components/PresencePanel";
 
@@ -162,7 +162,7 @@ function Row({ label, description, control, children }: { label: React.ReactNode
 }
 
 function ToggleRow({ label, description, checked, onChange }: { label: string; description?: React.ReactNode; checked: boolean; onChange: (value: boolean) => void }) {
-  return <Row label={label} description={description} control={<Toggle checked={checked} onChange={onChange} label={label} />} />;
+  return <Row label={label} description={description} control={<SwitchArea checked={checked} onChange={onChange} label={label} />} />;
 }
 
 function GeneralSection() {
