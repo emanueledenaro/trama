@@ -623,8 +623,8 @@ for (const row of stepChrome) {
   if (row.height < 32) throw new Error(`The action of the step ${row.id} is under 32 px: ${JSON.stringify(row)}`);
 }
 await welcomeStep("language").getByTestId("language-choice").waitFor();
-// One filled button at most: the provider's, while it is to do.
-if ((await welcome.locator('button[data-variant="default"]').count()) > 1) throw new Error("The Benvenuto has more than one primary action");
+// One filled button at most: Apri un progetto's, while no project is open.
+if ((await welcome.locator('button[data-variant="default"]:not([data-filled="false"])').count()) > 1) throw new Error("The Benvenuto has more than one primary action");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
   for (const [label, theme] of themes) {
@@ -716,14 +716,22 @@ await welcome.locator('[data-step="aiHero"][data-status="done"]').waitFor();
 await shot("00e-welcome-aihero-chosen");
 await welcomeStep("aiHero").getByRole("button", { name: "Cambia", exact: true }).click();
 
-// Inizia, where the project picker of B02 went: open, create, clone and the example, as links at every size and theme.
-// The Benvenuto's one filled button stays the provider's: none here.
+// Inizia, where the project picker of B02 went: create, clone and the example as rows, "Apri un progetto" as the action on
+// the right. Without a project it is the Benvenuto's one filled button (design rules: one main action per view, never
+// two), so the provider's Collega is an outline there.
 const picker = welcome.getByTestId("welcome-start");
 const startLinks = await picker.getByTestId("welcome-start-actions").getByRole("button").allInnerTexts();
-for (const name of ["Apri un progetto", "Crea un progetto", "Clona da GitHub", "Progetto di esempio"]) {
+for (const name of ["Crea un progetto", "Clona da GitHub", "Progetto di esempio"]) {
   if (!startLinks.some((text) => text.startsWith(name))) throw new Error(`Inizia has no ${name}: ${startLinks}`);
 }
-if (await picker.locator('button[data-variant="default"]').count()) throw new Error("Inizia has a primary button");
+const openProject = picker.getByTestId("welcome-start-open").getByRole("button", { name: "Apri un progetto" });
+if ((await openProject.getAttribute("data-variant")) !== "default" || (await openProject.getAttribute("data-filled")) === "false") throw new Error("Apri un progetto is not the filled action");
+const filled = await welcome.locator('button[data-variant="default"]:not([data-filled="false"])').allInnerTexts();
+if (filled.length !== 1 || !filled[0].includes("Apri un progetto")) throw new Error(`Without a project the Benvenuto's one filled button is not Apri un progetto: ${filled}`);
+await primaryLast(picker.getByTestId("welcome-start-open"), "Inizia");
+const startRows = await picker.getByTestId("welcome-start-actions").getByRole("button").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+if (startRows.some((height) => height < 32)) throw new Error(`A way to start is under 32 px: ${startRows}`);
+if (await picker.locator('[style*="gradient"], [class*="gradient"]').count()) throw new Error("Inizia uses a gradient outside the tokens");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
   for (const [label, theme] of themes) {
@@ -5313,6 +5321,10 @@ await app.close();
     throw new Error("The Benvenuto did not open on the provider step");
   }
   await beside.locator('[data-provider-row="codex"]').waitFor();
+  // With a project open Apri un progetto is an outline: the window's filled button belongs to the work.
+  const openBeside = await beside.getByTestId("welcome-start-open").getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant");
+  if (openBeside === "default") throw new Error("Apri un progetto is a main action while a project is open");
+  if ((await beside.locator('button[data-variant="default"]:not([data-filled="false"])').count()) > 1) throw new Error("The Benvenuto beside the conversation has more than one filled button");
   for (const provider of ["codex", "claudeAgent"]) {
     for (const dark of [false, true]) {
       await setLookTo(provider, dark);
