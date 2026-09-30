@@ -60,17 +60,18 @@ export function StepRow({
         onClick={onToggle}
         disabled={!onToggle}
         aria-expanded={onToggle ? expanded : undefined}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-ui disabled:cursor-default"
+        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-ui disabled:cursor-default"
       >
         <span className="flex size-4 shrink-0 items-center justify-center">
           <StepIcon status={step.status} index={index} current={current} />
         </span>
         <span className={cn("min-w-0 flex-1 truncate", step.status === "done" ? "text-foreground/75" : "text-foreground")}>{step.title}</span>
         {step.optional ? <span className="shrink-0 text-ui-xs text-muted-foreground/70">{t("welcome.optional")}</span> : null}
-        <span className={cn("shrink-0 text-ui-xs", step.status === "done" ? "text-success" : "text-muted-foreground")}>{stepStatusLabel(t, step.status)}</span>
+        {/* A step done is its check, a step to do its number: the state is written only when it is something else. */}
+        {step.status !== "done" && step.status !== "pending" ? <span className="shrink-0 text-ui-xs text-muted-foreground">{stepStatusLabel(t, step.status)}</span> : null}
       </button>
       {expanded ? (
-        <div className="px-2.5 pb-2.5 pl-9">
+        <div className="px-2 pb-2 pl-8">
           <p className="text-ui-sm text-muted-foreground">{step.detail}</p>
           {children ? <div className="cta-row mt-2">{children}</div> : null}
         </div>

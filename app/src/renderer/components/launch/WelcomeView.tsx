@@ -5,7 +5,10 @@ import {
   IconFolder,
   IconFolderOpen,
   IconLayoutList,
+  IconPlayerPlay,
   IconPlus,
+  IconRefresh,
+  IconRotateClockwise,
   IconSchool,
   IconTarget,
   IconUsers,
@@ -25,8 +28,10 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { providerStatus } from "@/components/settings/SettingsView";
 import { Spinner } from "@/components/Spinner";
-import { Button } from "@/components/ui/button";
+import { useWaiting } from "@/components/WaitingView";
+import { Button, FilledScope } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -48,7 +53,7 @@ const EXERCISE_COPY: Record<ExerciseId, { title: MessageKey; lead: MessageKey }>
 function Block({ id, title, aside, children }: { id: string; title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section aria-labelledby={`welcome-${id}`} data-testid={`welcome-${id}`} className="min-w-0">
-      <div className="flex min-h-7 items-center gap-2 pb-1.5">
+      <div className="flex min-h-8 items-center gap-2 pb-2">
         <h2 id={`welcome-${id}`} className="min-w-0 flex-1 text-ui font-medium text-foreground">
           {title}
         </h2>
@@ -67,7 +72,7 @@ function StartLink({ icon, label, hint, onClick, disabled }: { icon: React.React
         type="button"
         disabled={disabled}
         onClick={onClick}
-        className="group/start flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] disabled:pointer-events-none disabled:opacity-50"
+        className="group/start flex min-h-8 w-full items-start gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] disabled:pointer-events-none disabled:opacity-50"
       >
         <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-[var(--color-text-accent)]">{icon}</span>
         <span className="min-w-0 flex-1">
@@ -79,6 +84,11 @@ function StartLink({ icon, label, hint, onClick, disabled }: { icon: React.React
   );
 }
 
+/**
+ * Inizia answers one question: how do I get to a project. The three other ways are rows; opening a folder is the action,
+ * on the right and last. It is the Benvenuto's one filled button while no project is open; with one open the window's
+ * filled button belongs to the work, so it is an outline.
+ */
 function StartBlock({ onClone }: { onClone: () => void }) {
   const t = useT();
   const app = useUi((s) => s.app)!;
@@ -89,18 +99,11 @@ function StartBlock({ onClone }: { onClone: () => void }) {
   return (
     <Block id="start" title={t("welcome.start.title")}>
       {app.loadingProject ? (
-        <p className="flex items-center gap-2 px-2 pb-1.5 text-ui-sm text-muted-foreground" role="status">
+        <p className="flex items-center gap-2 px-2 pb-2 text-ui-sm text-muted-foreground" role="status">
           <Spinner /> {t("welcome.start.opening", { name: app.loadingProject })}
         </p>
       ) : null}
       <ul className="space-y-0.5" data-testid="welcome-start-actions">
-        <StartLink
-          icon={<IconFolderOpen className="size-4" stroke={1.7} />}
-          label={t("welcome.start.open")}
-          hint={t("welcome.start.openHint")}
-          disabled={loading}
-          onClick={() => void act("project:openDialog", undefined)}
-        />
         <StartLink icon={<IconPlus className="size-4" stroke={1.7} />} label={t("welcome.start.create")} disabled={loading} onClick={() => setDialog("createProject")} />
         <StartLink icon={<IconBrandGithub className="size-4" stroke={1.7} />} label={t("welcome.start.clone")} disabled={loading} onClick={onClone} />
         <StartLink
@@ -119,11 +122,23 @@ function StartBlock({ onClone }: { onClone: () => void }) {
           />
         ) : null}
       </ul>
+      <div className="cta-row mt-4" data-testid="welcome-start-open">
+        <p className="mr-auto min-w-0 text-ui-xs text-muted-foreground">{t("welcome.start.openHint")}</p>
+        <Button variant={app.project ? "outline" : "default"} disabled={loading} onClick={() => void act("project:openDialog", undefined)}>
+          <IconFolderOpen className="size-4" stroke={1.7} />
+          {t("welcome.start.open")}
+        </Button>
+      </div>
     </Block>
   );
 }
 
-function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOverview | null }) {
+/** The state of a project's line while the summaries are read: a bar where the work and colleagues will be. */
+function RecentSkeleton() {
+  return <span className="mt-2 block h-3 w-32 animate-pulse rounded-sm bg-[var(--color-background-button-secondary)]" aria-hidden data-testid="recent-loading" />;
+}
+
+function RecentRow({ recent, entry, loading }: { recent: RecentProject; entry: ProjectOverview | null; loading: boolean }) {
   const t = useT();
   const language = useLanguage();
   const status = recentProjectStatus(t, entry);
@@ -134,11 +149,12 @@ function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOve
       <button
         type="button"
         onClick={() => void act("project:open", { path: recent.path })}
-        className="flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
+        className="flex min-h-8 w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
       >
         <IconFolder className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.6} />
         <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2 pr-6">
+          {/* The room on the right is the forget button's, so the time never sits under it. */}
+          <span className="flex items-baseline gap-2 pr-8">
             <span className="min-w-0 truncate text-ui text-[var(--color-text-accent)]">{name}</span>
             <span className="ml-auto shrink-0 text-ui-xs text-muted-foreground/70">
               {entry?.updatedAt
@@ -146,9 +162,10 @@ function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOve
                 : t("welcome.recent.opened", { ago: formatAgo(language, recent.lastOpenedAt) })}
             </span>
           </span>
-          <span className="block truncate font-mono text-ui-xs text-muted-foreground/70" title={recent.path}>
-            {recent.path}
-          </span>
+          {/* The path can be long: truncated, whole in the tooltip. */}
+          <Tooltip label={recent.path} side="bottom">
+            <span className="block truncate font-mono text-ui-xs text-muted-foreground/70">{recent.path}</span>
+          </Tooltip>
           {entry ? (
             <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-muted-foreground">
               <span className={cn("inline-flex items-center gap-1.5", busy && "text-[var(--color-text-accent)]")}>
@@ -162,28 +179,34 @@ function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOve
                 </span>
               ) : null}
             </span>
+          ) : loading ? (
+            <RecentSkeleton />
           ) : null}
         </span>
       </button>
-      <Tooltip label={t("welcome.recent.forget", { name })}>
-        <button
-          type="button"
-          aria-label={t("welcome.recent.forget", { name })}
-          onClick={() => void act("project:forgetRecent", { id: recent.id })}
-          className="sidebar-icon-button absolute top-1.5 right-1.5 size-5 opacity-0 group-hover/recent:opacity-100 focus-visible:opacity-100"
-        >
-          <IconX className="size-3" />
-        </button>
-      </Tooltip>
+      <IconButton
+        label={t("welcome.recent.forget", { name })}
+        icon={<IconX />}
+        size="icon"
+        onClick={() => void act("project:forgetRecent", { id: recent.id })}
+        className="absolute top-1 right-1 opacity-0 group-hover/recent:opacity-100 focus-visible:opacity-100"
+      />
     </li>
   );
 }
 
+/**
+ * Recenti answers one question: which project do I go back to. Four states: the rows (default), a bar under each
+ * project while its summary is read (loading), a message with the way to a first project (empty) and a message with
+ * a retry when the summaries cannot be read (error: the rows still open their project).
+ */
 function RecentBlock() {
   const t = useT();
   const app = useUi((s) => s.app)!;
   const openView = useUi((s) => s.openView);
   const [entries, setEntries] = useState<Map<string, ProjectOverview>>(new Map());
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const [attempt, setAttempt] = useState(0);
   const recents = app.recentProjects.slice(0, RECENT_COUNT);
   const hasRecents = recents.length > 0;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -198,7 +221,11 @@ function RecentBlock() {
     timer.current = setTimeout(
       () =>
         void act("overview:read", undefined).then((result) => {
-          if (live && result) setEntries(new Map(result.map((entry) => [entry.id, entry])));
+          if (!live) return;
+          if (result) {
+            setEntries(new Map(result.map((entry) => [entry.id, entry])));
+            setStatus("ready");
+          } else setStatus("failed");
         }),
       loaded.current ? 500 : 0,
     );
@@ -207,7 +234,7 @@ function RecentBlock() {
       live = false;
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [app, hasRecents]);
+  }, [app, hasRecents, attempt]);
 
   return (
     <Block
@@ -215,25 +242,42 @@ function RecentBlock() {
       title={t("welcome.recent.title")}
       aside={
         hasRecents ? (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 text-ui-sm text-[var(--color-text-accent)] hover:underline"
-            onClick={() => openView("projects")}
-          >
-            <IconLayoutList className="size-3.5" stroke={1.8} />
-            {t("welcome.recent.all")}
-          </button>
+          <IconButton label={t("welcome.recent.all")} icon={<IconLayoutList />} size="icon" onClick={() => openView("projects")} />
         ) : null
       }
     >
       {hasRecents ? (
-        <ul className="space-y-0.5">
-          {recents.map((recent) => (
-            <RecentRow key={recent.id} recent={recent} entry={entries.get(recent.id) ?? null} />
-          ))}
-        </ul>
+        <>
+          {status === "failed" ? (
+            <p className="flex items-center gap-2 px-2 pb-2 text-ui-sm text-destructive" role="alert" data-testid="recent-error">
+              <span className="min-w-0 flex-1">{t("welcome.recent.error")}</span>
+              <IconButton
+                label={t("welcome.recent.retry")}
+                icon={<IconRefresh />}
+                size="icon"
+                onClick={() => {
+                  setStatus("loading");
+                  setAttempt((n) => n + 1);
+                }}
+              />
+            </p>
+          ) : null}
+          <ul className="space-y-0.5">
+            {recents.map((recent) => (
+              <RecentRow key={recent.id} recent={recent} entry={entries.get(recent.id) ?? null} loading={status === "loading"} />
+            ))}
+          </ul>
+        </>
       ) : (
-        <p className="px-2 text-ui-sm text-muted-foreground">{t("welcome.recent.none")}</p>
+        <div className="space-y-3 px-2" data-testid="recent-empty">
+          <p className="text-ui-sm text-muted-foreground">{t("welcome.recent.none")}</p>
+          <div className="cta-row">
+            <Button variant="outline" onClick={() => void act("project:openDialog", undefined)}>
+              <IconFolderOpen className="size-4" stroke={1.7} />
+              {t("welcome.start.open")}
+            </Button>
+          </div>
+        </div>
       )}
     </Block>
   );
@@ -258,7 +302,14 @@ function ProviderList() {
               <ProviderIcon provider={id} className="size-4" />
               <span className="text-ui text-foreground">{provider.name}</span>
               {state?.checking ? <Spinner className="size-3" /> : null}
-              <span className="min-w-[6rem] flex-1 truncate text-ui-xs text-muted-foreground">{status.detail}</span>
+              {/* The provider's own words can be long: cut, whole in the tooltip. */}
+              {status.detail ? (
+                <Tooltip label={status.detail}>
+                  <span className="min-w-[6rem] flex-1 truncate text-ui-xs text-muted-foreground">{status.detail}</span>
+                </Tooltip>
+              ) : (
+                <span className="min-w-[6rem] flex-1" />
+              )}
               <Badge tone={status.tone}>{status.label}</Badge>
               {state?.account?.kind === "signedOut" ? (
                 <Button
@@ -287,7 +338,7 @@ function ProviderList() {
         type="button"
         aria-expanded={others}
         onClick={() => setOthers(!others)}
-        className="mt-1.5 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+        className="-ml-2 mt-2 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-ui-sm text-muted-foreground hover:text-foreground"
       >
         {others ? t("welcome.onlyMainProviders") : t("welcome.otherProviders", { count: PROVIDERS.length - MAIN_PROVIDERS.length })}
         <IconChevronDown className={cn("size-3.5 transition-transform", others && "rotate-180")} stroke={1.8} />
@@ -308,8 +359,9 @@ function StepBody({ step }: { step: StepState }) {
   const cloneWaiting = useUi((s) => s.cloneAfterGitHub);
   const setCloneAfterGitHub = useUi((s) => s.setCloneAfterGitHub);
   const setDialog = useUi((s) => s.setDialog);
+  const app = useUi((s) => s.app)!;
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {STEP_LEAD[step.id as WelcomeStepId] ? <p className="text-ui-sm text-muted-foreground">{t(STEP_LEAD[step.id as WelcomeStepId]!)}</p> : null}
       {step.id === "provider" ? <ProviderList /> : null}
       {step.id === "github" && cloneWaiting ? (
@@ -329,9 +381,12 @@ function StepBody({ step }: { step: StepState }) {
           </div>
         </div>
       ) : null}
-      <div className="cta-row">
-        <StepActions step={step} />
-      </div>
+      {/* Without a project the filled button of the Benvenuto is Apri un progetto: a step's primary is an outline. */}
+      <FilledScope allowed={Boolean(app.project)}>
+        <div className="cta-row">
+          <StepActions step={step} />
+        </div>
+      </FilledScope>
     </div>
   );
 }
@@ -342,11 +397,19 @@ function stepAction(t: ReturnType<typeof useT>, step: StepState): string {
   return step.id === "aiHero" ? t("welcome.action.open") : t("welcome.action.connect");
 }
 
+/**
+ * One step of Configura. A step done asks for nothing: a check, what Trama saw and a small "Cambia". A step to do
+ * says nothing about its state, its button says what to do; the state is written only when it is not that
+ * (checking, skipped, blocked). The provider, the step Trama needs, is the one with a text button; the other steps
+ * unfold with an icon.
+ */
 function StepLine({ step, open, primary, onToggle }: { step: StepState; open: boolean; primary: boolean; onToggle: () => void }) {
   const t = useT();
   const id = step.id as WelcomeStepId;
   const done = step.status === "done";
   const bodyId = `welcome-step-${id}`;
+  const label = stepAction(t, step);
+  const toggle = { "aria-expanded": open, "aria-controls": bodyId, onClick: onToggle };
   return (
     <li
       data-step={id}
@@ -354,7 +417,7 @@ function StepLine({ step, open, primary, onToggle }: { step: StepState; open: bo
       data-testid="welcome-step"
       className={cn("rounded-lg transition-colors", open && "bg-[var(--color-background-button-secondary)]")}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2">
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2 px-2 py-2">
         <span className="flex size-4 shrink-0 items-center justify-center">
           <StepIcon status={step.status} index={WELCOME_ORDER[id]} current={open} />
         </span>
@@ -372,24 +435,23 @@ function StepLine({ step, open, primary, onToggle }: { step: StepState; open: bo
           <LanguageChoice />
         ) : (
           <>
-            <span className={cn("shrink-0 text-ui-xs", done ? "text-success" : "text-muted-foreground")} data-testid="welcome-step-status">
-              {stepStatusLabel(t, step.status)}
-            </span>
-            <Button
-              size="xs"
-              variant={primary ? "default" : "outline"}
-              aria-expanded={open}
-              aria-controls={bodyId}
-              onClick={onToggle}
-              className="min-w-[4.5rem]"
-            >
-              {stepAction(t, step)}
-            </Button>
+            {step.status !== "done" && step.status !== "pending" ? (
+              <span className="shrink-0 text-ui-xs text-muted-foreground" data-testid="welcome-step-status">
+                {stepStatusLabel(t, step.status)}
+              </span>
+            ) : null}
+            {id === "provider" && !done ? (
+              <Button variant={primary ? "default" : "outline"} className="min-w-[4.5rem]" {...toggle}>
+                {label}
+              </Button>
+            ) : (
+              <IconButton label={label} icon={<IconChevronDown className={cn("transition-transform", open && "rotate-180")} />} size="icon" {...toggle} />
+            )}
           </>
         )}
       </div>
       {open && id !== "language" ? (
-        <div id={bodyId} className="px-2 pb-3 pl-9">
+        <div id={bodyId} className="px-2 pb-4 pl-9">
           <StepBody step={step} />
         </div>
       ) : null}
@@ -401,13 +463,15 @@ const WELCOME_ORDER: Record<WelcomeStepId, number> = { language: 0, provider: 1,
 
 function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: WelcomeStepId | null; setOpen: (id: WelcomeStepId | null) => void }) {
   const t = useT();
+  const app = useUi((s) => s.app)!;
   const done = steps.filter((s) => s.status === "done").length;
   const providerPending = steps.find((s) => s.id === "provider")?.status !== "done";
   return (
     <Block
       id="setup"
       title={t("welcome.setup.title")}
-      aside={<span className="text-ui-xs text-muted-foreground">{t("welcome.setup.count", { done, total: steps.length })}</span>}
+      // Once everything is set the header says so: the count would say it twice.
+      aside={isAllSet(app) ? null : <span className="text-ui-xs text-muted-foreground">{t("welcome.setup.count", { done, total: steps.length })}</span>}
     >
       <ol className="space-y-0.5" aria-label={t("welcome.stepsLabel")}>
         {steps.map((step) => (
@@ -415,8 +479,8 @@ function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: Welcom
             key={step.id}
             step={step}
             open={open === step.id}
-            // One filled button in the Benvenuto: the provider, the one step Trama needs, while nothing is unfolded.
-            primary={step.id === "provider" && providerPending && open === null}
+            // With a project open the Benvenuto's filled button is the provider, the one step Trama needs, while nothing is unfolded.
+            primary={step.id === "provider" && providerPending && open === null && Boolean(app.project)}
             onToggle={() => setOpen(open === step.id ? null : (step.id as WelcomeStepId))}
           />
         ))}
@@ -425,14 +489,19 @@ function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: Welcom
   );
 }
 
+/**
+ * One exercise of Impara. Its number is a check once done and ringed while it runs; the state is not written again
+ * beside its button. The button starts work, so it has an icon and its text, and it shows the wait while the example opens.
+ */
 function ExerciseLine({ row, index }: { row: LearnRow; index: number }) {
   const t = useT();
   const setExercise = useUi((s) => s.setExercise);
   const closeWelcome = useUi((s) => s.closeWelcome);
+  const [starting, setStarting] = useState(false);
   const copy = EXERCISE_COPY[row.id];
   const label = row.status === "done" ? t("welcome.learn.redo") : row.status === "started" ? t("welcome.learn.resume") : t("welcome.learn.start");
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2" data-exercise={row.id} data-status={row.status} data-testid="welcome-exercise">
+    <li className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2 px-2 py-2" data-exercise={row.id} data-status={row.status} data-testid="welcome-exercise">
       <span className="flex size-4 shrink-0 items-center justify-center">
         {row.status === "done" ? <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden /> : <StepIcon status="pending" index={index} current={row.status === "started"} />}
       </span>
@@ -440,22 +509,23 @@ function ExerciseLine({ row, index }: { row: LearnRow; index: number }) {
         <p className="text-ui text-foreground">{t(copy.title)}</p>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">{t(copy.lead)}</p>
       </div>
-      <span className={cn("shrink-0 text-ui-xs", row.status === "done" ? "text-success" : "text-muted-foreground")}>
-        {row.status === "done" ? t("step.status.done") : row.status === "started" ? t("welcome.learn.started") : t("step.status.pending")}
-      </span>
       <Button
-        size="xs"
         variant="outline"
-        className="min-w-[4.5rem]"
+        className="min-w-[6rem]"
+        disabled={starting}
         aria-label={`${label}: ${t(copy.title)}`}
         // The exercise runs on the example project, in a panel beside its chat (C13, issue #354).
-        onClick={() =>
-          void act("exercise:start", { exercise: row.id }).then(() => {
-            setExercise(row.id);
-            closeWelcome();
-          })
-        }
+        onClick={() => {
+          setStarting(true);
+          void act("exercise:start", { exercise: row.id })
+            .then(() => {
+              setExercise(row.id);
+              closeWelcome();
+            })
+            .finally(() => setStarting(false));
+        }}
       >
+        {starting ? <Spinner /> : row.status === "done" ? <IconRotateClockwise className="size-4" stroke={1.7} /> : <IconPlayerPlay className="size-4" stroke={1.7} />}
         {label}
       </Button>
     </li>
@@ -475,26 +545,24 @@ function LearnBlock() {
       title={t("welcome.learn.title")}
       aside={
         allDone ? (
-          <button
-            type="button"
+          <IconButton
+            label={shown ? t("welcome.learn.hide") : t("welcome.learn.again")}
+            icon={<IconChevronDown className={cn("transition-transform", shown && "rotate-180")} />}
+            size="icon"
             aria-expanded={shown}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 text-ui-sm text-muted-foreground hover:text-foreground"
             onClick={() => setShown(!shown)}
-          >
-            {shown ? t("welcome.learn.hide") : t("welcome.learn.again")}
-            <IconChevronDown className={cn("size-3.5 transition-transform", shown && "rotate-180")} stroke={1.8} />
-          </button>
+          />
         ) : null
       }
     >
       {allDone && !shown ? (
-        <p className="flex items-center gap-2.5 px-2 py-1.5 text-ui text-foreground/85" data-testid="welcome-learn-done">
+        <p className="flex min-h-8 items-center gap-2 px-2 text-ui text-foreground/85" data-testid="welcome-learn-done">
           <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
           {t("welcome.learn.doneCount", { count: done })}
         </p>
       ) : (
         <>
-          <p className="px-2 pb-1 text-ui-xs text-muted-foreground">{t("welcome.learn.lead")}</p>
+          <p className="px-2 pb-2 text-ui-xs text-muted-foreground">{t("welcome.learn.lead")}</p>
           <ol className="space-y-0.5" aria-label={t("welcome.learn.title")}>
             {rows.map((row, index) => (
               <ExerciseLine key={row.id} row={row} index={index} />
@@ -558,41 +626,55 @@ export function WelcomeView() {
     openStep("github");
   };
 
+  // Beside the conversation the window's one filled button is Aspetta te's while something waits (issue #338).
+  const waiting = useWaiting().length > 0;
   return (
-    <div
-      ref={root}
-      className="chat-pane-enter @container/welcome relative min-h-0 flex-1 overflow-y-auto"
-      data-testid="welcome"
-      data-all-set={allSet ? "true" : "false"}
-    >
-      <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 sm:px-8 @min-[900px]/welcome:pt-12">
-        <header className="flex items-center gap-4">
-          <WelcomeMark play={intro} />
-          <div className="min-w-0">
-            <h1 className="font-display text-[30px] leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-[34px]">
-              {t("welcome.title")}
-            </h1>
-            <p className="mt-1.5 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
-          </div>
-        </header>
-        {allSet ? (
-          <p className="mt-5 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
-            <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
-            <span className="font-medium">{t("welcome.allSet.title")}</span>
-            <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
-          </p>
-        ) : null}
-        <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-          <div className="flex min-w-0 flex-col gap-8">
-            <StartBlock onClone={clone} />
-            <RecentBlock />
-          </div>
-          <div className="flex min-w-0 flex-col gap-8">
-            <SetupBlock steps={steps} open={open} setOpen={setOpen} />
-            <LearnBlock />
+    <FilledScope allowed={!waiting}>
+      <div
+        ref={root}
+        className="chat-pane-enter @container/welcome relative min-h-0 flex-1 overflow-y-auto"
+        data-testid="welcome"
+        data-all-set={allSet ? "true" : "false"}
+      >
+        <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 sm:px-8 @min-[900px]/welcome:pt-12">
+          <header className="flex items-center gap-4">
+            <WelcomeMark play={intro} />
+            <div className="min-w-0">
+              <h1 className="font-display text-3xl leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-4xl">
+                {t("welcome.title")}
+              </h1>
+              <p className="mt-2 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
+            </div>
+          </header>
+          {allSet ? (
+            <p className="mt-6 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
+              <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
+              <span className="font-medium">{t("welcome.allSet.title")}</span>
+              <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
+            </p>
+          ) : null}
+          <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+            {/* Who comes back looks for a recent project first; who arrives new looks for a way to start. */}
+            <div className="flex min-w-0 flex-col gap-8">
+              {app.recentProjects.length > 0 ? (
+                <>
+                  <RecentBlock />
+                  <StartBlock onClone={clone} />
+                </>
+              ) : (
+                <>
+                  <StartBlock onClone={clone} />
+                  <RecentBlock />
+                </>
+              )}
+            </div>
+            <div className="flex min-w-0 flex-col gap-8">
+              <SetupBlock steps={steps} open={open} setOpen={setOpen} />
+              <LearnBlock />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </FilledScope>
   );
 }

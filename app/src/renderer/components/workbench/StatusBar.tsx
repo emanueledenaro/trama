@@ -33,16 +33,14 @@ const ITEM =
   "no-drag inline-flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-ui-xs text-[var(--color-text-foreground-secondary)] outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]";
 
 /**
- * A problem of the status bar (UI wave of 29 September): the conflict with the default branch or a step of Configura
- * that went back. It is tinted with the warning color, so it reads at a glance; the text is the warning mixed with the
- * ink, dark enough on the light bar and light enough on the dark one.
+ * A problem of the status bar: the conflict with the default branch or a step of Configura that went back. The state
+ * lives in the warning icon and in the heavier text; the button itself takes no state tint (design rules, colors).
  */
-const PROBLEM =
-  "bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] font-medium text-[color-mix(in_srgb,var(--warning)_62%,var(--foreground))] hover:bg-[color-mix(in_srgb,var(--warning)_22%,transparent)] hover:text-[color-mix(in_srgb,var(--warning)_62%,var(--foreground))] aria-expanded:bg-[color-mix(in_srgb,var(--warning)_22%,transparent)]";
+const PROBLEM = "font-medium text-foreground";
 
-/** The line between two groups of the status bar: where the branch ends, where the problems end. */
+/** The line between two groups of the status bar: the status line and what surrounds it, the branch and the icons. */
 function Divider() {
-  return <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-[color-mix(in_srgb,var(--foreground)_16%,transparent)]" data-testid="status-divider" />;
+  return <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-[var(--app-surface-divider)]" data-testid="status-divider" />;
 }
 
 const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
@@ -67,15 +65,12 @@ export function StatusLineIcon({ line }: { line: StatusLineView }) {
 type Popup = "focus" | "divergence" | null;
 
 /** A panel over the status bar; a click outside the bar or Escape closes it. */
-function StatusPopup({ side, children }: { side: "start" | "end"; children: React.ReactNode }) {
+function StatusPopup({ children }: { children: React.ReactNode }) {
   // While something waits, the window's one filled button is Aspetta te's (issue #338).
   const waiting = useWaiting().length > 0;
   return (
     <div
-      className={cn(
-        "translucent-popup absolute bottom-full z-40 mb-1 w-[min(560px,calc(100vw-24px))] rounded-xl",
-        side === "start" ? "left-2" : "right-2",
-      )}
+      className="translucent-popup absolute right-2 bottom-full z-40 mb-2 w-[min(560px,calc(100vw-24px))] rounded-xl"
     >
       <FilledScope allowed={!waiting}>{children}</FilledScope>
     </div>
@@ -114,7 +109,7 @@ function FocusItem({ open, onToggle }: { open: boolean; onToggle: () => void }) 
  * and the provider limit it waits for (issue #249). On the right: Activity, the Pause of continuous work or its
  * Riprendi (A05), the stop of the automatic move that runs, and the person's move last.
  */
-function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React.ReactNode }) {
+function StatusLine({ line, aside }: { line: StatusLineView | null; aside: React.ReactNode }) {
   const t = useT();
   const openActivity = useUi((s) => s.openActivity);
   const openDialog = useUi((s) => s.openDialog);
@@ -126,7 +121,7 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
     openDialog(action.goalId);
     window.setTimeout(() => runNextStep(action, action.requestId), 120);
   };
-  if (!line) return <div className="flex min-w-0 flex-1 items-center justify-end">{focus}</div>;
+  if (!line) return <div className="flex min-w-0 flex-1 items-center justify-end gap-0.5">{aside}</div>;
   // A move that answers an item of Aspetta te is taken there (issue #331): the line says it, the button is in the view.
   const action = line.action && !(line.action.actor === "person" && waiting.some((item) => item.targetId === line.action!.targetId)) ? line.action : null;
   return (
@@ -159,7 +154,7 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
           ) : null}
         </span>
       </div>
-      {focus}
+      {aside}
       <Tooltip label={t("workbench.status.activity")}>
         <button type="button" className={ITEM} aria-label={t("workbench.status.activity")} onClick={() => openActivity()}>
           <IconListDetails className="size-3.5" stroke={1.8} />
@@ -250,7 +245,7 @@ function SetupItem({ back }: { back: NonNullable<ReturnType<typeof useSetupBack>
         aria-label={label}
         onClick={() => openWelcome(back.id as WelcomeStepId)}
       >
-        <IconAlertTriangle className="size-3 shrink-0" stroke={1.8} />
+        <IconAlertTriangle className="size-3 shrink-0 text-warning" stroke={1.8} />
         <span className="min-w-0 truncate">{label}</span>
       </button>
     </Tooltip>
@@ -258,11 +253,12 @@ function SetupItem({ back }: { back: NonNullable<ReturnType<typeof useSetupBack>
 }
 
 /**
- * The status bar at the bottom of the window (issue #330, ADR 0018), in three groups split by a visible line (UI wave
- * of 29 September): the branch, quiet, since it is context; the problems, tinted, so the conflict with the default
- * branch or a step of Configura that went back read at a glance; the status line with the next step in the ink, then
- * Activity, Pause and the person's move on the right. The work in focus sits in the bar above the composer while the
- * conversation shows; over Progetti or Impostazioni it comes back here. Decisions wait in Aspetta te.
+ * The status bar at the bottom of the window (issue #330, ADR 0018), read left to right by importance: the status
+ * line with the next step in the ink, what asks for an action (the conflict with the default branch, a step of
+ * Configura that went back, marked by a warning icon and never by a tinted button), the work in focus, the branch as
+ * quiet context, then a line and Activity, Pause and the person's move on the right. The work in focus sits in the bar
+ * above the composer while the conversation shows; over Progetti or Impostazioni it comes back here. Decisions wait
+ * in Aspetta te.
  */
 export function StatusBar() {
   const t = useT();
@@ -304,42 +300,48 @@ export function StatusBar() {
     >
       {project ? (
         <>
-          {branch ? (
-            <Tooltip label={t("workbench.status.branch", { name: branch })}>
-              <button
-                type="button"
-                className={cn(ITEM, "max-w-[10rem] text-[var(--color-text-foreground-tertiary)]")}
-                data-testid="status-branch"
-                onClick={() => setInspector({ kind: "branch", name: branch })}
-              >
-                <IconGitBranch className="size-3 shrink-0" stroke={1.8} />
-                <span className="min-w-0 truncate">{branch}</span>
-              </button>
-            </Tooltip>
-          ) : null}
-          {branch && problems ? <Divider /> : null}
-          {divergence ? (
-            <button
-              type="button"
-              className={cn(ITEM, PROBLEM)}
-              aria-expanded={popup === "divergence"}
-              data-testid="status-conflict"
-              onClick={() => toggle("divergence")}
-            >
-              <IconAlertTriangle className="size-3 shrink-0" stroke={1.8} />
-              {t("workbench.status.conflicts", { count: divergence.conflictingFiles.length })}
-            </button>
-          ) : null}
-          {setup ? <SetupItem back={setup} /> : null}
-          {(branch || problems) && line ? <Divider /> : null}
-          <StatusLine line={line} focus={conversation ? null : <FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />} />
+          <StatusLine
+            line={line}
+            aside={
+              <>
+                {divergence ? (
+                  <button
+                    type="button"
+                    className={cn(ITEM, PROBLEM)}
+                    aria-expanded={popup === "divergence"}
+                    data-testid="status-conflict"
+                    onClick={() => toggle("divergence")}
+                  >
+                    <IconAlertTriangle className="size-3 shrink-0 text-warning" stroke={1.8} />
+                    {t("workbench.status.conflicts", { count: divergence.conflictingFiles.length })}
+                  </button>
+                ) : null}
+                {setup ? <SetupItem back={setup} /> : null}
+                {conversation ? null : <FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />}
+                {branch ? (
+                  <Tooltip label={t("workbench.status.branch", { name: branch })}>
+                    <button
+                      type="button"
+                      className={cn(ITEM, "max-w-[10rem] text-[var(--color-text-foreground-tertiary)]")}
+                      data-testid="status-branch"
+                      onClick={() => setInspector({ kind: "branch", name: branch })}
+                    >
+                      <IconGitBranch className="size-3 shrink-0" stroke={1.8} />
+                      <span className="min-w-0 truncate">{branch}</span>
+                    </button>
+                  </Tooltip>
+                ) : null}
+                <Divider />
+              </>
+            }
+          />
           {popup === "focus" ? (
-            <StatusPopup side="end">
+            <StatusPopup>
               <FocusPanel />
             </StatusPopup>
           ) : null}
           {popup === "divergence" && divergence ? (
-            <StatusPopup side="start">
+            <StatusPopup>
               <BranchDivergencePanel divergence={divergence} filesOpen onDone={() => setPopup(null)} />
             </StatusPopup>
           ) : null}
