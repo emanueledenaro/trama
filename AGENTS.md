@@ -60,6 +60,10 @@ Il controllo gira in CI su ogni pull request e copre commit, merge e titolo dell
 
 I nomi dei branch seguono Conventional Branch 1.1.0 e sono controllati nello stesso job di CI. Tipi, regole della descrizione ed esempi non validi in `docs/agents/branch-naming.md`.
 
+### Regole di design
+
+Griglia, raggi, palette, tipografia, stati e accessibilità dell'interfaccia sono in `docs/agents/design-rules.md`. Valgono insieme ai principi delle schermate in `docs/design/schermate-2026-09-28/principi.md` e all'ADR 0018. Leggerli prima di creare o cambiare una schermata.
+
 ## Confini
 
 Distinguere file rilevati, ipotesi, dati di esempio e verifiche eseguite. Un risultato AI non è un'evidenza di test. Credenziali e accesso ChatGPT appartengono al componente ufficiale Codex. Le letture del repository escludono segreti e collegamenti simbolici. Il renderer non decide autonomamente gli esiti delle verifiche.
