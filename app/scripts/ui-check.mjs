@@ -1473,6 +1473,9 @@ const settingsFit = await narrowSettings.evaluate((el) => {
 });
 if (!settingsFit.inside || settingsFit.overflow) throw new Error(`The agent's settings do not fit the narrow tab: ${JSON.stringify(settingsFit)}`);
 await shot("04e2d-agent-settings-narrow");
+// UI wave of 30 September: in a narrow window the work bar gives up the waiting item's title before it cuts it in "C…".
+const narrowBarCut = await page.evaluate(() => [...document.querySelectorAll('[data-testid="waiting-summary"] .truncate')].some((el) => el.scrollWidth > el.clientWidth + 1));
+if (narrowBarCut) throw new Error("The work bar cuts the waiting item in a narrow window");
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("04e2e-agent-settings-narrow-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
