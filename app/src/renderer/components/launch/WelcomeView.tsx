@@ -5,8 +5,10 @@ import {
   IconFolder,
   IconFolderOpen,
   IconLayoutList,
+  IconPlayerPlay,
   IconPlus,
   IconRefresh,
+  IconRotateClockwise,
   IconSchool,
   IconTarget,
   IconUsers,
@@ -487,14 +489,19 @@ function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: Welcom
   );
 }
 
+/**
+ * One exercise of Impara. Its number is a check once done and ringed while it runs; the state is not written again
+ * beside its button. The button starts work, so it has an icon and its text, and it shows the wait while the example opens.
+ */
 function ExerciseLine({ row, index }: { row: LearnRow; index: number }) {
   const t = useT();
   const setExercise = useUi((s) => s.setExercise);
   const closeWelcome = useUi((s) => s.closeWelcome);
+  const [starting, setStarting] = useState(false);
   const copy = EXERCISE_COPY[row.id];
   const label = row.status === "done" ? t("welcome.learn.redo") : row.status === "started" ? t("welcome.learn.resume") : t("welcome.learn.start");
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2" data-exercise={row.id} data-status={row.status} data-testid="welcome-exercise">
+    <li className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2 px-2 py-2" data-exercise={row.id} data-status={row.status} data-testid="welcome-exercise">
       <span className="flex size-4 shrink-0 items-center justify-center">
         {row.status === "done" ? <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden /> : <StepIcon status="pending" index={index} current={row.status === "started"} />}
       </span>
@@ -502,22 +509,23 @@ function ExerciseLine({ row, index }: { row: LearnRow; index: number }) {
         <p className="text-ui text-foreground">{t(copy.title)}</p>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">{t(copy.lead)}</p>
       </div>
-      <span className={cn("shrink-0 text-ui-xs", row.status === "done" ? "text-success" : "text-muted-foreground")}>
-        {row.status === "done" ? t("step.status.done") : row.status === "started" ? t("welcome.learn.started") : t("step.status.pending")}
-      </span>
       <Button
-        size="xs"
         variant="outline"
-        className="min-w-[4.5rem]"
+        className="min-w-[6rem]"
+        disabled={starting}
         aria-label={`${label}: ${t(copy.title)}`}
         // The exercise runs on the example project, in a panel beside its chat (C13, issue #354).
-        onClick={() =>
-          void act("exercise:start", { exercise: row.id }).then(() => {
-            setExercise(row.id);
-            closeWelcome();
-          })
-        }
+        onClick={() => {
+          setStarting(true);
+          void act("exercise:start", { exercise: row.id })
+            .then(() => {
+              setExercise(row.id);
+              closeWelcome();
+            })
+            .finally(() => setStarting(false));
+        }}
       >
+        {starting ? <Spinner /> : row.status === "done" ? <IconRotateClockwise className="size-4" stroke={1.7} /> : <IconPlayerPlay className="size-4" stroke={1.7} />}
         {label}
       </Button>
     </li>
@@ -537,26 +545,24 @@ function LearnBlock() {
       title={t("welcome.learn.title")}
       aside={
         allDone ? (
-          <button
-            type="button"
+          <IconButton
+            label={shown ? t("welcome.learn.hide") : t("welcome.learn.again")}
+            icon={<IconChevronDown className={cn("transition-transform", shown && "rotate-180")} />}
+            size="icon"
             aria-expanded={shown}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 text-ui-sm text-muted-foreground hover:text-foreground"
             onClick={() => setShown(!shown)}
-          >
-            {shown ? t("welcome.learn.hide") : t("welcome.learn.again")}
-            <IconChevronDown className={cn("size-3.5 transition-transform", shown && "rotate-180")} stroke={1.8} />
-          </button>
+          />
         ) : null
       }
     >
       {allDone && !shown ? (
-        <p className="flex items-center gap-2.5 px-2 py-1.5 text-ui text-foreground/85" data-testid="welcome-learn-done">
+        <p className="flex min-h-8 items-center gap-2 px-2 text-ui text-foreground/85" data-testid="welcome-learn-done">
           <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
           {t("welcome.learn.doneCount", { count: done })}
         </p>
       ) : (
         <>
-          <p className="px-2 pb-1 text-ui-xs text-muted-foreground">{t("welcome.learn.lead")}</p>
+          <p className="px-2 pb-2 text-ui-xs text-muted-foreground">{t("welcome.learn.lead")}</p>
           <ol className="space-y-0.5" aria-label={t("welcome.learn.title")}>
             {rows.map((row, index) => (
               <ExerciseLine key={row.id} row={row} index={index} />
