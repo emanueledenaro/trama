@@ -76,6 +76,28 @@ export function checkHeader(header) {
   return ok();
 }
 
+// The subject GitHub's "Update branch" button and a plain `git merge` give a
+// merge of a trunk branch into a work branch, for example
+// "Merge branch 'main' into feature/x". It is accepted only on a merge commit.
+const BASE_MERGE_RE = new RegExp(
+  `^Merge (?:remote-tracking )?branch '(?:origin/)?(?:${TRUNK_BRANCHES.join('|')})'(?: of \\S+)? into \\S+$`,
+);
+
+export function isBaseMergeSubject(subject) {
+  return BASE_MERGE_RE.test((subject ?? '').split('\n')[0].trim());
+}
+
+/**
+ * Checks one commit of a pull request. A merge commit may keep the subject git
+ * gives a merge of main into the branch; every other commit follows checkHeader.
+ */
+export function checkCommit(subject, { isMerge = false } = {}) {
+  if (isMerge && isBaseMergeSubject(subject)) {
+    return ok();
+  }
+  return checkHeader(subject);
+}
+
 export function checkCommitMessage(message) {
   return checkHeader(message);
 }

@@ -3,7 +3,7 @@
 // by the optional commit-msg hook (scripts/conventional-commits/hooks/commit-msg).
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { checkHeader, checkBranchName } from './lib.mjs';
+import { checkHeader, checkBranchName, checkCommit } from './lib.mjs';
 
 const HELP = `Usage:
   cli.mjs branch-name <name>
@@ -37,7 +37,7 @@ function prTitle(title) {
 }
 
 function commitRange(base, head) {
-  const result = spawnSync('git', ['log', '--format=%H%x1f%s', `${base}..${head}`], {
+  const result = spawnSync('git', ['log', '--format=%H%x1f%P%x1f%s', `${base}..${head}`], {
     encoding: 'utf8',
   });
   if (result.status !== 0) {
@@ -50,8 +50,8 @@ function commitRange(base, head) {
     process.exit(0);
   }
   const results = lines.map((line) => {
-    const [sha, subject] = line.split('\x1f');
-    const check = checkHeader(subject);
+    const [sha, parents, subject] = line.split('\x1f');
+    const check = checkCommit(subject, { isMerge: parents.split(' ').length > 1 });
     if (check.ok) return check;
     return { ok: false, reason: `${sha.slice(0, 7)}: ${check.reason}` };
   });
@@ -61,7 +61,9 @@ function commitRange(base, head) {
 function commitMsgFile(path) {
   const content = readFileSync(path, 'utf8');
   const header = content.split('\n')[0];
-  reportAndExit([checkHeader(header)]);
+  // During `git merge` the hook sees MERGE_HEAD: the merge keeps git's subject.
+  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).status === 0;
+  reportAndExit([checkCommit(header, { isMerge: merging })]);
 }
 
 const [, , command, ...args] = process.argv;

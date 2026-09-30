@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkHeader, checkBranchName } from './lib.mjs';
+import { checkHeader, checkBranchName, checkCommit } from './lib.mjs';
 
 test('accepts a conforming commit header', () => {
   assert.equal(checkHeader('feat(app): add the search palette').ok, true);
@@ -26,6 +26,32 @@ test('rejects a GitHub default merge subject', () => {
 
 test('rejects a default git merge subject', () => {
   assert.equal(checkHeader("Merge branch 'main' into feature/x").ok, false);
+});
+
+test('accepts the Update branch merge of main on a merge commit', () => {
+  assert.equal(checkCommit("Merge branch 'main' into feature/x", { isMerge: true }).ok, true);
+  assert.equal(
+    checkCommit("Merge branch 'main' of https://github.com/owner/repo into bugfix/y", { isMerge: true }).ok,
+    true,
+  );
+  assert.equal(checkCommit("Merge remote-tracking branch 'origin/main' into feature/x", { isMerge: true }).ok, true);
+});
+
+test('rejects the merge subject on a commit that is not a merge', () => {
+  assert.equal(checkCommit("Merge branch 'main' into feature/x").ok, false);
+});
+
+test('rejects a merge of a branch that is not a trunk', () => {
+  assert.equal(checkCommit("Merge branch 'feature/a' into feature/x", { isMerge: true }).ok, false);
+});
+
+test('rejects the GitHub pull request merge subject even on a merge commit', () => {
+  assert.equal(checkCommit('Merge pull request #42 from owner/branch', { isMerge: true }).ok, false);
+});
+
+test('checks any other merge commit as a header', () => {
+  assert.equal(checkCommit('chore: merge origin/main into feature/x', { isMerge: true }).ok, true);
+  assert.equal(checkCommit('merged stuff', { isMerge: true }).ok, false);
 });
 
 test('rejects an empty description', () => {

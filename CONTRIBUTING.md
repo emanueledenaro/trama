@@ -50,14 +50,12 @@ node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs scripts/r
 
 ## Commits
 
-Commit messages follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<type>[optional scope][!]: <description>`, for example `feat(app): add the search palette`. The allowed types and the breaking change rules are in [AGENTS.md](AGENTS.md#commit-e-branch); the CI check and an optional local hook are described in [docs/agents/conventional-commits.md](docs/agents/conventional-commits.md). This also applies to merge commits: to bring `main` into your branch, use
+Commit messages follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<type>[optional scope][!]: <description>`, for example `feat(app): add the search palette`. The allowed types and the breaking change rules are in [AGENTS.md](AGENTS.md#commit-e-branch); the CI check and an optional local hook are described in [docs/agents/conventional-commits.md](docs/agents/conventional-commits.md). This also applies to merge commits, with one exception: a merge that brings `main` into your branch may keep the subject git gives it ("Merge branch 'main' into ..."), so GitHub's "Update branch" button works. You can also merge locally:
 
 ```bash
 git fetch origin
-git merge -m "chore: merge origin/main into <branch>" origin/main
+git merge origin/main
 ```
-
-rather than GitHub's "Update branch" button, whose default subject does not conform.
 
 Commit types drive the version number and the changelog (see [Releases](#releases)), so pick them with care: `feat` for a new capability, `fix` for a bug fix, `!` or a `BREAKING CHANGE:` footer for an incompatible change.
 
