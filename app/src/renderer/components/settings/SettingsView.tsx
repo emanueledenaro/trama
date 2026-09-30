@@ -6,11 +6,11 @@ import {
   IconChevronDown,
   IconDeviceDesktop,
   IconEye,
-  IconHome,
   IconListDetails,
   IconMoon,
   IconPlugConnected,
   IconRefresh,
+  IconSchool,
   IconSettings,
   IconSun,
   IconTools,
@@ -30,7 +30,7 @@ import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Toggle } from "@/components/ui/toggle";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -88,7 +88,7 @@ export function SettingsView() {
                 aria-current={section === entry.id ? "page" : undefined}
                 onClick={() => openSettings(entry.id)}
                 className={cn(
-                  "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
+                  "flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
                   section === entry.id
                     ? "bg-[var(--sidebar-selected)] text-foreground"
                     : "text-foreground/80 hover:bg-[var(--sidebar-accent)] hover:text-foreground",
@@ -102,15 +102,18 @@ export function SettingsView() {
         ))}
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div key={section} className="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-8">
-          {section === "general" ? <GeneralSection /> : null}
-          {section === "connections" ? <ConnectionsSection /> : null}
-          {section === "method" ? <MethodSection /> : null}
-          {section === "standard" ? <StandardSection /> : null}
-          {section === "learning" ? <LearningSection /> : null}
-          {section === "monitor" ? <MonitorSection /> : null}
-          {section === "presence" ? <PresenceSection /> : null}
-        </div>
+        {/* The one filled button of the window is the one of Aspetta te (ADR 0018): a primary here is drawn as an outline. */}
+        <FilledScope allowed={false}>
+          <div key={section} className="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-8">
+            {section === "general" ? <GeneralSection /> : null}
+            {section === "connections" ? <ConnectionsSection /> : null}
+            {section === "method" ? <MethodSection /> : null}
+            {section === "standard" ? <StandardSection /> : null}
+            {section === "learning" ? <LearningSection /> : null}
+            {section === "monitor" ? <MonitorSection /> : null}
+            {section === "presence" ? <PresenceSection /> : null}
+          </div>
+        </FilledScope>
       </div>
     </div>
   );
@@ -123,7 +126,7 @@ function PageHeader({ title, description, actions }: { title: string; descriptio
         <h2 className="text-ui-lg font-medium text-foreground">{title}</h2>
         {description ? <p className="mt-1 text-ui-sm text-muted-foreground">{description}</p> : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="cta-row shrink-0">{actions}</div> : null}
     </header>
   );
 }
@@ -151,7 +154,7 @@ function Row({ label, description, control, children }: { label: React.ReactNode
           <div className="text-ui text-foreground">{label}</div>
           {description ? <div className="mt-0.5 text-ui-sm text-muted-foreground">{description}</div> : null}
         </div>
-        {control ? <div className="flex shrink-0 items-center gap-2">{control}</div> : null}
+        {control ? <div className="cta-row ml-auto shrink-0">{control}</div> : null}
       </div>
       {children}
     </div>
@@ -190,7 +193,7 @@ function GeneralSection() {
                   aria-checked={theme === option.value}
                   onClick={() => void act("settings:update", { theme: option.value })}
                   className={cn(
-                    "flex h-6 items-center gap-1.5 rounded-md px-2.5 text-ui-sm transition-colors",
+                    "flex h-8 items-center gap-2 rounded-md px-3 text-ui-sm transition-colors",
                     theme === option.value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -211,8 +214,8 @@ function GeneralSection() {
           label={t("settings.guide")}
           description={t("settings.guide.description")}
           control={
-            <Button variant="outline" size="sm" onClick={() => openWelcome()}>
-              <IconHome stroke={1.8} /> {t("settings.guide.open")}
+            <Button variant="outline" onClick={() => openWelcome()}>
+              <IconSchool stroke={1.8} /> {t("settings.guide.open")}
             </Button>
           }
         />

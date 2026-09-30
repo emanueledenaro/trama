@@ -417,6 +417,27 @@ const primaryLast = async (row, where) => {
   const lastRow = Math.max(...buttons.map((b) => b.top));
   if (primary[0].top !== lastRow || buttons.some((b) => b.top === lastRow && b.right > primary[0].right)) throw new Error(`${where}: the primary action is not last`);
 };
+// Design rules for Impostazioni (issues of 30 September): the settings hold no filled button (the window's one is the
+// one of Aspetta te), every button, radio and navigation entry is at least 32 px tall, and the controls of a row sit on
+// its right, the primary last. `settingsRules` runs on the section that is open.
+const settingsRules = async (where) => {
+  const found = await page.getByTestId("settings").evaluate((root) => {
+    const shown = (node) => node.getBoundingClientRect().width > 0 && getComputedStyle(node).visibility !== "hidden";
+    const filled = [...root.querySelectorAll('button[data-variant="default"]')].filter((b) => shown(b) && b.dataset.filled !== "false").map((b) => b.textContent.trim());
+    const small = [...root.querySelectorAll('nav button, [role="radio"], .cta-row > button')]
+      .filter(shown)
+      .filter((b) => b.getBoundingClientRect().height < 31.5)
+      .map((b) => `${b.getAttribute("aria-label") ?? b.textContent.trim()} ${Math.round(b.getBoundingClientRect().height)}px`);
+    const left = [...root.querySelectorAll(".cta-row")]
+      .filter(shown)
+      .filter((row) => row.parentElement.getBoundingClientRect().right - row.getBoundingClientRect().right > 24)
+      .map((row) => row.textContent.trim() || row.getAttribute("role") || "actions");
+    return { filled, small, left };
+  });
+  if (found.filled.length) throw new Error(`${where}: a filled button in Impostazioni: ${found.filled}`);
+  if (found.small.length) throw new Error(`${where}: click areas under 32 px in Impostazioni: ${found.small}`);
+  if (found.left.length) throw new Error(`${where}: actions not on the right of their row: ${found.left}`);
+};
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
@@ -2826,6 +2847,9 @@ await settings.getByRole("button", { name: /^Generale/ }).first().click();
 // Issue #301: the language sits in Generale and changes the page at once.
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano", checked: true }).waitFor();
 await shot("12-settings");
+await settingsRules("Generale");
+// The guide opens from a button with an icon and its name (the table of principi.md), not a bare text.
+if (!(await settings.getByRole("button", { name: "Apri il Benvenuto" }).locator("svg").count())) throw new Error("Apri il Benvenuto has no icon");
 await settings.getByTestId("language-choice").getByRole("radio", { name: "English" }).click();
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();

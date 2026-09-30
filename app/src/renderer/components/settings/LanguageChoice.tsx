@@ -21,7 +21,7 @@ export function LanguageChoice() {
           aria-checked={language === value}
           onClick={() => void act("settings:update", { language: value })}
           className={cn(
-            "flex h-6 items-center rounded-md px-2.5 text-ui-sm transition-colors",
+            "flex h-8 items-center rounded-md px-3 text-ui-sm transition-colors",
             language === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
           )}
         >
