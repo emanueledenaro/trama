@@ -420,6 +420,33 @@ const primaryLast = async (row, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// Design rules for the status bar: read left to right by importance (status line, what asks for an action, the work in
+// focus, the branch, then a line and the icons), no button takes a state tint at rest, and the bar stays 24 px.
+const statusBarRules = async (where) => {
+  const bar = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="status-bar"]');
+    const left = (selector) => root.querySelector(selector)?.getBoundingClientRect().left ?? null;
+    const order = [
+      '[data-testid="status-line-text"]',
+      '[data-testid="status-conflict"]',
+      '[data-testid="status-setup"]',
+      '[data-testid="status-focus"]',
+      '[data-testid="status-branch"]',
+      '[data-testid="status-divider"]',
+      'button[aria-label="Attività"]',
+    ]
+      .map((selector) => [selector, left(selector)])
+      .filter(([, x]) => x !== null);
+    const tinted = [...root.querySelectorAll("button")]
+      .filter((button) => !["rgba(0, 0, 0, 0)", "transparent"].includes(getComputedStyle(button).backgroundColor))
+      .map((button) => button.getAttribute("data-testid") ?? button.getAttribute("aria-label"));
+    return { order, tinted, height: root.getBoundingClientRect().height };
+  });
+  const xs = bar.order.map(([, x]) => x);
+  if (xs.some((x, i) => i > 0 && x < xs[i - 1])) throw new Error(`The status bar is not read by importance ${where}: ${JSON.stringify(bar.order)}`);
+  if (bar.tinted.length) throw new Error(`A status bar button has a background at rest ${where}: ${bar.tinted.join(", ")}`);
+  if (bar.height !== 24) throw new Error(`The status bar is not 24 px ${where}: ${bar.height}`);
+};
 // UI wave of 29 September: only the conversation holds the work bar on the composer. Over a detail tab without the
 // composer, as an agent's or a candidate's, the bar is the tab's last row in a room of its own: the tab ends where the
 // bar starts, so it covers nothing, and it still shows while something waits. Progetti, Impostazioni and the Benvenuto
@@ -747,6 +774,7 @@ await shot("02-demo-study");
     status: document.querySelector('[data-testid="status-bar"]').getBoundingClientRect().height,
   }));
   if (bars.title !== 46 || bars.activity !== 48 || bars.status !== 24) throw new Error(`The window's bars are not 46, 48 and 24 px: ${JSON.stringify(bars)}`);
+  await statusBarRules("at the first launch");
   if (await page.getByTestId("side-bar").count()) throw new Error("The side bar is open at the first launch");
   // One badge in the activity bar, the count of Aspetta te.
   const badges = await activityBar().getByTestId("activity-badge").allInnerTexts();
@@ -2470,6 +2498,9 @@ const slices = writtenSpec.getByTestId("plan-slices");
 const confirmSlices = slices.getByRole("button", { name: "Conferma le fette" });
 await confirmSlices.waitFor({ timeout: 20_000 });
 if ((await slices.getByTestId("plan-slice").count()) !== 3) throw new Error("The breakdown does not show the three slices of to-tickets");
+// Design rules: what to do comes before the long detail, so the slices and their confirmation sit above the seams of the spec.
+const specOrder = await writtenSpec.evaluate((spec) => [spec.querySelector('[data-testid="plan-slices"]'), spec.querySelector('[data-testid="plan-seam"]')].map((el) => el.getBoundingClientRect().top));
+if (!(specOrder[0] < specOrder[1])) throw new Error(`The slices of a written spec come after its seams: ${specOrder}`);
 await slices.getByText("Bloccata da: 1").first().waitFor();
 await slices.getByText("Può iniziare subito").waitFor();
 if (await writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" }).count()) throw new Error("A plan with slices still offers the approval of the whole plan");
@@ -3138,6 +3169,27 @@ const actionsOnRight = async (size) => {
   }
 };
 await actionsOnRight("1280x820");
+// Design rules for the bar above the composer and its panel: a 32 px row whose work-in-focus button is 32 px high, the
+// blocks of the panel spaced on 8 px steps, and the divider drawn with the token.
+{
+  const rules = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="work-bar"]');
+    const row = bar.querySelector('[data-testid="work-bar-line"]');
+    const focus = bar.querySelector('[data-testid="work-bar-focus"]').getBoundingClientRect();
+    const panel = getComputedStyle(bar.querySelector('[data-testid="focus-bar"]'));
+    const divider = bar.querySelector('[data-testid="work-bar-divider"]');
+    return {
+      row: row ? Math.round(row.getBoundingClientRect().height) : null,
+      focus: Math.round(focus.height),
+      padding: [panel.paddingTop, panel.paddingLeft],
+      gap: panel.rowGap,
+      divider: divider ? getComputedStyle(divider).backgroundColor : null,
+    };
+  });
+  if (rules.row !== 32 || rules.focus < 32) throw new Error(`The bar above the composer is not 32 px: ${JSON.stringify(rules)}`);
+  if (rules.padding.join() !== "16px,16px" || rules.gap !== "8px") throw new Error(`The focus panel is not on the 8 px steps: ${JSON.stringify(rules)}`);
+  if (rules.divider === "rgb(0, 0, 0)") throw new Error("The divider of the bar is not drawn with the token");
+}
 await shot("17-focus-bar-queue");
 await pause.click();
 const focusIs = (title, equal) =>
@@ -3645,6 +3697,13 @@ await closePanels();
   if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
   if (await adaNow.getByTestId("assignment-contract").count()) throw new Error("The assignment's contract shows before the person opens its details");
   await adaNow.getByRole("button", { name: "Riprendi" }).waitFor();
+  // Design rules: Riprendi starts work, so it shows an icon with its text; and it sits above the closed details, on the right.
+  const resumeAda = adaNow.getByRole("button", { name: "Riprendi", exact: true });
+  if (!(await resumeAda.locator("svg").count()) || (await resumeAda.innerText()).trim() !== "Riprendi") throw new Error("Riprendi on the assignment card is not icon and text");
+  const resumeTop = await resumeAda.evaluate((el) => el.getBoundingClientRect().top);
+  const toggleTop = await detailToggle.evaluate((el) => el.getBoundingClientRect().top);
+  if (!(resumeTop < toggleTop)) throw new Error("The assignment card puts its actions below the details toggle");
+  if ((await resumeAda.evaluate((el) => el.parentElement.lastElementChild === el)) !== true) throw new Error("Riprendi is not the last action of the assignment card");
   await themeShots("52b-person-stopped");
   await detailToggle.click();
   const reliedOn = adaNow.getByTestId("contract-decisions");
@@ -4176,6 +4235,11 @@ const auditVisibleText = await focusAudit.innerText();
 if (/Skill ricevute|git diff [0-9a-f]{7}|gpt-5\.5/.test(auditVisibleText)) throw new Error(`The examination shows technical lines to the person: ${auditVisibleText}`);
 const againButton = focusAudit.getByRole("button", { name: "Esamina di nuovo" });
 if (!(await againButton.locator("svg").count())) throw new Error("Esamina di nuovo has no icon");
+// Design rules: the examination has no filled button (the window's one is in Aspetta te), its blocks sit on the 16 px
+// step, and its findings read "Prova:" from the catalog.
+if (await focusAudit.locator('button[data-variant="default"]').count()) throw new Error("The examination has a filled button");
+const auditPadding = await focusAudit.evaluate((el) => getComputedStyle(el).paddingTop);
+if (auditPadding !== "16px") throw new Error(`The examination's blocks are not on the 16 px step: ${auditPadding}`);
 await focusAudit.evaluate((el) => el.querySelectorAll("details").forEach((d) => (d.open = true)));
 for (const check of ["swift_build", "swift_test"]) {
   await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
@@ -5159,6 +5223,7 @@ await app.close();
   const warning = page.getByTestId("status-setup");
   await warning.waitFor();
   if ((await warning.getAttribute("data-step")) !== "provider") throw new Error("The status bar does not warn about the provider");
+  await statusBarRules("with the provider warning");
   await shot("00g-composer-no-provider");
   // The Benvenuto does not reopen by itself on the same project; the warning and the composer reopen it on the step.
   await page.waitForTimeout(500);
@@ -5514,6 +5579,7 @@ const openDivergence = async () => {
   await divergenceNotice.waitFor({ timeout: 30_000 });
 };
 if (!/^18 file in conflitto$/.test((await page.getByTestId("status-conflict").innerText({ timeout: 30_000 })).trim())) throw new Error("The status bar does not count the files in conflict");
+await statusBarRules("with a conflict");
 await openDivergence();
 const divergenceText = await divergenceNotice.getByTestId("branch-divergence-text").innerText();
 if (!divergenceText.includes("chore/pre-apertura") || !divergenceText.includes("18 file in conflitto") || /[A-Z]-[0-9A-F]{6,}|[–—]/.test(divergenceText)) {
@@ -7051,6 +7117,8 @@ for (const [name, testid, file] of [
   }
 }
 if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+// Design rules: a repeated check is secondary, so it is an icon with the name as tooltip and no visible text.
+if ((await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).innerText()).trim() !== "") throw new Error("Cloud sessions: the check of the session shows text, not only an icon");
 if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");
 const cloudState = await page.evaluate(async () => (await window.trama.getState()).project.document.team.specialists.find((s) => s.name === "Ada").assignments[0]);
 if (cloudState.status !== "running" || cloudState.cloud.status !== "working") throw new Error(`Cloud sessions: reopening stopped the cloud work: ${cloudState.status}`);
