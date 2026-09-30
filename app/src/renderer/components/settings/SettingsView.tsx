@@ -552,9 +552,9 @@ function MethodSection() {
               >
                 {t("settings.method.rollback")}
               </Button>
-              {/* The row's primary: last, on the right; the settings draw it as an outline (ADR 0018). */}
+              {/* The row's primary: last, on the right, and never filled (ADR 0018). */}
               <Button
-                variant="default"
+                variant="outline"
                 disabled={noProject || running}
                 onClick={async () => {
                   setRunning(true);
@@ -710,7 +710,7 @@ function WorkPlaceGroup() {
                   disabled={!cloud}
                   onClick={() => void act("project:settings", { workPlace: value })}
                   className={cn(
-                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-3 text-ui-sm transition-colors",
+                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-4 text-ui-sm transition-colors",
                     selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -747,7 +747,7 @@ function DiscussionModelGroup() {
                   aria-checked={setting === value}
                   onClick={() => void act("project:settings", { discussionModel: value })}
                   className={cn(
-                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-3 text-ui-sm transition-colors",
+                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-4 text-ui-sm transition-colors",
                     setting === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
