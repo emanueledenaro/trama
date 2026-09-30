@@ -741,12 +741,6 @@ await shot("02-demo-study");
     });
   const filledButtons = () =>
     page.locator('button[data-variant="default"]').evaluateAll((buttons) => buttons.filter((b) => b.getBoundingClientRect().width > 0).length);
-  const bars = await page.evaluate(() => ({
-    title: document.querySelector('[data-testid="title-bar"]').getBoundingClientRect().height,
-    activity: document.querySelector('[data-testid="activity-bar"]').getBoundingClientRect().width,
-    status: document.querySelector('[data-testid="status-bar"]').getBoundingClientRect().height,
-  }));
-  if (bars.title !== 46 || bars.activity !== 48 || bars.status !== 24) throw new Error(`The window's bars are not 46, 48 and 24 px: ${JSON.stringify(bars)}`);
   // Design rules for the title bar: every button and the search are at least 32 px, and the branch is not repeated here
   // (the status bar has it, and it opens the branch).
   {
@@ -759,6 +753,12 @@ await shot("02-demo-study");
     if (small.length) throw new Error(`The title bar has buttons under 32 px: ${small.join(", ")}`);
     if (await page.locator('[data-testid="title-bar"] .tabler-icon-git-branch').count()) throw new Error("The title bar repeats the branch of the status bar");
   }
+  const bars = await page.evaluate(() => ({
+    title: document.querySelector('[data-testid="title-bar"]').getBoundingClientRect().height,
+    activity: document.querySelector('[data-testid="activity-bar"]').getBoundingClientRect().width,
+    status: document.querySelector('[data-testid="status-bar"]').getBoundingClientRect().height,
+  }));
+  if (bars.title !== 46 || bars.activity !== 48 || bars.status !== 24) throw new Error(`The window's bars are not 46, 48 and 24 px: ${JSON.stringify(bars)}`);
   if (await page.getByTestId("side-bar").count()) throw new Error("The side bar is open at the first launch");
   // One badge in the activity bar, the count of Aspetta te.
   const badges = await activityBar().getByTestId("activity-badge").allInnerTexts();
