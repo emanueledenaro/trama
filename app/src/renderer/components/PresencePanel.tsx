@@ -39,17 +39,17 @@ export function PresenceControls({
     <div className="flex flex-wrap items-center justify-end gap-2">
       {sharing ? (
         // Issue #338: "Sospendi la presenza" names what it pauses; both moves are icon and text.
-        <Button size="xs" variant="ghost" onClick={() => void act("presence:pause", { paused: !paused })}>
+        <Button variant="ghost" onClick={() => void act("presence:pause", { paused: !paused })}>
           {paused ? <IconPlayerPlay /> : <IconPlayerPause />}
           {paused ? t("settings.presence.resume") : t("settings.presence.pause")}
         </Button>
       ) : null}
       {showLabel ? (
         <span aria-hidden className="text-ui-sm text-foreground/80">
-          Condividi la presenza
+          {t("settings.presence.switch")}
         </span>
       ) : null}
-      <Toggle label="Condividi la presenza" checked={sharing} onChange={(share) => void act("presence:consent", { share, proposal: null })} />
+      <Toggle label={t("settings.presence.switch")} checked={sharing} onChange={(share) => void act("presence:consent", { share, proposal: null })} />
     </div>
   );
 }

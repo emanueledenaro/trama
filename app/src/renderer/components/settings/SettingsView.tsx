@@ -828,7 +828,11 @@ function MonitorSection() {
   const t = useT();
   return (
     <>
-      <PageHeader title={t("settings.monitor.title")} description={t("settings.monitor.description")} />
+      <PageHeader title={t("settings.section.monitor")} description={t("settings.monitor.description")} />
+      {/* The summary: is it on, and how many repositories does it watch. */}
+      <p className="mb-6 text-ui text-foreground" data-testid="monitor-summary">
+        {monitor.enabled ? t("settings.monitor.summaryOn", { count: monitor.repositories.length }) : t("settings.monitor.summaryOff")}
+      </p>
       <Group>
         <ToggleRow label={t("settings.monitor.enabled")} checked={monitor.enabled} onChange={(enabled) => void act("monitor:update", { enabled })} />
         {platform !== "linux" ? (
@@ -849,10 +853,10 @@ function MonitorSection() {
           return (
             <Row
               key={repo}
-              label={<span className="font-mono text-[12px]">{repo}</span>}
+              label={<span className="font-mono text-ui-sm">{repo}</span>}
               description={status?.lastError ? <span className="text-destructive">{status.lastError}</span> : status?.lastSuccessAt ? t("settings.monitor.updated") : null}
               control={
-                <Button variant="ghost" size="xs" onClick={() => void act("monitor:update", { removeRepository: repo })}>
+                <Button variant="ghost" onClick={() => void act("monitor:update", { removeRepository: repo })}>
                   {t("settings.monitor.remove")}
                 </Button>
               }
@@ -861,10 +865,10 @@ function MonitorSection() {
         })}
         {repository && !monitored ? (
           <Row
-            label={<span className="font-mono text-[12px]">{repository}</span>}
+            label={<span className="font-mono text-ui-sm">{repository}</span>}
             description={t("settings.monitor.openRepository")}
             control={
-              <Button size="sm" variant="outline" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
+              <Button variant="outline" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
                 <IconEye stroke={1.8} /> {t("settings.monitor.watch")}
               </Button>
             }

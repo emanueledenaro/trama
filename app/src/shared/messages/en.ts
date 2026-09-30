@@ -391,9 +391,11 @@ export const en: Record<keyof typeof it, string> = {
   "settings.standard.notePlaceholder": "Language, paradigm or exceptions for this project",
 
 
-  "settings.monitor.title": "Background monitor",
   "settings.monitor.description":
     "Reads your colleagues' branches and pull requests with GitHub CLI and tells you what is new while Trama is open or in the background.",
+  "settings.monitor.summaryOn": "Monitor on: {count} watched repositories",
+  "settings.monitor.summaryOn.one": "Monitor on: 1 watched repository",
+  "settings.monitor.summaryOff": "Monitor off",
   "settings.monitor.enabled": "Monitor on",
   "settings.monitor.openAtLogin": "Start Trama at login, in the background",
   "settings.monitor.repositories": "Watched repositories",
@@ -410,6 +412,7 @@ export const en: Record<keyof typeof it, string> = {
   "settings.presence.openProject": "Open a project to choose whether to share your presence.",
   "settings.presence.demo": "The example project does not share presence.",
   "settings.presence.share": "Share your presence in {name}",
+  "settings.presence.switch": "Share the presence",
   "settings.presence.pause": "Pause the presence",
   "settings.presence.resume": "Resume the presence",
   // Focus mode on a module or the project, full screen (F03)

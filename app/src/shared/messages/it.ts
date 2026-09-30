@@ -394,9 +394,11 @@ export const it = {
   "settings.standard.notePlaceholder": "Lingua, paradigma o eccezioni di questo progetto",
 
 
-  "settings.monitor.title": "Monitor in background",
   "settings.monitor.description":
     "Legge branch e pull request dei colleghi con GitHub CLI e ti avvisa delle novità mentre Trama è aperto o in background.",
+  "settings.monitor.summaryOn": "Monitor attivo: {count} repository osservati",
+  "settings.monitor.summaryOn.one": "Monitor attivo: 1 repository osservato",
+  "settings.monitor.summaryOff": "Monitor spento",
   "settings.monitor.enabled": "Monitor attivo",
   "settings.monitor.openAtLogin": "Avvia Trama all'accesso, in background",
   "settings.monitor.repositories": "Repository osservati",
@@ -413,6 +415,7 @@ export const it = {
   "settings.presence.openProject": "Apri un progetto per scegliere se condividere la presenza.",
   "settings.presence.demo": "Il progetto di esempio non condivide la presenza.",
   "settings.presence.share": "Condividi la presenza in {name}",
+  "settings.presence.switch": "Condividi la presenza",
   "settings.presence.pause": "Sospendi la presenza",
   "settings.presence.resume": "Riprendi la presenza",
   // Focus mode on a module or the project, full screen (F03)
