@@ -83,7 +83,7 @@ function ProposalReference({ requestId }: { requestId: string }) {
       type="button"
       aria-label={t("rules.mandate.proposalOpen")}
       title={t("rules.mandate.proposalOpen")}
-      className="-mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground transition-colors hover:bg-[var(--sidebar-accent)]"
+      className="-mx-2 flex min-h-8 w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground transition-colors hover:bg-[var(--sidebar-accent)]"
       data-testid="mandate-proposal-reference"
       data-waiting-key={item.key}
       onClick={() => setInspector({ kind: "waiting", key: item.key })}
@@ -169,7 +169,7 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
     }).then(() => setMode(null));
 
   const checkbox = "accent-[var(--color-text-accent)]";
-  const optionRow = "flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-ui hover:bg-[var(--sidebar-accent)]";
+  const optionRow = "flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-ui hover:bg-[var(--sidebar-accent)]";
 
   return (
     <div className="pb-3" data-testid="mandate-view">

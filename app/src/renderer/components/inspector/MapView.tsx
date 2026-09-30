@@ -10,7 +10,7 @@ import { useT } from "@/lib/i18n";
 import { DisclosureSection, EmptyNote, InspectorSection } from "./Inspector";
 
 const ROW =
-  "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)]";
+  "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)]";
 
 /**
  * The modules of the project (issue #334): the map of today as the Moduli section of Mandato. Each module says whether
@@ -48,9 +48,8 @@ export function ModulesList() {
         </ul>
       ) : null}
       <div className="cta-row mt-3">
-        <Button size="sm" variant="outline" className="max-w-full" title={t("focus.openProject")} onClick={() => openFocusStart({ kind: "project" })}>
-          <IconFocus2 stroke={1.8} /> <span className="truncate">{t("focus.openProject")}</span>
-        </Button>
+        {/* Secondary and repeated: an icon with its name (ADR 0018, issue #338). */}
+        <IconButton size="icon" label={t("focus.openProject")} icon={<IconFocus2 stroke={1.8} />} onClick={() => openFocusStart({ kind: "project" })} />
       </div>
       {snapshot.modules.length === 0 ? <EmptyNote>{t("rules.modules.empty")}</EmptyNote> : null}
       <div className="-mx-2 mt-2 flex flex-col gap-0.5" role="listbox" aria-label={t("rules.modules.title")} onKeyDown={moveFocusWithArrows}>
@@ -99,7 +98,7 @@ export function ModuleView({ id }: { id: string }) {
   return (
     <>
       <div className="px-4 pt-3">
-        <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "map" })}>
+        <button type="button" className="inline-flex min-h-8 items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "map" })}>
           <IconArrowLeft className="size-3.5" /> {t("rules.module.back")}
         </button>
         <h3 className="mt-2 text-ui-lg font-medium text-foreground">{module.name}</h3>
@@ -111,7 +110,7 @@ export function ModuleView({ id }: { id: string }) {
         <div className="cta-row mt-3">
           {/* Issue #338: the examination is secondary, an icon with its name; "Chiedi" with its icon fits the narrow side
               bar, and its tooltip and name keep the whole question. */}
-          <IconButton size="icon-sm" label={t("focus.openModule")} icon={<IconFocus2 stroke={1.8} />} onClick={() => openFocusStart({ kind: "module", moduleId: module.id })} />
+          <IconButton size="icon" label={t("focus.openModule")} icon={<IconFocus2 stroke={1.8} />} onClick={() => openFocusStart({ kind: "module", moduleId: module.id })} />
           <Tooltip label={t("rules.module.ask")}>
             <Button size="sm" variant="outline" aria-label={t("rules.module.ask")} onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
               <IconMessageCircle stroke={1.8} /> {t("rules.module.askShort")}
@@ -164,6 +163,7 @@ export function ModuleView({ id }: { id: string }) {
 }
 
 export function FilePreview({ path }: { path: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [contents, setContents] = useState<string | null>(null);
@@ -189,16 +189,14 @@ export function FilePreview({ path }: { path: string }) {
     <div className="flex h-full flex-col">
       <div className="px-4 pt-3 pb-2">
         {module ? (
-          <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "module", id: module.id })}>
+          <button type="button" className="inline-flex min-h-8 items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "module", id: module.id })}>
             <IconArrowLeft className="size-3.5" /> {module.name}
           </button>
         ) : null}
         <div className="mt-2 flex items-center gap-2">
           <p className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">{path}</p>
           <OverlapMarkSign mark={project.overlaps?.files[path]} />
-          <button type="button" className="sidebar-icon-button size-6 rounded-md" aria-label="Mostra nella cartella" onClick={() => void act("project:revealInFolder", { relativePath: path })}>
-            <IconExternalLink className="size-3.5" />
-          </button>
+          <IconButton size="icon" label={t("rules.file.reveal")} icon={<IconExternalLink stroke={1.8} />} onClick={() => void act("project:revealInFolder", { relativePath: path })} />
         </div>
       </div>
       {fileOverlaps.length ? (
@@ -209,7 +207,16 @@ export function FilePreview({ path }: { path: string }) {
         </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
-        {failed ? <EmptyNote>Il file non è disponibile per la lettura.</EmptyNote> : null}
+        {failed ? (
+          <p className="text-ui text-destructive" role="alert" data-testid="file-unavailable">
+            {t("rules.file.unavailable")}
+          </p>
+        ) : null}
+        {!failed && contents === null ? (
+          <p className="text-ui text-muted-foreground" role="status" data-testid="file-loading">
+            {t("rules.file.loading")}
+          </p>
+        ) : null}
         {contents !== null ? (
           <pre className="rounded-xl bg-[var(--app-chat-code-surface)] p-3 font-mono text-[11.5px] leading-[1.55] text-foreground/90">
             <code>

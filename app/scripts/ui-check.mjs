@@ -2202,6 +2202,9 @@ await shot("09-mandate");
   for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
     if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
   }
+  // Design rules (Mandato): no filled button, and the restriction and correction primaries are outlines.
+  if (await rulesBar.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("Mandato has a filled button");
+  if (await rulesBar.locator('button[data-variant="destructive"]').count()) throw new Error("Mandato shows a red button before a confirm step");
   const tabNames = (await rulesBar.getByRole("tab").allInnerTexts()).map((name) => name.replace(/\s+/g, " ").trim());
   if (tabNames.length !== 3 || tabNames[0] !== "Mandato" || !/^Patto\s*\d+$/.test(tabNames[1]) || tabNames[2] !== "Standard") {
     throw new Error(`Regole tabs: ${tabNames.join(", ")}`);
@@ -2250,9 +2253,23 @@ await shot("09-mandate");
       await shot(`34-rules-mandate-change-${provider}-${dark ? "dark" : "light"}`);
     }
   }
+  // Design rules: Revoca is text and not red; red appears only at the confirm step, which ends with the destructive action.
+  const revokeButton = rulesBar.getByTestId("mandate-change").getByRole("button", { name: "Revoca", exact: true });
+  if ((await revokeButton.getAttribute("data-variant")) === "destructive") throw new Error("Revoca is red before its confirm step");
+  await revokeButton.click();
+  const revokeActions = await rulesBar.getByTestId("mandate-revoke-confirm").locator(".cta-row button").evaluateAll((els) => els.map((el) => `${el.textContent?.trim()}:${el.getAttribute("data-variant")}`));
+  if (revokeActions.join("|") !== "Annulla:ghost|Revoca il mandato:destructive") throw new Error(`Revoca confirm step: ${revokeActions.join(", ")}`);
+  await rulesBar.getByTestId("mandate-revoke-confirm").getByRole("button", { name: "Annulla", exact: true }).click();
   // Moduli: the map of today, with the modules of the mandate marked.
   await openSection("Moduli");
   await rulesBar.getByTestId("module-in-mandate").first().waitFor();
+  // Design rules (Moduli): the deep examination is an icon with its name, of at least 32 px; a module row is at least 32 px.
+  const projectFocus = rulesBar.getByRole("button", { name: "Esame approfondito del progetto" });
+  const focusBox = await projectFocus.boundingBox();
+  if (!focusBox || focusBox.width < 32 || focusBox.height < 32) throw new Error("The project's deep examination is smaller than 32 px");
+  if ((await projectFocus.innerText()).trim()) throw new Error("The project's deep examination has text: it is an icon");
+  const moduleBox = await page.getByRole("listbox", { name: "Moduli" }).getByRole("option").first().boundingBox();
+  if (!moduleBox || moduleBox.height < 32) throw new Error("A module row is shorter than 32 px");
   await rulesBar.getByTestId("mandate-modules").scrollIntoViewIfNeeded();
   await themeShots("34-rules-mandate-modules");
   // A module shows its files first and keeps the dependencies closed.
@@ -2261,6 +2278,13 @@ await shot("09-mandate");
   await detailPane().getByTestId("module-files").waitFor();
   if ((await detailPane().getByTestId("module-dependencies").getAttribute("data-open")) !== "false") throw new Error("The module's dependencies are not closed");
   await themeShots("34-rules-module");
+  // Design rules (file): the file opens with its own name for "Mostra nella cartella", an icon of at least 32 px.
+  await detailPane().getByTestId("module-files").locator("button").first().click();
+  const reveal = detailPane().getByRole("button", { name: "Mostra nella cartella" });
+  await reveal.waitFor();
+  const revealBox = await reveal.boundingBox();
+  if (!revealBox || revealBox.width < 32 || revealBox.height < 32) throw new Error("Mostra nella cartella is smaller than 32 px");
+  if ((await reveal.innerText()).trim()) throw new Error("Mostra nella cartella has text: it is an icon");
   await setLookTo(rulesLook.provider, rulesLook.dark);
 }
 await app.evaluate(({ nativeTheme }) => {
