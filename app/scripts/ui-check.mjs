@@ -3647,6 +3647,13 @@ await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_dif
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
 await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
 await failedCard.getByText("Verifica non superata").waitFor();
+// UI wave of 30 September: what a candidate is missing comes before its checks, right after who did the work.
+const missingFirst = await failedCard.evaluate((card) => {
+  const missing = card.querySelector('[data-testid="candidate-blockers"]');
+  const checks = card.querySelector('[data-testid="candidate-evidence"]');
+  return Boolean(missing && checks && missing.compareDocumentPosition(checks) & Node.DOCUMENT_POSITION_FOLLOWING);
+});
+if (!missingFirst) throw new Error("What a candidate is missing does not come before its checks");
 await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
 await failedOutput.getByText(/trailing whitespace\./).waitFor();
