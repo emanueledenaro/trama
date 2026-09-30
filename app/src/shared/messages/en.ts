@@ -1061,6 +1061,7 @@ export const en: Record<keyof typeof it, string> = {
   "goal.detail.filtered": "Chat filtered",
   "goal.detail.archive": "Archive",
   "goal.detail.edit": "Edit",
+  "goal.detail.expected": "Expected result",
   "work.slices.title": "Slices",
   "work.slices.titleOf": "Slices of «{plan}»",
   "work.slices.none": "No slices. The Coordinator splits the work into slices once a plan is ready.",

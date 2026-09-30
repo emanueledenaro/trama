@@ -404,7 +404,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
         ) : null}
         <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
       </div>
-      <InspectorSection title="Risultato atteso" aside={
+      <InspectorSection title={t("goal.detail.expected")} aside={
           !editing ? (
             <Tooltip label={t("goal.detail.edit")}>
               <Button size="icon" variant="ghost" aria-label={t("goal.detail.edit")} onClick={() => setEditing(true)}>

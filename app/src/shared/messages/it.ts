@@ -1063,6 +1063,7 @@ export const it = {
   "goal.detail.filtered": "Chat filtrata",
   "goal.detail.archive": "Archivia",
   "goal.detail.edit": "Modifica",
+  "goal.detail.expected": "Risultato atteso",
   "work.slices.title": "Fette",
   "work.slices.titleOf": "Fette di «{plan}»",
   "work.slices.none": "Nessuna fetta. Il Coordinatore divide il lavoro in fette quando un piano è pronto.",
