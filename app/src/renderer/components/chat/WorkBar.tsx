@@ -100,12 +100,12 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
             </FilledScope>
           </div>
         ) : null}
-        <div className="flex h-9 min-w-0 items-center gap-1 px-1">
+        <div className="flex h-8 min-w-0 items-center gap-1 px-1" data-testid="work-bar-line">
           {hasFocus ? (
             <button
               type="button"
               className={cn(
-                "flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-2 text-left text-ui-sm outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]",
+                "flex h-8 min-w-0 items-center gap-2 rounded-lg px-2 text-left text-ui-sm outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]",
                 waiting ? "max-w-[42%] shrink" : "flex-1",
               )}
               aria-label={t("workbench.status.focusOf", { title })}
@@ -124,10 +124,10 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
               <IconChevronUp className={cn("ml-auto size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} stroke={1.8} />
             </button>
           ) : null}
-          {hasFocus && waiting ? <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)]" /> : null}
+          {hasFocus && waiting ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-[var(--app-surface-divider)]" data-testid="work-bar-divider" /> : null}
           {waiting ? (
             // One row that never wraps: the text gives way, Decidi stays last on the right.
-            <div className="flex min-w-0 flex-1 items-center gap-2 pl-1.5" data-testid="waiting-summary" data-waiting-key={first.key}>
+            <div className="flex min-w-0 flex-1 items-center gap-2 pl-2" data-testid="waiting-summary" data-waiting-key={first.key}>
               <span className="flex min-w-0 flex-1 items-center gap-2 text-ui-sm">
                 <IconHourglass className="size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
                 <span className="min-w-0 truncate">

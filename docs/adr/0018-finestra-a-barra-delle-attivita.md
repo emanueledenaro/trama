@@ -36,3 +36,7 @@ Decisione della persona (issue #354, B11). Il primo avvio non ha più una scherm
 Alternative scartate: un assistente a tutto schermo con un passo per schermata, che bloccava l'app fino alla fine; una sola schermata riordinata, che lasciava tre punti d'ingresso diversi per le stesse cose.
 
 Conseguenza: la configurazione non blocca più l'uso di Trama, e ogni funzione del primo avvio ha un solo posto.
+
+## Aggiunta del 30 settembre: ordine della barra di stato
+
+La barra di stato si legge per importanza, da sinistra a destra: la riga di stato con il prossimo passo, ciò che chiede un'azione (conflitto con il branch principale, passo di Configura tornato indietro), il lavoro in primo piano, il branch come contesto, poi una linea e le icone Attività e Pausa, con la mossa della persona per ultima. Prima il branch stava a sinistra. Uno stato si vede nell'icona di avviso e nel testo più marcato: un pulsante non prende mai una tinta di stato.
