@@ -420,6 +420,33 @@ const primaryLast = async (row, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// Design rules for the status bar: read left to right by importance (status line, what asks for an action, the work in
+// focus, the branch, then a line and the icons), no button takes a state tint at rest, and the bar stays 24 px.
+const statusBarRules = async (where) => {
+  const bar = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="status-bar"]');
+    const left = (selector) => root.querySelector(selector)?.getBoundingClientRect().left ?? null;
+    const order = [
+      '[data-testid="status-line-text"]',
+      '[data-testid="status-conflict"]',
+      '[data-testid="status-setup"]',
+      '[data-testid="status-focus"]',
+      '[data-testid="status-branch"]',
+      '[data-testid="status-divider"]',
+      'button[aria-label="Attività"]',
+    ]
+      .map((selector) => [selector, left(selector)])
+      .filter(([, x]) => x !== null);
+    const tinted = [...root.querySelectorAll("button")]
+      .filter((button) => !["rgba(0, 0, 0, 0)", "transparent"].includes(getComputedStyle(button).backgroundColor))
+      .map((button) => button.getAttribute("data-testid") ?? button.getAttribute("aria-label"));
+    return { order, tinted, height: root.getBoundingClientRect().height };
+  });
+  const xs = bar.order.map(([, x]) => x);
+  if (xs.some((x, i) => i > 0 && x < xs[i - 1])) throw new Error(`The status bar is not read by importance ${where}: ${JSON.stringify(bar.order)}`);
+  if (bar.tinted.length) throw new Error(`A status bar button has a background at rest ${where}: ${bar.tinted.join(", ")}`);
+  if (bar.height !== 24) throw new Error(`The status bar is not 24 px ${where}: ${bar.height}`);
+};
 // UI wave of 29 September: only the conversation holds the work bar on the composer. Over a detail tab without the
 // composer, as an agent's or a candidate's, the bar is the tab's last row in a room of its own: the tab ends where the
 // bar starts, so it covers nothing, and it still shows while something waits. Progetti, Impostazioni and the Benvenuto
@@ -747,6 +774,7 @@ await shot("02-demo-study");
     status: document.querySelector('[data-testid="status-bar"]').getBoundingClientRect().height,
   }));
   if (bars.title !== 46 || bars.activity !== 48 || bars.status !== 24) throw new Error(`The window's bars are not 46, 48 and 24 px: ${JSON.stringify(bars)}`);
+  await statusBarRules("at the first launch");
   if (await page.getByTestId("side-bar").count()) throw new Error("The side bar is open at the first launch");
   // One badge in the activity bar, the count of Aspetta te.
   const badges = await activityBar().getByTestId("activity-badge").allInnerTexts();
@@ -1780,10 +1808,42 @@ await addedNote.waitFor({ state: "detached", timeout: 10_000 });
 // Skills: Apri, Fissa and Archivia are icons with a tooltip and a name; Elimina keeps its text.
 const learnedSkill = memoryView.getByTestId("learned-skill").filter({ hasText: "release-flow" });
 for (const name of ["Apri", "Fissa", "Archivia"]) await learnedSkill.getByRole("button", { name, exact: true }).waitFor();
+// Design rules: a skill is a 32 px row (name, state, icon actions); the description, the counters and Elimina wait in
+// the detail, closed until the person opens the row.
+if ((await learnedSkill.getAttribute("data-open")) !== "false") throw new Error("A skill's detail is open before the person opens it");
+if (await learnedSkill.getByTestId("learned-skill-detail").count()) throw new Error("A closed skill shows its detail");
+const skillRow = await learnedSkill.getByRole("button", { name: /^release-flow/ }).boundingBox();
+if (!skillRow || skillRow.height < 32) throw new Error(`A skill's row is under 32 px: ${skillRow?.height}`);
+for (const name of ["Apri", "Fissa", "Archivia"]) {
+  const box = await learnedSkill.getByRole("button", { name, exact: true }).boundingBox();
+  if (!box || box.width < 32 || box.height < 32) throw new Error(`${name} is under 32 px: ${box?.width}x${box?.height}`);
+}
+await learnedSkill.getByRole("button", { name: /^release-flow/ }).click();
+await learnedSkill.getByTestId("learned-skill-detail").waitFor();
 if (!(await learnedSkill.getByRole("button", { name: "Elimina" }).innerText()).includes("Elimina")) throw new Error("Elimina lost its text");
+if (await learnedSkill.locator('button[data-variant="destructive"]').count()) throw new Error("Elimina is red before the confirmation step");
+await learnedSkill.getByRole("button", { name: "Elimina" }).click();
+if (!(await learnedSkill.locator('button[data-variant="destructive"]').count())) throw new Error("The confirmation step of Elimina is not red");
+await learnedSkill.getByRole("button", { name: "Annulla", exact: true }).click();
 await learnedSkill.getByRole("button", { name: "Apri", exact: true }).click();
 await learnedSkill.getByLabel("Testo della skill release-flow").waitFor();
 await learnedSkill.getByRole("button", { name: "Chiudi", exact: true }).first().click();
+// Design rules: the head holds one line and a closed explanation, no button of the view is filled, the tidy and review
+// actions are icons, and the practices are rows that open on request.
+if ((await memoryView.locator("[data-testid=memory-intro]").getAttribute("open")) !== null) throw new Error("The explanation of Memoria is open by default");
+if (await memoryView.locator('button[data-variant="default"]').count()) throw new Error("Memoria has a filled button");
+for (const name of ["Rivedi ora", "Controlla ora"]) {
+  const box = await memoryView.getByRole("button", { name, exact: true }).boundingBox();
+  if (!box || box.width < 32 || box.height < 32) throw new Error(`${name} is under 32 px`);
+  if ((await memoryView.getByRole("button", { name, exact: true }).innerText()).trim()) throw new Error(`${name} shows text next to its icon`);
+}
+if (await memoryView.getByTestId("practice").count()) {
+  const practice = memoryView.getByTestId("practice").first();
+  if ((await practice.getAttribute("data-open")) !== "false") throw new Error("A practice is open before the person opens it");
+  await practice.getByRole("button", { expanded: false }).first().click();
+  if ((await practice.getAttribute("data-open")) !== "true") throw new Error("A practice does not open");
+  await practice.getByRole("button", { expanded: true }).first().click();
+}
 // Every button of the view has a name, and nothing scrolls sideways.
 const unnamed = await memoryView.locator("button").evaluateAll((buttons) => buttons.filter((b) => !(b.getAttribute("aria-label") || b.textContent.trim())).length);
 if (unnamed) throw new Error(`${unnamed} buttons of Memoria have no name`);
@@ -2438,6 +2498,9 @@ const slices = writtenSpec.getByTestId("plan-slices");
 const confirmSlices = slices.getByRole("button", { name: "Conferma le fette" });
 await confirmSlices.waitFor({ timeout: 20_000 });
 if ((await slices.getByTestId("plan-slice").count()) !== 3) throw new Error("The breakdown does not show the three slices of to-tickets");
+// Design rules: what to do comes before the long detail, so the slices and their confirmation sit above the seams of the spec.
+const specOrder = await writtenSpec.evaluate((spec) => [spec.querySelector('[data-testid="plan-slices"]'), spec.querySelector('[data-testid="plan-seam"]')].map((el) => el.getBoundingClientRect().top));
+if (!(specOrder[0] < specOrder[1])) throw new Error(`The slices of a written spec come after its seams: ${specOrder}`);
 await slices.getByText("Bloccata da: 1").first().waitFor();
 await slices.getByText("Può iniziare subito").waitFor();
 if (await writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" }).count()) throw new Error("A plan with slices still offers the approval of the whole plan");
@@ -3048,6 +3111,27 @@ const actionsOnRight = async (size) => {
   }
 };
 await actionsOnRight("1280x820");
+// Design rules for the bar above the composer and its panel: a 32 px row whose work-in-focus button is 32 px high, the
+// blocks of the panel spaced on 8 px steps, and the divider drawn with the token.
+{
+  const rules = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="work-bar"]');
+    const row = bar.querySelector('[data-testid="work-bar-line"]');
+    const focus = bar.querySelector('[data-testid="work-bar-focus"]').getBoundingClientRect();
+    const panel = getComputedStyle(bar.querySelector('[data-testid="focus-bar"]'));
+    const divider = bar.querySelector('[data-testid="work-bar-divider"]');
+    return {
+      row: row ? Math.round(row.getBoundingClientRect().height) : null,
+      focus: Math.round(focus.height),
+      padding: [panel.paddingTop, panel.paddingLeft],
+      gap: panel.rowGap,
+      divider: divider ? getComputedStyle(divider).backgroundColor : null,
+    };
+  });
+  if (rules.row !== 32 || rules.focus < 32) throw new Error(`The bar above the composer is not 32 px: ${JSON.stringify(rules)}`);
+  if (rules.padding.join() !== "16px,16px" || rules.gap !== "8px") throw new Error(`The focus panel is not on the 8 px steps: ${JSON.stringify(rules)}`);
+  if (rules.divider === "rgb(0, 0, 0)") throw new Error("The divider of the bar is not drawn with the token");
+}
 await shot("17-focus-bar-queue");
 await pause.click();
 const focusIs = (title, equal) =>
@@ -3555,6 +3639,13 @@ await closePanels();
   if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
   if (await adaNow.getByTestId("assignment-contract").count()) throw new Error("The assignment's contract shows before the person opens its details");
   await adaNow.getByRole("button", { name: "Riprendi" }).waitFor();
+  // Design rules: Riprendi starts work, so it shows an icon with its text; and it sits above the closed details, on the right.
+  const resumeAda = adaNow.getByRole("button", { name: "Riprendi", exact: true });
+  if (!(await resumeAda.locator("svg").count()) || (await resumeAda.innerText()).trim() !== "Riprendi") throw new Error("Riprendi on the assignment card is not icon and text");
+  const resumeTop = await resumeAda.evaluate((el) => el.getBoundingClientRect().top);
+  const toggleTop = await detailToggle.evaluate((el) => el.getBoundingClientRect().top);
+  if (!(resumeTop < toggleTop)) throw new Error("The assignment card puts its actions below the details toggle");
+  if ((await resumeAda.evaluate((el) => el.parentElement.lastElementChild === el)) !== true) throw new Error("Riprendi is not the last action of the assignment card");
   await themeShots("52b-person-stopped");
   await detailToggle.click();
   const reliedOn = adaNow.getByTestId("contract-decisions");
@@ -4086,6 +4177,11 @@ const auditVisibleText = await focusAudit.innerText();
 if (/Skill ricevute|git diff [0-9a-f]{7}|gpt-5\.5/.test(auditVisibleText)) throw new Error(`The examination shows technical lines to the person: ${auditVisibleText}`);
 const againButton = focusAudit.getByRole("button", { name: "Esamina di nuovo" });
 if (!(await againButton.locator("svg").count())) throw new Error("Esamina di nuovo has no icon");
+// Design rules: the examination has no filled button (the window's one is in Aspetta te), its blocks sit on the 16 px
+// step, and its findings read "Prova:" from the catalog.
+if (await focusAudit.locator('button[data-variant="default"]').count()) throw new Error("The examination has a filled button");
+const auditPadding = await focusAudit.evaluate((el) => getComputedStyle(el).paddingTop);
+if (auditPadding !== "16px") throw new Error(`The examination's blocks are not on the 16 px step: ${auditPadding}`);
 await focusAudit.evaluate((el) => el.querySelectorAll("details").forEach((d) => (d.open = true)));
 for (const check of ["swift_build", "swift_test"]) {
   await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
@@ -5071,6 +5167,7 @@ await app.close();
   const warning = page.getByTestId("status-setup");
   await warning.waitFor();
   if ((await warning.getAttribute("data-step")) !== "provider") throw new Error("The status bar does not warn about the provider");
+  await statusBarRules("with the provider warning");
   await shot("00g-composer-no-provider");
   // The Benvenuto does not reopen by itself on the same project; the warning and the composer reopen it on the step.
   await page.waitForTimeout(500);
@@ -5426,6 +5523,7 @@ const openDivergence = async () => {
   await divergenceNotice.waitFor({ timeout: 30_000 });
 };
 if (!/^18 file in conflitto$/.test((await page.getByTestId("status-conflict").innerText({ timeout: 30_000 })).trim())) throw new Error("The status bar does not count the files in conflict");
+await statusBarRules("with a conflict");
 await openDivergence();
 const divergenceText = await divergenceNotice.getByTestId("branch-divergence-text").innerText();
 if (!divergenceText.includes("chore/pre-apertura") || !divergenceText.includes("18 file in conflitto") || /[A-Z]-[0-9A-F]{6,}|[–—]/.test(divergenceText)) {
@@ -6963,6 +7061,8 @@ for (const [name, testid, file] of [
   }
 }
 if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+// Design rules: a repeated check is secondary, so it is an icon with the name as tooltip and no visible text.
+if ((await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).innerText()).trim() !== "") throw new Error("Cloud sessions: the check of the session shows text, not only an icon");
 if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");
 const cloudState = await page.evaluate(async () => (await window.trama.getState()).project.document.team.specialists.find((s) => s.name === "Ada").assignments[0]);
 if (cloudState.status !== "running" || cloudState.cloud.status !== "working") throw new Error(`Cloud sessions: reopening stopped the cloud work: ${cloudState.status}`);
@@ -7036,6 +7136,20 @@ await app.close();
   await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).and(page.locator('[aria-checked="true"]')).waitFor();
   await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
   await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
+  // Design rules: the dialog's clickable parts are at least 32 px high, and its primary is the last button on the right.
+  {
+    const parts = await focusStart.evaluate((dialog) => {
+      const buttons = [...dialog.querySelectorAll("button")].filter(
+        (node) => node.closest('[data-testid="focus-start"]') || ["Annulla", "Avvia l'esame"].some((name) => node.textContent.includes(name)),
+      );
+      const submit = buttons.find((node) => node.textContent.includes("Avvia l'esame"));
+      return { heights: buttons.map((node) => Math.round(node.getBoundingClientRect().height)), submitVariant: submit?.getAttribute("data-variant") };
+    });
+    if (parts.heights.some((h) => h < 32)) throw new Error(`A focus start button is under 32 px: ${parts.heights}`);
+    if (parts.submitVariant !== "default") throw new Error(`Avvia l'esame is not the primary action: ${JSON.stringify(parts)}`);
+    const [cancel, submit] = [await focusStart.getByRole("button", { name: "Annulla" }).boundingBox(), await focusStart.getByRole("button", { name: "Avvia l'esame" }).boundingBox()];
+    if (!cancel || !submit || submit.x < cancel.x) throw new Error("The primary of the focus start dialog is not last on the right");
+  }
   await focusStart.getByLabel("Punto fisso").fill("release-9");
   await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
   await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
@@ -7056,6 +7170,35 @@ await app.close();
   await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito del modulo Orders").waitFor();
   await focusView.getByTestId("focus-mode-notifications").getByText("Notifiche in pausa").waitFor();
   await lastAction(focusView.locator("header .cta-row"), "Esci dall'esame");
+  // Design rules for focus mode: the verdict is one block between the header and the columns, the exit is an icon with its
+  // name, nothing is filled, the actions are 32 px high, and no box sits inside another box.
+  {
+    const verdict = focusView.getByTestId("focus-audit-verdict");
+    await verdict.getByTestId("focus-audit-status").getByText("Esame concluso").waitFor();
+    const [header, verdictBox, columns] = [await focusView.locator("header").boundingBox(), await verdict.boundingBox(), await focusView.getByTestId("focus-columns").boundingBox()];
+    if (!header || !verdictBox || !columns || verdictBox.y < header.y + header.height - 1 || verdictBox.y + verdictBox.height > columns.y + 1) throw new Error("The verdict is not between the header and the columns");
+    if (verdictBox.height > 96) throw new Error(`The verdict is ${verdictBox.height} px high, not a line and its summary`);
+    const facts = await focusView.evaluate((root) => {
+      const exit = root.querySelector('header [aria-label="Esci dall\'esame"]');
+      const headerButtons = [...root.querySelectorAll("header button")];
+      return {
+        exitText: exit?.textContent.trim() ?? null,
+        exitLabel: exit?.getAttribute("aria-label") ?? null,
+        filled: [...root.querySelectorAll('button[data-variant="default"]')].filter((node) => node.getAttribute("data-filled") !== "false").length,
+        short: headerButtons.map((node) => Math.round(node.getBoundingClientRect().height)).filter((h) => h < 32),
+        boxes: root.querySelectorAll(".chat-card").length,
+        padding: ["header", '[data-testid="focus-audit-verdict"]'].map((selector) => getComputedStyle(root.querySelector(selector)).paddingLeft),
+      };
+    });
+    if (facts.exitLabel !== "Esci dall'esame" || facts.exitText !== "") throw new Error(`The exit is not an icon with its name: ${JSON.stringify(facts)}`);
+    if (facts.filled) throw new Error(`Focus mode has ${facts.filled} filled buttons`);
+    if (facts.short.length) throw new Error(`A focus mode action is under 32 px: ${facts.short}`);
+    if (facts.boxes) throw new Error(`Focus mode has ${facts.boxes} boxes inside its own frame`);
+    if (facts.padding.some((value) => value !== "16px")) throw new Error(`The header and the verdict are not on the 16 px grid: ${facts.padding}`);
+    // The state of the selected finding is in its row, not repeated in the proof.
+    if (await focusView.getByTestId("focus-proof").getByText("Verificato da Trama", { exact: true }).count()) throw new Error("The proof repeats the state of the finding");
+    if (/[–—]/.test(await verdict.innerText())) throw new Error("A dash in the verdict");
+  }
   // The examination takes the editor area with its tabs; the window's activity bar and status bar stay (issue #330).
   if (await page.getByTestId("editor-area").count()) throw new Error("Focus mode leaves the editor tabs in view");
   for (const bar of ["activity-bar", "status-bar"]) {

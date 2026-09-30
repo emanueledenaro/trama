@@ -1,8 +1,10 @@
+import { IconRotateClockwise } from "@tabler/icons-react";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { canMovePlace, cloudEligible, cloudWorking, offersCloud } from "@shared/workPlace";
 import { CLOUD_SESSION_TONE } from "@shared/states";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Sep } from "@/components/ui/sep";
 import { useT } from "@/lib/i18n";
 import { act } from "@/lib/store";
@@ -81,9 +83,14 @@ export function PlaceActions({ specialist, assignment }: { specialist: Specialis
   if (!cloudEligible(specialist, assignment)) return null;
   if (cloudWorking(assignment) && assignment.status === "running") {
     return (
-      <Button size="sm" variant="outline" onClick={() => void act("assignment:cloudCheck", { assignmentId: assignment.id })}>
-        {t("cloudSession.check")}
-      </Button>
+      // A repeated check is secondary: icon only, with its name as tooltip and aria-label (principi.md).
+      <IconButton
+        label={t("cloudSession.check")}
+        icon={<IconRotateClockwise />}
+        variant="outline"
+        size="icon-sm"
+        onClick={() => void act("assignment:cloudCheck", { assignmentId: assignment.id })}
+      />
     );
   }
   if (!canMovePlace(assignment)) return null;
