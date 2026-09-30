@@ -852,6 +852,8 @@ export const en: Record<keyof typeof it, string> = {
 
   // Memory view (issue #335)
   "memory.title": "What the Coordinator remembers",
+  "memory.intro.toggle": "What this memory is",
+  "memory.loading": "Loading the project's memory.",
   "memory.intro":
     "Notes about the project, a profile of how you work and the procedures that work, called skills. Everything stays in Trama's folder, never in the repository, and here you can correct or remove anything. These are the Coordinator's notes: the decisions stay those of the Pact.",
   "memory.waiting": "{count} proposals wait for you: {what}",
