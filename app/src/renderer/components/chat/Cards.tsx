@@ -18,6 +18,7 @@ import {
   IconUsers,
   IconFocus2,
   IconLock,
+  IconPlayerPlay,
 } from "@tabler/icons-react";
 import { readableFailure } from "@shared/providerFailure";
 import {
@@ -138,9 +139,13 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
         streaming ? (
           <span className="shimmer-text text-ui-sm">{t("chat.card.study.studying")}</span>
         ) : (
-          <button type="button" onClick={() => setOpen(!open)} className="sidebar-icon-button size-5" aria-label={open ? t("chat.card.study.collapse") : t("chat.card.study.expand")}>
-            <IconChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-          </button>
+          <IconButton
+            label={open ? t("chat.card.study.collapse") : t("chat.card.study.expand")}
+            icon={<IconChevronRight className={cn("transition-transform", open && "rotate-90")} />}
+            size="icon"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          />
         )
       }
     >
@@ -153,7 +158,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
       )}
       {streaming ? (
         <div className="cta-row mt-2">
-          <Button variant="outline" size="xs" onClick={() => void act("coordinator:interrupt", undefined)}>
+          <Button variant="outline" size="sm" onClick={() => void act("coordinator:interrupt", undefined)}>
             {t("chat.card.study.interrupt")}
           </Button>
         </div>
@@ -2252,6 +2257,21 @@ export function RouteCard({ routeId }: { routeId: string }) {
     >
       <div data-testid="route" data-route={route.id}>
         <Field label={t("chat.card.route.situation")}>{route.situation}</Field>
+        {route.status === "proposed" && !runnable ? (
+          <p className="mt-2 text-ui-sm text-muted-foreground">{t("chat.card.route.noneAvailable")}</p>
+        ) : null}
+        {route.status === "proposed" ? (
+          <div className="cta-row mt-3">
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("route:answer", { routeId: route.id, start: false })}>
+              {t("chat.card.route.decline")}
+            </Button>
+            {/* Starting the route starts work: icon and text (principi.md). */}
+            <Button size="sm" disabled={busy || !runnable} onClick={() => void act("route:answer", { routeId: route.id, start: true })}>
+              <IconPlayerPlay />
+              {t("chat.card.route.start")}
+            </Button>
+          </div>
+        ) : null}
         <Field label={routePathLabel(t, route.path)}>
           <ol className="mt-1 space-y-1">
             {route.steps.map((step, index) => (
@@ -2271,20 +2291,7 @@ export function RouteCard({ routeId }: { routeId: string }) {
           <span className="text-ui-sm text-muted-foreground">{boundaryLabel(t, route.boundary).detail}</span>
         </Field>
         <Field label={t("chat.card.route.reason")}>{route.reason}</Field>
-        {route.status === "proposed" && !runnable ? (
-          <p className="mt-2 text-ui-sm text-muted-foreground">{t("chat.card.route.noneAvailable")}</p>
-        ) : null}
       </div>
-      {route.status === "proposed" ? (
-        <div className="cta-row mt-3">
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("route:answer", { routeId: route.id, start: false })}>
-            {t("chat.card.route.decline")}
-          </Button>
-          <Button size="sm" disabled={busy || !runnable} onClick={() => void act("route:answer", { routeId: route.id, start: true })}>
-            {t("chat.card.route.start")}
-          </Button>
-        </div>
-      ) : null}
     </CardFrame>
   );
 }
