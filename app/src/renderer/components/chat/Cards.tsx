@@ -18,6 +18,7 @@ import {
   IconUsers,
   IconFocus2,
   IconLock,
+  IconPlayerPlay,
 } from "@tabler/icons-react";
 import { readableFailure } from "@shared/providerFailure";
 import {
@@ -915,7 +916,9 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
             {t("chat.card.assignment.stop")}
           </Button>
         ) : (
+          // Resume starts work again: icon and text, primary last (ADR 0018).
           <Button size="sm" variant="outline" onClick={() => void act("assignment:resume", { assignmentId })}>
+            <IconPlayerPlay />
             {t("chat.card.assignment.resume")}
           </Button>
         )}
@@ -936,6 +939,7 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
       {fold ? (
         <>
           {questions}
+          {actions}
           <button
             type="button"
             aria-expanded={showDetail}
@@ -962,17 +966,17 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
         <>
           {who}
           {objective}
-          {contract}
-          {where}
           {line}
           {failure}
-          {report}
           {questions}
+          {actions}
+          {contract}
+          {where}
+          {report}
           <ThreadLinks assignmentId={assignment.id} />
           {result}
         </>
       )}
-      {actions}
     </CardFrame>
   );
 }
