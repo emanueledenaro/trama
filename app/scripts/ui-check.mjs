@@ -4082,6 +4082,16 @@ const missingFirst = await failedCard.evaluate((card) => {
   return Boolean(missing && checks && missing.compareDocumentPosition(checks) & Node.DOCUMENT_POSITION_FOLLOWING);
 });
 if (!missingFirst) throw new Error("What a candidate is missing does not come before its checks");
+// Design rules: the card opens with a verdict line and the person's actions come right after it, before the checks.
+await failedCard.getByTestId("candidate-verdict").getByText(/^Non è ancora pronto: /).waitFor();
+const actionsBeforeChecks = await failedCard.evaluate((card) => {
+  const verdict = card.querySelector('[data-testid="candidate-verdict"]');
+  const actions = card.querySelector(".cta-row");
+  const checks = card.querySelector('[data-testid="candidate-evidence"]');
+  const after = (a, b) => Boolean(a && b && a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  return after(verdict, actions) && after(actions, checks);
+});
+if (!actionsBeforeChecks) throw new Error("The card's actions do not sit between its verdict and its checks");
 await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
 await failedOutput.getByText(/trailing whitespace\./).waitFor();

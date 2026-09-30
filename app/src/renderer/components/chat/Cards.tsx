@@ -1,6 +1,7 @@
 import {
   IconBook2,
   IconBriefcase,
+  IconAlertTriangle,
   IconCircleCheck,
   IconCircleX,
   IconFileDiff,
@@ -1615,27 +1616,42 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
     </>
   );
-  const blockersField = (
-    <>
-      {report.blockers.length && report.state !== "superseded" ? (
-        <Field label={t("chat.card.candidate.missing")}>
-          <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
-            {report.blockers.map((b) => (
-              <li key={`${b.code}-${b.detail}`}>
-                {blockerText(t, b.code)}
-                {b.code === "BASE_CHANGED" || b.code === "WORKTREE_CHANGED" ? null : (
-                  <span className="text-muted-foreground">
-                    <Sep />
-                    <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(t, b.detail) : b.detail} />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Field>
-      ) : null}
-    </>
+  const blockerList = (
+    <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
+      {report.blockers.map((b) => (
+        <li key={`${b.code}-${b.detail}`}>
+          {blockerText(t, b.code)}
+          {b.code === "BASE_CHANGED" || b.code === "WORKTREE_CHANGED" ? null : (
+            <span className="text-muted-foreground">
+              <Sep />
+              <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(t, b.detail) : b.detail} />
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
+  const blocked = report.blockers.length > 0 && report.state !== "superseded";
+  // In the chat and in Aspetta te the first thing to read is the verdict: one line that says whether the work is
+  // ready and, when it is not, how much is missing (docs/agents/design-rules.md). The candidate's tab keeps its own
+  // "what is missing to merge it" heading, so it shows the list alone.
+  const blockersField =
+    blocked && layout === "detail" ? (
+      <Field label={t("chat.card.candidate.missing")}>{blockerList}</Field>
+    ) : blocked ? (
+      <div className="mt-2 flex flex-col gap-2 rounded-lg bg-destructive/10 px-4 py-2" data-testid="candidate-verdict" data-verdict="blocked">
+        <p className="flex items-start gap-2 text-ui font-medium text-destructive">
+          <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
+          <span>{t("chat.card.candidate.verdict.blocked", { count: report.blockers.length })}</span>
+        </p>
+        {blockerList}
+      </div>
+    ) : layout === "card" && open ? (
+      <p className="mt-2 flex items-start gap-2 rounded-lg bg-success/10 px-4 py-2 text-ui font-medium text-success" data-testid="candidate-verdict" data-verdict="ready">
+        <IconCircleCheck className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
+        <span>{t("chat.card.candidate.verdict.ready")}</span>
+      </p>
+    ) : null;
   const otherWork = (
     <>
       {(() => {
@@ -1811,13 +1827,13 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : t("chat.card.candidate.title")} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       {whoLine}
       {supersededNote}
-      {/* What is missing comes first, as in the candidate's own tab: the reason is what the person came for. */}
+      {/* The verdict comes first, as in the candidate's own tab, and the person's actions right after it (design rules). */}
       {blockersField}
+      {mergeLines}
+      {actions}
       {decisionsField}
       {checksFields}
       {otherWork}
-      {mergeLines}
-      {actions}
     </CardFrame>
   );
 }
