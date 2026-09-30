@@ -3453,6 +3453,9 @@ for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open 
 await themeShots("29b-context-rollover-summary");
 await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
 const meter = page.getByTestId("context-meter");
+// The reordered context is small: the meter is hidden far from the threshold, so the check lowers it to see the meter.
+if (await meter.count()) throw new Error("The meter shows right after the reorder, far from the threshold");
+await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 5 }));
 await meter.waitFor({ timeout: 30_000 });
 if (!/^\d+%$/.test((await meter.innerText()).trim())) throw new Error(`The meter shows more than the percent: ${await meter.innerText()}`);
 if (!/ su [\d.]+ token$/.test((await meter.getAttribute("title")) ?? "")) throw new Error("The meter has no tokens on hover");
@@ -3475,6 +3478,7 @@ const reordersSoFar = await page.getByTestId("context-rollover").count();
 await reorderNow.click();
 await page.getByTestId("context-rollover").nth(reordersSoFar).waitFor({ timeout: 30_000 });
 await page.keyboard.press("Escape").catch(() => undefined);
+await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 80 }));
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
