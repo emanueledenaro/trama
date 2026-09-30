@@ -443,6 +443,7 @@ export const it = {
   "focus.start.cancel": "Annulla",
   "focus.start.submit": "Avvia l'esame",
   "focus.summary": "Sintesi",
+  "focus.verdict": "Verdetto dell'esame",
   "focus.lens.report": "Rapporto della lente {lens}",
   "focus.column.progress": "Avanzamento",
   "focus.column.findings": "Rilievi",

@@ -440,6 +440,7 @@ export const en: Record<keyof typeof it, string> = {
   "focus.start.cancel": "Cancel",
   "focus.start.submit": "Start the review",
   "focus.summary": "Summary",
+  "focus.verdict": "Verdict of the review",
   "focus.lens.report": "Report of the {lens} lens",
   "focus.column.progress": "Progress",
   "focus.column.findings": "Findings",
