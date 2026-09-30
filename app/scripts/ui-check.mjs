@@ -5425,6 +5425,10 @@ await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
 await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
 await page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true }).waitFor();
+await settingsRules("Presenza");
+// The pause is an icon and its name, at the 32 px of a button; the title of the page is the name in the navigation.
+if (!(await page.getByTestId("settings").getByRole("button", { name: "Sospendi la presenza" }).locator("svg").count())) throw new Error("Sospendi la presenza has no icon");
+await page.getByTestId("settings").getByRole("heading", { name: "Presenza", exact: true }).waitFor();
 // Issue #338: the pause of the presence says what it pauses, "Sospendi la presenza", and its way back "Riprendi la presenza".
 if (await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa", exact: true }).count()) throw new Error("Presence still offers Metti in pausa");
 await page.getByTestId("settings").getByRole("button", { name: "Sospendi la presenza" }).click();
@@ -5439,6 +5443,11 @@ await page.getByTestId("settings").getByText("Repository osservati").waitFor();
   if (/Nessun repository/.test(text) && /Repository del progetto aperto/.test(text)) throw new Error("The Monitor says no repository above the project's one");
 }
 await shot("16f-monitor-settings");
+await settingsRules("Monitor");
+// The page is named like its navigation entry and opens on one line: is the monitor on, and how many repositories.
+await page.getByTestId("settings").getByRole("heading", { name: "Monitor", exact: true }).waitFor();
+const monitorSummary = (await page.getByTestId("settings").getByTestId("monitor-summary").textContent()).trim();
+if (!/^Monitor (attivo: \d+ repository osservat[io]|spento)$/.test(monitorSummary)) throw new Error(`The monitor summary reads "${monitorSummary}"`);
 
 // P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
 await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();

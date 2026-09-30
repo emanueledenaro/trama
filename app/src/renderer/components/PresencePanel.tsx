@@ -1,6 +1,6 @@
 import { IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import { presenceLines, type PresenceView } from "@shared/presence";
-import { Toggle } from "@/components/ui/toggle";
+import { SwitchArea } from "@/components/settings/SwitchArea";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { act } from "@/lib/store";
@@ -39,17 +39,17 @@ export function PresenceControls({
     <div className="flex flex-wrap items-center justify-end gap-2">
       {sharing ? (
         // Issue #338: "Sospendi la presenza" names what it pauses; both moves are icon and text.
-        <Button size="xs" variant="ghost" onClick={() => void act("presence:pause", { paused: !paused })}>
+        <Button variant="ghost" onClick={() => void act("presence:pause", { paused: !paused })}>
           {paused ? <IconPlayerPlay /> : <IconPlayerPause />}
           {paused ? t("settings.presence.resume") : t("settings.presence.pause")}
         </Button>
       ) : null}
       {showLabel ? (
         <span aria-hidden className="text-ui-sm text-foreground/80">
-          Condividi la presenza
+          {t("settings.presence.switch")}
         </span>
       ) : null}
-      <Toggle label="Condividi la presenza" checked={sharing} onChange={(share) => void act("presence:consent", { share, proposal: null })} />
+      <SwitchArea label={t("settings.presence.switch")} checked={sharing} onChange={(share) => void act("presence:consent", { share, proposal: null })} />
     </div>
   );
 }
