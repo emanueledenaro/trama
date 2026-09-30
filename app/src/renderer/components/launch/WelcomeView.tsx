@@ -654,9 +654,19 @@ export function WelcomeView() {
             </p>
           ) : null}
           <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+            {/* Who comes back looks for a recent project first; who arrives new looks for a way to start. */}
             <div className="flex min-w-0 flex-col gap-8">
-              <StartBlock onClone={clone} />
-              <RecentBlock />
+              {app.recentProjects.length > 0 ? (
+                <>
+                  <RecentBlock />
+                  <StartBlock onClone={clone} />
+                </>
+              ) : (
+                <>
+                  <StartBlock onClone={clone} />
+                  <RecentBlock />
+                </>
+              )}
             </div>
             <div className="flex min-w-0 flex-col gap-8">
               <SetupBlock steps={steps} open={open} setOpen={setOpen} />
