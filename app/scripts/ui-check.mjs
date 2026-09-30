@@ -1884,6 +1884,8 @@ await shot("04k-domain-proposal-written");
   };
   await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 95 }));
   const reordersBefore = await page.getByTestId("context-rollover").count();
+  // Design rules, composer: under the threshold there is no meter. The turns so far are far from 85%, the threshold minus 10 points.
+  if (await page.getByTestId("context-meter").count()) throw new Error("The composer shows the context meter well under the threshold");
   await composer().fill("[pieno] Quanto contesto resta?");
   await page.keyboard.press("Enter");
   await page.getByText("[pieno] Quanto contesto resta?", { exact: true }).waitFor();
