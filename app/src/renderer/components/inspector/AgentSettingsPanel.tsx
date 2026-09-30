@@ -239,7 +239,7 @@ function LookPreview({ specialist }: { specialist: Specialist }) {
   );
 }
 
-/** The agent's color (W15): Trama picked a free one; the person may choose another. Chips with the name written, one radio group. */
+/** The agent's color (W15): Trama picked a free one; the person may choose another. Each color is the bot in that color, with the name on hover; one radio group. */
 function ColorChoice({ specialist, save }: { specialist: Specialist; save: Save }) {
   const t = useT();
   const group = useRef<HTMLDivElement>(null);
@@ -258,34 +258,33 @@ function ColorChoice({ specialist, save }: { specialist: Specialist; save: Save 
         {AGENT_PALETTE.map((entry, index) => {
           const selected = entry.color === specialist.color;
           return (
-            <button
-              key={entry.color}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              data-testid="agent-color"
-              tabIndex={selected ? 0 : -1}
-              className={cn(
-                "agent-identity inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border-2 px-2 text-ui-sm transition-colors",
-                selected
-                  ? "border-[color:var(--agent)] font-medium text-foreground"
-                  : "border-[color:var(--color-border-light)] text-[var(--color-text-foreground-secondary)] hover:border-[color:var(--agent)] hover:text-foreground",
-              )}
-              style={agentStyle({ color: entry.color })}
-              onClick={() => (selected ? undefined : pick(entry.color))}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                  event.preventDefault();
-                  move(index, 1);
-                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  move(index, -1);
-                }
-              }}
-            >
-              <span aria-hidden className="size-2 shrink-0 rounded-full bg-[var(--agent)]" />
-              {colorName(t, entry.color)}
-            </button>
+            <Tooltip key={entry.color} label={colorName(t, entry.color)}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={colorName(t, entry.color)}
+                data-testid="agent-color"
+                tabIndex={selected ? 0 : -1}
+                className={cn(
+                  "agent-identity inline-flex size-10 cursor-pointer items-center justify-center rounded-full transition-shadow",
+                  selected ? "ring-2 ring-[var(--agent)] ring-offset-1 ring-offset-background" : "hover:ring-1 hover:ring-[var(--agent)]",
+                )}
+                style={agentStyle({ color: entry.color })}
+                onClick={() => (selected ? undefined : pick(entry.color))}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                    event.preventDefault();
+                    move(index, 1);
+                  } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    move(index, -1);
+                  }
+                }}
+              >
+                <AgentAvatar agent={{ ...specialist, color: entry.color }} activity="idle" size={32} />
+              </button>
+            </Tooltip>
           );
         })}
       </div>

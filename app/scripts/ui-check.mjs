@@ -1457,17 +1457,17 @@ await agentPanel.getByTestId("agent-settings-saved").getByText("Salvato").waitFo
 await personTab.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // The tab takes the new name too.
 await page.locator('[data-testid="editor-tab"][data-selected="true"]').getByText("Giulia", { exact: true }).waitFor();
-// W15: the person picks another color, as a chip with a dot and the name written; only the avatar and the tag take it.
+// W15: the person picks another color, as the bot in that color with its name on hover and as its accessible name; only the avatar and the tag take it.
 const colorGroup = agentPanel.getByRole("radiogroup");
 if ((await colorGroup.getAttribute("aria-labelledby")) === null) throw new Error("The color group has no name");
 await shot("04e4a-agent-look-panel");
 await agentPanel.getByRole("radio", { name: "Rame" }).click();
-await agentPanel.locator('[role="radio"][aria-checked="true"]').filter({ hasText: "Rame" }).waitFor({ timeout: 20_000 });
-const chips = await colorGroup.getByRole("radio").evaluateAll((all) => all.map((el) => ({ text: el.innerText.trim(), dot: Boolean(el.querySelector("span")), width: parseFloat(getComputedStyle(el).borderTopWidth), color: getComputedStyle(el).borderTopColor, height: el.getBoundingClientRect().height, checked: el.getAttribute("aria-checked") })));
-if (chips.some((chip) => !chip.text || !chip.dot || chip.height < 32 || chip.width < 2)) throw new Error(`A color chip lacks its dot, its written name, 32 px or a 2 px border: ${JSON.stringify(chips)}`);
-// Only the chosen color has its own border color.
+await agentPanel.locator('[role="radio"][aria-checked="true"][aria-label="Rame"]').waitFor({ timeout: 20_000 });
+const chips = await colorGroup.getByRole("radio").evaluateAll((all) => all.map((el) => ({ name: el.getAttribute("aria-label") ?? "", bot: el.children.length > 0, height: el.getBoundingClientRect().height, ring: getComputedStyle(el).boxShadow, checked: el.getAttribute("aria-checked") })));
+if (chips.some((chip) => !chip.name || !chip.bot || chip.height < 32)) throw new Error(`A color lacks its bot, its accessible name or 32 px: ${JSON.stringify(chips)}`);
+// Only the chosen color has the ring.
 const chosenChips = chips.filter((chip) => chip.checked === "true");
-if (chosenChips.length !== 1 || chips.filter((chip) => chip.color === chosenChips[0].color).length !== 1) throw new Error(`Only the chosen color has the marked border: ${JSON.stringify(chips)}`);
+if (chosenChips.length !== 1 || chips.filter((chip) => chip.ring !== "none").length !== 1 || chosenChips[0].ring === "none") throw new Error(`Only the chosen color has the ring: ${JSON.stringify(chips)}`);
 await agentPanel.getByTestId("agent-settings-saved").getByText("Salvato").waitFor();
 await shot("04e4-team-color");
 // The panel closes with its X, with Escape and with the gear again, and it opens again on the saved color.
@@ -1475,7 +1475,7 @@ await agentPanel.getByRole("button", { name: "Chiudi le impostazioni" }).click()
 await agentPanel.waitFor({ state: "detached" });
 await personTab.getByTestId("agent-settings-open").click();
 await agentPanel.waitFor();
-await agentPanel.locator('[role="radio"][aria-checked="true"]').filter({ hasText: "Rame" }).waitFor();
+await agentPanel.locator('[role="radio"][aria-checked="true"][aria-label="Rame"]').waitFor();
 await page.keyboard.press("Escape");
 await agentPanel.waitFor({ state: "detached" });
 await personTab.getByTestId("agent-settings-open").click();
