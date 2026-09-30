@@ -3106,6 +3106,27 @@ const actionsOnRight = async (size) => {
   }
 };
 await actionsOnRight("1280x820");
+// Design rules for the bar above the composer and its panel: a 32 px row whose work-in-focus button is 32 px high, the
+// blocks of the panel spaced on 8 px steps, and the divider drawn with the token.
+{
+  const rules = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="work-bar"]');
+    const row = bar.querySelector('[data-testid="work-bar-line"]');
+    const focus = bar.querySelector('[data-testid="work-bar-focus"]').getBoundingClientRect();
+    const panel = getComputedStyle(bar.querySelector('[data-testid="focus-bar"]'));
+    const divider = bar.querySelector('[data-testid="work-bar-divider"]');
+    return {
+      row: row ? Math.round(row.getBoundingClientRect().height) : null,
+      focus: Math.round(focus.height),
+      padding: [panel.paddingTop, panel.paddingLeft],
+      gap: panel.rowGap,
+      divider: divider ? getComputedStyle(divider).backgroundColor : null,
+    };
+  });
+  if (rules.row !== 32 || rules.focus < 32) throw new Error(`The bar above the composer is not 32 px: ${JSON.stringify(rules)}`);
+  if (rules.padding.join() !== "16px,16px" || rules.gap !== "8px") throw new Error(`The focus panel is not on the 8 px steps: ${JSON.stringify(rules)}`);
+  if (rules.divider === "rgb(0, 0, 0)") throw new Error("The divider of the bar is not drawn with the token");
+}
 await shot("17-focus-bar-queue");
 await pause.click();
 const focusIs = (title, equal) =>
