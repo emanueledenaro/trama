@@ -2628,8 +2628,8 @@ const candidatePageRules = async (label, { interfaceChange = false, diffOpen = f
       dataOutcome: toMerge?.getAttribute("data-outcome") ?? null,
       header: node.querySelector('[data-testid="candidate-header"]')?.textContent ?? "",
       filled: node.querySelectorAll('button[data-variant="default"]:not([data-filled="false"])').length,
-      // The outcome and its actions, the history, and the examination's actions; the parts drawn by the chat card's components keep their own size.
-      short: [...node.querySelectorAll('[data-testid="candidate-to-merge"] button, [data-testid="candidate-history"] button, [data-testid="focus-audit"] .cta-row button')].map((b) => Math.round(b.getBoundingClientRect().height)).filter((h) => h < 32),
+      // The actions, the diff line, the pull request link and the examination's actions; the inline references of the chat card's components keep their own size.
+      short: [...node.querySelectorAll('[data-testid="candidate-actions"] button, [data-testid="candidate-diff"] summary, [data-testid="candidate-pull-request"], [data-testid="focus-audit"] .cta-row button')].map((b) => Math.round(b.getBoundingClientRect().height)).filter((h) => h < 32),
       boxes: node.querySelectorAll(".chat-card").length,
       radius: toMerge ? getComputedStyle(toMerge).borderRadius : null,
       padding: [padding("candidate-proof"), padding("candidate-history")],

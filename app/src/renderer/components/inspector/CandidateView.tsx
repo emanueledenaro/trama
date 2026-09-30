@@ -334,6 +334,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
           <HistoryRow label={t("candidate.history.pullRequest")}>
             <button
               type="button"
+              data-testid="candidate-pull-request"
               className="inline-flex min-h-8 items-center gap-2 text-[var(--color-text-accent)] hover:underline"
               onClick={() => void act("shell:openExternal", { url: candidate.pullRequest!.url })}
             >
