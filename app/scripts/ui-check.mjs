@@ -522,6 +522,15 @@ const setTheme = async (theme) => {
 // Progetti and Impostazioni. It has four blocks: Inizia, Recenti, Configura and Impara.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.getByRole("heading", { name: block, exact: true }).waitFor();
+// Recenti, empty (design rules, four states): a message and the way to a first project, an outline: the filled button of
+// the Benvenuto is the one of Inizia. The message no longer repeats the ways to start.
+const recentEmpty = welcome.getByTestId("recent-empty");
+await recentEmpty.waitFor();
+if (!(await recentEmpty.getByText("Nessun progetto recente.").count())) throw new Error("Recenti, empty, has no message");
+if ((await recentEmpty.locator('button[data-variant="default"]').count()) !== 0 || (await recentEmpty.getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant")) !== "outline") {
+  throw new Error("Recenti, empty, has a second main action");
+}
+if (/clonane|Clona|esempio/.test(await recentEmpty.innerText())) throw new Error("Recenti, empty, repeats the ways to start of Inizia");
 if (await page.getByRole("button", { name: "Chiudi Benvenuto", exact: true }).count()) throw new Error("The Benvenuto can be closed without a project");
 const barViews = await activityBar().getByRole("button").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
 if (barViews.join("|") !== "Progetti|Impostazioni") throw new Error(`Without a project the activity bar shows more than Progetti and Impostazioni: ${barViews}`);
@@ -5008,7 +5017,18 @@ await recentPicker.waitFor();
 await recentPicker.getByTestId("recent-project").filter({ hasText: /collega attivo|colleghi attivi/ }).first().waitFor({ timeout: 20_000 });
 if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played again without a first launch");
 if ((await recentPicker.getByTestId("recent-project").count()) > 5) throw new Error("Recenti lists more than five projects");
-await recentPicker.getByRole("button", { name: "Tutti i progetti" }).click();
+// Tutti i progetti is navigation: an icon with its tooltip and name, at least 32 px. Forgetting a project too, and a
+// long path is cut, whole in the tooltip.
+const allProjects = recentPicker.getByRole("button", { name: "Tutti i progetti" });
+if ((await allProjects.innerText()).trim() !== "") throw new Error("Tutti i progetti has a text beside its icon");
+const recentSizes = await recentPicker.locator("[data-icon-button]").evaluateAll((nodes) => nodes.map((node) => Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height)));
+if (recentSizes.length < 2 || recentSizes.some((size) => size < 32)) throw new Error(`An icon button of Recenti is under 32 px: ${recentSizes}`);
+const recentPath = recentPicker.getByTestId("recent-project").first().locator(".truncate.font-mono");
+if ((await recentPath.evaluate((node) => getComputedStyle(node).textOverflow)) !== "ellipsis") throw new Error("A recent path is not truncated");
+await recentPath.hover();
+await page.getByRole("tooltip").filter({ hasText: (await recentPath.innerText()).trim() }).waitFor();
+await page.mouse.move(0, 0);
+await allProjects.click();
 await page.locator('[data-testid="side-bar"][data-view="projects"]').waitFor();
 await activityBar().getByRole("button", { name: "Progetti", exact: true }).click();
 await page.getByTestId("side-bar").waitFor({ state: "detached" });
