@@ -34,7 +34,7 @@ export type SquadEdit = "rename" | "merge" | "split";
 const say = (t: Translate, found: SquadChangeProblem | null) => (found ? t(found.key, found.params) : null);
 
 const checkbox = "accent-[var(--color-text-accent)]";
-const optionRow = "flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-ui hover:bg-[var(--sidebar-accent)]";
+const optionRow = "flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-ui hover:bg-[var(--sidebar-accent)]";
 
 /** The menu of a squad's changes; an action that cannot be made says why under its name. */
 export function SquadMenu({ squad, onEdit }: { squad: Squad; onEdit: (edit: SquadEdit) => void }) {
@@ -113,7 +113,7 @@ export function RenameSquad({ squad, onDone }: { squad: Squad; onDone: () => voi
   const { busy, run } = useRun(onDone);
   const save = () => run(act("squad:rename", { squadId: squad.id, name: name.trim() }));
   return (
-    <div className="mt-2 space-y-2 px-2" data-testid="rename-squad">
+    <div className="mt-4 space-y-4 px-2" data-testid="rename-squad">
       <Input
         autoFocus
         aria-label={t("teams.squad.renameLabel")}
@@ -176,7 +176,7 @@ export function MergeSquad({ squad, onDone }: { squad: Squad; onDone: () => void
   const { busy, run } = useRun(onDone);
   const save = () => from && run(act("squad:merge", { intoId: squad.id, fromId: from.id, keepIds: choose ? kept : null }));
   return (
-    <div className="mt-2 space-y-2 px-2" data-testid="merge-squad">
+    <div className="mt-4 space-y-4 px-2" data-testid="merge-squad">
       <div>
         <Label>{t("teams.squad.mergeWith")}</Label>
         <PickerSelect
@@ -215,7 +215,7 @@ export function SplitSquad({ squad, onDone }: { squad: Squad; onDone: () => void
   const { busy, run } = useRun(onDone);
   const save = () => run(act("squad:split", { squadId: squad.id, moduleIds, developerIds, name: name.trim() }));
   return (
-    <div className="mt-2 space-y-2 px-2" data-testid="split-squad">
+    <div className="mt-4 space-y-4 px-2" data-testid="split-squad">
       <div>
         <Label>{t("teams.squad.splitAreas")}</Label>
         <div className="flex flex-col gap-0.5 rounded-lg border border-input p-1" data-testid="split-areas">
@@ -276,7 +276,7 @@ export function MergeProposalCard({ proposal }: { proposal: SquadMergeProposal }
   const all = [...squadDevelopers(document, into), ...squadDevelopers(document, from)].map((s) => s.id);
   const reason = say(t, mergeProblem(document, into.id, from.id, keep));
   return (
-    <section className="space-y-2 border-b border-[color:var(--app-surface-divider)] px-4 py-3" data-testid="squad-merge-proposal">
+    <section className="space-y-4 border-b border-[color:var(--app-surface-divider)] px-4 py-4" data-testid="squad-merge-proposal">
       <p className="text-ui font-medium text-foreground">{t("teams.mergeProposal.title")}</p>
       <p className="text-ui-sm text-muted-foreground">{t("teams.mergeProposal.text", { from: from.name, into: into.name, count: all.length })}</p>
       <p className="text-ui-sm text-muted-foreground">{t("teams.squad.mergeNote", { from: from.name, into: into.name })}</p>

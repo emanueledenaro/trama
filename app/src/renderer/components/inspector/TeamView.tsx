@@ -122,14 +122,14 @@ function Fold({
         aria-expanded={open}
         aria-controls={id}
         data-testid={testId ? `${testId}-toggle` : undefined}
-        className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left text-ui-sm text-muted-foreground transition-colors hover:text-foreground"
+        className="flex min-h-8 w-full items-center gap-1.5 px-4 py-2 text-left text-ui-sm text-muted-foreground transition-colors hover:text-foreground"
         onClick={onToggle}
       >
         {open ? <IconChevronDown className="size-3.5 shrink-0" stroke={1.8} /> : <IconChevronRight className="size-3.5 shrink-0" stroke={1.8} />}
         <span className="min-w-0 flex-1 truncate">{title}</span>
       </button>
       {open ? (
-        <div id={id} className="px-4 pb-3" data-testid={testId}>
+        <div id={id} className="px-4 pb-4" data-testid={testId}>
           {children}
         </div>
       ) : null}
@@ -255,7 +255,7 @@ function SquadGroup({ squad }: { squad: Squad }) {
   // The id stays on hover; a squad the person changed says the Coordinator leaves it as it is (A11).
   const hover = squad.touchedAt ? `${squad.id}\n${t("teams.squad.changed")}` : squad.id;
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="squad" data-squad={squad.name} data-squad-id={squad.id}>
+    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-4" data-testid="squad" data-squad={squad.name} data-squad-id={squad.id}>
       <div className="flex min-w-0 items-center gap-1">
         <p className="min-w-0 flex-1 truncate px-2 text-ui-sm text-muted-foreground" title={hover} data-testid="squad-header">
           <span className="font-medium text-foreground" data-testid="squad-name">
@@ -343,7 +343,7 @@ function DiscussionsAcrossSquads() {
   const document = useUi((s) => s.app?.project?.document);
   if (!document || !squadDiscussions(document, null).length) return null;
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="discussions-across">
+    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-4" data-testid="discussions-across">
       <p className="px-2 text-ui-sm font-medium text-foreground">{t("teams.discussions.across")}</p>
       <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground">{t("teams.discussions.acrossNote")}</p>
       <DiscussionRows squadId={null} />
@@ -410,12 +410,16 @@ function BacklogList({ backlog }: { backlog: SquadBacklogView }) {
                   </Button>
                 </Tooltip>
               ) : null}
-              <Button size="icon-xs" variant="ghost" disabled={index === items.length - 1} onClick={() => move(item, "down")} aria-label={t("teams.backlog.down", { name })}>
-                <IconChevronDown />
-              </Button>
-              <Button size="icon-xs" variant="ghost" disabled={index === 0} onClick={() => move(item, "up")} aria-label={t("teams.backlog.up", { name })}>
-                <IconChevronUp />
-              </Button>
+              <Tooltip label={t("teams.backlog.down", { name })}>
+                <Button size="icon-xs" variant="ghost" disabled={index === items.length - 1} onClick={() => move(item, "down")} aria-label={t("teams.backlog.down", { name })}>
+                  <IconChevronDown />
+                </Button>
+              </Tooltip>
+              <Tooltip label={t("teams.backlog.up", { name })}>
+                <Button size="icon-xs" variant="ghost" disabled={index === 0} onClick={() => move(item, "up")} aria-label={t("teams.backlog.up", { name })}>
+                  <IconChevronUp />
+                </Button>
+              </Tooltip>
             </div>
           </li>
         );
@@ -485,7 +489,7 @@ function SquadsSummary() {
       : t("teams.summary.noSquadAtWork")
     : t("teams.summary.noSquads");
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3" data-testid="squads-summary">
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-4" data-testid="squads-summary">
       <p className="text-ui-lg text-foreground">{lead}</p>
       <p className="mt-1 text-ui-sm text-muted-foreground">
         {summary.peopleAtWork ? t("teams.summary.peopleAtWork", { count: summary.peopleAtWork }) : t("teams.summary.nobodyAtWork")}
@@ -557,7 +561,7 @@ export function SquadsView() {
       ))}
       <DiscussionsAcrossSquads />
       {!squads.length || outside.length ? (
-        <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5">
+        <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-4">
           <p className="px-2 text-ui-sm font-medium text-foreground">{squads.length ? t("teams.outside.title") : t("teams.developers.title")}</p>
           <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground">
             {squads.length ? t("teams.outside.note") : team.confirmedAt !== null ? t("teams.developers.unformed") : t("teams.developers.unproposed")}
@@ -570,7 +574,7 @@ export function SquadsView() {
         </section>
       ) : null}
       {unowned?.items.length ? (
-        <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="unowned-backlog">
+        <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-4" data-testid="unowned-backlog">
           <p className="px-2 text-ui-sm font-medium text-foreground">{t(squads.length ? "teams.backlog.unowned.title" : "teams.backlog.project.title")}</p>
           <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground">{t(squads.length ? "teams.backlog.unowned.note" : "teams.backlog.project.note")}</p>
           <SquadBacklog backlog={unowned} />

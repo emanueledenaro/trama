@@ -54,7 +54,7 @@ function OverlapLine({ items }: { items: OverlapItem[] }) {
   const top = strongest(items);
   if (!top) return null;
   return (
-    <div className="mt-1.5 pl-6" data-testid="focus-overlap" data-level={top.level}>
+    <div className="mt-2 pl-6" data-testid="focus-overlap" data-level={top.level}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <IconUsers className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
         <OverlapBadge level={top.level} />
@@ -96,7 +96,7 @@ function QueueRow({ task }: { task: FocusTask }) {
   const overlap = useUi((s) => strongest(s.app?.project?.overlaps?.tasks[task.id] ?? []));
   const hold = holdText(task, t);
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2" data-testid="focus-queue-item" data-status={task.status}>
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2" data-testid="focus-queue-item" data-status={task.status}>
       <div className="flex min-w-[12rem] flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
           <PhaseChip task={task} />
@@ -157,9 +157,9 @@ export function FocusPanel({ goTo = true }: { goTo?: boolean }) {
   const queueLabel = paused ? t("focus.queuedPaused", { queued, count: paused }) : t("focus.queued", { queued });
   const elsewhere = focus !== null && (focus.goalId ?? null) !== dialogGoalId;
   return (
-    <section aria-label={t("workbench.status.focus")} className="flex min-w-0 flex-col gap-1.5 p-3" data-testid="focus-bar">
+    <section aria-label={t("workbench.status.focus")} className="flex min-w-0 flex-col gap-2 p-4" data-testid="focus-bar">
       {focus || view.queue.length ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className={cn("relative flex min-w-[12rem] flex-1 items-start gap-2", seam.shown && "-mx-2 px-2 py-1.5")}>
             {seam.stitch}
             <IconFocus2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
