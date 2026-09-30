@@ -314,6 +314,7 @@ function StepBody({ step }: { step: StepState }) {
   const cloneWaiting = useUi((s) => s.cloneAfterGitHub);
   const setCloneAfterGitHub = useUi((s) => s.setCloneAfterGitHub);
   const setDialog = useUi((s) => s.setDialog);
+  const app = useUi((s) => s.app)!;
   return (
     <div className="space-y-2.5">
       {STEP_LEAD[step.id as WelcomeStepId] ? <p className="text-ui-sm text-muted-foreground">{t(STEP_LEAD[step.id as WelcomeStepId]!)}</p> : null}
@@ -335,9 +336,12 @@ function StepBody({ step }: { step: StepState }) {
           </div>
         </div>
       ) : null}
-      <div className="cta-row">
-        <StepActions step={step} />
-      </div>
+      {/* Without a project the filled button of the Benvenuto is Apri un progetto: a step's primary is an outline. */}
+      <FilledScope allowed={Boolean(app.project)}>
+        <div className="cta-row">
+          <StepActions step={step} />
+        </div>
+      </FilledScope>
     </div>
   );
 }
