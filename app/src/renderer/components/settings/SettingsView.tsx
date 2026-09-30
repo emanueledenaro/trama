@@ -33,7 +33,7 @@ import { Spinner } from "@/components/Spinner";
 import { Button, FilledScope } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Toggle } from "@/components/ui/toggle";
-import { Tooltip } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -281,30 +281,20 @@ const GITHUB_STATUS: Record<GitHubCliState["status"], MessageKey> = {
 function CapabilityToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const t = useT();
   return (
-    <Tooltip label={t("settings.provider.capabilities")}>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={t("settings.provider.capabilities")}
-        aria-expanded={open}
-        className={cn(open && "bg-[var(--color-background-button-secondary)] text-foreground")}
-        onClick={onToggle}
-      >
-        <IconListDetails />
-      </Button>
-    </Tooltip>
+    <IconButton
+      label={t("settings.provider.capabilities")}
+      icon={<IconListDetails />}
+      size="icon"
+      aria-expanded={open}
+      className={cn(open && "bg-[var(--color-background-button-secondary)] text-foreground")}
+      onClick={onToggle}
+    />
   );
 }
 
 /** Checks a connection again, as an icon with its tooltip (issue #336). */
 function CheckButton({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
-  return (
-    <Tooltip label={label}>
-      <Button variant="ghost" size="icon-xs" aria-label={label} disabled={disabled} onClick={onClick}>
-        <IconRefresh />
-      </Button>
-    </Tooltip>
-  );
+  return <IconButton label={label} icon={<IconRefresh />} size="icon" disabled={disabled} onClick={onClick} />;
 }
 
 function CapabilityList({ provider }: { provider: ProviderDescriptor }) {
@@ -349,6 +339,14 @@ function ConnectionsSection() {
   }, []);
   const account = codex.account;
   const status = providerStatus(t, language, account, codex.checking);
+  const providerStates = useUi((s) => s.app!.providers);
+  // One line on top: how many of the connections are ready (the states below say which and why).
+  const others = PROVIDERS.filter((provider) => provider.id !== "codex");
+  const ready =
+    Number(status.tone === "success") +
+    Number(gitHubCli.status === "ready") +
+    others.filter((provider) => providerStatus(t, language, providerStates[provider.id]?.account ?? null, false).tone === "success").length;
+  const total = 2 + others.length;
   const codexDetail = account?.kind === "unsupported" ? t("settings.connections.codexUnsupported", { type: account.type }) : status.detail;
   return (
     <>
@@ -358,7 +356,6 @@ function ConnectionsSection() {
         actions={
           <Button
             variant="outline"
-            size="sm"
             onClick={() => {
               void act("codex:refresh", undefined);
               void act("providers:refresh", {});
@@ -369,6 +366,9 @@ function ConnectionsSection() {
           </Button>
         }
       />
+      <p className="mb-6 text-ui text-foreground" data-testid="connections-summary">
+        {t("settings.connections.summary", { ready, total })}
+      </p>
       <Group title={t("settings.connections.mainAccount")}>
         <Row
           label={
@@ -390,7 +390,7 @@ function ConnectionsSection() {
               <CapabilityToggle open={codexOpen} onToggle={() => setCodexOpen(!codexOpen)} />
               <CheckButton label={t("settings.provider.checkOf", { name: "ChatGPT" })} onClick={() => void act("codex:refresh", undefined)} />
               {account?.kind === "signedOut" ? (
-                <Button size="sm" onClick={() => void act("codex:login", undefined)}>
+                <Button onClick={() => void act("codex:login", undefined)}>
                   {t("settings.connections.signInChatGpt")}
                 </Button>
               ) : null}
@@ -407,7 +407,9 @@ function ConnectionsSection() {
           }
           description={
             <>
-              <GitHubCliDescription state={gitHubCli} />
+              <span className={cn(gitHubCli.status === "error" && "text-destructive")} data-testid="github-description">
+                <GitHubCliDescription state={gitHubCli} />
+              </span>
               {access ? (
                 <span className="mt-1 block" data-testid="github-access">
                   {t("settings.connections.githubAccess", { access })}
@@ -417,7 +419,7 @@ function ConnectionsSection() {
           }
           control={
             <>
-              <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
+              <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "destructive" : "secondary"}>
                 {t(GITHUB_STATUS[gitHubCli.status])}
               </Badge>
               <CheckButton
@@ -460,7 +462,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
       }
       description={
         <>
-          {status.detail ? <span>{status.detail}</span> : null}
+          {status.detail ? <span className={cn(state?.account?.kind === "unavailable" && "text-destructive")}>{status.detail}</span> : null}
           {connected && state ? (
             <span className="text-muted-foreground/70">
               {status.detail ? " · " : ""}
@@ -478,13 +480,12 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
       }
       control={
         <>
-          <Badge tone={status.tone}>{status.label}</Badge>
+          <Badge tone={state?.account?.kind === "unavailable" ? "destructive" : status.tone}>{status.label}</Badge>
           <CapabilityToggle open={open} onToggle={() => setOpen(!open)} />
           <CheckButton label={t("settings.provider.checkOf", { name: provider.name })} onClick={() => void act("providers:refresh", { provider: id })} />
           {state?.account?.kind === "signedOut" ? (
             <Button
               variant="outline"
-              size="xs"
               onClick={() =>
                 void act("provider:login", { provider: id }).then((result) =>
                   setHint(result?.command ? t("settings.provider.signInHint", { command: result.command }) : null),
