@@ -1,6 +1,7 @@
-import { IconFocus2, IconFolder, IconFolders } from "@tabler/icons-react";
+import { IconFocus2, IconFolder, IconFolders, IconPlayerPlay } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { RepositoryModule } from "@shared/repository";
+import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/field";
@@ -9,7 +10,7 @@ import { useT } from "@/lib/i18n";
 import { errorText, type FocusStartTarget, useUi } from "@/lib/store";
 
 const OPTION =
-  "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)] aria-checked:bg-[var(--sidebar-accent)] aria-checked:text-foreground";
+  "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)] aria-checked:bg-[var(--sidebar-accent)] aria-checked:text-foreground";
 
 // A stable empty list: a new one at each read would make the store selector update forever.
 const NO_MODULES: RepositoryModule[] = [];
@@ -75,16 +76,17 @@ export function FocusStartDialog() {
       icon={<IconFocus2 className="size-4 text-muted-foreground" stroke={1.7} />}
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={() => setDialog(null)}>
+          <Button variant="ghost" onClick={() => setDialog(null)}>
             {t("focus.start.cancel")}
           </Button>
-          <Button size="sm" disabled={!fixedPoint.trim() || opening} onClick={() => void submit()}>
-            {t("focus.start.submit")}
+          {/* The primary, last on the right; it starts work, so icon and text. Never drawn filled inside a dialog. */}
+          <Button disabled={!fixedPoint.trim() || opening} onClick={() => void submit()}>
+            {opening ? <Spinner /> : <IconPlayerPlay />} {t("focus.start.submit")}
           </Button>
         </>
       }
     >
-      <div className="space-y-3 pt-2" data-testid="focus-start">
+      <div className="space-y-4 pt-2" data-testid="focus-start">
         <div>
           <Label>{t("focus.start.what")}</Label>
           <div className="-mx-2 flex max-h-44 flex-col gap-0.5 overflow-y-auto" role="radiogroup" aria-label={t("focus.start.what")}>
@@ -130,13 +132,13 @@ export function FocusStartDialog() {
             autoFocus
           />
           {suggestions.length ? (
-            <div className="mt-1.5 flex flex-wrap gap-1" aria-label={t("focus.start.suggestions")}>
+            <div className="mt-2 flex flex-wrap gap-2" aria-label={t("focus.start.suggestions")}>
               {suggestions.map((ref) => (
                 <button
                   key={ref}
                   type="button"
                   className={cn(
-                    "rounded-md border border-[color:var(--color-border)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground",
+                    "inline-flex min-h-8 items-center rounded-md border border-[color:var(--color-border)] px-2 font-mono text-[11px] text-muted-foreground hover:text-foreground",
                     ref === fixedPoint.trim() && "border-ring/60 text-foreground",
                   )}
                   onClick={() => {
