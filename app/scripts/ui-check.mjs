@@ -728,6 +728,14 @@ await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// Design rules, chat: the icon-only copy buttons of the timeline have a tooltip as well as a name, and a turn of work
+// is 16 px above the next block (16, 24 or 32 between blocks).
+{
+  const copy = await page.locator('.chat-timeline-scroll button[aria-label^="Copia "]').evaluateAll((buttons) => buttons.map((b) => [b.getAttribute("aria-label"), b.getAttribute("title")]));
+  for (const [name, title] of copy) if (title !== name) throw new Error(`The chat button "${name}" has no tooltip: ${title}`);
+  const margins = await page.locator('[data-testid="work-line"]').evaluateAll((lines) => lines.map((l) => getComputedStyle(l).marginBottom));
+  for (const margin of margins) if (margin !== "16px") throw new Error(`A turn of work is ${margin} above the next block, not 16px`);
+}
 // Issue #330: the window laid out as VS Code, following the prototype B of issue #314. The activity bar picks the view,
 // the side bar shows it attached, the conversation is the editor and the status bar says what happens now.
 {

@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconTarget, IconTrash, IconChevronDown, IconCheck } from "@tabler/icons-react";
+import { IconTarget, IconTrash, IconChevronDown, IconCheck, IconPencil } from "@tabler/icons-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
@@ -17,6 +17,7 @@ import { act, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Composer } from "./Composer";
+import { emptyChatAction } from "./emptyChat";
 import { useWaiting } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
 import { WorkBar } from "./WorkBar";
@@ -77,7 +78,7 @@ function GoalTag({ goalId }: { goalId: string }) {
   const goal = findGoal(project.document, goalId);
   const t = useT();
   return (
-    <div className="flex justify-center pt-3 pb-1">
+    <div className="flex justify-center pt-4 pb-2">
       <button
         type="button"
         data-testid="chat-goal-tag"
@@ -114,11 +115,16 @@ function ProjectIntro() {
           {t("chat.view.retry")}
         </Button>
       ) : null}
-      {!hasConfirmedGoal(project.document.goals) ? (
+      {/* An empty chat has a message and one action: the first goal, or the first message once there is a goal. */}
+      {emptyChatAction(project.document.goals) === "firstGoal" ? (
         <Button variant="outline" size="sm" onClick={() => useUi.getState().setInspector({ kind: "goals", create: true })}>
           <IconTarget /> {t("chat.view.firstGoal")}
         </Button>
-      ) : null}
+      ) : (
+        <Button variant="outline" size="sm" data-testid="chat-intro-write" onClick={() => useUi.getState().focusComposer()}>
+          <IconPencil /> {t("chat.view.write")}
+        </Button>
+      )}
     </div>
   );
 }
@@ -132,7 +138,7 @@ function FirstGoalPrompt() {
   return (
     <div
       className={cn(
-        "relative my-3 flex flex-wrap items-center gap-3 rounded-xl border px-3.5 py-3",
+        "relative my-4 flex flex-wrap items-center gap-4 rounded-xl border px-3.5 py-3",
         seam.shown ? "border-transparent" : "border-dashed border-[color:var(--color-border)]",
       )}
       data-testid="first-goal"
