@@ -3550,6 +3550,13 @@ await closePanels();
   if ((await detailToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The assignment's details are open before the person opens them");
   if (await adaNow.getByTestId("assignment-contract").count()) throw new Error("The assignment's contract shows before the person opens its details");
   await adaNow.getByRole("button", { name: "Riprendi" }).waitFor();
+  // Design rules: Riprendi starts work, so it shows an icon with its text; and it sits above the closed details, on the right.
+  const resumeAda = adaNow.getByRole("button", { name: "Riprendi", exact: true });
+  if (!(await resumeAda.locator("svg").count()) || (await resumeAda.innerText()).trim() !== "Riprendi") throw new Error("Riprendi on the assignment card is not icon and text");
+  const resumeTop = await resumeAda.evaluate((el) => el.getBoundingClientRect().top);
+  const toggleTop = await detailToggle.evaluate((el) => el.getBoundingClientRect().top);
+  if (!(resumeTop < toggleTop)) throw new Error("The assignment card puts its actions below the details toggle");
+  if ((await resumeAda.evaluate((el) => el.parentElement.lastElementChild === el)) !== true) throw new Error("Riprendi is not the last action of the assignment card");
   await themeShots("52b-person-stopped");
   await detailToggle.click();
   const reliedOn = adaNow.getByTestId("contract-decisions");
@@ -6956,6 +6963,8 @@ for (const [name, testid, file] of [
   }
 }
 if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+// Design rules: a repeated check is secondary, so it is an icon with the name as tooltip and no visible text.
+if ((await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).innerText()).trim() !== "") throw new Error("Cloud sessions: the check of the session shows text, not only an icon");
 if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");
 const cloudState = await page.evaluate(async () => (await window.trama.getState()).project.document.team.specialists.find((s) => s.name === "Ada").assignments[0]);
 if (cloudState.status !== "running" || cloudState.cloud.status !== "working") throw new Error(`Cloud sessions: reopening stopped the cloud work: ${cloudState.status}`);
