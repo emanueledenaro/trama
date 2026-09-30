@@ -56,6 +56,10 @@ Un solo contesto in `CONTEXT.md` e `docs/adr/`. Per esplorare o modificare il do
 
 Il controllo gira in CI su ogni pull request e copre commit, merge e titolo della PR. Regole, esempi e hook locale facoltativo in `docs/agents/conventional-commits.md`.
 
+### Controllo delle regole di design
+
+Un job di CI (`design-rules`) segnala le violazioni delle regole di design solo nelle righe che una PR aggiunge o modifica in `app/src/renderer`, per ora come avviso e senza bloccare. In locale: `node app/scripts/check-design-rules.mjs origin/main`. Una riga si esclude con `design-rules-ignore: <motivo>` (motivo obbligatorio). Regole, limiti e passaggio da avviso a errore in `docs/agents/design-rules-check.md`.
+
 ### Branch naming
 
 I nomi dei branch seguono Conventional Branch 1.1.0 e sono controllati nello stesso job di CI. Tipi, regole della descrizione ed esempi non validi in `docs/agents/branch-naming.md`.
