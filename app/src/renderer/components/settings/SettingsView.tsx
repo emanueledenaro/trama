@@ -539,7 +539,6 @@ function MethodSection() {
           control={
             <>
               <Button
-                size="sm"
                 variant="ghost"
                 disabled={noProject}
                 onClick={() =>
@@ -553,8 +552,8 @@ function MethodSection() {
               >
                 {t("settings.method.rollback")}
               </Button>
+              {/* The row's primary: last, on the right, and never filled (ADR 0018). */}
               <Button
-                size="sm"
                 variant="outline"
                 disabled={noProject || running}
                 onClick={async () => {
@@ -604,7 +603,7 @@ function LimitPicker({ label, testId, options, value, onPick }: { label: string;
           aria-checked={value === option}
           onClick={() => onPick(option)}
           className={cn(
-            "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+            "flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
             value === option ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -711,7 +710,7 @@ function WorkPlaceGroup() {
                   disabled={!cloud}
                   onClick={() => void act("project:settings", { workPlace: value })}
                   className={cn(
-                    "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
+                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-4 text-ui-sm transition-colors",
                     selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -748,7 +747,7 @@ function DiscussionModelGroup() {
                   aria-checked={setting === value}
                   onClick={() => void act("project:settings", { discussionModel: value })}
                   className={cn(
-                    "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
+                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-4 text-ui-sm transition-colors",
                     setting === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
