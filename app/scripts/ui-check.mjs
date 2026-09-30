@@ -1463,6 +1463,8 @@ if ((await colorGroup.getAttribute("aria-labelledby")) === null) throw new Error
 await shot("04e4a-agent-look-panel");
 await agentPanel.getByRole("radio", { name: "Rame" }).click();
 await agentPanel.locator('[role="radio"][aria-checked="true"][aria-label="Rame"]').waitFor({ timeout: 20_000 });
+// The ring fades in and out with a transition: measure it once it has settled.
+await page.waitForTimeout(600);
 const chips = await colorGroup.getByRole("radio").evaluateAll((all) => all.map((el) => ({ name: el.getAttribute("aria-label") ?? "", bot: el.children.length > 0, height: el.getBoundingClientRect().height, ring: getComputedStyle(el).boxShadow, checked: el.getAttribute("aria-checked") })));
 if (chips.some((chip) => !chip.name || !chip.bot || chip.height < 32)) throw new Error(`A color lacks its bot, its accessible name or 32 px: ${JSON.stringify(chips)}`);
 // Only the chosen color has the ring.
