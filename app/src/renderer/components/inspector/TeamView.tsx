@@ -11,11 +11,10 @@ import {
   IconHourglass,
   IconMessageCircle,
   IconMessages,
-  IconPalette,
   IconPinned,
   IconUsers,
 } from "@tabler/icons-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { BacklogItem, BacklogReason, SquadBacklogView } from "@shared/backlog";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment, Squad } from "@shared/domain";
@@ -45,6 +44,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { act, examineCandidate, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
+import { AgentSettingsPanel, ModelNote, SettingsGear } from "./AgentSettingsPanel";
 import { AutomaticWorkSection } from "./AutomaticWork";
 import { DiscussionStateChip } from "./AgentThreadView";
 import { GroupBoardSection } from "./GroupBoard";
@@ -653,19 +653,16 @@ function squadLine(t: Translate, document: Parameters<typeof squadPart>[0], spec
 }
 
 /**
- * The summary under the person's name (critique of 29 September 2026): what it does, what holds it up and the next
- * move, one short row each. The next move is the one line that stands out.
+ * The summary under the person's header (critique of 29 September 2026): what holds it up, when something does, and
+ * the next move, which is the one line that stands out. What it is doing is the "Now" card right below, so it is not
+ * repeated here.
  */
 function AgentBriefRows({ specialist }: { specialist: Specialist }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const brief = agentBrief(t, project.document, project.candidateReports, specialist);
   return (
-    <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-ui-sm" data-testid="specialist-brief" data-sign={brief.sign}>
-      <dt className="text-muted-foreground">{t("teams.brief.doing")}</dt>
-      <dd className="line-clamp-2 min-w-0 break-words text-foreground/90" data-testid="brief-doing" title={brief.doing ?? undefined}>
-        {brief.doing ? <ReferenceText text={brief.doing} links={false} /> : t("teams.person.nothingNow")}
-      </dd>
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-ui-sm" data-testid="specialist-brief" data-sign={brief.sign}>
       {brief.blocker ? (
         <>
           <dt className="text-muted-foreground">{t("teams.brief.blocker")}</dt>
@@ -683,22 +680,25 @@ function AgentBriefRows({ specialist }: { specialist: Specialist }) {
 }
 
 /**
- * A person of the squad (issue #333, the specialist of W13), in its editor tab: the header with the bot, the name, the
- * role, the squad and the sign, then the summary of its work (what it does, what holds it up, the next move), Ask and
- * the menu with Rename and Remove; then the settings (model and look, issue #455), the work now with its details
- * folded, the last result, the assignments and the conversations between agents as compact rows; and closed at the
- * bottom why it is in the squad, when it steps in and its working copy.
+ * A person of the squad (issue #333, the specialist of W13), in its editor tab, in this order: the header (bot, name
+ * with its tag, squad, sign and the model in a small note, with the gear of the agent's settings and the menu of the
+ * destructive actions), the situation (what holds it up, the next move, Ask), the work now, one list of assignments
+ * with the latest result first, the conversations between agents when there are some, and closed at the bottom why it
+ * is in the squad, when it steps in and its working copy. The settings open in a panel under the header: the model
+ * and the look, saved as they change.
  */
 export function SpecialistView({ id }: { id: string }) {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const askCoordinator = useUi((s) => s.askCoordinator);
   const [removing, setRemoving] = useState(false);
-  const [renaming, setRenaming] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [whyOpen, toggleWhy] = useFold();
   const [dutiesOpen, toggleDuties] = useFold();
   const [workspaceOpen, toggleWorkspace] = useFold();
+  const gear = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
   const document = project.document;
   const specialist = document.team.specialists.find((s) => s.id === id);
   if (!specialist) return <div className="p-4"><EmptyNote>{t("teams.person.missing")}</EmptyNote></div>;
@@ -709,20 +709,45 @@ export function SpecialistView({ id }: { id: string }) {
   const now = openWork(specialist);
   const lastResult = [...specialist.assignments].reverse().find((a) => a.status === "completed" && a.id !== now?.id) ?? null;
   const others = [...specialist.assignments].reverse().filter((a) => a.id !== now?.id && a.id !== lastResult?.id);
+  const listed = (lastResult ? 1 : 0) + others.length;
   const workspace = current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? current.workspace : null;
-  const menu = specialist.status !== "removed" && !fixed;
+  const editable = specialist.status !== "removed";
+  // Only the destructive actions are in the menu; a person at work cannot be removed, so it has no menu then.
+  const menu = editable && !fixed && !busy;
   // The question goes to the dialog of the goal the latest assignment serves; otherwise to the dialog on screen.
   const ask = () => {
     const goalId = findGoal(document, current?.goalId ?? null)?.id;
     askCoordinator(specialistQuestion(specialist, current ?? null), goalId ? { goalId } : {});
   };
+  const toggleSettings = () => {
+    if (settingsOpen) gear.current?.focus();
+    setSettingsOpen(!settingsOpen);
+  };
+  const closeSettings = () => {
+    setSettingsOpen(false);
+    gear.current?.focus();
+  };
   return (
     <div data-testid="specialist" data-specialist-id={specialist.id}>
-      <div className="border-b border-[color:var(--app-surface-divider)] px-4 pt-3 pb-3">
+      <div className="border-b border-[color:var(--app-surface-divider)] px-4 pt-4 pb-4">
         {/* The bot sits beside the header, so it takes no room from the name and the status; the status never shrinks.
             The id stays on hover. */}
         <div className="flex items-start gap-3" data-testid="specialist-header" title={specialist.id}>
-          <AgentAvatar agent={specialist} size={48} />
+          {editable ? (
+            <button
+              type="button"
+              aria-label={t("teams.settings.open")}
+              aria-expanded={settingsOpen}
+              aria-controls={panelId}
+              data-testid="agent-settings-avatar"
+              className="shrink-0 cursor-pointer rounded-full"
+              onClick={toggleSettings}
+            >
+              <AgentAvatar agent={specialist} size={48} />
+            </button>
+          ) : (
+            <AgentAvatar agent={specialist} size={48} />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               {/* The id is Trama's, not the person's: it stays on hover (issue #392). */}
@@ -741,48 +766,32 @@ export function SpecialistView({ id }: { id: string }) {
             <span className="mt-1 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-foreground/90" data-testid="specialist-status">
               <SignMark sign={sign} className="size-3" /> {t(SIGN_LABEL[sign])}
             </span>
+            {editable ? <ModelNote specialist={specialist} /> : null}
           </div>
-        </div>
-        <AgentBriefRows specialist={specialist} />
-        <div className="cta-row mt-2">
-          {menu ? (
-            <Menu>
-              <Tooltip label={t("teams.person.more")}>
-                <MenuTrigger aria-label={t("teams.person.more")} className="sidebar-icon-button inline-flex size-7 items-center justify-center rounded-md" data-testid="specialist-menu">
-                  <IconDots className="size-4" stroke={1.8} />
-                </MenuTrigger>
-              </Tooltip>
-              <MenuPopup align="end">
-                <MenuItem
-                  onClick={() => {
-                    setRenaming(true);
-                    setRemoving(false);
-                  }}
-                >
-                  {t("teams.person.rename")}
-                </MenuItem>
-                {!busy ? (
-                  <MenuItem
-                    destructive
-                    onClick={() => {
-                      setRemoving(true);
-                      setRenaming(false);
-                    }}
-                  >
-                    {t("teams.person.remove")}
-                  </MenuItem>
-                ) : null}
-              </MenuPopup>
-            </Menu>
+          {editable || menu ? (
+            <div className="flex shrink-0 items-center" data-testid="specialist-header-actions">
+              {menu ? (
+                <Menu>
+                  <Tooltip label={t("teams.person.more")}>
+                    <MenuTrigger aria-label={t("teams.person.more")} className="sidebar-icon-button inline-flex size-8 items-center justify-center rounded-md" data-testid="specialist-menu">
+                      <IconDots className="size-4" stroke={1.8} />
+                    </MenuTrigger>
+                  </Tooltip>
+                  <MenuPopup align="end">
+                    <MenuItem destructive onClick={() => setRemoving(true)}>
+                      {t("teams.person.remove")}
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
+              ) : null}
+              {editable ? <SettingsGear ref={gear} open={settingsOpen} controls={panelId} onClick={toggleSettings} /> : null}
+            </div>
           ) : null}
-          <Button size="sm" variant="outline" aria-label={t("teams.person.askLong")} onClick={ask}>
-            <IconMessageCircle stroke={1.8} /> {t("teams.person.ask")}
-          </Button>
         </div>
-        {renaming ? <RenameSpecialist specialist={specialist} onDone={() => setRenaming(false)} /> : null}
         {removing ? (
-          <div className="mt-2 space-y-2" data-testid="remove-specialist">
+          <div className="mt-4 space-y-2" data-testid="remove-specialist">
             <TextArea
+              autoFocus
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder={t("teams.person.removeReason")}
@@ -805,27 +814,33 @@ export function SpecialistView({ id }: { id: string }) {
           </div>
         ) : null}
       </div>
-      {/* The settings come before the work (critique of 29 September 2026): they are the person's to change. */}
-      {specialist.status !== "removed" ? <SpecialistSettings specialist={specialist} /> : null}
+      {settingsOpen && editable ? <AgentSettingsPanel specialist={specialist} id={panelId} onClose={closeSettings} /> : null}
+      <div className="border-b border-[color:var(--app-surface-divider)] px-4 py-4">
+        <AgentBriefRows specialist={specialist} />
+        <div className="cta-row mt-4" data-testid="specialist-ask">
+          <Button size="sm" variant="outline" aria-label={t("teams.person.askLong")} onClick={ask}>
+            <IconMessageCircle stroke={1.8} /> {t("teams.person.ask")}
+          </Button>
+        </div>
+      </div>
       <NowSection assignment={now} />
       {now && ["stopped", "failed"].includes(now.status) ? <AssignmentProvider assignment={now} /> : null}
-      {lastResult ? (
-        <InspectorSection title={t("teams.person.lastResult")}>
-          <div className="-mx-2" data-testid="specialist-last-result">
-            <AssignmentRow assignment={lastResult} done />
-          </div>
-        </InspectorSection>
-      ) : null}
-      {fixed ? <AutomaticWorkSection role={specialist.role} /> : null}
-      <InspectorSection title={t("teams.person.assignments", { count: specialist.assignments.length })}>
+      <InspectorSection title={t("teams.person.assignments", { count: listed })}>
         {specialist.assignments.length === 0 ? <EmptyNote>{t("teams.person.noAssignments")}</EmptyNote> : null}
-        {specialist.assignments.length && !others.length ? <EmptyNote>{t("teams.person.noOtherAssignments")}</EmptyNote> : null}
+        {specialist.assignments.length && !listed ? <EmptyNote>{t("teams.person.noOtherAssignments")}</EmptyNote> : null}
+        {/* The latest result is the first row: it is what the person looks for before the older ones. */}
         <div className="-mx-2 flex flex-col" data-testid="specialist-assignments">
+          {lastResult ? (
+            <div data-testid="specialist-last-result">
+              <AssignmentRow assignment={lastResult} done />
+            </div>
+          ) : null}
           {others.map((assignment) => (
             <AssignmentRow key={assignment.id} assignment={assignment} />
           ))}
         </div>
       </InspectorSection>
+      {fixed ? <AutomaticWorkSection role={specialist.role} /> : null}
       <SpecialistThreads specialistId={specialist.id} />
       <Fold open={whyOpen} onToggle={toggleWhy} title={t("teams.person.why")}>
         <p className="text-ui text-foreground/90">
@@ -839,7 +854,7 @@ export function SpecialistView({ id }: { id: string }) {
         </p>
       </Fold>
       <Fold open={dutiesOpen} onToggle={toggleDuties} title={t("teams.person.duties")}>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           {roleDuties(t, specialist.role).map((duty) => (
             <div key={duty.moment}>
               <span className="block text-ui text-foreground/90">
@@ -992,229 +1007,6 @@ function AssignmentRow({ assignment, done = false }: { assignment: SpecialistAss
         </div>
       ) : null}
     </div>
-  );
-}
-
-const nameKey = (name: string) => name.trim().toLocaleLowerCase("it").replace(/\s+/g, " ");
-
-/** The person renames a developer (W13): the id stays, so assignments, chat and history follow the new name. */
-function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDone: () => void }) {
-  const t = useT();
-  const specialists = useUi((s) => s.app?.project?.document.team.specialists ?? []);
-  const [name, setName] = useState(specialist.name);
-  const next = name.trim();
-  const taken = specialists.some((s) => s.id !== specialist.id && s.status !== "removed" && nameKey(s.name) === nameKey(next));
-  const fixedName = FIXED_ROLES.some((role) => LANGUAGES.some((language) => nameKey(roleProfile(translator(language), role).name) === nameKey(next)));
-  const unchanged = next === specialist.name;
-  const save = () => void act("specialist:rename", { specialistId: specialist.id, name: next }).then(onDone);
-  return (
-    <div className="mt-2 space-y-2" data-testid="rename-specialist">
-      <Input
-        autoFocus
-        aria-label={t("teams.rename.label")}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && next && !taken && !fixedName && !unchanged) save();
-          if (e.key === "Escape") onDone();
-        }}
-      />
-      {taken ? <p className="text-ui-sm text-muted-foreground">{t("teams.rename.taken")}</p> : null}
-      {fixedName ? <p className="text-ui-sm text-muted-foreground">{t("teams.rename.fixedName")}</p> : null}
-      <p className="text-ui-xs text-muted-foreground" title={specialist.id}>
-        {t("team.rename.followsName")}
-      </p>
-      <div className="cta-row">
-        <Button size="sm" variant="ghost" onClick={onDone}>
-          {t("teams.person.cancel")}
-        </Button>
-        <Button size="sm" disabled={!next || taken || fixedName || unchanged} onClick={save}>
-          {t("teams.person.rename")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-const SETTING_PILL =
-  "inline-flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-[color:var(--color-border-light)] px-2.5 text-ui-sm text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)]";
-
-/**
- * The agent's settings, always in view (issue #455): the model of its next assignments, with the composer's picker,
- * and its look. The person's model wins over the Coordinator's pick; when it cannot run now the card says so and the
- * agent works on the Coordinator's default model.
- */
-function SpecialistSettings({ specialist }: { specialist: Specialist }) {
-  const t = useT();
-  const project = useUi((s) => s.app?.project)!;
-  const providers = useUi((s) => s.app!.providers);
-  const chosen = specialist.chosenModel ?? null;
-  const coordinatorProvider: ProviderId = chatComposer(project.document).selectedProvider ?? project.document.coordinator.threadProvider ?? "codex";
-  const provider = chosen?.provider ?? coordinatorProvider;
-  const models = providers[provider]?.models ?? [];
-  const info = chosen ? models.find((m) => m.model === chosen.model) : undefined;
-  const connected = chosen ? isUsableAccount(providers[chosen.provider]?.account) : true;
-  const missing = Boolean(chosen && connected && models.length && !info);
-  const problem = !chosen
-    ? null
-    : !connected
-      ? t("teams.settings.providerOff", { provider: providerLabel(chosen.provider), name: specialist.name })
-      : missing
-        ? t("teams.settings.modelGone", { provider: providerLabel(chosen.provider), model: chosen.model, name: specialist.name })
-        : null;
-  const choose = (choice: ModelChoice | null) => void act("specialist:setModel", { specialistId: specialist.id, choice });
-  return (
-    <InspectorSection title={t("teams.settings.title")}>
-      {/* On top of the page now (critique of 29 September 2026), so each part is its name, its control and a short note. */}
-      <div className="flex flex-col gap-3" data-testid="specialist-settings">
-        <div data-testid="specialist-model">
-          <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.settings.model")}</h5>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <ModelPicker
-              className={SETTING_PILL}
-              selectedProvider={provider}
-              selectedModel={chosen?.model ?? null}
-              effort={chosen ? (chosen.effort ?? info?.defaultReasoningEffort ?? null) : null}
-              modelMissing={Boolean(problem)}
-              busy={false}
-              fastMode={false}
-              emptyLabel={t("teams.settings.coordinatorChooses")}
-              ariaLabel={t("teams.settings.modelLabel", { name: specialist.name })}
-              testId="specialist-model-picker"
-              onChoose={choose}
-            />
-            {chosen ? (
-              <Button size="sm" variant="ghost" data-testid="specialist-model-reset" onClick={() => choose(null)}>
-                {t("teams.settings.reset")}
-              </Button>
-            ) : null}
-          </div>
-          <p className="mt-1 text-ui-xs text-muted-foreground">
-            {chosen ? t("teams.settings.modelNote", { name: specialist.name }) : t("teams.settings.coordinatorNote")}
-          </p>
-          {problem ? (
-            <p className="mt-2 text-ui-sm text-warning" data-testid="specialist-model-problem">
-              {problem}
-            </p>
-          ) : null}
-        </div>
-        <div data-testid="specialist-look">
-          <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.settings.look")}</h5>
-          <AgentLook specialist={specialist} />
-        </div>
-      </div>
-    </InspectorSection>
-  );
-}
-
-/**
- * The agent's look in one place: a summary in the settings and one button, "Personalizza aspetto", that opens everything
- * the person can change about how the agent looks. Today that is the bot's color and the name; the panel is where new
- * options go, so the settings page keeps its one row.
- */
-function AgentLook({ specialist }: { specialist: Specialist }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const fixed = isFixedRole(specialist.role);
-  const canRename = specialist.status !== "removed" && !fixed;
-  const close = (next: boolean) => {
-    setOpen(next);
-    if (!next) setRenaming(false);
-  };
-  return (
-    <>
-      <div className="mt-1.5 flex items-center gap-3" data-testid="agent-look-summary">
-        <span className="agent-identity inline-flex size-10 shrink-0 items-center justify-center rounded-full" style={agentStyle({ color: specialist.color })}>
-          <AgentAvatar agent={specialist} activity="idle" size={32} />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-ui-sm text-muted-foreground">{t("teams.look.summary", { color: colorName(t, specialist.color) })}</span>
-        <Button size="sm" variant="outline" aria-label={t("teams.look.customizeLabel", { name: specialist.name })} data-testid="agent-look-open" onClick={() => setOpen(true)}>
-          <IconPalette stroke={1.8} /> {t("teams.look.customize")}
-        </Button>
-      </div>
-      <Dialog
-        open={open}
-        onOpenChange={close}
-        title={t("teams.look.title", { name: specialist.name })}
-        description={t("teams.look.description")}
-        footer={
-          <Button size="sm" onClick={() => close(false)}>
-            {t("teams.look.done")}
-          </Button>
-        }
-      >
-        <div className="flex flex-col gap-5 pt-2" data-testid="agent-look-panel">
-          <section aria-label={t("teams.look.preview")} className="flex items-center gap-4 rounded-xl bg-[var(--color-background-elevated-secondary)] p-4" data-testid="agent-look-preview">
-            <span className="agent-identity inline-flex size-24 shrink-0 items-center justify-center rounded-2xl" style={agentStyle({ color: specialist.color })}>
-              <AgentAvatar agent={specialist} activity="idle" size={80} />
-            </span>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate text-ui-lg font-medium text-foreground">{specialist.name}</span>
-                <AgentTag agent={specialist} className="shrink-0 text-ui-sm" />
-              </div>
-              <p className="mt-0.5 text-ui-sm text-muted-foreground">{colorName(t, specialist.color)}</p>
-            </div>
-          </section>
-          <section>
-            <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.look.color")}</h5>
-            <AgentColorPicker specialist={specialist} />
-          </section>
-          <section data-testid="agent-look-name">
-            <h5 className="text-ui-sm font-medium text-foreground/90">{t("teams.look.name")}</h5>
-            {canRename ? (
-              renaming ? (
-                <RenameSpecialist specialist={specialist} onDone={() => setRenaming(false)} />
-              ) : (
-                <div className="mt-1.5 flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground">{specialist.name}</span>
-                  <Button size="sm" variant="outline" onClick={() => setRenaming(true)}>
-                    {t("teams.person.rename")}
-                  </Button>
-                </div>
-              )
-            ) : (
-              <p className="mt-1.5 text-ui-sm text-muted-foreground">{t("teams.look.nameFixed")}</p>
-            )}
-          </section>
-        </div>
-      </Dialog>
-    </>
-  );
-}
-
-/** The agent's color (W15): Trama picked a free one; the person may choose another from the palette. */
-function AgentColorPicker({ specialist }: { specialist: Specialist }) {
-  const t = useT();
-  return (
-    <>
-      <div className="mt-1.5 flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("teams.color.label")}>
-        {AGENT_PALETTE.map((entry) => {
-          const selected = entry.color === specialist.color;
-          return (
-            <Tooltip key={entry.color} label={colorName(t, entry.color)}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                aria-label={colorName(t, entry.color)}
-                data-testid="agent-color"
-                className={cn(
-                  "agent-identity inline-flex size-10 items-center justify-center rounded-full transition-shadow",
-                  selected ? "ring-2 ring-[var(--agent)] ring-offset-1 ring-offset-background" : "hover:ring-1 hover:ring-[var(--agent)]",
-                )}
-                style={agentStyle({ color: entry.color })}
-                onClick={() => (selected ? undefined : void act("specialist:setColor", { specialistId: specialist.id, color: entry.color }))}
-              >
-                <AgentAvatar agent={{ ...specialist, color: entry.color }} activity="idle" size={32} />
-              </button>
-            </Tooltip>
-          );
-        })}
-      </div>
-      <p className="mt-1 text-ui-xs text-muted-foreground">{t("teams.color.note")}</p>
-    </>
   );
 }
 
