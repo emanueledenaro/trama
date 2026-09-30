@@ -116,6 +116,17 @@ const activityBar = () => page.getByRole("navigation", { name: "Viste" });
 // two "Rinomina" items (issue #460). A menu opens once the previous one is gone, and its items are looked for inside
 // the one open menu. `page` changes at every launch, so the locator is built on each call.
 const openMenus = () => page.getByRole("menu");
+// Design of 30 September: the parts of a form or card are 16 px apart, on the 8 px grid.
+const partGaps = (box) => box.evaluate((el) => [...el.children].slice(1).map((child, i) => Math.round(child.getBoundingClientRect().top - el.children[i].getBoundingClientRect().bottom)));
+const expectGaps = async (name, box) => {
+  const gaps = await partGaps(box);
+  if (!gaps.length || gaps.some((gap) => gap < 16)) throw new Error(`${name}: the parts are not 16 px apart: ${gaps}`);
+};
+// The check rows of a form are at least 32 px tall, so they are easy to hit.
+const expectRowsTall = async (name, rows) => {
+  const heights = await rows.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+  if (!heights.length || heights.some((height) => height < 32)) throw new Error(`${name}: a row is under 32 px: ${heights}`);
+};
 const openMenu = async (trigger) => {
   await openMenus().first().waitFor({ state: "hidden" });
   await trigger.click();
@@ -561,6 +572,15 @@ for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   if (entrance !== "none") throw new Error(`The Benvenuto animates its entrance with reduced motion: ${entrance}`);
 }
+// Recenti, empty (design rules, four states): a message and the way to a first project, an outline: the filled button of
+// the Benvenuto is the one of Inizia. The message no longer repeats the ways to start.
+const recentEmpty = welcome.getByTestId("recent-empty");
+await recentEmpty.waitFor();
+if (!(await recentEmpty.getByText("Nessun progetto recente.").count())) throw new Error("Recenti, empty, has no message");
+if ((await recentEmpty.locator('button[data-variant="default"]').count()) !== 0 || (await recentEmpty.getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant")) !== "outline") {
+  throw new Error("Recenti, empty, has a second main action");
+}
+if (/clonane|Clona|esempio/.test(await recentEmpty.innerText())) throw new Error("Recenti, empty, repeats the ways to start of Inizia");
 if (await page.getByRole("button", { name: "Chiudi Benvenuto", exact: true }).count()) throw new Error("The Benvenuto can be closed without a project");
 const barViews = await activityBar().getByRole("button").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
 if (barViews.join("|") !== "Progetti|Impostazioni") throw new Error(`Without a project the activity bar shows more than Progetti and Impostazioni: ${barViews}`);
@@ -590,9 +610,33 @@ for (const row of stepRows.slice(1)) {
   if (row.status === "done" && row.optional) throw new Error(`The step ${row.id} says "facoltativo" beside Fatto`);
 }
 if (!stepRows.find((row) => row.id === "github").optional) throw new Error("GitHub, optional and to do, does not say so");
+// Design rules: a step done asks for nothing (a check and a small "Cambia", no "Fatto"); a step to do does not repeat its
+// state ("Da fare") beside the button that says what to do; the state is written only for checking, skipped, blocked.
+// Secondary actions are icons of 32 px with their name, the provider's text button aside.
+const stepChrome = await welcome.getByTestId("welcome-step").evaluateAll((nodes) =>
+  nodes
+    .filter((node) => node.dataset.step !== "language")
+    .map((node) => {
+      const button = node.firstElementChild.querySelector(":scope > button");
+      const rect = button.getBoundingClientRect();
+      return {
+        id: node.dataset.step,
+        status: node.dataset.status,
+        state: node.querySelector('[data-testid="welcome-step-status"]')?.textContent ?? null,
+        iconOnly: button.textContent.trim() === "" && Boolean(button.getAttribute("aria-label")),
+        height: Math.round(rect.height),
+      };
+    }),
+);
+for (const row of stepChrome) {
+  if (row.status === "done" && (row.state !== null || !row.iconOnly)) throw new Error(`A step done asks for something or repeats its state: ${JSON.stringify(row)}`);
+  if (row.status === "pending" && row.state !== null) throw new Error(`A step to do repeats its state: ${JSON.stringify(row)}`);
+  if (row.id !== "provider" && !row.iconOnly) throw new Error(`The action of the step ${row.id} is not an icon: ${JSON.stringify(row)}`);
+  if (row.height < 32) throw new Error(`The action of the step ${row.id} is under 32 px: ${JSON.stringify(row)}`);
+}
 await welcomeStep("language").getByTestId("language-choice").waitFor();
-// One filled button at most: the provider's, while it is to do.
-if ((await welcome.locator('button[data-variant="default"]').count()) > 1) throw new Error("The Benvenuto has more than one primary action");
+// One filled button at most: Apri un progetto's, while no project is open.
+if ((await welcome.locator('button[data-variant="default"]:not([data-filled="false"])').count()) > 1) throw new Error("The Benvenuto has more than one primary action");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
   for (const [label, theme] of themes) {
@@ -649,6 +693,7 @@ await welcome.locator('[data-provider-row="codex"]').waitFor();
 await welcome.locator('[data-provider-row="claudeAgent"]').waitFor();
 if (await welcome.locator('[data-provider-row="cursor"]').count()) throw new Error("The other providers are not behind their toggle");
 await welcomeStep("provider").getByRole("button", { name: "Controlla di nuovo" }).waitFor();
+if ((await welcomeStep("provider").getByRole("button", { name: "Controlla di nuovo" }).innerText()).trim() !== "") throw new Error("Controlla di nuovo is not an icon");
 await shot("00b-welcome-provider");
 await welcome.getByRole("button", { name: /^Altri provider/ }).click();
 await welcome.locator('[data-provider-row="cursor"]').waitFor();
@@ -683,14 +728,22 @@ await welcome.locator('[data-step="aiHero"][data-status="done"]').waitFor();
 await shot("00e-welcome-aihero-chosen");
 await welcomeStep("aiHero").getByRole("button", { name: "Cambia", exact: true }).click();
 
-// Inizia, where the project picker of B02 went: open, create, clone and the example, as links at every size and theme.
-// The Benvenuto's one filled button stays the provider's: none here.
+// Inizia, where the project picker of B02 went: create, clone and the example as rows, "Apri un progetto" as the action on
+// the right. Without a project it is the Benvenuto's one filled button (design rules: one main action per view, never
+// two), so the provider's Collega is an outline there.
 const picker = welcome.getByTestId("welcome-start");
 const startLinks = await picker.getByTestId("welcome-start-actions").getByRole("button").allInnerTexts();
-for (const name of ["Apri un progetto", "Crea un progetto", "Clona da GitHub", "Progetto di esempio"]) {
+for (const name of ["Crea un progetto", "Clona da GitHub", "Progetto di esempio"]) {
   if (!startLinks.some((text) => text.startsWith(name))) throw new Error(`Inizia has no ${name}: ${startLinks}`);
 }
-if (await picker.locator('button[data-variant="default"]').count()) throw new Error("Inizia has a primary button");
+const openProject = picker.getByTestId("welcome-start-open").getByRole("button", { name: "Apri un progetto" });
+if ((await openProject.getAttribute("data-variant")) !== "default" || (await openProject.getAttribute("data-filled")) === "false") throw new Error("Apri un progetto is not the filled action");
+const filled = await welcome.locator('button[data-variant="default"]:not([data-filled="false"])').allInnerTexts();
+if (filled.length !== 1 || !filled[0].includes("Apri un progetto")) throw new Error(`Without a project the Benvenuto's one filled button is not Apri un progetto: ${filled}`);
+await primaryLast(picker.getByTestId("welcome-start-open"), "Inizia");
+const startRows = await picker.getByTestId("welcome-start-actions").getByRole("button").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+if (startRows.some((height) => height < 32)) throw new Error(`A way to start is under 32 px: ${startRows}`);
+if (await picker.locator('[style*="gradient"], [class*="gradient"]').count()) throw new Error("Inizia uses a gradient outside the tokens");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
   for (const [label, theme] of themes) {
@@ -1337,6 +1390,10 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
   const sharedToggle = teamPanel.getByTestId("shared-roles-toggle");
   if ((await sharedToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The shared roles are not closed at first");
   if (!/^Ruoli condivisi\s*\d+/.test((await sharedToggle.innerText()).trim())) throw new Error("The shared roles do not show their count");
+  // Design of 30 September, Squads list: the blocks have 16 px above and below (the 8 px grid) and a closed section's row is 32 px.
+  const blockPads = await teamPanel.locator('[data-testid="squad"], [data-testid="squads-summary"]').evaluateAll((els) => els.flatMap((el) => [getComputedStyle(el).paddingTop, getComputedStyle(el).paddingBottom]));
+  if (!blockPads.length || blockPads.some((pad) => pad !== "16px")) throw new Error(`The blocks of the Squads view are not 16 px apart: ${blockPads}`);
+  if ((await sharedToggle.boundingBox()).height < 32) throw new Error("The row of a closed section is under 32 px");
   const person = teamPanel.getByTestId("team-developer").first();
   for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
     await page.setViewportSize({ width, height });
@@ -2710,11 +2767,74 @@ await openView("Lavoro");
   }
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 }
+// Design rules for the candidate's page (issue #314), from the top: the work in words, the outcome with its actions under it,
+// the files and the diff (closed), the screenshots only when the interface changes, the proof, the history. No state badge
+// repeats the outcome, no box sits in another box, nothing is filled, clickable things are 32 px, spacing is on the 16 px grid.
+const candidatePageRules = async (label, { interfaceChange = false, diffOpen = false } = {}) => {
+  const root = detailPane().getByTestId("candidate-detail");
+  await root.waitFor();
+  if (interfaceChange) await root.locator('[data-testid="candidate-shots"] [data-testid="interface-shot"] img').nth(3).waitFor({ timeout: 30_000 });
+  const facts = await root.evaluate((node) => {
+    const top = (selector) => node.querySelector(selector)?.getBoundingClientRect().top ?? null;
+    const toMerge = node.querySelector('[data-testid="candidate-to-merge"]');
+    const row = toMerge?.querySelector(".cta-row");
+    const buttons = row ? [...row.querySelectorAll("button")] : [];
+    const summary = node.querySelector('[data-testid="candidate-diff"] summary');
+    const padding = (id) => {
+      const style = getComputedStyle(node.querySelector(`[data-testid="${id}"]`));
+      return `${style.paddingLeft} ${style.paddingTop}`;
+    };
+    return {
+      order: ["h2", '[data-testid="candidate-to-merge"]', '[data-testid="candidate-diff"]', '[data-testid="candidate-proof"]', '[data-testid="candidate-history"]'].map(top),
+      outcome: node.querySelector('[data-testid="candidate-outcome"]')?.textContent.trim() ?? null,
+      dataOutcome: toMerge?.getAttribute("data-outcome") ?? null,
+      header: node.querySelector('[data-testid="candidate-header"]')?.textContent ?? "",
+      filled: node.querySelectorAll('button[data-variant="default"]:not([data-filled="false"])').length,
+      // The actions, the diff line, the pull request link and the examination's actions; the inline references of the chat card's components keep their own size.
+      short: [...node.querySelectorAll('[data-testid="candidate-actions"] button, [data-testid="candidate-diff"] summary, [data-testid="candidate-pull-request"], [data-testid="focus-audit"] .cta-row button')].map((b) => Math.round(b.getBoundingClientRect().height)).filter((h) => h < 32),
+      boxes: node.querySelectorAll(".chat-card").length,
+      radius: toMerge ? getComputedStyle(toMerge).borderRadius : null,
+      padding: [padding("candidate-proof"), padding("candidate-history")],
+      diffOpen: node.querySelector('[data-testid="candidate-diff"]').hasAttribute("open"),
+      diffRow: summary ? Math.round(summary.getBoundingClientRect().height) : 0,
+      diffText: summary?.textContent.trim() ?? "",
+      passedRows: node.querySelectorAll('[data-testid="candidate-proof"] [data-testid="candidate-evidence"][data-result="pass"]').length,
+      reviews: node.querySelectorAll('[data-testid="technical-review"], [data-testid="candidate-reviewers-none"]').length,
+      shots: node.querySelectorAll('[data-testid="candidate-shots"]').length,
+      historyLabels: [...node.querySelectorAll('[data-testid="candidate-history"] .w-32')].map((n) => n.textContent.trim()),
+      actions: row ? { right: Math.round(row.getBoundingClientRect().right - buttons.at(-1).getBoundingClientRect().right), labels: buttons.map((b) => b.textContent.trim()) } : null,
+      prose: `${toMerge?.textContent ?? ""} ${node.querySelector('[data-testid="candidate-history"]')?.textContent ?? ""}`,
+    };
+  });
+  const fail = (what) => {
+    throw new Error(`Candidate page (${label}): ${what}: ${JSON.stringify(facts)}`);
+  };
+  if (facts.order.some((y) => y === null) || facts.order.some((y, i) => i && y <= facts.order[i - 1])) fail("the parts are not in the order title, outcome, diff, proof, history");
+  if (!/^(Non è ancora pronto: (manca 1 cosa|mancano \d+ cose)|Pronto|Unito|Superato)$/.test(facts.outcome ?? "")) fail("the outcome is not one line of the vocabulary");
+  const outcomeOf = { Pronto: "ready", Unito: "merged", Superato: "superseded" };
+  if (facts.dataOutcome !== (outcomeOf[facts.outcome] ?? "missing")) fail("the outcome and its state disagree");
+  if (/Pronto|Unito|Superato|Non è ancora pronto/.test(facts.header)) fail("a state repeats the outcome in the header");
+  if (facts.filled) fail("a button is filled");
+  if (facts.short.length) fail("a clickable part is under 32 px");
+  if (facts.boxes || facts.radius !== "0px") fail("a box sits inside another");
+  if (facts.padding.some((value) => value !== "16px 16px")) fail("the blocks are not on the 16 px grid");
+  if (facts.diffOpen !== diffOpen) fail(diffOpen ? "the diff is closed" : "the diff is not closed");
+  if (facts.diffRow < 32 || !/^Diff catturato da Trama, \d+ file$/.test(facts.diffText)) fail("the files row is not the diff's 32 px line");
+  if (facts.passedRows) fail("a passed check shows as a row, not in the one line");
+  if (facts.reviews !== 1) fail("the reviewers are neither an opinion nor one line");
+  if (facts.shots !== (interfaceChange ? 1 : 0)) fail("the screenshots do not follow the interface change");
+  if (!facts.historyLabels.includes("Versione") || !facts.historyLabels.includes("Incarico")) fail("the history lacks the version or the assignment");
+  if (facts.actions && facts.actions.right > 4) fail("the actions are not on the right");
+  if (interfaceChange && (facts.actions?.labels.at(-1) !== "Approva e unisci" || !facts.actions.labels.includes("Rifiuta") || facts.actions.labels.includes("Approva questo candidato"))) fail("an interface candidate does not end with Approva e unisci");
+  if (/[–—]/.test(facts.prose)) fail("a dash in the outcome or the history");
+};
 await page.getByTestId("side-bar").locator('button[data-record-id^="C-"]').first().click();
 // Issue #336: the candidate opens in its editor tab: what is missing to merge it on top, the diff closed below.
 await detailPane().getByText(/^Diff catturato da Trama/).waitFor();
 await detailPane().getByTestId("candidate-to-merge").waitFor();
 if (await detailPane().getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
+await candidatePageRules("verified candidate");
+await shot("04i-candidate-page");
 // Opening the same candidate again brings back its tab.
 await page.getByTestId("side-bar").locator('button[data-record-id^="C-"]').first().click();
 if ((await page.locator('[data-testid="editor-tab"][data-tab^="detail:candidate:"]').count()) !== 1) throw new Error("The same candidate opened a second tab");
@@ -2857,6 +2977,11 @@ await themeShots("15c-status-line-paused");
       for (const dark of [false, true]) {
         await setLookTo(provider, dark);
         await shot(`38-button-rule-${width}x${height}-${provider}-${dark ? "dark" : "light"}`);
+        // Design rules, chat: no filled button in the timeline or in the composer, the window's one is Aspetta te's.
+        const chatFilled = await page
+          .locator('.chat-timeline-scroll button[data-variant="default"], form.chat-composer-surface button[data-variant="default"]')
+          .evaluateAll((buttons) => buttons.filter((b) => b.dataset.filled !== "false" && b.getBoundingClientRect().width > 0).map((b) => b.textContent.trim()));
+        if (chatFilled.length) throw new Error(`The chat has a filled button at ${width}x${height}: ${chatFilled.join(", ")}`);
       }
     }
   }
@@ -3419,7 +3544,10 @@ if (await page.getByTestId("welcome").count()) throw new Error("The welcome show
     throw new Error("Inizia offers the first goal only with a project of the person open");
   }
   await reopened.locator('[data-step="github"][data-status="done"]').waitFor({ timeout: 20_000 });
-  if ((await reopened.getAttribute("data-all-set")) === "true") await reopened.getByTestId("welcome-all-set").getByText("Tutto pronto.").waitFor();
+  if ((await reopened.getAttribute("data-all-set")) === "true") {
+    await reopened.getByTestId("welcome-all-set").getByText("Tutto pronto.").waitFor();
+    if (await reopened.getByTestId("welcome-setup").getByText(/su \d+ fatti/).count()) throw new Error("Configura counts the steps done beside Tutto pronto");
+  }
   const reopenedLook = await lookOf();
   for (const [width, height] of [
     [1280, 800],
@@ -4600,6 +4728,13 @@ if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a s
   const backlog = squadsBar.getByTestId("squad-backlog").nth(backlogIndex);
   await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
   await backlog.getByTestId("squad-backlog-toggle").click();
+  // Moving an item is an icon: it has its tooltip, as well as its name.
+  {
+    const moveDown = backlog.getByTestId("backlog-item").first().getByRole("button", { name: /^Sposta giù / });
+    await moveDown.hover();
+    await page.locator(".translucent-popup").getByText(/^Sposta giù /).waitFor();
+    await page.mouse.move(0, 0);
+  }
   const backlogKeys = () => backlog.getByTestId("backlog-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-key")?.split(":").at(-1)));
   if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The backlog is not in the Coordinator's order: ${await backlogKeys()}`);
   for (const item of await backlog.getByTestId("backlog-item").all()) {
@@ -5160,7 +5295,18 @@ await recentPicker.waitFor();
 await recentPicker.getByTestId("recent-project").filter({ hasText: /collega attivo|colleghi attivi/ }).first().waitFor({ timeout: 20_000 });
 if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played again without a first launch");
 if ((await recentPicker.getByTestId("recent-project").count()) > 5) throw new Error("Recenti lists more than five projects");
-await recentPicker.getByRole("button", { name: "Tutti i progetti" }).click();
+// Tutti i progetti is navigation: an icon with its tooltip and name, at least 32 px. Forgetting a project too, and a
+// long path is cut, whole in the tooltip.
+const allProjects = recentPicker.getByRole("button", { name: "Tutti i progetti" });
+if ((await allProjects.innerText()).trim() !== "") throw new Error("Tutti i progetti has a text beside its icon");
+const recentSizes = await recentPicker.locator("[data-icon-button]").evaluateAll((nodes) => nodes.map((node) => Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height)));
+if (recentSizes.length < 2 || recentSizes.some((size) => size < 32)) throw new Error(`An icon button of Recenti is under 32 px: ${recentSizes}`);
+const recentPath = recentPicker.getByTestId("recent-project").first().locator(".truncate.font-mono");
+if ((await recentPath.evaluate((node) => getComputedStyle(node).textOverflow)) !== "ellipsis") throw new Error("A recent path is not truncated");
+await recentPath.hover();
+await page.locator(".translucent-popup").filter({ hasText: (await recentPath.innerText()).trim() }).waitFor();
+await page.mouse.move(0, 0);
+await allProjects.click();
 await page.locator('[data-testid="side-bar"][data-view="projects"]').waitFor();
 await activityBar().getByRole("button", { name: "Progetti", exact: true }).click();
 await page.getByTestId("side-bar").waitFor({ state: "detached" });
@@ -5201,6 +5347,10 @@ await app.close();
     throw new Error("The Benvenuto did not open on the provider step");
   }
   await beside.locator('[data-provider-row="codex"]').waitFor();
+  // With a project open Apri un progetto is an outline: the window's filled button belongs to the work.
+  const openBeside = await beside.getByTestId("welcome-start-open").getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant");
+  if (openBeside === "default") throw new Error("Apri un progetto is a main action while a project is open");
+  if ((await beside.locator('button[data-variant="default"]:not([data-filled="false"])').count()) > 1) throw new Error("The Benvenuto beside the conversation has more than one filled button");
   for (const provider of ["codex", "claudeAgent"]) {
     for (const dark of [false, true]) {
       await setLookTo(provider, dark);
@@ -5212,6 +5362,8 @@ await app.close();
   await beside.waitFor({ state: "detached" });
   const connect = page.getByTestId("composer-connect-provider");
   await connect.waitFor();
+  // Design rules, chat: the composer's Collega is a primary drawn as an outline, the window has no filled button here.
+  if ((await connect.getAttribute("data-filled")) !== "false") throw new Error("The composer's Collega a provider is a filled button");
   if (await page.getByRole("button", { name: "Invia al Coordinatore" }).count()) throw new Error("The composer sends without a provider");
   const warning = page.getByTestId("status-setup");
   await warning.waitFor();
@@ -7423,6 +7575,11 @@ await page.setViewportSize({ width: 900, height: 820 });
 await styledItem.locator('[data-testid="interface-shots"]').evaluate((node) => node.scrollIntoView({ block: "center" }));
 await themeShots("30b2-interface-candidate-narrow");
 await page.setViewportSize({ width: 1280, height: 820 });
+// Its own page: the screenshots come from the interface change, and the person decides right under the outcome.
+await styledItem.getByRole("button", { name: "Apri il diff" }).click();
+await candidatePageRules("interface candidate", { interfaceChange: true, diffOpen: true });
+await themeShots("30b3-interface-candidate-page");
+await closeDetails();
 
 // The person refuses it with a reason: it leaves Aspetta te and the reason reaches the developer.
 await styledItem.getByRole("button", { name: "Rifiuta", exact: true }).click();
@@ -7717,6 +7874,7 @@ await renameSquadForm.getByLabel("Nome della squadra").fill("catalogo");
 await renameSquadForm.getByText("C'è già una squadra che si chiama catalogo.").waitFor();
 if (await renameSquadForm.getByRole("button", { name: "Rinomina" }).isEnabled()) throw new Error("A squad can take another squad's name");
 await renameSquadForm.getByLabel("Nome della squadra").fill("Ordini e pagamenti");
+await expectGaps("Rename a squad", renameSquadForm);
 const renameSquadButtons = await renameSquadForm.locator(".cta-row button").allTextContents();
 if (renameSquadButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not the last call to action: ${renameSquadButtons}`);
 await themeShots("51c-squad-rename");
@@ -7729,6 +7887,8 @@ const mergeForm = squadsSide.getByTestId("merge-squad");
 await mergeForm.getByText("Insieme sono 4 sviluppatori e una squadra ne ha al massimo 3.", { exact: false }).waitFor();
 const kept = await mergeForm.getByTestId("squad-keep").locator("input:checked").count();
 if (kept !== 3) throw new Error(`The proposal keeps ${kept} developers, not 3`);
+await expectGaps("Merge squads", mergeForm);
+await expectRowsTall("Merge squads", mergeForm.getByTestId("squad-keep").locator("label"));
 await mergeForm.scrollIntoViewIfNeeded();
 {
   const look = await lookOf();
@@ -7776,6 +7936,7 @@ const mergeProposalCard = squadsSide.getByTestId("squad-merge-proposal");
 await mergeProposalCard.getByText("Hai chiesto al Coordinatore di unire Catalogo a Ordini e pagamenti.", { exact: false }).waitFor({ timeout: 20_000 });
 const squadProposalButtons = await mergeProposalCard.locator(".cta-row button").allTextContents();
 if (squadProposalButtons.at(-1)?.trim() !== "Unisci") throw new Error(`Merge is not the last call to action: ${squadProposalButtons}`);
+await expectGaps("The merge proposal", mergeProposalCard);
 await themeShots("51j-squad-merge-proposal");
 await mergeProposalCard.getByRole("button", { name: "Lascia com'è" }).click();
 await mergeProposalCard.waitFor({ state: "detached", timeout: 20_000 });
@@ -7786,6 +7947,8 @@ const splitForm = squadsSide.getByTestId("split-squad");
 await splitForm.getByTestId("split-areas").getByRole("checkbox", { name: "Payments" }).check();
 if (!(await splitForm.getByTestId("split-developers").getByRole("checkbox", { name: "Marta" }).isChecked())) throw new Error("The split does not propose the developer who knows the area");
 await splitForm.getByLabel("Nome della squadra nuova").fill("Pagamenti");
+await expectGaps("Split a squad", splitForm);
+await expectRowsTall("Split a squad", splitForm.locator('[data-testid="split-areas"] label, [data-testid="split-developers"] label'));
 const splitButtons = await splitForm.locator(".cta-row button").allTextContents();
 if (splitButtons.at(-1)?.trim() !== "Dividi") throw new Error(`Split is not the last call to action: ${splitButtons}`);
 await splitForm.scrollIntoViewIfNeeded();
