@@ -7508,13 +7508,14 @@ await app.close();
   await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
   await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
   // Design rules: the dialog's clickable parts are at least 32 px high, and its primary is the last button on the right.
+  // The height is the layout one: the dialog opens from scale 0.98, so the box on screen reads 31 px while it animates.
   {
     const parts = await focusStart.evaluate((dialog) => {
       const buttons = [...dialog.querySelectorAll("button")].filter(
         (node) => node.closest('[data-testid="focus-start"]') || ["Annulla", "Avvia l'esame"].some((name) => node.textContent.includes(name)),
       );
       const submit = buttons.find((node) => node.textContent.includes("Avvia l'esame"));
-      return { heights: buttons.map((node) => Math.round(node.getBoundingClientRect().height)), submitVariant: submit?.getAttribute("data-variant") };
+      return { heights: buttons.map((node) => node.offsetHeight), submitVariant: submit?.getAttribute("data-variant") };
     });
     if (parts.heights.some((h) => h < 32)) throw new Error(`A focus start button is under 32 px: ${parts.heights}`);
     if (parts.submitVariant !== "default") throw new Error(`Avvia l'esame is not the primary action: ${JSON.stringify(parts)}`);
