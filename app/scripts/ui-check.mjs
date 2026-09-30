@@ -892,6 +892,18 @@ await shot("02-demo-study");
     });
   const filledButtons = () =>
     page.locator('button[data-variant="default"]').evaluateAll((buttons) => buttons.filter((b) => b.getBoundingClientRect().width > 0).length);
+  // Design rules for the title bar: every button and the search are at least 32 px, and the branch is not repeated here
+  // (the status bar has it, and it opens the branch).
+  {
+    const small = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="title-bar"] button')]
+        .map((button) => ({ name: button.getAttribute("aria-label"), box: button.getBoundingClientRect() }))
+        .filter(({ box }) => box.width > 0 && box.height < 32)
+        .map(({ name, box }) => `${name}: ${Math.round(box.height)}`),
+    );
+    if (small.length) throw new Error(`The title bar has buttons under 32 px: ${small.join(", ")}`);
+    if (await page.locator('[data-testid="title-bar"] .tabler-icon-git-branch').count()) throw new Error("The title bar repeats the branch of the status bar");
+  }
   const bars = await page.evaluate(() => ({
     title: document.querySelector('[data-testid="title-bar"]').getBoundingClientRect().height,
     activity: document.querySelector('[data-testid="activity-bar"]').getBoundingClientRect().width,

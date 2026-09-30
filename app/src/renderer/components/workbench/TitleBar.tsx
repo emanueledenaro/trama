@@ -4,7 +4,6 @@ import {
   IconCheck,
   IconChevronDown,
   IconFolderPlus,
-  IconGitBranch,
   IconHome,
   IconLayoutBottombar,
   IconLayoutList,
@@ -26,7 +25,7 @@ import { SPLIT_EDITOR_MIN_VIEWPORT } from "@/lib/workbench";
 import { useViewportWidth } from "./EditorArea";
 
 const ICON_BUTTON =
-  "no-drag inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent aria-pressed:text-foreground";
+  "no-drag inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent aria-pressed:text-foreground";
 
 /** The project's name with the menu of the projects: the recent ones, the overview, open and create. */
 function ProjectMenu() {
@@ -42,7 +41,7 @@ function ProjectMenu() {
   return (
     <div className="flex min-w-0 items-center gap-1">
       <Menu>
-        <MenuTrigger aria-label={t("workbench.title.projectMenu", { name })} className={cn(HEADER_CHIP, "no-drag min-w-0 text-ui text-foreground")}>
+        <MenuTrigger aria-label={t("workbench.title.projectMenu", { name })} className={cn(HEADER_CHIP, "no-drag !h-8 min-w-0 text-ui text-foreground")}>
           {/* One chat per project (U01): with a goal filter the next crumb names the goal the next message is about. */}
           <span className="min-w-0 truncate" data-testid={goal ? undefined : "dialog-title"}>
             {name}
@@ -99,12 +98,6 @@ function ProjectMenu() {
           </button>
         </>
       ) : null}
-      {project?.snapshot.branch ? (
-        <span className="hidden min-w-0 items-center gap-1 truncate text-ui-sm text-muted-foreground/70 @min-[900px]/title:flex">
-          <IconGitBranch className="size-3.5 shrink-0" stroke={1.7} />
-          <span className="truncate">{project.snapshot.branch}</span>
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -119,12 +112,12 @@ function NavigationButtons() {
     <div className="flex shrink-0 items-center gap-0.5">
       <Tooltip label={t("workbench.title.back")}>
         <button type="button" aria-label={t("workbench.title.back")} disabled={!canGoBack} onClick={goBack} className={ICON_BUTTON}>
-          <IconArrowNarrowLeft className="size-[18px]" stroke={1.6} />
+          <IconArrowNarrowLeft className="size-5" stroke={1.6} />
         </button>
       </Tooltip>
       <Tooltip label={t("workbench.title.forward")}>
         <button type="button" aria-label={t("workbench.title.forward")} disabled={!canGoForward} onClick={goForward} className={ICON_BUTTON}>
-          <IconArrowNarrowRight className="size-[18px]" stroke={1.6} />
+          <IconArrowNarrowRight className="size-5" stroke={1.6} />
         </button>
       </Tooltip>
     </div>
@@ -132,8 +125,9 @@ function NavigationButtons() {
 }
 
 /**
- * The title bar (issue #330, ADR 0018), 46 px across the window: Trama's mark, the project with its menu and branch,
- * the search in the middle, and the toggles of the side bar and of the Activity panel. It is the window's drag area.
+ * The title bar (issue #330, ADR 0018), 46 px across the window: Trama's mark, the project with its menu, the search
+ * in the middle, and the toggles of the side bar and of the Activity panel. Its buttons are 32 px. The branch lives
+ * once, in the status bar. It is the window's drag area.
  */
 export function TitleBar({ isMac }: { isMac: boolean }) {
   const t = useT();
@@ -156,7 +150,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
       data-testid="title-bar"
     >
       {/* The brand slot (B01): the mark stays here in every screen, in the provider's colors. */}
-      <div className="flex size-7 shrink-0 items-center justify-center" data-testid="brand-slot">
+      <div className="flex size-8 shrink-0 items-center justify-center" data-testid="brand-slot">
         <TramaMark size={18} />
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center">
@@ -168,7 +162,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
           type="button"
           aria-label={t("workbench.title.search")}
           onClick={() => setDialog("search")}
-          className="no-drag flex h-7 w-[min(360px,30vw)] min-w-9 items-center gap-2 rounded-md border border-[color:var(--border)] bg-[var(--color-background-button-secondary)] px-2.5 text-ui-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="no-drag flex h-8 w-[min(360px,30vw)] min-w-9 items-center gap-2 rounded-md border border-[color:var(--border)] bg-[var(--color-background-button-secondary)] px-2.5 text-ui-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <IconSearch className="size-3.5 shrink-0" stroke={1.8} />
           <span className="hidden min-w-0 flex-1 truncate text-left @min-[760px]/title:inline">

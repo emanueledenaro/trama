@@ -95,7 +95,7 @@ export function ActivityBar() {
       </ActivityButton>
       {project ? (
         <>
-          <div className="h-1.5" />
+          <div className="h-2" />
           <ActivityButton
             label={t("workbench.view.conversation")}
             active={mainView === "dialog" && !covered && !sidebarOpen}
