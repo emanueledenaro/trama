@@ -2470,6 +2470,9 @@ const slices = writtenSpec.getByTestId("plan-slices");
 const confirmSlices = slices.getByRole("button", { name: "Conferma le fette" });
 await confirmSlices.waitFor({ timeout: 20_000 });
 if ((await slices.getByTestId("plan-slice").count()) !== 3) throw new Error("The breakdown does not show the three slices of to-tickets");
+// Design rules: what to do comes before the long detail, so the slices and their confirmation sit above the seams of the spec.
+const specOrder = await writtenSpec.evaluate((spec) => [spec.querySelector('[data-testid="plan-slices"]'), spec.querySelector('[data-testid="plan-seam"]')].map((el) => el.getBoundingClientRect().top));
+if (!(specOrder[0] < specOrder[1])) throw new Error(`The slices of a written spec come after its seams: ${specOrder}`);
 await slices.getByText("Bloccata da: 1").first().waitFor();
 await slices.getByText("Può iniziare subito").waitFor();
 if (await writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" }).count()) throw new Error("A plan with slices still offers the approval of the whole plan");
