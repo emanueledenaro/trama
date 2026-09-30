@@ -2822,6 +2822,9 @@ if ((await archivedRow.getByTestId("goal-state").allTextContents()).join("|") !=
 await shot("14e-goal-archived");
 await inspectorPanel.getByRole("button", { name: new RegExp(goalTitle) }).click();
 // Issue #336: the goal opens in its editor tab.
+// Design rules: editing the expected result is an icon; an archived goal offers Ripristina as text and no Archivia.
+await expectIconOnly(detailPane().getByRole("button", { name: "Modifica", exact: true }), "Obiettivo, Modifica");
+if (await detailPane().getByRole("button", { name: "Archivia", exact: true }).count()) throw new Error("An archived goal offers Archivia");
 await detailPane().getByRole("button", { name: "Ripristina" }).click();
 await openView("Progetti");
 await page.getByTestId("sidebar-goal").filter({ hasText: goalTitle }).waitFor();
