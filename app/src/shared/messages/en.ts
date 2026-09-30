@@ -1510,6 +1510,7 @@ export const en: Record<keyof typeof it, string> = {
   "rules.pact.edit": "Edit the decision",
   "rules.pact.back": "Open the whole Pact",
   "rules.standard.summary": "{on} of {total} rules on",
+  "rules.standard.about": "About this standard",
   "settings.standard.moved": "The code standard applies to the open project: the rules and the fit to the project are in Rules, on the Standard tab.",
   "settings.standard.open": "Open in Rules",
   "settings.section.learning": "Learning",

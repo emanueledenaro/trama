@@ -1512,6 +1512,7 @@ export const it = {
   "rules.pact.edit": "Modifica la decisione",
   "rules.pact.back": "Apri il Patto completo",
   "rules.standard.summary": "{on} regole attive su {total}",
+  "rules.standard.about": "Su questo standard",
   "settings.standard.moved": "Lo standard del codice vale per il progetto aperto: le regole e l'adattamento stanno in Regole, nella scheda Standard.",
   "settings.standard.open": "Apri in Regole",
   "settings.section.learning": "Apprendimento",
