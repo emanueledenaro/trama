@@ -420,6 +420,33 @@ const primaryLast = async (row, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// Design rules for the status bar: read left to right by importance (status line, what asks for an action, the work in
+// focus, the branch, then a line and the icons), no button takes a state tint at rest, and the bar stays 24 px.
+const statusBarRules = async (where) => {
+  const bar = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="status-bar"]');
+    const left = (selector) => root.querySelector(selector)?.getBoundingClientRect().left ?? null;
+    const order = [
+      '[data-testid="status-line-text"]',
+      '[data-testid="status-conflict"]',
+      '[data-testid="status-setup"]',
+      '[data-testid="status-focus"]',
+      '[data-testid="status-branch"]',
+      '[data-testid="status-divider"]',
+      'button[aria-label="Attività"]',
+    ]
+      .map((selector) => [selector, left(selector)])
+      .filter(([, x]) => x !== null);
+    const tinted = [...root.querySelectorAll("button")]
+      .filter((button) => !["rgba(0, 0, 0, 0)", "transparent"].includes(getComputedStyle(button).backgroundColor))
+      .map((button) => button.getAttribute("data-testid") ?? button.getAttribute("aria-label"));
+    return { order, tinted, height: root.getBoundingClientRect().height };
+  });
+  const xs = bar.order.map(([, x]) => x);
+  if (xs.some((x, i) => i > 0 && x < xs[i - 1])) throw new Error(`The status bar is not read by importance ${where}: ${JSON.stringify(bar.order)}`);
+  if (bar.tinted.length) throw new Error(`A status bar button has a background at rest ${where}: ${bar.tinted.join(", ")}`);
+  if (bar.height !== 24) throw new Error(`The status bar is not 24 px ${where}: ${bar.height}`);
+};
 // UI wave of 29 September: only the conversation holds the work bar on the composer. Over a detail tab without the
 // composer, as an agent's or a candidate's, the bar is the tab's last row in a room of its own: the tab ends where the
 // bar starts, so it covers nothing, and it still shows while something waits. Progetti, Impostazioni and the Benvenuto
@@ -747,6 +774,7 @@ await shot("02-demo-study");
     status: document.querySelector('[data-testid="status-bar"]').getBoundingClientRect().height,
   }));
   if (bars.title !== 46 || bars.activity !== 48 || bars.status !== 24) throw new Error(`The window's bars are not 46, 48 and 24 px: ${JSON.stringify(bars)}`);
+  await statusBarRules("at the first launch");
   if (await page.getByTestId("side-bar").count()) throw new Error("The side bar is open at the first launch");
   // One badge in the activity bar, the count of Aspetta te.
   const badges = await activityBar().getByTestId("activity-badge").allInnerTexts();
@@ -5064,6 +5092,7 @@ await app.close();
   const warning = page.getByTestId("status-setup");
   await warning.waitFor();
   if ((await warning.getAttribute("data-step")) !== "provider") throw new Error("The status bar does not warn about the provider");
+  await statusBarRules("with the provider warning");
   await shot("00g-composer-no-provider");
   // The Benvenuto does not reopen by itself on the same project; the warning and the composer reopen it on the step.
   await page.waitForTimeout(500);
@@ -5419,6 +5448,7 @@ const openDivergence = async () => {
   await divergenceNotice.waitFor({ timeout: 30_000 });
 };
 if (!/^18 file in conflitto$/.test((await page.getByTestId("status-conflict").innerText({ timeout: 30_000 })).trim())) throw new Error("The status bar does not count the files in conflict");
+await statusBarRules("with a conflict");
 await openDivergence();
 const divergenceText = await divergenceNotice.getByTestId("branch-divergence-text").innerText();
 if (!divergenceText.includes("chore/pre-apertura") || !divergenceText.includes("18 file in conflitto") || /[A-Z]-[0-9A-F]{6,}|[–—]/.test(divergenceText)) {
