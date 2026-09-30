@@ -3536,11 +3536,11 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
   const discussionSettings = page.getByTestId("settings");
   await discussionSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
-  // Metodo: the rules of the settings hold, Prepara is the row's primary (last, drawn as an outline) and the limits are 32 px.
+  // Metodo: the rules of the settings hold, Prepara is the last action of its row, not filled, and the limits are 32 px.
   await settingsRules("Metodo di lavoro");
   const prepareRow = discussionSettings.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Prepara", exact: true }) });
-  await primaryLast(prepareRow, "Metodo di lavoro, Prepara");
-  if ((await prepareRow.getByRole("button", { name: "Prepara", exact: true }).getAttribute("data-filled")) !== "false") throw new Error("Prepara is drawn filled");
+  if ((await prepareRow.locator(":scope > button").last().textContent()).trim() !== "Prepara") throw new Error("Prepara is not the last action of its row");
+  if ((await prepareRow.getByRole("button", { name: "Prepara", exact: true }).getAttribute("data-filled")) === "true") throw new Error("Prepara is drawn filled");
   for (const id of ["shared-developers", "parallel-developers", "squad-limit-developersPerSquad", "squad-limit-activeSquads", "work-place"]) {
     const heights = await discussionSettings.getByTestId(id).getByRole("radio").evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().height));
     if (heights.some((h) => h < 31.5)) throw new Error(`The choices of ${id} are under 32 px: ${heights}`);
