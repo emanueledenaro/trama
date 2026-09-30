@@ -1,4 +1,4 @@
-import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2 } from "@tabler/icons-react";
+import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2, IconRotateClockwise, IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
@@ -9,6 +9,7 @@ import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { examineAgain, FindingActions, FollowUpLine, isRunning, STATUS_TEXT, STATUS_TONE } from "@/components/inspector/AuditView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { formatRelativeTime } from "@/lib/format";
@@ -162,7 +163,7 @@ function Publication({ audit }: { audit: FocusAudit }) {
   const published = audit.publication;
   return (
     <section aria-label={t("audit.publication.title")}>
-      <h3 className="mb-1.5 text-ui-sm font-medium text-muted-foreground">{t("audit.publication.title")}</h3>
+      <h3 className="mb-2 text-ui-sm font-medium text-muted-foreground">{t("audit.publication.title")}</h3>
       {published ? (
         <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
           {withNodes(t("audit.publication.done"), {
@@ -228,20 +229,16 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
   const lensLine = lensSummary(audit, t);
   return (
     <div className="space-y-4">
-      {audit.summary ? (
-        <section aria-label={t("focus.summary")}>
-          <h3 className="mb-1.5 text-ui-sm font-medium text-muted-foreground">{t("focus.summary")}</h3>
-          <div className="chat-card px-3.5 py-2.5">
-            <p className="text-ui text-foreground" data-testid="focus-audit-summary">{plainText(t, audit.summary)}</p>
-            {lensLine ? <p className="mt-1 text-ui text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
-            {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
-          </div>
+      {/* The summary itself is in the verdict on top; here only how the findings stand, without a box of its own. */}
+      {audit.summary && (lensLine || tally) ? (
+        <section aria-label={t("focus.summary")} className="space-y-1">
+          {lensLine ? <p className="text-ui text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
+          {tally ? <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </section>
       ) : null}
-      {audit.status === "failed" && audit.failure ? <p className="text-ui-sm text-destructive">{audit.failure}</p> : null}
       {(["standards", "spec"] as const).map((name) => (
         <section key={name} data-testid="audit-axis" data-axis={name} data-status={audit[name].status} aria-label={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
-          <div className="mb-1.5 flex items-center gap-2">
+          <div className="mb-2 flex items-center gap-2">
             <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{AXIS_TITLE[name]}</h3>
             {name === "spec" && audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
           </div>
@@ -250,7 +247,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
       ))}
       {lenses.length ? (
         <section aria-label={t("audit.lenses.title")}>
-          <div className="mb-1.5 flex items-center gap-2">
+          <div className="mb-2 flex items-center gap-2">
             <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.lenses.title")}</h3>
             <Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>
           </div>
@@ -262,7 +259,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
       {/* Trama's lenses (F05) follow the axes, each marked as Trama's addition, with the same findings and proofs. */}
       {lenses.map(({ name, lens }) => (
         <section key={name} data-testid="audit-lens" data-lens={name} data-status={lens.status} aria-label={t(LENS_TITLE_KEYS[name])}>
-          <div className="mb-1.5 flex items-center gap-2">
+          <div className="mb-2 flex items-center gap-2">
             <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t(LENS_TITLE_KEYS[name])}</h3>
             <Badge tone="outline">{t("audit.lens.addedBy")}</Badge>
           </div>
@@ -277,17 +274,12 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
 /** Right: the proof of the selected finding and how Trama verified it (F02); a hypothesis stays one. */
 function Proof({ finding }: { finding: AuditFinding | null }) {
   const t = useT();
-  if (!finding) return <p className="text-ui text-muted-foreground/70">{t("focus.proof.pick")}</p>;
+  if (!finding) return <p className="text-ui text-muted-foreground">{t("focus.proof.pick")}</p>;
   const { evidence } = finding;
   return (
-    <div className="space-y-3" data-testid="focus-proof" data-finding={finding.id}>
-      <div className="space-y-1.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
-          {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
-        </div>
-        <p className="text-ui text-foreground">{finding.title}</p>
-      </div>
+    <div className="space-y-4" data-testid="focus-proof" data-finding={finding.id}>
+      {/* The state and the gravity of the finding stay in its row on the left: not repeated here. */}
+      <p className="text-ui font-medium text-foreground">{finding.title}</p>
       <div>
         <h4 className="text-ui-sm font-medium text-muted-foreground">{t("focus.proof.title")}</h4>
         {!evidence ? (
@@ -323,10 +315,50 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
   );
 }
 
+/**
+ * The verdict in one line, on top: how the examination went and how many findings, then its summary. It is what the
+ * person reads first; the columns below are for the long reading.
+ */
+function Verdict({ audit, running }: { audit: FocusAudit; running: boolean }) {
+  const t = useT();
+  const total = auditFindings(audit).length;
+  const failed = audit.status === "failed";
+  return (
+    <section className="chat-surface-divider shrink-0 space-y-1 px-4 py-2" aria-label={t("focus.verdict")} data-testid="focus-audit-verdict">
+      <p className={cn("flex flex-wrap items-center gap-2 text-ui", failed ? "text-destructive" : "text-foreground")} data-testid="focus-audit-status">
+        {running ? <Spinner /> : null}
+        <span className="font-medium">{t(STATUS_TEXT[audit.status])}</span>
+        {audit.status === "done" ? (
+          <>
+            <Sep />
+            {total ? t("audit.findings", { count: total }) : t("audit.findings.none")}
+          </>
+        ) : null}
+        {audit.finishedAt && !running ? (
+          <span className="text-ui-sm text-muted-foreground">
+            <Sep />
+            {formatRelativeTime(audit.finishedAt)}
+          </span>
+        ) : null}
+      </p>
+      {failed && audit.failure ? (
+        <p className="text-ui-sm text-destructive" role="alert">
+          {audit.failure}
+        </p>
+      ) : null}
+      {audit.summary ? (
+        <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
+          {plainText(t, audit.summary)}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function Column({ title, testId, className, children }: { title: string; testId: string; className?: string; children: React.ReactNode }) {
   return (
     <section className={cn("flex min-h-0 min-w-0 flex-col", className)} aria-label={title} data-testid={testId}>
-      <h2 className="shrink-0 px-4 pt-3 pb-1 text-ui-sm font-medium text-muted-foreground">{title}</h2>
+      <h2 className="shrink-0 px-4 pt-4 pb-2 text-ui-sm font-medium text-muted-foreground">{title}</h2>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
     </section>
   );
@@ -354,16 +386,14 @@ export function FocusModeView() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const exit = (
-    <Button size="sm" onClick={() => void act("focusMode:exit", undefined)}>
-      {t("focus.exit")}
-    </Button>
-  );
+  const leave = () => void act("focusMode:exit", undefined);
   if (!audit) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3" data-focus-mode="">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-4" data-focus-mode="">
         <p className="text-ui text-muted-foreground">{t("focus.notFound")}</p>
-        <div className="cta-row">{exit}</div>
+        <div className="cta-row">
+          <Button onClick={leave}>{t("focus.exit")}</Button>
+        </div>
       </div>
     );
   }
@@ -376,38 +406,35 @@ export function FocusModeView() {
 
   return (
     <div className="@container/focus relative flex h-full w-full min-w-0 flex-col" data-testid="focus-audit" data-focus-mode="" data-status={audit.status}>
-      <header className="chat-surface-divider flex min-h-[46px] shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 sm:px-5">
+      <header className="chat-surface-divider flex min-h-[46px] shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
         <div className="flex min-w-[12rem] flex-1 items-center gap-2">
           <IconFocus2 className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
           <h1 className="min-w-0 truncate font-system-ui text-ui text-foreground" data-testid="focus-mode-title">
             <span className="font-medium">{t("focus.title")}</span> <span className="text-muted-foreground">{focusTargetOf(t, audit.target, assignment?.objective)}</span>
           </h1>
-          <span className="flex shrink-0 items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
-            <Sep />
-            {running ? <Spinner /> : null}
-            {t(STATUS_TEXT[audit.status])}
-          </span>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-4">
           <span className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="focus-mode-notifications" title={t("focus.pausedHint")}>
             <IconBellPause className="size-3.5" stroke={1.7} />
             {focus.pausedNotifications ? t("focus.pausedCount", { count: focus.pausedNotifications }) : t("focus.notificationsPaused")}
           </span>
+          {/* Actions on the right; leaving is navigation, so an icon with its name, last. Nothing is drawn filled here. */}
           <div className="cta-row">
             {audit.status === "done" && linked && !audit.publication ? (
-              <Button size="sm" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+              <Button variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
                 {t("audit.publication.publish")}
               </Button>
             ) : null}
             {running ? null : (
-              <Button size="sm" variant="outline" onClick={() => void examineAgain(audit)}>
-                {t("focus.again")}
+              <Button variant="outline" onClick={() => void examineAgain(audit)}>
+                <IconRotateClockwise /> {t("focus.again")}
               </Button>
             )}
-            {exit}
+            <IconButton size="icon" label={t("focus.exit")} icon={<IconX />} onClick={leave} />
           </div>
         </div>
       </header>
+      <Verdict audit={audit} running={running} />
       <div
         // The editor area, not the window, sets the columns: one below 44rem, two up to 64rem, three beyond.
         className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto @min-[44rem]/focus:grid-cols-[minmax(13rem,15rem)_minmax(0,1fr)] @min-[44rem]/focus:grid-rows-[minmax(0,1fr)_minmax(0,auto)] @min-[44rem]/focus:overflow-hidden @min-[64rem]/focus:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(18rem,24rem)] @min-[64rem]/focus:grid-rows-1"
@@ -415,7 +442,7 @@ export function FocusModeView() {
       >
         <Column title={t("focus.column.progress")} testId="focus-progress" className="border-b border-[color:var(--app-surface-divider)] @min-[44rem]/focus:row-span-2 @min-[44rem]/focus:border-r @min-[44rem]/focus:border-b-0 @min-[64rem]/focus:row-span-1">
           <Progress audit={audit} checks={checks} />
-          <p className="mt-3 text-ui-sm text-muted-foreground">{t("focus.readOnly")}</p>
+          <p className="mt-4 text-ui-sm text-muted-foreground">{t("focus.readOnly")}</p>
         </Column>
         <Column title={t("focus.column.findings")} testId="focus-findings" className="border-b border-[color:var(--app-surface-divider)] @min-[44rem]/focus:border-b-0">
           <Findings audit={audit} selected={shown?.id ?? null} onSelect={setSelected} />

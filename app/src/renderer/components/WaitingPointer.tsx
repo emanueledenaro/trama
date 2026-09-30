@@ -26,7 +26,7 @@ export function WaitingPointer({ item, text }: { item: WaitingItem; text: string
       type="button"
       title={t("waiting.pointer.hint")}
       onClick={() => setInspector({ kind: "waiting", key: item.key })}
-      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-dashed border-[color:var(--color-border)] px-2.5 py-1.5 text-left text-ui-sm transition-colors hover:bg-[var(--sidebar-accent)]"
+      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-dashed border-[color:var(--color-border)] px-2 py-2 text-left text-ui-sm transition-colors hover:bg-[var(--sidebar-accent)]"
       data-testid="waiting-pointer"
       data-waiting-key={item.key}
       data-waiting-kind={item.kind}
