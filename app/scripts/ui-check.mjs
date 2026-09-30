@@ -2531,6 +2531,25 @@ await shot("09-mandate");
         if (!/^v\d+$/.test((await rulesBar.getByTestId("pact-decisions").locator("button").first().locator("span").last().innerText()).trim())) {
           throw new Error("A decision of the Pact does not show its version");
         }
+        // Design rules (Patto): the new-decision icon is at least 32 px and has no text, a decision row is at least 32 px,
+        // and the view has no filled button. The editor puts the primary last and draws it as an outline.
+        const newDecision = rulesBar.getByRole("button", { name: "Nuova decisione" });
+        const newBox = await newDecision.boundingBox();
+        if (!newBox || newBox.width < 32 || newBox.height < 32) throw new Error("Nuova decisione is smaller than 32 px");
+        if ((await newDecision.innerText()).trim()) throw new Error("Nuova decisione has text: it is an icon in the section header");
+        const rowBox = await rulesBar.getByTestId("pact-decisions").locator("button").first().boundingBox();
+        if (!rowBox || rowBox.height < 32) throw new Error("A decision row of the Patto is shorter than 32 px");
+        if (await rulesBar.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The Patto has a filled button");
+        await newDecision.click();
+        // The primary moves to the right with CSS order, so the order on screen is read from the positions.
+        const editorActions = await rulesBar
+          .getByTestId("decision-editor")
+          .locator(".cta-row button")
+          .evaluateAll((els) => els.map((el) => ({ text: el.textContent?.trim(), left: el.getBoundingClientRect().left })).sort((x, y) => x.left - y.left).map((x) => x.text));
+        if (editorActions.join("|") !== "Annulla|Registra decisione") throw new Error(`Patto editor actions: ${editorActions.join(", ")}`);
+        const editorPadding = await rulesBar.getByTestId("decision-editor").evaluate((el) => getComputedStyle(el).paddingLeft);
+        if (editorPadding !== "16px") throw new Error(`The Patto editor padding is ${editorPadding}, not 16px`);
+        await rulesBar.getByRole("button", { name: "Annulla", exact: true }).click();
       }
       if (tab === "Standard") await rulesBar.getByTestId("standard-summary").getByText(/regole attive su \d+/).waitFor();
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll in Regole ${tab} at ${width}x${height}`);
