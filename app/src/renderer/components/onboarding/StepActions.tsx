@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { IconRefresh, IconSettings } from "@tabler/icons-react";
 import type { GuideStepId, StepState } from "@shared/onboarding";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Spinner } from "@/components/Spinner";
 import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
@@ -37,19 +39,16 @@ export function StepActions({ step }: { step: StepState }) {
       return (
         <>
           {skip}
-          <Button variant="outline" size={size} onClick={() => useUi.getState().openSettings("connections")}>
-            {t("step.allProviders")}
-          </Button>
-          <Button
-            variant="outline"
-            size={size}
+          <IconButton label={t("step.allProviders")} icon={<IconSettings />} size="icon" onClick={() => useUi.getState().openSettings("connections")} />
+          <IconButton
+            label={t("step.checkAgain")}
+            icon={<IconRefresh />}
+            size="icon"
             onClick={() => {
               void act("codex:refresh", undefined);
               void act("providers:refresh", {});
             }}
-          >
-            {t("step.checkAgain")}
-          </Button>
+          />
           {app.codex.account?.kind === "signedOut" ? (
             <Button size={size} onClick={() => void act("codex:login", undefined)}>
               {t("step.signInChatGpt")}
@@ -70,9 +69,13 @@ export function StepActions({ step }: { step: StepState }) {
               )
             : null}
           {skip}
-          <Button variant="outline" size={size} disabled={app.gitHubCli.status === "checking"} onClick={() => void act("onboarding:checkGitHub", undefined)}>
-            {t("step.checkAgain")}
-          </Button>
+          <IconButton
+            label={t("step.checkAgain")}
+            icon={<IconRefresh />}
+            size="icon"
+            disabled={app.gitHubCli.status === "checking"}
+            onClick={() => void act("onboarding:checkGitHub", undefined)}
+          />
         </>
       );
     case "aiHero": {

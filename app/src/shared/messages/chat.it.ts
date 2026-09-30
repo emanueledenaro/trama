@@ -461,6 +461,7 @@ export const chatIt = {
   "chat.view.intro": "{files} file in {count} moduli. Scrivi al Coordinatore per iniziare.",
   "chat.view.intro.one": "{files} file in {count} modulo. Scrivi al Coordinatore per iniziare.",
   "chat.view.retry": "Riprova",
+  "chat.view.write": "Scrivi al Coordinatore",
   "chat.view.firstGoal": "Formula il primo obiettivo",
   "chat.view.firstGoalHint": "Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te in questa chat, filtrata sull'obiettivo. Non concede un mandato.",
   "chat.view.queued": "In coda: parte quando il Coordinatore finisce",

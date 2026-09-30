@@ -1,16 +1,20 @@
 import { Popover } from "@base-ui/react/popover";
 import { DEFAULT_CONTEXT_THRESHOLD } from "@shared/contextRollover";
-import { contextReading } from "@shared/contextReading";
+import { contextReading, type ContextReading } from "@shared/contextReading";
 import { formatNumber } from "@shared/i18n";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker";
 import { useLanguage, useT } from "@/lib/i18n";
 
+/** Under the threshold the composer answers only "what do I want to say?": the meter appears once the context is near it. */
+export const showsContextMeter = (reading: ContextReading): boolean => reading.state !== "ok";
+
 /**
  * Ring that shows how much of the Coordinator's context the session uses (ADR 0019): only the percent, the tokens on
  * hover. The reading is the same for every provider and never goes past the window; an invalid one shows as not
- * available (issue #305). Past the threshold Trama reorders the context; "Riordina ora" does it on request.
+ * available (issue #305). It is hidden while the context is well under the threshold (design rules, chat and composer),
+ * and shows from 10 points under it. Past the threshold Trama reorders the context; "Riordina ora" does it on request.
  */
 export function ContextMeter() {
   const t = useT();
@@ -24,6 +28,7 @@ export function ContextMeter() {
   const known = reading.percent !== null && reading.usedTokens !== null && reading.contextWindow !== null;
   // A provider that never gave a window has nothing to measure against: the meter stays hidden.
   if (!known && usage.contextWindow === null && usage.usedTokens !== null) return null;
+  if (!showsContextMeter(reading)) return null;
   const tokens = known
     ? t("context.meter.tokens", { used: formatNumber(language, reading.usedTokens!), window: formatNumber(language, reading.contextWindow!) })
     : undefined;
