@@ -721,9 +721,33 @@ if ((await page.getByTestId("welcome").count()) !== 1) throw new Error("More tha
 // and the Benvenuto gives way to the conversation (issue #354, decisions 5 and 9).
 const learn = welcome.getByTestId("welcome-learn");
 if ((await learn.getByTestId("welcome-exercise").count()) !== 4) throw new Error("Impara does not list the four exercises");
+// Design rules: the state of an exercise is its number or check and its button, not a word beside a button that says the
+// same; the button starts work, so it has an icon and its text, 32 px high, an outline (the filled button is Inizia's).
+const exerciseRows = await learn.getByTestId("welcome-exercise").evaluateAll((nodes) =>
+  nodes.map((node) => {
+    const button = node.querySelector("button");
+    return { text: node.textContent, height: Math.round(button.getBoundingClientRect().height), icon: Boolean(button.querySelector("svg")), variant: button.dataset.variant };
+  }),
+);
+for (const row of exerciseRows) {
+  if (/Da fare|In corso|Fatto/.test(row.text)) throw new Error(`An exercise repeats its state beside its button: ${row.text}`);
+  if (row.height < 32 || !row.icon || row.variant !== "outline") throw new Error(`An exercise button is not an icon and text outline of 32 px: ${JSON.stringify(row)}`);
+}
 await learn.getByRole("button", { name: "Inizia: Conosci il progetto" }).click();
 await page.getByRole("complementary", { name: "Esercizio" }).waitFor({ timeout: 20_000 });
 await welcome.waitFor({ state: "detached" });
+// The panel of the exercise: close and tabs are at least 32 px, close is an icon with its name, a step does not repeat
+// its state, and every text comes from the catalog (it answers to the language chosen).
+{
+  const panel = page.getByRole("complementary", { name: "Esercizio" });
+  const close = panel.getByRole("button", { name: "Chiudi l'esercizio" });
+  if ((await close.innerText()).trim() !== "") throw new Error("The close button of the exercise has a text beside its icon");
+  const sizes32 = await panel.locator('button[data-icon-button], [role="tab"]').evaluateAll((nodes) => nodes.map((node) => Math.round(Math.min(node.getBoundingClientRect().width, node.getBoundingClientRect().height))));
+  if (sizes32.length < 5 || sizes32.some((size) => size < 32)) throw new Error(`Close or a tab of the exercise is under 32 px: ${sizes32}`);
+  if (/Da fare|Fatto/.test(await panel.getByRole("list", { name: "Passi dell'esercizio" }).innerText())) throw new Error("A step of the exercise repeats its state");
+  const panelButtons = await panel.getByRole("list", { name: "Passi dell'esercizio" }).locator("button").evaluateAll((nodes) => nodes.filter((node) => node.dataset.variant).map((node) => Math.round(node.getBoundingClientRect().height)));
+  if (panelButtons.some((height) => height < 32)) throw new Error(`An action of the exercise is under 32 px: ${panelButtons}`);
+}
 await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
