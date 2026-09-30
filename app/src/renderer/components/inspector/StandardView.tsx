@@ -38,7 +38,7 @@ export function StandardView() {
         <ul className="-mx-2 flex flex-col">
           {cleanCodeRules(t).map((rule) => (
             <li key={rule.id} className="rounded-md px-2" data-testid="standard-rule" data-open={opened.has(rule.id) ? "true" : "false"}>
-              <div className="flex min-h-8 items-center gap-3">
+              <div className="flex min-h-8 items-center gap-2">
                 <button
                   type="button"
                   aria-expanded={opened.has(rule.id)}
