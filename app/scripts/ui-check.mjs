@@ -435,7 +435,7 @@ const settingsRules = async (where) => {
   const found = await page.getByTestId("settings").evaluate((root) => {
     const shown = (node) => node.getBoundingClientRect().width > 0 && getComputedStyle(node).visibility !== "hidden";
     const filled = [...root.querySelectorAll('button[data-variant="default"]')].filter((b) => shown(b) && b.dataset.filled !== "false").map((b) => b.textContent.trim());
-    const small = [...root.querySelectorAll('nav button, [role="radio"], .cta-row > button')]
+    const small = [...root.querySelectorAll('nav button, [role="radio"], [data-icon-button], .cta-row > button')]
       .filter(shown)
       .filter((b) => b.getBoundingClientRect().height < 31.5)
       .map((b) => `${b.getAttribute("aria-label") ?? b.textContent.trim()} ${Math.round(b.getBoundingClientRect().height)}px`);
@@ -3280,6 +3280,16 @@ if (!(await settings.isVisible())) await page.getByRole("button", { name: "Impos
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
+await settingsRules("Collegamenti");
+// Summary first: how many connections are ready, in one line above the groups.
+const summaryLine = (await settings.getByTestId("connections-summary").textContent()).trim();
+if (!/^Pronti: \d+ su \d+$/.test(summaryLine)) throw new Error(`The connections summary reads "${summaryLine}"`);
+if (!(await settings.evaluate((el) => el.querySelector('[data-testid="connections-summary"]').compareDocumentPosition(el.querySelector("section")) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+  throw new Error("The connections summary is not above the groups");
+}
+// Secondary actions are icons with a tooltip name and an aria-label: Capacità and Verifica, one of each per row.
+const iconButtons = await settings.locator("[data-icon-button]").evaluateAll((nodes) => nodes.map((n) => ({ name: n.getAttribute("aria-label"), text: n.textContent.trim() })));
+if (!iconButtons.length || iconButtons.some((b) => !b.name || b.text)) throw new Error(`Icon buttons without a name, or with a text: ${JSON.stringify(iconButtons)}`);
 // Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
 const capabilityToggles = settings.getByRole("button", { name: /^Capacità/ });
 await capabilityToggles.first().click();

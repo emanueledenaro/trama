@@ -318,6 +318,7 @@ export const it = {
   "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "L'accesso avviene nel browser ufficiale o nel terminale. Trama non copia le credenziali.",
+  "settings.connections.summary": "Pronti: {ready} su {total}",
   "settings.connections.checkAll": "Verifica tutti",
   "settings.connections.mainAccount": "Account principale",
   "settings.connections.codexUnsupported":

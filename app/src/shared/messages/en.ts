@@ -316,6 +316,7 @@ export const en: Record<keyof typeof it, string> = {
   "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "You sign in through the official browser page or in the terminal. Trama does not copy your credentials.",
+  "settings.connections.summary": "Ready: {ready} of {total}",
   "settings.connections.checkAll": "Check all",
   "settings.connections.mainAccount": "Main account",
   "settings.connections.codexUnsupported": "Codex uses an account of type {type}. Trama accepts only a ChatGPT account, to avoid API billing.",
