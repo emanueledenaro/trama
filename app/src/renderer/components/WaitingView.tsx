@@ -1,12 +1,14 @@
 import {
   IconBan,
   IconBrain,
+  IconChevronDown,
   IconChevronRight,
   IconFileDiff,
   IconHourglass,
   IconListCheck,
   IconLockOpen,
   IconMessageQuestion,
+  IconPencilPlus,
   IconRoute,
   IconShieldCheck,
   IconTarget,
@@ -19,7 +21,9 @@ import { findGoal } from "@shared/goals";
 import type { MessageKey } from "@shared/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Sep } from "@/components/ui/sep";
+import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
@@ -80,6 +84,8 @@ const KIND_ICONS: Record<WaitingKind, React.ComponentType<{ className?: string; 
 export function WaitingList({ focusKey }: { focusKey?: string }) {
   const t = useT();
   const items = useWaiting();
+  const loading = useUi((s) => !s.app?.project);
+  const focusComposer = useUi((s) => s.focusComposer);
   const list = useRef<HTMLDivElement>(null);
   const openKey = focusKey && items.some((item) => item.key === focusKey) ? focusKey : items[0]?.key;
   useEffect(() => {
@@ -87,50 +93,63 @@ export function WaitingList({ focusKey }: { focusKey?: string }) {
     list.current?.querySelector(`[data-waiting-key="${CSS.escape(focusKey)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [focusKey]);
   return (
-    <div ref={list} data-testid="waiting-view" data-count={items.length}>
-      <WaitingStatus count={items.length} />
-      {items.length === 0 ? (
-        <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3">
-          <p className="text-ui text-muted-foreground/70">{t("waiting.view.emptyList")}</p>
-        </section>
-      ) : (
+    <div ref={list} data-testid="waiting-view" data-count={items.length} data-state={loading ? "loading" : items.length ? "list" : "empty"}>
+      <WaitingStatus count={items.length} loading={loading} onWrite={() => focusComposer()} />
+      {items.length > 0 ? (
         <div aria-label={t("waiting.view.list")} role="list">
           {items.map((item) => (item.key === openKey ? <OpenItem key={item.key} item={item} /> : <CompactItem key={item.key} item={item} />))}
         </div>
-      )}
+      ) : null}
       <DecidedToday />
     </div>
   );
 }
 
 /**
- * The status at the top of the view (UI wave of 29 September): one line with how many things wait and their order; how
- * the view works folds behind "Come funziona", since the person reads it once. The count is in the header too, as on the
- * icon of the activity bar.
+ * The status at the top of the view, one question: how many things wait for the person. How the view works and in what
+ * order the items come folds behind an icon button, since the person reads it once. With nothing waiting the one
+ * message is the empty state, with the way back to the conversation as its action; while the project loads it is a
+ * single line with a spinner. The count is in the header too, as on the icon of the activity bar.
  */
-function WaitingStatus({ count }: { count: number }) {
+function WaitingStatus({ count, loading, onWrite }: { count: number; loading: boolean; onWrite: () => void }) {
   const t = useT();
   const [how, setHow] = useState(false);
+  if (loading) {
+    return (
+      <section className="flex items-center gap-2 border-b border-[color:var(--app-surface-divider)] px-4 py-4" data-testid="waiting-view-summary" aria-busy="true">
+        <Spinner />
+        <p className="text-ui-sm text-muted-foreground">{t("waiting.view.loading")}</p>
+      </section>
+    );
+  }
+  if (count === 0) {
+    return (
+      <section className="flex flex-col gap-2 border-b border-[color:var(--app-surface-divider)] px-4 py-4" data-testid="waiting-view-summary">
+        <p className="text-ui-sm text-muted-foreground">{t("waiting.view.none")}</p>
+        <p className="text-ui-xs text-muted-foreground">{t("waiting.view.empty")}</p>
+        <div className="cta-row">
+          <Button size="xs" variant="outline" onClick={onWrite} data-testid="waiting-view-write">
+            <IconPencilPlus className="size-3.5" stroke={1.8} />
+            {t("menu.focusComposer")}
+          </Button>
+        </div>
+      </section>
+    );
+  }
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-2.5" data-testid="waiting-view-summary">
-      <div className="flex min-w-0 items-start gap-2">
-        <p className={cn("min-w-0 flex-1 text-ui-sm", count ? "text-foreground" : "text-muted-foreground")}>
-          {count ? t("waiting.view.status", { count }) : t("waiting.view.none")}
-        </p>
-        {count ? (
-          <button
-            type="button"
-            aria-expanded={how}
-            onClick={() => setHow(!how)}
-            className="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-sm px-1 text-ui-xs text-muted-foreground transition-colors hover:bg-[var(--sidebar-accent)] hover:text-foreground"
-            data-testid="waiting-view-how"
-          >
-            {t("waiting.view.how")}
-            <IconChevronRight className={cn("size-3 shrink-0 transition-transform", how && "rotate-90")} stroke={1.8} />
-          </button>
-        ) : null}
+    <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-2" data-testid="waiting-view-summary">
+      <div className="flex min-w-0 items-center gap-2">
+        <p className="min-w-0 flex-1 text-ui-sm text-foreground">{t("waiting.view.count", { count })}</p>
+        <IconButton
+          size="icon"
+          label={t("waiting.view.how")}
+          aria-expanded={how}
+          onClick={() => setHow(!how)}
+          data-testid="waiting-view-how"
+          icon={<IconChevronDown className={cn("transition-transform", how && "rotate-180")} stroke={1.8} />}
+        />
       </div>
-      {count === 0 || how ? <p className="mt-1 text-ui-xs text-muted-foreground">{count ? t("waiting.view.howText") : t("waiting.view.empty")}</p> : null}
+      {how ? <p className="pb-2 text-ui-xs text-muted-foreground">{t("waiting.view.howText")}</p> : null}
     </section>
   );
 }
@@ -151,7 +170,7 @@ function OpenItem({ item }: { item: WaitingItem }) {
       data-testid="waiting-item"
       data-waiting-kind={item.kind}
       data-open="true"
-      className="border-b border-[color:var(--app-surface-divider)] px-3 pt-2.5 pb-1"
+      className="border-b border-[color:var(--app-surface-divider)] px-4 pt-2 pb-2"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-0.5 text-ui-xs" data-testid="waiting-item-meta">
         <Badge tone={item.blocks > 0 ? "warning" : "secondary"}>{blocksText(item.blocks)}</Badge>
@@ -323,7 +342,7 @@ export function WaitingReference({ item, lead }: { item: WaitingItem; lead?: str
       type="button"
       title={t("waiting.reference.open")}
       onClick={() => setInspector({ kind: "waiting", key: item.key })}
-      className="my-3 flex w-full min-w-0 items-center gap-2 rounded-xl border border-dashed border-[color:var(--color-border)] px-3 py-2 text-left text-ui transition-colors hover:bg-[var(--sidebar-accent)]"
+      className="my-4 flex w-full min-w-0 items-center gap-2 rounded-xl border border-dashed border-[color:var(--color-border)] px-4 py-2 text-left text-ui transition-colors hover:bg-[var(--sidebar-accent)]"
       data-testid="waiting-reference"
       data-waiting-key={item.key}
       data-waiting-kind={item.kind}

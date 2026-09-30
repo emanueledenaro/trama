@@ -1,0 +1,23 @@
+name: Design rules
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  design-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Report only: violations in added lines become annotations on the pull request and the job stays green.
+      # To make errors fail the job, add --enforce below; see docs/agents/design-rules-check.md.
+      - name: Regole di design nelle righe aggiunte
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node app/scripts/check-design-rules.mjs "$BASE_SHA"
