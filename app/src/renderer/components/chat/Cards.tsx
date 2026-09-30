@@ -82,6 +82,7 @@ import { formatTime } from "@/lib/format";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
+import { CandidateOverlaps, CHECK_BLOCKERS, CONFLICT_LABEL, MergeLine, MergeStopField, QUALITY_LABEL, TestedSeamsField } from "@/components/inspector/CandidateFields";
 
 export function CardFrame({
   icon,
@@ -1053,16 +1054,6 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
   );
 }
 
-const QUALITY_LABEL: Record<QualityItem["code"], MessageKey> = {
-  VERIFIED: "chat.card.quality.VERIFIED",
-  COMMIT_MESSAGE: "chat.card.quality.COMMIT_MESSAGE",
-  NO_SECRETS: "chat.card.quality.NO_SECRETS",
-  DIFF_CHECK: "chat.card.quality.DIFF_CHECK",
-  ISSUE_LINKED: "chat.card.quality.ISSUE_LINKED",
-  PACT_SETTLED: "chat.card.quality.PACT_SETTLED",
-  MANDATE: "chat.card.quality.MANDATE",
-};
-
 /** The quality standard before publishing (Q01): each condition, and for a missing one what to do. */
 function QualityField({ items }: { items: QualityItem[] }) {
   const t = useT();
@@ -1089,9 +1080,6 @@ function QualityField({ items }: { items: QualityItem[] }) {
     </Field>
   );
 }
-
-/** Blockers whose detail is the name of a check. */
-const CHECK_BLOCKERS = new Set(["EVIDENCE_MISSING", "EVIDENCE_STALE", "CHECK_FAILED"]);
 
 /** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
 export function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
@@ -1152,25 +1140,6 @@ function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; i
         </li>
       ))}
     </ul>
-  );
-}
-
-/** The seams the developer of a slice says it tested (M06): its statement, shown apart from Trama's evidence. */
-function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
-  const t = useT();
-  return (
-    <Field label={t("chat.card.seams.tested")}>
-      <div data-testid="candidate-tested-seams">
-        {seams === null ? (
-          <p className="text-ui-sm text-muted-foreground">{t("chat.card.seams.notReported")}</p>
-        ) : seams.length === 0 ? (
-          <p className="text-ui-sm text-muted-foreground">{t("chat.card.seams.noneConfirmed")}</p>
-        ) : (
-          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside={t("chat.card.seams.outsideConfirmed")} />
-        )}
-        <p className="mt-1 text-ui-xs text-muted-foreground">{t(STATEMENT_NOTE)}</p>
-      </div>
-    </Field>
   );
 }
 
@@ -1427,72 +1396,6 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
         ) : null}
       </div>
     </Field>
-  );
-}
-
-/**
- * Where the candidate stands on its way to the main branch (issue #247): merged and on whose authority, waiting for
- * the checks of its pull request, stopped, or who handles it.
- */
-function MergeLine({ candidate, route, routeReason, open, approved }: { candidate: Candidate; route: MergeRoute; routeReason: string | null; open: boolean; approved: boolean }) {
-  const t = useT();
-  const merge = candidate.merge;
-  const pull = candidate.pullRequest;
-  let text: string | null = null;
-  let tone = "text-muted-foreground";
-  if (pull?.mergedAt) {
-    text = pull.mergedBy === "coordinator" ? t("chat.card.merge.byCoordinator") : pull.mergedBy === "person" ? t("chat.card.merge.byPerson") : t("chat.card.merge.onGitHub");
-  } else if (merge && open && merge.status !== "merged") {
-    // A destructive stop says it in its own field, with consequences and alternatives (issue #41).
-    text = merge.status === "running" ? t("chat.card.merge.running") : merge.stop ? null : merge.detail;
-    if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
-  } else if (open && candidate.humanRejection) {
-    text = t("chat.card.merge.rejected", { note: candidate.humanRejection.note });
-  } else if (open && route === "coordinator") {
-    text = candidate.clearance ? t("chat.card.merge.cleared") : t("chat.card.merge.onClearance");
-  } else if (open && route === "interface") {
-    text = approved
-      ? candidate.clearance
-        ? t("chat.card.merge.approved")
-        : t("chat.card.merge.approvedAwaitingClearance")
-      : t("chat.card.merge.interface");
-  } else if (open && routeReason) {
-    text = routeReason;
-  }
-  if (!text) return null;
-  return (
-    <p className={cn("mt-2 text-ui-sm", tone)} data-testid="candidate-merge" data-route={route} data-status={pull?.mergedAt ? "merged" : (merge?.status ?? "none")}>
-      {text}
-      {pull?.mergedAt && pull.mergedBy === "coordinator" && merge?.mandateVersion ? <MergeMandate version={merge.mandateVersion} /> : null}
-    </p>
-  );
-}
-
-/**
- * A merge the Coordinator stopped because it destroys something (issue #41): the reasons, what happens and what the
- * person can do. The texts of the stop are Trama's records, in Italian.
- */
-function MergeStopField({ stop }: { stop: MergeStop }) {
-  const t = useT();
-  return (
-    <div className="mt-2 space-y-1 text-ui-sm" data-testid="candidate-merge-stop">
-      <p className="text-foreground/90">
-        {t("mergeStop.title")} {stop.reasons.join(" ")}
-      </p>
-      <p className="font-medium text-foreground">{t("mergeStop.consequences")}</p>
-      <ul className="list-disc space-y-0.5 pl-4">
-        {stop.consequences.map((c) => (
-          <li key={c}>{c}</li>
-        ))}
-      </ul>
-      <p className="font-medium text-foreground">{t("mergeStop.alternatives")}</p>
-      <ul className="list-disc space-y-0.5 pl-4">
-        {stop.alternatives.map((a) => (
-          <li key={a}>{a}</li>
-        ))}
-      </ul>
-      {stop.acknowledgedAt ? <p className="text-muted-foreground">{t("mergeStop.declined")}</p> : null}
-    </div>
   );
 }
 
@@ -1991,15 +1894,6 @@ export function PlanCard({ planId }: { planId: string }) {
   );
 }
 
-const CONFLICT_LABEL = {
-  conflict: { label: "chat.card.conflict.conflict", tone: "destructive" as const },
-  overlap: { label: "chat.card.conflict.overlap", tone: "warning" as const },
-  clean: { label: "chat.card.conflict.clean", tone: "success" as const },
-  unknown: { label: "chat.card.conflict.unknown", tone: "secondary" as const },
-  hypothesis: { label: "chat.card.conflict.hypothesis", tone: "info" as const },
-  semantic: { label: "chat.card.conflict.semantic", tone: "destructive" as const },
-} satisfies Record<string, { label: MessageKey; tone: string }>;
-
 /** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
 function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
   const candidate = document.candidates.find((c) => c.id === candidateId);
@@ -2312,36 +2206,6 @@ export function RouteCard({ routeId }: { routeId: string }) {
         <Field label={t("chat.card.route.reason")}>{route.reason}</Field>
       </div>
     </CardFrame>
-  );
-}
-
-/**
- * G03, before publishing or merging (decision 4): the candidate's files against the colleagues' presence, with the
- * conflicts the merge probes found. A warning, never a lock: the buttons stay where they are.
- */
-function CandidateOverlaps({ candidateId }: { candidateId: string }) {
-  const t = useT();
-  const project = useUi((s) => s.app?.project)!;
-  const overlaps = project.overlaps;
-  const candidate = project.document.candidates.find((c) => c.id === candidateId);
-  if (!overlaps || !candidate || !project.presence) return null;
-  const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
-  const items = compareSides({
-    sides: [{ mine: specialist?.name ?? candidate.specialistId, files: candidate.changedFiles, moduleIds: [] }],
-    others: project.presence.others,
-    modules: project.snapshot.modules.map((m) => ({ id: m.id, name: m.name, relativePath: m.relativePath, files: m.files.map((f) => f.relativePath) })),
-    probes: overlaps.probes,
-    pullRequests: project.github.snapshot?.pullRequests ?? [],
-  });
-  if (!items.length) return null;
-  return (
-    <Field label={candidate.pullRequest ? t("chat.card.overlaps.beforeMerge") : t("chat.card.overlaps.beforePublish")}>
-      <div data-testid="candidate-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
-        {items.map((item) => (
-          <OverlapRow key={item.id} item={item} />
-        ))}
-      </div>
-    </Field>
   );
 }
 
