@@ -6,6 +6,7 @@ import {
   IconFolderOpen,
   IconLayoutList,
   IconPlus,
+  IconRefresh,
   IconSchool,
   IconTarget,
   IconUsers,
@@ -27,6 +28,7 @@ import { providerStatus } from "@/components/settings/SettingsView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -123,7 +125,12 @@ function StartBlock({ onClone }: { onClone: () => void }) {
   );
 }
 
-function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOverview | null }) {
+/** The state of a project's line while the summaries are read: a bar where the work and colleagues will be. */
+function RecentSkeleton() {
+  return <span className="mt-2 block h-3 w-32 animate-pulse rounded-sm bg-[var(--color-background-button-secondary)]" aria-hidden data-testid="recent-loading" />;
+}
+
+function RecentRow({ recent, entry, loading }: { recent: RecentProject; entry: ProjectOverview | null; loading: boolean }) {
   const t = useT();
   const language = useLanguage();
   const status = recentProjectStatus(t, entry);
@@ -134,11 +141,12 @@ function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOve
       <button
         type="button"
         onClick={() => void act("project:open", { path: recent.path })}
-        className="flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
+        className="flex min-h-8 w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
       >
         <IconFolder className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.6} />
         <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2 pr-6">
+          {/* The room on the right is the forget button's, so the time never sits under it. */}
+          <span className="flex items-baseline gap-2 pr-8">
             <span className="min-w-0 truncate text-ui text-[var(--color-text-accent)]">{name}</span>
             <span className="ml-auto shrink-0 text-ui-xs text-muted-foreground/70">
               {entry?.updatedAt
@@ -146,9 +154,10 @@ function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOve
                 : t("welcome.recent.opened", { ago: formatAgo(language, recent.lastOpenedAt) })}
             </span>
           </span>
-          <span className="block truncate font-mono text-ui-xs text-muted-foreground/70" title={recent.path}>
-            {recent.path}
-          </span>
+          {/* The path can be long: truncated, whole in the tooltip. */}
+          <Tooltip label={recent.path} side="bottom">
+            <span className="block truncate font-mono text-ui-xs text-muted-foreground/70">{recent.path}</span>
+          </Tooltip>
           {entry ? (
             <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-xs text-muted-foreground">
               <span className={cn("inline-flex items-center gap-1.5", busy && "text-[var(--color-text-accent)]")}>
@@ -162,28 +171,34 @@ function RecentRow({ recent, entry }: { recent: RecentProject; entry: ProjectOve
                 </span>
               ) : null}
             </span>
+          ) : loading ? (
+            <RecentSkeleton />
           ) : null}
         </span>
       </button>
-      <Tooltip label={t("welcome.recent.forget", { name })}>
-        <button
-          type="button"
-          aria-label={t("welcome.recent.forget", { name })}
-          onClick={() => void act("project:forgetRecent", { id: recent.id })}
-          className="sidebar-icon-button absolute top-1.5 right-1.5 size-5 opacity-0 group-hover/recent:opacity-100 focus-visible:opacity-100"
-        >
-          <IconX className="size-3" />
-        </button>
-      </Tooltip>
+      <IconButton
+        label={t("welcome.recent.forget", { name })}
+        icon={<IconX />}
+        size="icon"
+        onClick={() => void act("project:forgetRecent", { id: recent.id })}
+        className="absolute top-1 right-1 opacity-0 group-hover/recent:opacity-100 focus-visible:opacity-100"
+      />
     </li>
   );
 }
 
+/**
+ * Recenti answers one question: which project do I go back to. Four states: the rows (default), a bar under each
+ * project while its summary is read (loading), a message with the way to a first project (empty) and a message with
+ * a retry when the summaries cannot be read (error: the rows still open their project).
+ */
 function RecentBlock() {
   const t = useT();
   const app = useUi((s) => s.app)!;
   const openView = useUi((s) => s.openView);
   const [entries, setEntries] = useState<Map<string, ProjectOverview>>(new Map());
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const [attempt, setAttempt] = useState(0);
   const recents = app.recentProjects.slice(0, RECENT_COUNT);
   const hasRecents = recents.length > 0;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -198,7 +213,11 @@ function RecentBlock() {
     timer.current = setTimeout(
       () =>
         void act("overview:read", undefined).then((result) => {
-          if (live && result) setEntries(new Map(result.map((entry) => [entry.id, entry])));
+          if (!live) return;
+          if (result) {
+            setEntries(new Map(result.map((entry) => [entry.id, entry])));
+            setStatus("ready");
+          } else setStatus("failed");
         }),
       loaded.current ? 500 : 0,
     );
@@ -207,7 +226,7 @@ function RecentBlock() {
       live = false;
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [app, hasRecents]);
+  }, [app, hasRecents, attempt]);
 
   return (
     <Block
@@ -215,25 +234,42 @@ function RecentBlock() {
       title={t("welcome.recent.title")}
       aside={
         hasRecents ? (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 text-ui-sm text-[var(--color-text-accent)] hover:underline"
-            onClick={() => openView("projects")}
-          >
-            <IconLayoutList className="size-3.5" stroke={1.8} />
-            {t("welcome.recent.all")}
-          </button>
+          <IconButton label={t("welcome.recent.all")} icon={<IconLayoutList />} size="icon" onClick={() => openView("projects")} />
         ) : null
       }
     >
       {hasRecents ? (
-        <ul className="space-y-0.5">
-          {recents.map((recent) => (
-            <RecentRow key={recent.id} recent={recent} entry={entries.get(recent.id) ?? null} />
-          ))}
-        </ul>
+        <>
+          {status === "failed" ? (
+            <p className="flex items-center gap-2 px-2 pb-2 text-ui-sm text-destructive" role="alert" data-testid="recent-error">
+              <span className="min-w-0 flex-1">{t("welcome.recent.error")}</span>
+              <IconButton
+                label={t("welcome.recent.retry")}
+                icon={<IconRefresh />}
+                size="icon"
+                onClick={() => {
+                  setStatus("loading");
+                  setAttempt((n) => n + 1);
+                }}
+              />
+            </p>
+          ) : null}
+          <ul className="space-y-0.5">
+            {recents.map((recent) => (
+              <RecentRow key={recent.id} recent={recent} entry={entries.get(recent.id) ?? null} loading={status === "loading"} />
+            ))}
+          </ul>
+        </>
       ) : (
-        <p className="px-2 text-ui-sm text-muted-foreground">{t("welcome.recent.none")}</p>
+        <div className="space-y-3 px-2" data-testid="recent-empty">
+          <p className="text-ui-sm text-muted-foreground">{t("welcome.recent.none")}</p>
+          <div className="cta-row">
+            <Button variant="outline" onClick={() => void act("project:openDialog", undefined)}>
+              <IconFolderOpen className="size-4" stroke={1.7} />
+              {t("welcome.start.open")}
+            </Button>
+          </div>
+        </div>
       )}
     </Block>
   );
