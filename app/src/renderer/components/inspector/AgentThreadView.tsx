@@ -1,3 +1,4 @@
+import { IconHourglass } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { AgentThreadAuthor, AgentThreadMessage, Specialist } from "@shared/domain";
 import { authorName, findAgentThread, threadParticipants } from "@shared/agentThreads";
@@ -8,6 +9,7 @@ import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { formatDate, formatTime } from "@/lib/format";
 import { useT } from "@/lib/i18n";
@@ -70,7 +72,7 @@ export function AgentThreadView({ id }: { id: string }) {
           <p className="mt-0.5 text-ui-sm text-muted-foreground">
             {threadParticipants(t, thread, specialists)}
             <Sep />
-            <button type="button" className="underline-offset-2 hover:underline" onClick={() => setInspector({ kind: "specialist", id: thread.specialistIds[0]! })}>
+            <button type="button" className="inline-flex min-h-8 items-center underline-offset-2 hover:underline" onClick={() => setInspector({ kind: "specialist", id: thread.specialistIds[0]! })}>
               {t("thread.openDeveloper")}
             </button>
           </p>
@@ -78,7 +80,7 @@ export function AgentThreadView({ id }: { id: string }) {
         </InspectorSection>
       )}
       <InspectorSection title={t("thread.messages", { count: thread.messages.length })}>
-        <ol className="space-y-3" data-testid="agent-thread-messages">
+        <ol className="space-y-4" data-testid="agent-thread-messages">
           {thread.messages.map((message) => (
             <MessageRow key={message.id} message={message} specialists={specialists} discussion={discussion} />
           ))}
@@ -119,12 +121,12 @@ function DiscussionHeader({ thread, specialists }: { thread: Discussion; special
             </>
           ) : null}
         </p>
-        <p className="mt-3 text-ui-xs text-muted-foreground">{t("discussion.participants")}</p>
-        <ul className="mt-1 flex flex-col gap-1" data-testid="discussion-participants">
+        <p className="mt-4 text-ui-xs text-muted-foreground">{t("discussion.participants")}</p>
+        <ul className="mt-2 flex flex-col" data-testid="discussion-participants">
           {members.map((member) => (
-            <li key={member.id} className="flex min-w-0 items-center gap-1.5 text-ui-sm">
+            <li key={member.id} className="flex min-h-8 min-w-0 items-center gap-1.5 text-ui-sm">
               <AgentAvatar agent={member} size={20} />
-              <button type="button" className="min-w-0 truncate text-foreground hover:underline" onClick={() => setInspector({ kind: "specialist", id: member.id })}>
+              <button type="button" className="min-h-8 min-w-0 truncate text-foreground hover:underline" onClick={() => setInspector({ kind: "specialist", id: member.id })}>
                 {member.name}
               </button>
               <AgentTag agent={member} className="shrink-0 text-ui-xs" />
@@ -132,7 +134,7 @@ function DiscussionHeader({ thread, specialists }: { thread: Discussion; special
             </li>
           ))}
           {!discussion.chairId ? (
-            <li className="flex min-w-0 items-center gap-1.5 text-ui-sm">
+            <li className="flex min-h-8 min-w-0 items-center gap-1.5 text-ui-sm">
               <span className="flex size-5 items-center justify-center">
                 <TramaMark size={16} />
               </span>
@@ -141,21 +143,28 @@ function DiscussionHeader({ thread, specialists }: { thread: Discussion; special
             </li>
           ) : null}
         </ul>
-        {state === "overdue" ? <p className="mt-3 text-ui-sm text-warning">{t("discussion.overdue", { chair })}</p> : null}
+        {state === "overdue" ? <p className="mt-4 text-ui-sm text-warning">{t("discussion.overdue", { chair })}</p> : null}
         {state === "waitingPerson" ? (
-          <div className="mt-3 rounded-lg border border-warning/40 p-2" data-testid="discussion-waiting">
-            <p className="text-ui-sm text-foreground">{t("discussion.waiting")}</p>
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-warning/40 p-2" data-testid="discussion-waiting">
+            <p className="min-w-0 flex-1 text-ui-sm text-foreground">{t("discussion.waiting")}</p>
+            {/* Opening the question is a way to another view: an icon, named by its tooltip. */}
             {discussion.decisionRequestId ? (
-              <div className="cta-row mt-2">
-                <Button size="xs" onClick={() => setInspector({ kind: "waiting", key: `question:${discussion.decisionRequestId}` })}>
-                  {t("discussion.openQuestion")}
+              <Tooltip label={t("discussion.openQuestion")}>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t("discussion.openQuestion")}
+                  data-testid="discussion-open-question"
+                  onClick={() => setInspector({ kind: "waiting", key: `question:${discussion.decisionRequestId}` })}
+                >
+                  <IconHourglass stroke={1.8} />
                 </Button>
-              </div>
+              </Tooltip>
             ) : null}
           </div>
         ) : null}
         {outcome ? (
-          <div className="mt-3 rounded-lg bg-[var(--color-background-button-secondary)] p-2" data-testid="discussion-outcome" data-how={outcome.how}>
+          <div className="mt-4 rounded-lg bg-[var(--color-background-button-secondary)] p-2" data-testid="discussion-outcome" data-how={outcome.how}>
             <p className="text-ui-xs text-muted-foreground">
               {t("discussion.outcome")}
               <Sep />

@@ -3572,7 +3572,21 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   await thread.locator('[data-testid="agent-thread-message"][data-event="forwarded"]').getByText("Tu, tramite il Coordinatore").waitFor({ timeout: 20_000 });
   await expectNoRawIds(thread.getByTestId("discussion-header"), "The discussion's header");
   await discussionShots("b-discussion-waiting");
-  await header.getByRole("button", { name: "Apri la domanda" }).click();
+  // Design of 30 September: opening the question is a way to another view, so it is an icon with its tooltip and a name,
+  // and each participant's row is at least 32 px tall.
+  const openQuestion = header.getByTestId("discussion-open-question");
+  if ((await openQuestion.innerText()).trim() || (await openQuestion.getAttribute("aria-label")) !== "Apri la domanda") throw new Error("Opening the question is not an icon named 'Apri la domanda'");
+  const openBox = await openQuestion.boundingBox();
+  if (!openBox || openBox.width < 32 || openBox.height < 32) throw new Error(`Opening the question is under 32 px: ${JSON.stringify(openBox)}`);
+  await openQuestion.hover();
+  await page.locator(".translucent-popup").getByText("Apri la domanda", { exact: true }).waitFor();
+  await page.mouse.move(0, 0);
+  const participantHeights = await thread.getByTestId("discussion-participants").locator("li").evaluateAll((rows) => rows.map((row) => Math.round(row.getBoundingClientRect().height)));
+  if (participantHeights.some((height) => height < 32)) throw new Error(`A participant's row is under 32 px: ${participantHeights}`);
+  // The box that says the discussion waits is 16 px below what comes before it.
+  const waitingGap = await thread.getByTestId("discussion-waiting").evaluate((box) => Math.round(box.getBoundingClientRect().top - box.previousElementSibling.getBoundingClientRect().bottom));
+  if (waitingGap < 16) throw new Error(`The waiting box is ${waitingGap} px from what comes before it, not 16`);
+  await openQuestion.click();
   const question = squadPanel.locator('[data-testid="waiting-item"]').filter({ hasText: "Un ordine annullato torna nel carrello?" });
   await question.waitFor({ timeout: 20_000 });
   await question.getByTestId("decision-from-discussion").getByText(/^Dalla discussione tra agenti/).waitFor();
@@ -5658,6 +5672,11 @@ await primaryLast(reviewWork.locator(".cta-row"), "Lavoro automatico");
 const startBox = await startReview.boundingBox();
 const workBox = await reviewWork.boundingBox();
 if (!startBox || !workBox || workBox.x + workBox.width - (startBox.x + startBox.width) > 2) throw new Error("Avvia ora la revisione is not on the right");
+// Design of 30 September: Avvia starts work, so it is an icon with its text, at least 32 px tall, and not filled.
+if (startBox.height < 32) throw new Error(`Avvia is under 32 px: ${startBox.height}`);
+if ((await startReview.innerText()).trim() !== "Avvia" || !(await startReview.locator("svg").count())) throw new Error("Avvia is not an icon with its text");
+if ((await startReview.evaluate((el) => getComputedStyle(el).backgroundColor)) !== "rgba(0, 0, 0, 0)") throw new Error("Avvia is filled: the window has only the one of Aspetta te");
+if ((await reviewWork.evaluate((el) => getComputedStyle(el).paddingTop)) !== "8px") throw new Error("A row of the automatic work is not on the 8 px grid");
 await reviewWork.scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");

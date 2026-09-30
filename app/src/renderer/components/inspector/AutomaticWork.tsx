@@ -27,7 +27,6 @@ function StartNow({ work }: { work: AutomaticWorkStatus }) {
   return (
     <div className="cta-row shrink-0">
       <Button
-        size="xs"
         data-testid="automatic-work-start"
         aria-label={t("automaticWork.startNamed", { work: automaticWorkLabel(t, work.kind) })}
         title={t("automaticWork.startNamed", { work: automaticWorkLabel(t, work.kind) })}
@@ -49,7 +48,7 @@ function AutomaticWorkRow({ work, withRole }: { work: AutomaticWorkStatus; withR
   const state = automaticWorkState(t, work.state);
   const blocked = work.onRequest && !work.onRequest.allowed && work.state !== "running" ? work.onRequest.reason : null;
   return (
-    <div data-testid="automatic-work" data-work={work.kind} data-state={work.state} className="flex items-start gap-2 py-1.5">
+    <div data-testid="automatic-work" data-work={work.kind} data-state={work.state} className="flex items-start gap-2 py-2">
       <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground">{ICONS[work.kind]}</span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
