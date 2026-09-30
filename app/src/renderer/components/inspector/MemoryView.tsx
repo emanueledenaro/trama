@@ -10,9 +10,10 @@ import {
   IconPencil,
   IconPin,
   IconPinnedOff,
+  IconPlayerPlay,
   IconPlus,
   IconRefresh,
-  IconSearch,
+  IconRotateClockwise,
   IconTool,
   IconTrash,
 } from "@tabler/icons-react";
@@ -62,7 +63,9 @@ export function MemoryView() {
           />
           <SkillsSection learning={learning} />
         </>
-      ) : null}
+      ) : (
+        <EmptyNote>{t("memory.loading")}</EmptyNote>
+      )}
       <PracticesSection />
       {learning ? <HowItLearns learning={learning} /> : null}
     </div>
@@ -73,7 +76,7 @@ export function MemoryView() {
 function IconAction({ label, onClick, disabled, children, pressed }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode; pressed?: boolean }) {
   return (
     <Tooltip label={label}>
-      <Button size="icon-xs" variant="ghost" aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>
+      <Button size="icon-xs" variant="ghost" className="size-8" aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>
         {children}
       </Button>
     </Tooltip>
@@ -89,11 +92,17 @@ function MemorySummary({ learning }: { learning: LearningView | null }) {
   return (
     <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-3" data-testid="memory-summary">
       <h3 className="text-ui font-medium text-foreground">{t("memory.title")}</h3>
-      <p className="mt-1 text-ui-sm text-muted-foreground">{t("memory.intro")}</p>
+      <details className="group/intro mt-1" data-testid="memory-intro">
+        <summary className="flex min-h-8 cursor-pointer list-none items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <IconChevronRight className="size-3.5 shrink-0 transition-transform group-open/intro:rotate-90" stroke={1.8} />
+          {t("memory.intro.toggle")}
+        </summary>
+        <p className="pb-2 pl-5 text-ui-sm text-muted-foreground">{t("memory.intro")}</p>
+      </details>
       {first ? (
         <button
           type="button"
-          className="mt-2 flex w-full min-w-0 items-center gap-2 rounded-md py-1 text-left text-ui text-foreground hover:bg-[var(--app-sidebar-row-hover,var(--color-background-button-secondary-hover))]"
+          className="mt-2 flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md py-1 text-left text-ui text-foreground hover:bg-[var(--app-sidebar-row-hover,var(--color-background-button-secondary-hover))]"
           data-testid="memory-waiting"
           onClick={() => setInspector({ kind: "waiting", key: `memory:${first.id}` })}
         >
@@ -112,7 +121,7 @@ function UsageLine({ store }: { store: MemoryStoreView }) {
   return (
     <div className="mb-2">
       <div className="h-1 overflow-hidden rounded-full bg-[var(--color-border)]">
-        <div className={nearlyFull(store) ? "h-full bg-[var(--color-text-destructive,#d33)]" : "h-full bg-[var(--color-text-accent)]"} style={{ width: `${percent}%` }} />
+        <div className={nearlyFull(store) ? "h-full bg-[var(--destructive)]" : "h-full bg-[var(--color-text-accent)]"} style={{ width: `${percent}%` }} />
       </div>
       <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.usage", { chars: store.chars, limit: store.limit })}</p>
     </div>
@@ -138,9 +147,9 @@ function TidyLine({ target, store }: { target: "memory" | "user"; store: MemoryS
       {state === "running" ? null : (
         <div className="cta-row shrink-0">
           {pending ? (
-            <Button size="xs" variant="ghost" onClick={() => setInspector({ kind: "waiting", key: `memory:${pending.id}` })}>
-              {t("memory.tidy.open")}
-            </Button>
+            <IconAction label={t("memory.tidy.open")} onClick={() => setInspector({ kind: "waiting", key: `memory:${pending.id}` })}>
+              <IconChevronRight stroke={1.8} />
+            </IconAction>
           ) : (
             <Button size="xs" variant="outline" aria-label={t(`memory.tidy.actionLabel.${target}`)} onClick={() => void act("learning:review", { focus: "", tidy: target })}>
               <IconArrowsSort stroke={1.8} />
@@ -303,27 +312,29 @@ function SkillsSection({ learning }: { learning: LearningView }) {
 function SkillRow({ skill }: { skill: LearnedSkillView }) {
   const [content, setContent] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const t = useT();
+  const open = expanded || content !== null;
   const change = (action: "pin" | "unpin" | "adopt" | "archive" | "delete" | "edit", extra: { content?: string } = {}) =>
     act("learning:skill", { name: skill.name, action, ...extra });
   const toggleOpen = () =>
     content !== null ? setContent(null) : void act("learning:skillContent", { name: skill.name }).then((text) => setContent(text ?? ""));
   return (
-    <div className="py-2 text-ui-sm" data-testid="learned-skill">
-      <div className="flex items-start gap-2">
-        <IconFileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-foreground" title={skill.name}>
+    <div className="py-1 text-ui-sm" data-testid="learned-skill" data-open={open ? "true" : "false"}>
+      <div className="flex min-h-8 items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md text-left hover:bg-[var(--app-sidebar-row-hover,var(--color-background-button-secondary-hover))]"
+          onClick={() => setExpanded(!open)}
+        >
+          <IconChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} stroke={1.8} />
+          <span className="min-w-0 truncate font-medium text-foreground" title={skill.name}>
             {skill.name}
-          </p>
-          <p className="text-ui-xs text-muted-foreground">
-            {t("memory.skill.used", { count: skill.useCount })}
-            <Sep />
-            {t("memory.skill.patched", { count: skill.patchCount })}
-            <Sep />
-            {skill.lastActivityAt ? t("memory.skill.lastUse", { date: formatDate(skill.lastActivityAt) }) : t("memory.skill.neverUsed")}
-          </p>
-        </div>
+          </span>
+          {skill.pinned ? <Badge tone="info">{t("memory.skill.pinned")}</Badge> : null}
+          {skill.state === "stale" ? <Badge tone="warning">{t("memory.skill.stale")}</Badge> : null}
+        </button>
         <span className="flex shrink-0 items-center">
           <IconAction label={content !== null ? t("memory.skill.close") : t("memory.skill.open")} pressed={content !== null} onClick={toggleOpen}>
             <IconFileText stroke={1.8} />
@@ -343,43 +354,52 @@ function SkillRow({ skill }: { skill: LearnedSkillView }) {
           ) : null}
         </span>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-6">
-        {skill.category ? <span className="text-ui-xs text-muted-foreground">{skill.category}</span> : null}
-        {skill.pinned ? <Badge tone="info">{t("memory.skill.pinned")}</Badge> : null}
-        {skill.state === "stale" ? <Badge tone="warning">{t("memory.skill.stale")}</Badge> : null}
-        {skill.createdBy === "agent" ? <Badge tone="secondary">{t("memory.skill.fromReview")}</Badge> : <Badge tone="outline">{t("memory.skill.withYou")}</Badge>}
-      </div>
-      <p className="mt-1 pl-6 text-foreground/90">{skill.description}</p>
-      {content !== null ? (
-        <div className="mt-2 space-y-2 pl-6">
-          <TextArea aria-label={t("memory.skill.content", { name: skill.name })} value={content} onChange={(e) => setContent(e.target.value)} className="min-h-40 font-mono text-ui-xs" />
-          <div className="cta-row">
-            <Button size="sm" variant="ghost" onClick={() => setContent(null)}>
-              {t("memory.skill.close")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void change("edit", { content }).then(() => setContent(null))}>
-              {t("memory.skill.save")}
-            </Button>
+      {open ? (
+        <div className="space-y-2 pb-2 pl-6" data-testid="learned-skill-detail">
+          <p className="text-foreground/90">{skill.description}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {skill.category ? <span className="text-ui-xs text-muted-foreground">{skill.category}</span> : null}
+            {skill.createdBy === "agent" ? <Badge tone="secondary">{t("memory.skill.fromReview")}</Badge> : <Badge tone="outline">{t("memory.skill.withYou")}</Badge>}
           </div>
-        </div>
-      ) : null}
-      {!skill.pinned ? (
-        <div className="cta-row mt-1">
-          {confirming ? (
-            <>
-              <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
-                {t("memory.cancel")}
-              </Button>
-              <Button size="xs" variant="destructive" onClick={() => void change("delete")}>
-                {t("memory.skill.deleteConfirm")}
-              </Button>
-            </>
-          ) : (
-            <Button size="xs" variant="ghost" onClick={() => setConfirming(true)}>
-              <IconTrash className="size-3.5" stroke={1.8} />
-              {t("memory.skill.delete")}
-            </Button>
-          )}
+          <p className="text-ui-xs text-muted-foreground">
+            {t("memory.skill.used", { count: skill.useCount })}
+            <Sep />
+            {t("memory.skill.patched", { count: skill.patchCount })}
+            <Sep />
+            {skill.lastActivityAt ? t("memory.skill.lastUse", { date: formatDate(skill.lastActivityAt) }) : t("memory.skill.neverUsed")}
+          </p>
+          {content !== null ? (
+            <div className="space-y-2">
+              <TextArea aria-label={t("memory.skill.content", { name: skill.name })} value={content} onChange={(e) => setContent(e.target.value)} className="min-h-40 font-mono text-ui-xs" />
+              <div className="cta-row">
+                <Button size="sm" variant="ghost" onClick={() => setContent(null)}>
+                  {t("memory.skill.close")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void change("edit", { content }).then(() => setContent(null))}>
+                  {t("memory.skill.save")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {!skill.pinned ? (
+            <div className="cta-row">
+              {confirming ? (
+                <>
+                  <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+                    {t("memory.cancel")}
+                  </Button>
+                  <Button size="xs" variant="destructive" onClick={() => void change("delete")}>
+                    {t("memory.skill.deleteConfirm")}
+                  </Button>
+                </>
+              ) : (
+                <Button size="xs" variant="ghost" onClick={() => setConfirming(true)}>
+                  <IconTrash className="size-3.5" stroke={1.8} />
+                  {t("memory.skill.delete")}
+                </Button>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -394,7 +414,7 @@ function PracticesSection() {
     <InspectorSection title={t("memory.practices.title", { count: practices.length })}>
       <p className="mb-2 text-ui-xs text-muted-foreground">{t("memory.practices.note")}</p>
       {practices.length === 0 ? <EmptyNote>{t("memory.practices.empty")}</EmptyNote> : null}
-      <div className="space-y-2">
+      <div className="divide-y divide-[color:var(--app-surface-divider)]">
         {practices.map((practice) => (
           <PracticeRow key={practice.id} practice={practice} />
         ))}
@@ -404,16 +424,23 @@ function PracticesSection() {
 }
 
 function PracticeRow({ practice }: { practice: PracticeView }) {
+  const [open, setOpen] = useState(false);
   const [retiring, setRetiring] = useState(false);
   const [reason, setReason] = useState("");
   const t = useT();
   const adopted = practice.adoptedVersion !== null;
   return (
-    <div className="rounded-xl border border-[color:var(--color-border)] p-2.5 text-ui-sm" data-testid="practice">
-      <div className="flex items-center gap-2">
-        <span className="font-medium text-foreground">{practice.title}</span>
-        <span className="text-ui-xs text-muted-foreground">v{adopted ? practice.adoptedVersion : practice.version}</span>
-        <span className="ml-auto">
+    <div className="py-1 text-ui-sm" data-testid="practice" data-open={open ? "true" : "false"}>
+      <button
+        type="button"
+        aria-expanded={open}
+        className="flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-md text-left hover:bg-[var(--app-sidebar-row-hover,var(--color-background-button-secondary-hover))]"
+        onClick={() => setOpen(!open)}
+      >
+        <IconChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} stroke={1.8} />
+        <span className="min-w-0 truncate font-medium text-foreground">{practice.title}</span>
+        <span className="shrink-0 text-ui-xs text-muted-foreground">v{adopted ? practice.adoptedVersion : practice.version}</span>
+        <span className="ml-auto shrink-0">
           {adopted ? (
             <Badge tone="success">{t("memory.practice.adopted")}</Badge>
           ) : practice.retiredHere ? (
@@ -422,45 +449,49 @@ function PracticeRow({ practice }: { practice: PracticeView }) {
             <Badge tone="info">{t("memory.practice.proposed")}</Badge>
           )}
         </span>
-      </div>
-      <p className="mt-1 text-foreground/90">{practice.method}</p>
-      {practice.rationale ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.why", { why: practice.rationale })}</p> : null}
-      {practice.evidence.length ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.evidence", { evidence: practice.evidence.join("; ") })}</p> : null}
-      {!practice.fromThisProject ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.elsewhere")}</p> : null}
-      {practice.retiredHere ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.retiredBecause", { reason: practice.retiredHere.reason ?? "" })}</p> : null}
-      <div className="cta-row mt-2">
-        {adopted && (practice.adoptedVersion ?? 0) > 1 ? (
-          <Button size="sm" variant="ghost" onClick={() => void act("practice:change", { action: "rollback", id: practice.id })}>
-            {t("memory.practice.rollback")}
-          </Button>
-        ) : null}
-        {adopted ? (
-          <Button size="sm" variant="ghost" onClick={() => setRetiring(!retiring)}>
-            {t("memory.practice.retire")}
-          </Button>
-        ) : null}
-        {!adopted || (practice.adoptedVersion ?? 0) < practice.version ? (
-          <Button size="sm" variant="outline" onClick={() => void act("practice:change", { action: "adopt", id: practice.id })}>
-            {adopted ? t("memory.practice.upgrade", { version: practice.version }) : t("memory.practice.adopt")}
-          </Button>
-        ) : null}
-      </div>
-      {retiring ? (
-        <div className="mt-2 space-y-2">
-          <TextArea aria-label={t("memory.practice.reason")} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("memory.practice.reason")} className="min-h-12" />
-          <div className="cta-row">
-            <Button size="sm" variant="ghost" onClick={() => setRetiring(false)}>
-              {t("memory.cancel")}
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={!reason.trim()}
-              onClick={() => void act("practice:change", { action: "retire", id: practice.id, reason: reason.trim() }).then(() => setRetiring(false))}
-            >
-              {t("memory.practice.retireConfirm")}
-            </Button>
+      </button>
+      {open ? (
+        <div className="pb-2 pl-6">
+          <p className="text-foreground/90">{practice.method}</p>
+          {practice.rationale ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.why", { why: practice.rationale })}</p> : null}
+          {practice.evidence.length ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.evidence", { evidence: practice.evidence.join("; ") })}</p> : null}
+          {!practice.fromThisProject ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.elsewhere")}</p> : null}
+          {practice.retiredHere ? <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.practice.retiredBecause", { reason: practice.retiredHere.reason ?? "" })}</p> : null}
+          <div className="cta-row mt-2">
+            {adopted && (practice.adoptedVersion ?? 0) > 1 ? (
+              <Button size="sm" variant="ghost" onClick={() => void act("practice:change", { action: "rollback", id: practice.id })}>
+                {t("memory.practice.rollback")}
+              </Button>
+            ) : null}
+            {adopted ? (
+              <Button size="sm" variant="ghost" onClick={() => setRetiring(!retiring)}>
+                {t("memory.practice.retire")}
+              </Button>
+            ) : null}
+            {!adopted || (practice.adoptedVersion ?? 0) < practice.version ? (
+              <Button size="sm" variant="outline" onClick={() => void act("practice:change", { action: "adopt", id: practice.id })}>
+                {adopted ? t("memory.practice.upgrade", { version: practice.version }) : t("memory.practice.adopt")}
+              </Button>
+            ) : null}
           </div>
+          {retiring ? (
+            <div className="mt-2 space-y-2">
+              <TextArea aria-label={t("memory.practice.reason")} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("memory.practice.reason")} className="min-h-12" />
+              <div className="cta-row">
+                <Button size="sm" variant="ghost" onClick={() => setRetiring(false)}>
+                  {t("memory.cancel")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={!reason.trim()}
+                  onClick={() => void act("practice:change", { action: "retire", id: practice.id, reason: reason.trim() }).then(() => setRetiring(false))}
+                >
+                  {t("memory.practice.retireConfirm")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -524,7 +555,7 @@ function HowItLearns({ learning }: { learning: LearningView }) {
           </span>
         </button>
         <IconAction label={t("memory.review.now")} disabled={running} onClick={review}>
-          <IconRefresh stroke={1.8} />
+          <IconRotateClockwise stroke={1.8} />
         </IconAction>
       </div>
       {open ? (
@@ -653,7 +684,7 @@ function CuratorPart({ learning }: { learning: LearningView }) {
       aside={
         <span className="flex items-center">
           <IconAction label={t("memory.curator.run")} onClick={() => void act("learning:curator", { action: "run" })}>
-            <IconSearch stroke={1.8} />
+            <IconRefresh stroke={1.8} />
           </IconAction>
           <IconAction label={t("memory.curator.dryRun")} onClick={() => void act("learning:curator", { action: "dryRun" })}>
             <IconEye stroke={1.8} />
@@ -672,6 +703,7 @@ function CuratorPart({ learning }: { learning: LearningView }) {
           </Button>
         ) : null}
         <Button size="sm" variant="ghost" onClick={() => void act("learning:curator", { action: curator.paused ? "resume" : "pause" })}>
+          {curator.paused ? <IconPlayerPlay className="size-3.5" stroke={1.8} /> : null}
           {curator.paused ? t("memory.curator.resume") : t("memory.curator.suspend")}
         </Button>
       </div>
