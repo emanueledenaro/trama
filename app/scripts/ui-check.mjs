@@ -3618,7 +3618,7 @@ await closePanels();
   await brief.waitFor();
   if ((await brief.getAttribute("data-sign")) !== "stopped") throw new Error("The summary of a stopped person does not say it is stopped");
   // What it does is the Now card; the summary does not repeat it.
-  await adaPage.getByTestId("specialist-now").getByText("Documenta l'annullamento").first().waitFor();
+  await adaPage.getByTestId("specialist-now").getByTestId("assignment-detail-toggle").waitFor();
   if (await brief.getByTestId("brief-doing").count()) throw new Error("The summary repeats what the Now card says");
   await brief.getByTestId("brief-blocker").getByText("Fermato dalla persona").waitFor();
   await brief.getByTestId("brief-next").getByText("Riprendilo dalla scheda qui sotto, o chiedi al Coordinatore.").waitFor();
