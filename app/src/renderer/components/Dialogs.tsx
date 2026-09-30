@@ -1,13 +1,27 @@
 import { useState } from "react";
 import { parseRepositoryInput } from "@shared/onboarding";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
 import { Input, Label, TextArea } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
 import { SearchPalette } from "@/components/SearchPalette";
 import { FocusStartDialog } from "@/components/focus/FocusStartDialog";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 
+/**
+ * The actions of a dialog: on the right, the primary last. The window has one filled button, the one of Aspetta te
+ * (ADR 0018), so a dialog draws its primary as an outline.
+ */
+function DialogActions({ children }: { children: React.ReactNode }) {
+  return (
+    <FilledScope allowed={false}>
+      <div className="cta-row">{children}</div>
+    </FilledScope>
+  );
+}
+
 function CreateProjectDialog() {
+  const t = useT();
   const open = useUi((s) => s.dialog === "createProject");
   const setDialog = useUi((s) => s.setDialog);
   const [name, setName] = useState("");
@@ -16,15 +30,14 @@ function CreateProjectDialog() {
     <Dialog
       open={open}
       onOpenChange={(value) => setDialog(value ? "createProject" : null)}
-      title="Crea un progetto"
-      description="Trama crea la cartella con un README che descrive l'idea."
+      title={t("dialogs.create.title")}
+      description={t("dialogs.create.description")}
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={() => setDialog(null)}>
-            Annulla
+        <DialogActions>
+          <Button variant="ghost" onClick={() => setDialog(null)}>
+            {t("dialogs.cancel")}
           </Button>
           <Button
-            size="sm"
             disabled={!name.trim()}
             onClick={() =>
               void act("project:create", { name, idea }).then(() => {
@@ -34,18 +47,18 @@ function CreateProjectDialog() {
               })
             }
           >
-            Scegli la cartella
+            {t("dialogs.chooseFolder")}
           </Button>
-        </>
+        </DialogActions>
       }
     >
-      <div className="space-y-3 pt-2">
+      <div className="space-y-4 pt-2">
         <div>
-          <Label>Nome del progetto</Label>
+          <Label>{t("dialogs.create.name")}</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
         <div>
-          <Label>Cosa vuoi costruire?</Label>
+          <Label>{t("dialogs.create.idea")}</Label>
           <TextArea value={idea} onChange={(e) => setIdea(e.target.value)} />
         </div>
       </div>
@@ -55,6 +68,7 @@ function CreateProjectDialog() {
 
 /** Clones a GitHub repository into a folder the person picks, then opens it (B02). */
 function CloneProjectDialog() {
+  const t = useT();
   const open = useUi((s) => s.dialog === "cloneProject");
   const setDialog = useUi((s) => s.setDialog);
   const gh = useUi((s) => s.app?.gitHubCli.status ?? "unknown");
@@ -69,39 +83,36 @@ function CloneProjectDialog() {
     <Dialog
       open={open}
       onOpenChange={(value) => setDialog(value ? "cloneProject" : null)}
-      title="Clona da GitHub"
-      description="Trama clona il repository in una cartella che scegli, poi lo apre. Lo studio è in sola lettura: nulla viene modificato o pubblicato."
+      title={t("dialogs.clone.title")}
+      description={t("dialogs.clone.description")}
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={() => setDialog(null)}>
-            Annulla
+        <DialogActions>
+          <Button variant="ghost" onClick={() => setDialog(null)}>
+            {t("dialogs.cancel")}
           </Button>
-          <Button size="sm" disabled={!parsed} onClick={submit}>
-            Scegli la cartella
+          <Button disabled={!parsed} onClick={submit}>
+            {t("dialogs.chooseFolder")}
           </Button>
-        </>
+        </DialogActions>
       }
     >
-      <div className="space-y-2 pt-2">
+      <div className="space-y-4 pt-2">
         <div>
-          <Label>Repository</Label>
+          <Label>{t("dialogs.clone.repository")}</Label>
           <Input
             value={repository}
             onChange={(e) => setRepository(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submit();
             }}
-            placeholder="proprietario/nome oppure https://github.com/proprietario/nome"
+            placeholder={t("dialogs.clone.placeholder")}
             aria-invalid={repository.trim() !== "" && !parsed}
             autoFocus
           />
         </div>
-        <p className="text-ui-xs text-muted-foreground">
-          {repository.trim() && !parsed
-            ? "Non è un repository GitHub: scrivi proprietario/nome o incolla il suo indirizzo."
-            : gh === "ready"
-              ? "Trama usa GitHub CLI già collegato: funzionano anche i repository privati."
-              : "Senza GitHub CLI collegato si clonano solo i repository pubblici."}
+        {/* An invalid repository is an error: it reads in the system red. */}
+        <p className={repository.trim() && !parsed ? "text-ui-xs text-destructive" : "text-ui-xs text-muted-foreground"} data-testid="clone-hint">
+          {repository.trim() && !parsed ? t("dialogs.clone.invalid") : gh === "ready" ? t("dialogs.clone.ghReady") : t("dialogs.clone.ghMissing")}
         </p>
       </div>
     </Dialog>

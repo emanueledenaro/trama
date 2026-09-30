@@ -716,6 +716,14 @@ if ((await welcomeStep("github").getAttribute("data-status")) !== "done") {
 }
 await cloneDialog.getByRole("textbox").fill("non è un repository");
 if (await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).isEnabled()) throw new Error("Clone accepts an invalid repository");
+// The dialog's rules: an invalid repository reads in the system red; the actions sit on the right, the primary last and
+// not filled; every button is 32 px tall.
+if (!(await cloneDialog.getByTestId("clone-hint").evaluate((el) => el.classList.contains("text-destructive")))) throw new Error("The clone error is not in the system red");
+await primaryLast(cloneDialog.locator(".cta-row"), "Clona da GitHub");
+if ((await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).getAttribute("data-filled")) !== "false") throw new Error("A dialog button is filled");
+for (const height of await cloneDialog.locator(".cta-row > button").evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().height))) {
+  if (height < 31.5) throw new Error(`A dialog button is ${height}px tall`);
+}
 await cloneDialog.getByRole("textbox").fill("https://github.com/emanueledenaro/trama");
 await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).waitFor({ state: "visible" });
 if (!(await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).isEnabled())) throw new Error("Clone refuses a GitHub URL");
@@ -2358,8 +2366,38 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 // The overview (UX03) lists the project with its open goals. It opens from the Projects view (issue #330).
 await openView("Progetti");
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
-await page.getByTestId("overview-project").first().getByText("Ordini annullati in revisione").waitFor({ timeout: 10_000 });
+// Progetti: a compact row per project; the details (goals, checks, source) are closed until the person asks.
+const overviewRow = page.getByTestId("overview-project").first();
+await overviewRow.getByTestId("overview-details-toggle").waitFor({ timeout: 10_000 });
+if (await page.getByTestId("overview-details").count()) throw new Error("A project's details are open before the person asks");
+await shot("10e-overview-compact");
+await overviewRow.getByTestId("overview-details-toggle").click();
+await overviewRow.getByText("Ordini annullati in revisione").waitFor({ timeout: 10_000 });
+if ((await overviewRow.getByTestId("overview-details-toggle").getAttribute("aria-expanded")) !== "true") throw new Error("The details button does not say it is open");
 await shot("10e-overview");
+{
+  // Progetti rules: one summary line with the same total as the rows, no filled button, 32 px click areas, icon buttons named.
+  const overview = page.getByTestId("overview");
+  const summary = (await overview.getByTestId("overview-summary").textContent()).trim();
+  const match = /^Progetti: (\d+)\. In Aspetta te: (\d+)\.$/.exec(summary);
+  if (!match) throw new Error(`The projects summary reads "${summary}"`);
+  const rows = await overview.getByTestId("overview-project").evaluateAll((nodes) => nodes.map((n) => Number(n.dataset.waiting)));
+  if (Number(match[1]) !== rows.length || Number(match[2]) !== rows.reduce((a, b) => a + b, 0)) throw new Error(`The summary ${summary} does not match the rows ${rows}`);
+  const found = await overview.evaluate((root) => {
+    const shown = (node) => node.getBoundingClientRect().width > 0;
+    return {
+      filled: [...root.querySelectorAll('button[data-variant="default"]')].filter((b) => shown(b) && b.dataset.filled !== "false").length,
+      small: [...root.querySelectorAll('[data-icon-button], [data-testid="overview-waiting"], [data-testid="overview-project"] > div button')]
+        .filter(shown)
+        .filter((b) => b.getBoundingClientRect().height < 31.5)
+        .map((b) => b.getAttribute("aria-label") ?? b.textContent.trim()),
+      unnamed: [...root.querySelectorAll("[data-icon-button]")].filter((b) => !b.getAttribute("aria-label") || b.textContent.trim()).length,
+    };
+  });
+  if (found.filled) throw new Error("Progetti has a filled button");
+  if (found.small.length) throw new Error(`Progetti has click areas under 32 px: ${found.small}`);
+  if (found.unnamed) throw new Error("Progetti has an icon button without a name, or with a text");
+}
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await closePanels();
 

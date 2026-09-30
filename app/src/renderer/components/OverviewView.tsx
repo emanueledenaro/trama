@@ -11,23 +11,24 @@ import {
   IconTarget,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/cn";
 import type { AttentionReason, ProjectOverview, SharedCapacity } from "@shared/domain";
-import type { Translate } from "@shared/i18n";
+import type { MessageKey, Translate } from "@shared/i18n";
 import { Spinner } from "@/components/Spinner";
 import { Badge } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
+import { Button, FilledScope } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { formatRelativeTime } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { Sep } from "@/components/ui/sep";
-import { Tooltip } from "@/components/ui/tooltip";
 import { ReferenceText } from "@/components/chat/ReferenceText";
 
-const ATTENTION: Record<AttentionReason, { label: string; tone: "warning" | "destructive" | "success" | "info" }> = {
-  decision: { label: "Aspetta te", tone: "warning" },
-  blocked: { label: "Lavoro fermo", tone: "destructive" },
-  approval: { label: "Risultato da approvare", tone: "success" },
-  running: { label: "Al lavoro", tone: "info" },
+const ATTENTION: Record<AttentionReason, { label: MessageKey; tone: "warning" | "destructive" | "success" | "info" }> = {
+  decision: { label: "overview.attention.decision", tone: "warning" },
+  blocked: { label: "overview.attention.blocked", tone: "destructive" },
+  approval: { label: "overview.attention.approval", tone: "success" },
+  running: { label: "overview.attention.running", tone: "info" },
 };
 
 /** The checks of the open pull requests in plain words; null when the repository was not read. */
@@ -41,28 +42,32 @@ function ciLabel(t: Translate, ci: ProjectOverview["ci"]): string | null {
   return parts.length ? t("overview.ci.summary", { parts: parts.join(", ") }) : t("overview.ci.none");
 }
 
-function sourceLabel(entry: ProjectOverview): string {
+function sourceLabel(t: Translate, entry: ProjectOverview): string {
   switch (entry.source) {
     case "live":
-      return entry.selected ? "Aperto ora, dati aggiornati" : "In memoria, dati aggiornati";
+      return entry.selected ? t("overview.source.openNow") : t("overview.source.inMemory");
     case "saved":
-      return entry.updatedAt ? `Dati dell'ultimo salvataggio, ${formatRelativeTime(entry.updatedAt)}` : "Dati dell'ultimo salvataggio";
+      return entry.updatedAt ? t("overview.source.savedAt", { when: formatRelativeTime(entry.updatedAt) }) : t("overview.source.saved");
     case "unreadable":
-      return "Stato non leggibile";
+      return t("overview.source.unreadable");
     case "notSaved":
-      return "Nessun dato salvato: apri il progetto per studiarlo";
+      return t("overview.source.notSaved");
   }
 }
 
 /**
  * The projects overview (UX03): what needs the person first. It reads summaries from the main
- * process; it opens no AI session and does not change a project's priority.
+ * process; it opens no AI session and does not change a project's priority. Head, summary, one compact row per
+ * project (what the Coordinator does, the first thing of Aspetta te) and the details of a project on request.
  */
-export function OverviewView() {
+function OverviewBody() {
   const app = useUi((s) => s.app)!;
   const openGoalOf = useUi((s) => s.openGoalOf);
   const setMainView = useUi((s) => s.setMainView);
+  const setDialog = useUi((s) => s.setDialog);
   const [entries, setEntries] = useState<ProjectOverview[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   const capacity = app.sharedCapacity;
   const t = useT();
   const [loading, setLoading] = useState(false);
@@ -76,6 +81,7 @@ export function OverviewView() {
     void act("overview:read", undefined).then((result) => {
       if (read !== latestRead.current) return;
       setLoading(false);
+      setFailed(!result);
       if (result) setEntries(result);
     });
   };
@@ -101,98 +107,145 @@ export function OverviewView() {
     if (entry.waiting.first) useUi.getState().setInspector({ kind: "waiting", key: entry.waiting.first.key });
   };
 
+  const toggle = (id: string) =>
+    setOpened((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
   return (
     <div className="chat-pane-enter min-h-0 flex-1 overflow-y-auto" data-testid="overview">
       <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] px-4 py-6 sm:px-6">
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-ui-lg font-medium text-foreground">{t("overview.title")}</h2>
             <p className="mt-1 text-ui-sm text-muted-foreground">{t("overview.intro")}</p>
           </div>
-          <Tooltip label={t("overview.refresh")}>
-            <Button size="icon-sm" variant="ghost" onClick={load} disabled={loading} aria-label={t("overview.refresh")}>
-              {loading ? <Spinner /> : <IconRefresh />}
-            </Button>
-          </Tooltip>
+          <IconButton label={t("overview.refresh")} icon={loading ? <Spinner /> : <IconRefresh />} size="icon" onClick={load} disabled={loading} />
         </div>
-        {entries === null ? (
-          <p className="mt-6 flex items-center gap-2 text-ui text-muted-foreground">
-            <Spinner /> {t("overview.reading")}
+        {entries?.length ? (
+          <p className="mt-4 text-ui text-foreground" data-testid="overview-summary">
+            {t("overview.summary", { projects: entries.length, waiting: entries.reduce((sum, entry) => sum + entry.waiting.count, 0) })}
           </p>
+        ) : null}
+        {entries === null ? (
+          failed ? (
+            <p className="mt-6 text-ui text-destructive" data-testid="overview-failed">
+              {t("overview.failed")}
+            </p>
+          ) : (
+            <p className="mt-6 flex items-center gap-2 text-ui text-muted-foreground">
+              <Spinner /> {t("overview.reading")}
+            </p>
+          )
         ) : entries.length === 0 ? (
-          <p className="mt-6 text-ui text-muted-foreground">{t("overview.empty")}</p>
+          <div className="mt-6" data-testid="overview-empty">
+            <p className="text-ui text-muted-foreground">{t("overview.empty")}</p>
+            <div className="cta-row mt-4">
+              <Button variant="ghost" onClick={() => setDialog("createProject")}>
+                {t("welcome.start.create")}
+              </Button>
+              <Button onClick={() => void act("project:openDialog", undefined)}>{t("welcome.start.open")}</Button>
+            </div>
+          </div>
         ) : (
           <ul className="mt-4 space-y-2">
-            {entries.map((entry) => (
-              <li
-                key={entry.id}
-                className="rounded-xl border border-[color:var(--color-border)] bg-[var(--card)] px-3.5 py-3"
-                data-testid="overview-project"
-                data-waiting={entry.waiting.count}
-                data-selected={entry.selected ? "true" : undefined}
-              >
-                {/* One row per project (issue #336): what the Coordinator does, and the first thing that waits for the person. */}
-                <div className="flex items-start gap-3">
-                  <span
-                    className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-[var(--sidebar-selected)] text-ui-sm font-semibold text-[var(--color-text-accent)]"
-                    aria-hidden
-                  >
-                    {entry.name.trim().charAt(0).toLowerCase() || "t"}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <button type="button" className="min-w-0 truncate text-left text-ui font-medium text-foreground hover:underline" onClick={() => void open(entry)}>
-                        {entry.name}
-                      </button>
-                      {entry.attention ? <Badge tone={ATTENTION[entry.attention].tone}>{ATTENTION[entry.attention].label}</Badge> : null}
-                      {entry.source === "unreadable" ? (
-                        <Badge tone="destructive">
-                          <IconAlertTriangle className="size-3" /> Non leggibile
-                        </Badge>
+            {entries.map((entry) => {
+              const detailsOpen = opened.has(entry.id);
+              const ci = ciLabel(t, entry.ci);
+              return (
+                <li
+                  key={entry.id}
+                  className="rounded-xl border border-[color:var(--color-border)] bg-[var(--card)] p-4"
+                  data-testid="overview-project"
+                  data-waiting={entry.waiting.count}
+                  data-selected={entry.selected ? "true" : undefined}
+                >
+                  {/* One row per project (issue #336): what the Coordinator does, and the first thing that waits for the person. */}
+                  <div className="flex items-start gap-4">
+                    <span
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[var(--sidebar-selected)] text-ui-sm font-semibold text-[var(--color-text-accent)]"
+                      aria-hidden
+                    >
+                      {entry.name.trim().charAt(0).toLowerCase() || "t"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <button type="button" className="min-h-8 min-w-0 truncate text-left text-ui font-medium text-foreground hover:underline" onClick={() => void open(entry)}>
+                          {entry.name}
+                        </button>
+                        {entry.source === "unreadable" ? (
+                          <Badge tone="destructive">
+                            <IconAlertTriangle className="size-3" /> {t("overview.unreadable")}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {entry.coordinator ? <CoordinatorLine line={entry.coordinator} /> : null}
+                      {entry.problem ? <p className="mt-1 text-ui-xs text-destructive">{entry.problem}</p> : null}
+                    </div>
+                    <div className="cta-row shrink-0 flex-nowrap">
+                      <WaitingCell entry={entry} onOpen={() => void openWaiting(entry)} />
+                      <IconButton
+                        label={detailsOpen ? t("overview.details.hide") : t("overview.details.show")}
+                        icon={<IconChevronDown className={cn("transition-transform", detailsOpen && "rotate-180")} />}
+                        size="icon"
+                        aria-expanded={detailsOpen}
+                        data-testid="overview-details-toggle"
+                        onClick={() => toggle(entry.id)}
+                      />
+                    </div>
+                  </div>
+                  {detailsOpen ? (
+                    <div className="mt-4 pl-12" data-testid="overview-details">
+                      <p className="flex flex-wrap items-center gap-2 text-ui-sm text-muted-foreground">
+                        {entry.attention ? <Badge tone={ATTENTION[entry.attention].tone}>{t(ATTENTION[entry.attention].label)}</Badge> : null}
+                        {entry.reasons.length ? entry.reasons.join(", ") : entry.source === "live" || entry.source === "saved" ? t("overview.nothingReasons") : null}
+                      </p>
+                      {ci ? (
+                        <p className={cn("mt-2 text-ui-xs", entry.ci?.failing ? "text-destructive" : "text-muted-foreground")} data-testid="overview-ci">
+                          {ci}
+                        </p>
+                      ) : null}
+                      <p className="mt-2 text-ui-xs text-muted-foreground/70">{sourceLabel(t, entry)}</p>
+                      {entry.goals.length ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {entry.goals.map((goal) => (
+                            <button
+                              key={goal.id}
+                              type="button"
+                              onClick={() => {
+                                openGoalOf(entry.id, goal.id);
+                                if (app.project?.id !== entry.id) void act("project:open", { path: entry.path });
+                              }}
+                              className="inline-flex min-h-8 max-w-full items-center gap-2 rounded-lg border border-[color:var(--color-border)] px-3 text-ui-sm text-foreground/90 hover:bg-[var(--sidebar-accent)]"
+                            >
+                              <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
+                              <span className="truncate">{goal.title}</span>
+                              {goal.status === "proposed" ? <span className="text-muted-foreground"><Sep />{t("overview.goal.proposed")}</span> : null}
+                            </button>
+                          ))}
+                        </div>
                       ) : null}
                     </div>
-                    {entry.coordinator ? <CoordinatorLine line={entry.coordinator} /> : null}
-                  </div>
-                  <WaitingCell entry={entry} onOpen={() => void openWaiting(entry)} />
-                </div>
-                <div className="mt-1.5 pl-11">
-                  <p className="text-ui-sm text-muted-foreground">
-                    {entry.reasons.length ? entry.reasons.join(", ") : entry.source === "live" || entry.source === "saved" ? "Niente in attesa" : null}
-                  </p>
-                  {entry.problem ? <p className="mt-1 text-ui-xs text-destructive">{entry.problem}</p> : null}
-                  {ciLabel(t, entry.ci) ? (
-                    <p className={`mt-1 text-ui-xs ${entry.ci?.failing ? "text-destructive" : "text-muted-foreground"}`} data-testid="overview-ci">
-                      {ciLabel(t, entry.ci)}
-                    </p>
                   ) : null}
-                  <p className="mt-1 text-ui-xs text-muted-foreground/70">{sourceLabel(entry)}</p>
-                  {entry.goals.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {entry.goals.map((goal) => (
-                        <button
-                          key={goal.id}
-                          type="button"
-                          onClick={() => {
-                            openGoalOf(entry.id, goal.id);
-                            if (app.project?.id !== entry.id) void act("project:open", { path: entry.path });
-                          }}
-                          className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[color:var(--color-border)] px-2 py-0.5 text-ui-sm text-foreground/90 hover:bg-[var(--sidebar-accent)]"
-                        >
-                          <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
-                          <span className="truncate">{goal.title}</span>
-                          {goal.status === "proposed" ? <span className="text-muted-foreground"><Sep />proposto</span> : null}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
         {entries?.length ? <PrioritySection entries={entries} capacity={capacity} /> : null}
       </div>
     </div>
+  );
+}
+
+export function OverviewView() {
+  // The one filled button of the window is the one of Aspetta te (ADR 0018): a primary here is drawn as an outline.
+  return (
+    <FilledScope allowed={false}>
+      <OverviewBody />
+    </FilledScope>
   );
 }
 
@@ -224,12 +277,12 @@ function WaitingCell({ entry, onOpen }: { entry: ProjectOverview; onOpen: () => 
   const t = useT();
   const { count, first } = entry.waiting;
   if (!count || !first) {
-    return <span className="mt-0.5 shrink-0 text-ui-sm text-muted-foreground">{t("overview.nothingWaiting")}</span>;
+    return <span className="flex h-8 shrink-0 items-center text-ui-sm text-muted-foreground">{t("overview.nothingWaiting")}</span>;
   }
   return (
     <button
       type="button"
-      className="flex max-w-[45%] min-w-0 shrink-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-sm text-foreground hover:bg-[var(--sidebar-accent)]"
+      className="flex h-8 max-w-64 min-w-0 shrink items-center gap-2 rounded-md px-2 text-ui-sm text-foreground hover:bg-[var(--sidebar-accent)]"
       aria-label={t("overview.openWaiting", { title: first.title })}
       title={first.title}
       onClick={onOpen}
@@ -238,7 +291,7 @@ function WaitingCell({ entry, onOpen }: { entry: ProjectOverview; onOpen: () => 
       <IconHourglass className="size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
       <span className="min-w-0 truncate">{first.label}</span>
       <span
-        className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-[var(--color-text-accent)] px-1 text-[10px] font-semibold text-[var(--color-background-surface)]"
+        className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-[var(--color-text-accent)] px-1 text-ui-xs font-semibold text-[var(--color-background-surface)]"
         aria-label={t("overview.waitingCount", { count })}
         data-testid="overview-waiting-count"
       >
@@ -273,12 +326,8 @@ function PrioritySection({ entries, capacity }: { entries: ProjectOverview[]; ca
             <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.name}</span>
             {entry.waitingForCapacity ? <Badge tone="info">{t("overview.priority.waitingBadge", { count: entry.waitingForCapacity })}</Badge> : null}
             <div className="cta-row shrink-0">
-              <Button size="icon-xs" variant="ghost" disabled={index === ranked.length - 1} onClick={() => move(entry, "down")} aria-label={t("overview.priority.down", { name: entry.name })}>
-                <IconChevronDown />
-              </Button>
-              <Button size="icon-xs" variant="ghost" disabled={index === 0} onClick={() => move(entry, "up")} aria-label={t("overview.priority.up", { name: entry.name })}>
-                <IconChevronUp />
-              </Button>
+              <IconButton label={t("overview.priority.down", { name: entry.name })} icon={<IconChevronDown />} size="icon" disabled={index === ranked.length - 1} onClick={() => move(entry, "down")} />
+              <IconButton label={t("overview.priority.up", { name: entry.name })} icon={<IconChevronUp />} size="icon" disabled={index === 0} onClick={() => move(entry, "up")} />
             </div>
           </li>
         ))}
