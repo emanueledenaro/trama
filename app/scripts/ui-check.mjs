@@ -428,6 +428,26 @@ const primaryLast = async (row, where) => {
   const lastRow = Math.max(...buttons.map((b) => b.top));
   if (primary[0].top !== lastRow || buttons.some((b) => b.top === lastRow && b.right > primary[0].right)) throw new Error(`${where}: the primary action is not last`);
 };
+// Design rules for Lavoro: an action that only opens or navigates is an icon (no text, an accessible name and a tooltip
+// on hover) with at least 32 px of use area; an action that starts work is an icon and a text; none is a filled button.
+const expectIconOnly = async (button, where) => {
+  const info = await button.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return { text: node.innerText.trim(), icon: Boolean(node.querySelector("svg")), label: node.getAttribute("aria-label"), width: box.width, height: box.height, filled: node.dataset.filled };
+  });
+  if (info.text || !info.icon || !info.label) throw new Error(`${where}: not an icon with an accessible name: ${JSON.stringify(info)}`);
+  if (info.width < 32 || info.height < 32) throw new Error(`${where}: the icon's use area is ${info.width}x${info.height}, under 32 px`);
+  await button.hover();
+  await page.locator(".translucent-popup").filter({ hasText: info.label }).first().waitFor({ timeout: 5_000 }).catch(() => {
+    throw new Error(`${where}: no tooltip on hover`);
+  });
+  await page.mouse.move(0, 0);
+};
+const expectIconAndText = async (button, where) => {
+  const info = await button.evaluate((node) => ({ text: node.innerText.trim(), icon: Boolean(node.querySelector("svg")), variant: node.dataset.variant, filled: node.dataset.filled }));
+  if (!info.text || !info.icon) throw new Error(`${where}: not an icon with a text: ${JSON.stringify(info)}`);
+  if (info.variant === "destructive") throw new Error(`${where}: a red button outside a confirmation`);
+};
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
@@ -3665,6 +3685,13 @@ const issuesPanel = page.getByTestId("side-bar");
 await issuesPanel.getByTestId("work-issue").filter({ hasText: "Il pulsante Annulla non fa niente" }).getByText("nessun lavoro").waitFor({ timeout: 30_000 });
 await issuesPanel.getByRole("button", { name: /Il pulsante Annulla non fa niente/ }).click({ timeout: 30_000 });
 // Issue #336: the issue opens in its editor tab.
+{
+  // Design rules: Apri su GitHub is an icon, Chiedi has icon and text, and the primary of the row stays last.
+  const issueActions = detailPane().and(page.locator('[data-kind="issue"]')).locator(".cta-row");
+  await expectIconOnly(issueActions.getByRole("button", { name: "Apri su GitHub" }), "Issue, Apri su GitHub");
+  await expectIconAndText(issueActions.getByRole("button", { name: "Chiedi al Coordinatore", exact: true }), "Issue, Chiedi");
+  await primaryLast(issueActions, "Issue");
+}
 await detailPane().and(page.locator('[data-kind="issue"]')).getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
 await expectAsked("@issue:7 «Il pulsante Annulla non fa niente»", "Issue, Chiedi al Coordinatore");
 if (await page.getByRole("button", { name: "Invia al Coordinatore" }).isDisabled()) throw new Error("The question about the issue cannot be sent");
@@ -6088,6 +6115,7 @@ if (await workBranch.getByTestId("work-divergence-files").count()) throw new Err
 await workBranch.getByRole("button", { name: "Mostra i 18 file in conflitto" }).click();
 await workBranch.getByTestId("work-divergence-files").getByText("app/checkout/pagamenti-18.ts").waitFor();
 await workBranch.locator(".cta-row").getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).waitFor();
+await expectIconAndText(workBranch.locator(".cta-row").getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }), "Lavoro, Chiedi come riallineare");
 const ownPull = workView.getByTestId("work-pull").filter({ hasText: "#42 Spese di spedizione per zona" });
 await ownPull.getByText(/Bozza · CI in corso/).waitFor({ timeout: 20_000 });
 if ((await ownPull.getByRole("button", { name: "Apri su GitHub" }).innerText()).trim()) throw new Error("Lavoro: Apri su GitHub is not an icon");
