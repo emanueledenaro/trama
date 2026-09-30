@@ -120,6 +120,49 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
         <p className="mt-2 text-ui text-foreground/90">{t("chat.plan.seamsIntro")}</p>
       ) : null}
 
+      {/* What to do comes right after the summary and before the long detail (principi.md): the decision, then the slices it may wait on. */}
+      {sections ? (
+        <>
+      {editing ? (
+        <SpecEditor plan={plan} sections={sections} onClose={() => setEditing(false)} />
+      ) : plan.status === "ready" || plan.status === "stale" ? (
+        <div className="cta-row mt-3">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            {t("chat.plan.correctSpec")}
+          </Button>
+          {connected && !spec.issue && plan.status === "ready" ? (
+            <Button size="sm" variant="outline" onClick={() => void act("plan:publish", { planId: plan.id })}>
+              {t("chat.plan.publish")}
+            </Button>
+          ) : null}
+          {/* A spec written before M05 has no slices yet: the person can have it split, or approve it as a whole. */}
+          {!plan.slicing && plan.status === "ready" ? (
+            <Button size="sm" variant="outline" onClick={() => void act("plan:slice", { planId: plan.id })}>
+              {t("chat.plan.slice")}
+            </Button>
+          ) : null}
+          {!plan.slicing ? (
+            <Button
+              size="sm"
+              disabled={plan.status === "stale"}
+              onClick={() =>
+                void act("coordinator:send", {
+                  text: t("chat.plan.approveMessage", { id: plan.id }),
+                  moduleId: null,
+                  model: null,
+                  effort: null,
+                })
+              }
+            >
+              {t("chat.plan.approve")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+          <PlanSlices plan={plan} />
+        </>
+      ) : null}
+
       <Section label={t("chat.plan.seams")}>
         <div className="space-y-1.5">
           {spec.seams.map((seam) => (
@@ -221,43 +264,6 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
             {spec.publishFailure ? <span className="text-warning">{spec.publishFailure}</span> : null}
           </div>
 
-          {editing ? (
-            <SpecEditor plan={plan} sections={sections} onClose={() => setEditing(false)} />
-          ) : plan.status === "ready" || plan.status === "stale" ? (
-            <div className="cta-row mt-3">
-              <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-                {t("chat.plan.correctSpec")}
-              </Button>
-              {connected && !spec.issue && plan.status === "ready" ? (
-                <Button size="sm" variant="outline" onClick={() => void act("plan:publish", { planId: plan.id })}>
-                  {t("chat.plan.publish")}
-                </Button>
-              ) : null}
-              {/* A spec written before M05 has no slices yet: the person can have it split, or approve it as a whole. */}
-              {!plan.slicing && plan.status === "ready" ? (
-                <Button size="sm" variant="outline" onClick={() => void act("plan:slice", { planId: plan.id })}>
-                  {t("chat.plan.slice")}
-                </Button>
-              ) : null}
-              {!plan.slicing ? (
-                <Button
-                  size="sm"
-                  disabled={plan.status === "stale"}
-                  onClick={() =>
-                    void act("coordinator:send", {
-                      text: t("chat.plan.approveMessage", { id: plan.id }),
-                      moduleId: null,
-                      model: null,
-                      effort: null,
-                    })
-                  }
-                >
-                  {t("chat.plan.approve")}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-          <PlanSlices plan={plan} />
         </>
       ) : null}
     </div>
