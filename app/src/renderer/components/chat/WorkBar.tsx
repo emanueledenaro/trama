@@ -132,9 +132,12 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
                 <IconHourglass className="size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={1.8} />
                 <span className="min-w-0 truncate">
                   <span className="font-medium text-foreground">{first.label}</span>
-                  <Sep />
-                  <span className="text-muted-foreground">
-                    <ReferenceText text={first.title} />
+                  {/* The item's title needs room to be read: in a narrow window "C…" says nothing, so the label and Decidi stay. */}
+                  <span className="hidden @min-[560px]/chat:inline">
+                    <Sep />
+                    <span className="text-muted-foreground">
+                      <ReferenceText text={first.title} />
+                    </span>
                   </span>
                 </span>
               </span>
