@@ -218,7 +218,7 @@ function OverviewBody() {
                                 openGoalOf(entry.id, goal.id);
                                 if (app.project?.id !== entry.id) void act("project:open", { path: entry.path });
                               }}
-                              className="inline-flex min-h-8 max-w-full items-center gap-2 rounded-lg border border-[color:var(--color-border)] px-3 text-ui-sm text-foreground/90 hover:bg-[var(--sidebar-accent)]"
+                              className="inline-flex min-h-8 max-w-full items-center gap-2 rounded-lg border border-[color:var(--color-border)] px-4 text-ui-sm text-foreground/90 hover:bg-[var(--sidebar-accent)]"
                             >
                               <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
                               <span className="truncate">{goal.title}</span>
