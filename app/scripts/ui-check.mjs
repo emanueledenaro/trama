@@ -2698,11 +2698,74 @@ await openView("Lavoro");
   }
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 }
+// Design rules for the candidate's page (issue #314), from the top: the work in words, the outcome with its actions under it,
+// the files and the diff (closed), the screenshots only when the interface changes, the proof, the history. No state badge
+// repeats the outcome, no box sits in another box, nothing is filled, clickable things are 32 px, spacing is on the 16 px grid.
+const candidatePageRules = async (label, { interfaceChange = false, diffOpen = false } = {}) => {
+  const root = detailPane().getByTestId("candidate-detail");
+  await root.waitFor();
+  if (interfaceChange) await root.locator('[data-testid="candidate-shots"] [data-testid="interface-shot"] img').nth(3).waitFor({ timeout: 30_000 });
+  const facts = await root.evaluate((node) => {
+    const top = (selector) => node.querySelector(selector)?.getBoundingClientRect().top ?? null;
+    const toMerge = node.querySelector('[data-testid="candidate-to-merge"]');
+    const row = toMerge?.querySelector(".cta-row");
+    const buttons = row ? [...row.querySelectorAll("button")] : [];
+    const summary = node.querySelector('[data-testid="candidate-diff"] summary');
+    const padding = (id) => {
+      const style = getComputedStyle(node.querySelector(`[data-testid="${id}"]`));
+      return `${style.paddingLeft} ${style.paddingTop}`;
+    };
+    return {
+      order: ["h2", '[data-testid="candidate-to-merge"]', '[data-testid="candidate-diff"]', '[data-testid="candidate-proof"]', '[data-testid="candidate-history"]'].map(top),
+      outcome: node.querySelector('[data-testid="candidate-outcome"]')?.textContent.trim() ?? null,
+      dataOutcome: toMerge?.getAttribute("data-outcome") ?? null,
+      header: node.querySelector('[data-testid="candidate-header"]')?.textContent ?? "",
+      filled: node.querySelectorAll('button[data-variant="default"]:not([data-filled="false"])').length,
+      // The actions, the diff line, the pull request link and the examination's actions; the inline references of the chat card's components keep their own size.
+      short: [...node.querySelectorAll('[data-testid="candidate-actions"] button, [data-testid="candidate-diff"] summary, [data-testid="candidate-pull-request"], [data-testid="focus-audit"] .cta-row button')].map((b) => Math.round(b.getBoundingClientRect().height)).filter((h) => h < 32),
+      boxes: node.querySelectorAll(".chat-card").length,
+      radius: toMerge ? getComputedStyle(toMerge).borderRadius : null,
+      padding: [padding("candidate-proof"), padding("candidate-history")],
+      diffOpen: node.querySelector('[data-testid="candidate-diff"]').hasAttribute("open"),
+      diffRow: summary ? Math.round(summary.getBoundingClientRect().height) : 0,
+      diffText: summary?.textContent.trim() ?? "",
+      passedRows: node.querySelectorAll('[data-testid="candidate-proof"] [data-testid="candidate-evidence"][data-result="pass"]').length,
+      reviews: node.querySelectorAll('[data-testid="technical-review"], [data-testid="candidate-reviewers-none"]').length,
+      shots: node.querySelectorAll('[data-testid="candidate-shots"]').length,
+      historyLabels: [...node.querySelectorAll('[data-testid="candidate-history"] .w-32')].map((n) => n.textContent.trim()),
+      actions: row ? { right: Math.round(row.getBoundingClientRect().right - buttons.at(-1).getBoundingClientRect().right), labels: buttons.map((b) => b.textContent.trim()) } : null,
+      prose: `${toMerge?.textContent ?? ""} ${node.querySelector('[data-testid="candidate-history"]')?.textContent ?? ""}`,
+    };
+  });
+  const fail = (what) => {
+    throw new Error(`Candidate page (${label}): ${what}: ${JSON.stringify(facts)}`);
+  };
+  if (facts.order.some((y) => y === null) || facts.order.some((y, i) => i && y <= facts.order[i - 1])) fail("the parts are not in the order title, outcome, diff, proof, history");
+  if (!/^(Non è ancora pronto: (manca 1 cosa|mancano \d+ cose)|Pronto|Unito|Superato)$/.test(facts.outcome ?? "")) fail("the outcome is not one line of the vocabulary");
+  const outcomeOf = { Pronto: "ready", Unito: "merged", Superato: "superseded" };
+  if (facts.dataOutcome !== (outcomeOf[facts.outcome] ?? "missing")) fail("the outcome and its state disagree");
+  if (/Pronto|Unito|Superato|Non è ancora pronto/.test(facts.header)) fail("a state repeats the outcome in the header");
+  if (facts.filled) fail("a button is filled");
+  if (facts.short.length) fail("a clickable part is under 32 px");
+  if (facts.boxes || facts.radius !== "0px") fail("a box sits inside another");
+  if (facts.padding.some((value) => value !== "16px 16px")) fail("the blocks are not on the 16 px grid");
+  if (facts.diffOpen !== diffOpen) fail(diffOpen ? "the diff is closed" : "the diff is not closed");
+  if (facts.diffRow < 32 || !/^Diff catturato da Trama, \d+ file$/.test(facts.diffText)) fail("the files row is not the diff's 32 px line");
+  if (facts.passedRows) fail("a passed check shows as a row, not in the one line");
+  if (facts.reviews !== 1) fail("the reviewers are neither an opinion nor one line");
+  if (facts.shots !== (interfaceChange ? 1 : 0)) fail("the screenshots do not follow the interface change");
+  if (!facts.historyLabels.includes("Versione") || !facts.historyLabels.includes("Incarico")) fail("the history lacks the version or the assignment");
+  if (facts.actions && facts.actions.right > 4) fail("the actions are not on the right");
+  if (interfaceChange && (facts.actions?.labels.at(-1) !== "Approva e unisci" || !facts.actions.labels.includes("Rifiuta") || facts.actions.labels.includes("Approva questo candidato"))) fail("an interface candidate does not end with Approva e unisci");
+  if (/[–—]/.test(facts.prose)) fail("a dash in the outcome or the history");
+};
 await page.getByTestId("side-bar").locator('button[data-record-id^="C-"]').first().click();
 // Issue #336: the candidate opens in its editor tab: what is missing to merge it on top, the diff closed below.
 await detailPane().getByText(/^Diff catturato da Trama/).waitFor();
 await detailPane().getByTestId("candidate-to-merge").waitFor();
 if (await detailPane().getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
+await candidatePageRules("verified candidate");
+await shot("04i-candidate-page");
 // Opening the same candidate again brings back its tab.
 await page.getByTestId("side-bar").locator('button[data-record-id^="C-"]').first().click();
 if ((await page.locator('[data-testid="editor-tab"][data-tab^="detail:candidate:"]').count()) !== 1) throw new Error("The same candidate opened a second tab");
@@ -7397,6 +7460,11 @@ await page.setViewportSize({ width: 900, height: 820 });
 await styledItem.locator('[data-testid="interface-shots"]').evaluate((node) => node.scrollIntoView({ block: "center" }));
 await themeShots("30b2-interface-candidate-narrow");
 await page.setViewportSize({ width: 1280, height: 820 });
+// Its own page: the screenshots come from the interface change, and the person decides right under the outcome.
+await styledItem.getByRole("button", { name: "Apri il diff" }).click();
+await candidatePageRules("interface candidate", { interfaceChange: true, diffOpen: true });
+await themeShots("30b3-interface-candidate-page");
+await closeDetails();
 
 // The person refuses it with a reason: it leaves Aspetta te and the reason reaches the developer.
 await styledItem.getByRole("button", { name: "Rifiuta", exact: true }).click();

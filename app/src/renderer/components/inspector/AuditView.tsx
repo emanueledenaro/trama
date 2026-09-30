@@ -352,11 +352,11 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
     running || !candidate ? null : (
       <div className="cta-row">
         {audit?.status === "done" && linked && !audit.publication ? (
-          <Button size="xs" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+          <Button variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
             {t("audit.publication.publish")}
           </Button>
         ) : null}
-        <Button size="xs" variant="outline" onClick={() => startAudit(candidateId)}>
+        <Button variant="outline" onClick={() => startAudit(candidateId)}>
           {audit ? <IconRotateClockwise /> : <IconFocus2 />}
           {audit ? t("audit.again") : t("audit.start")}
         </Button>
@@ -364,15 +364,19 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
     );
   if (!audit) {
     return (
-      <InspectorSection title={t("audit.title")} aside={action}>
+      <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-4 last:border-b-0">
+        <div className="mb-2 flex min-h-8 items-center gap-2">
+          <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
+          {action}
+        </div>
         <EmptyNote>{t("audit.none")}</EmptyNote>
-      </InspectorSection>
+      </section>
     );
   }
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
     <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-4 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex min-h-8 items-center gap-2">
         <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
         {action}
       </div>
