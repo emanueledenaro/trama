@@ -2229,8 +2229,12 @@ await shot("09-mandate");
         if (!rowBox || rowBox.height < 32) throw new Error("A decision row of the Patto is shorter than 32 px");
         if (await rulesBar.locator('button[data-variant="default"]:not([data-filled="false"])').count()) throw new Error("The Patto has a filled button");
         await newDecision.click();
-        const editorActions = await rulesBar.getByTestId("decision-editor").locator(".cta-row button").allInnerTexts();
-        if (editorActions.map((b) => b.trim()).join("|") !== "Annulla|Registra decisione") throw new Error(`Patto editor actions: ${editorActions.join(", ")}`);
+        // The primary moves to the right with CSS order, so the order on screen is read from the positions.
+        const editorActions = await rulesBar
+          .getByTestId("decision-editor")
+          .locator(".cta-row button")
+          .evaluateAll((els) => els.map((el) => ({ text: el.textContent?.trim(), left: el.getBoundingClientRect().left })).sort((x, y) => x.left - y.left).map((x) => x.text));
+        if (editorActions.join("|") !== "Annulla|Registra decisione") throw new Error(`Patto editor actions: ${editorActions.join(", ")}`);
         const editorPadding = await rulesBar.getByTestId("decision-editor").evaluate((el) => getComputedStyle(el).paddingLeft);
         if (editorPadding !== "16px") throw new Error(`The Patto editor padding is ${editorPadding}, not 16px`);
         await rulesBar.getByRole("button", { name: "Annulla", exact: true }).click();
