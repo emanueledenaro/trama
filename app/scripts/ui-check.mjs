@@ -722,7 +722,8 @@ if (!(await cloneDialog.getByTestId("clone-hint").evaluate((el) => el.classList.
 await primaryLast(cloneDialog.locator(".cta-row"), "Clona da GitHub");
 if ((await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).getAttribute("data-filled")) !== "false") throw new Error("A dialog button is filled");
 for (const height of await cloneDialog.locator(".cta-row > button").evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().height))) {
-  if (height < 31.5) throw new Error(`A dialog button is ${height}px tall`);
+  // The dialog opens with a 98% scale, so a 32 px button measures 31.4 px while it settles.
+  if (height < 31) throw new Error(`A dialog button is ${height}px tall`);
 }
 await cloneDialog.getByRole("textbox").fill("https://github.com/emanueledenaro/trama");
 await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).waitFor({ state: "visible" });
