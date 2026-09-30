@@ -1463,10 +1463,11 @@ if ((await colorGroup.getAttribute("aria-labelledby")) === null) throw new Error
 await shot("04e4a-agent-look-panel");
 await agentPanel.getByRole("radio", { name: "Rame" }).click();
 await agentPanel.locator('[role="radio"][aria-checked="true"]').filter({ hasText: "Rame" }).waitFor({ timeout: 20_000 });
-const chips = await colorGroup.getByRole("radio").evaluateAll((all) => all.map((el) => ({ text: el.innerText.trim(), dot: Boolean(el.querySelector("span")), width: getComputedStyle(el).borderTopWidth, height: el.getBoundingClientRect().height, checked: el.getAttribute("aria-checked") })));
-if (chips.some((chip) => !chip.text || !chip.dot || chip.height < 32)) throw new Error(`A color chip lacks its dot, its written name or 32 px: ${JSON.stringify(chips)}`);
-const marked = chips.filter((chip) => chip.checked === "true");
-if (marked.length !== 1 || parseFloat(marked[0].width) < 2 || chips.filter((chip) => chip.checked !== "true").some((chip) => parseFloat(chip.width) >= 2)) throw new Error(`Only the chosen color has the marked border: ${JSON.stringify(chips)}`);
+const chips = await colorGroup.getByRole("radio").evaluateAll((all) => all.map((el) => ({ text: el.innerText.trim(), dot: Boolean(el.querySelector("span")), width: parseFloat(getComputedStyle(el).borderTopWidth), color: getComputedStyle(el).borderTopColor, height: el.getBoundingClientRect().height, checked: el.getAttribute("aria-checked") })));
+if (chips.some((chip) => !chip.text || !chip.dot || chip.height < 32 || chip.width < 2)) throw new Error(`A color chip lacks its dot, its written name, 32 px or a 2 px border: ${JSON.stringify(chips)}`);
+// Only the chosen color has its own border color.
+const chosenChips = chips.filter((chip) => chip.checked === "true");
+if (chosenChips.length !== 1 || chips.filter((chip) => chip.color === chosenChips[0].color).length !== 1) throw new Error(`Only the chosen color has the marked border: ${JSON.stringify(chips)}`);
 await agentPanel.getByTestId("agent-settings-saved").getByText("Salvato").waitFor();
 await shot("04e4-team-color");
 // The panel closes with its X, with Escape and with the gear again, and it opens again on the saved color.

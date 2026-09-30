@@ -21,7 +21,7 @@ const providerLabel = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.na
 const nameKey = (name: string) => name.trim().toLocaleLowerCase("it").replace(/\s+/g, " ");
 
 const SETTING_PILL =
-  "inline-flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-[color:var(--color-border-light)] px-2.5 text-ui-sm text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)]";
+  "inline-flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg border border-[color:var(--color-border-light)] px-4 text-ui-sm text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)]";
 
 /**
  * The model of an agent's next assignments (issue #455): the person's choice wins over the Coordinator's pick; when
@@ -140,7 +140,7 @@ export function AgentSettingsPanel({ specialist, id, onClose }: { specialist: Sp
         <span role="status" aria-live="polite" className="flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="agent-settings-saved">
           {saved ? (
             <>
-              <IconCheck className="size-3.5 text-success" stroke={1.8} /> {t("teams.settings.saved")}
+              <IconCheck className="size-4 text-success" stroke={1.8} /> {t("teams.settings.saved")}
             </>
           ) : null}
         </span>
@@ -266,9 +266,9 @@ function ColorChoice({ specialist, save }: { specialist: Specialist; save: Save 
               data-testid="agent-color"
               tabIndex={selected ? 0 : -1}
               className={cn(
-                "agent-identity inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-2 text-ui-sm transition-colors",
+                "agent-identity inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border-2 px-2 text-ui-sm transition-colors",
                 selected
-                  ? "border-2 border-[color:var(--agent)] px-[7px] font-medium text-foreground"
+                  ? "border-[color:var(--agent)] font-medium text-foreground"
                   : "border-[color:var(--color-border-light)] text-[var(--color-text-foreground-secondary)] hover:border-[color:var(--agent)] hover:text-foreground",
               )}
               style={agentStyle({ color: entry.color })}

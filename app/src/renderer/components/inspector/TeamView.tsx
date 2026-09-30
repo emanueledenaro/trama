@@ -662,7 +662,7 @@ function AgentBriefRows({ specialist }: { specialist: Specialist }) {
   const project = useUi((s) => s.app?.project)!;
   const brief = agentBrief(t, project.document, project.candidateReports, specialist);
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-ui-sm" data-testid="specialist-brief" data-sign={brief.sign}>
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-ui-sm" data-testid="specialist-brief" data-sign={brief.sign}>
       {brief.blocker ? (
         <>
           <dt className="text-muted-foreground">{t("teams.brief.blocker")}</dt>
