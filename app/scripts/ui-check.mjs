@@ -864,6 +864,13 @@ await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// Design rules: the study's fold control is an icon button with a name and a tooltip, at least 32 px to hit.
+{
+  const studyToggle = page.locator('[data-anchor="study"]').first().getByRole("button", { name: "Comprimi", exact: true });
+  const studyBox = await studyToggle.boundingBox();
+  if (!studyBox || studyBox.width < 32 || studyBox.height < 32) throw new Error(`The study's fold control is under 32 px: ${JSON.stringify(studyBox)}`);
+  if ((await studyToggle.innerText()).trim() !== "" || (await studyToggle.getAttribute("aria-expanded")) !== "true") throw new Error("The study's fold control is not an icon button that says it is open");
+}
 // Design rules, chat: the icon-only copy buttons of the timeline have a tooltip as well as a name, and a turn of work
 // is 16 px above the next block (16, 24 or 32 between blocks).
 {
@@ -5011,6 +5018,10 @@ const routeBefore = skipRoute && startRoute && (startRoute.y > skipRoute.y + ski
 if (!skipRoute || !startRoute || !routeBox || !routeBefore || routeBox.x + routeBox.width - (startRoute.x + startRoute.width) > 20) {
   throw new Error("Ask Trama route: Non avviare and Avvia il percorso are not on the right, primary last");
 }
+// Design rules: the answer sits under the situation, above the steps it may run; Avvia il percorso starts work, so it has an icon.
+const routeFirstStep = await routeCard.locator("ol li").first().boundingBox();
+if (!routeFirstStep || !startRoute || startRoute.y > routeFirstStep.y) throw new Error("Ask Trama route: the answer is below the steps");
+if (!(await routeCard.getByRole("button", { name: "Avvia il percorso" }).locator("svg").count())) throw new Error("Ask Trama route: Avvia il percorso has no icon");
 await routeCard.scrollIntoViewIfNeeded();
 await shot("21a-ask-trama-route");
 const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
