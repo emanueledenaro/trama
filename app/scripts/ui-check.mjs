@@ -116,6 +116,17 @@ const activityBar = () => page.getByRole("navigation", { name: "Viste" });
 // two "Rinomina" items (issue #460). A menu opens once the previous one is gone, and its items are looked for inside
 // the one open menu. `page` changes at every launch, so the locator is built on each call.
 const openMenus = () => page.getByRole("menu");
+// Design of 30 September: the parts of a form or card are 16 px apart, on the 8 px grid.
+const partGaps = (box) => box.evaluate((el) => [...el.children].slice(1).map((child, i) => Math.round(child.getBoundingClientRect().top - el.children[i].getBoundingClientRect().bottom)));
+const expectGaps = async (name, box) => {
+  const gaps = await partGaps(box);
+  if (!gaps.length || gaps.some((gap) => gap < 16)) throw new Error(`${name}: the parts are not 16 px apart: ${gaps}`);
+};
+// The check rows of a form are at least 32 px tall, so they are easy to hit.
+const expectRowsTall = async (name, rows) => {
+  const heights = await rows.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+  if (!heights.length || heights.some((height) => height < 32)) throw new Error(`${name}: a row is under 32 px: ${heights}`);
+};
 const openMenu = async (trigger) => {
   await openMenus().first().waitFor({ state: "hidden" });
   await trigger.click();
@@ -1325,6 +1336,10 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
   const sharedToggle = teamPanel.getByTestId("shared-roles-toggle");
   if ((await sharedToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The shared roles are not closed at first");
   if (!/^Ruoli condivisi\s*\d+/.test((await sharedToggle.innerText()).trim())) throw new Error("The shared roles do not show their count");
+  // Design of 30 September, Squads list: the blocks have 16 px above and below (the 8 px grid) and a closed section's row is 32 px.
+  const blockPads = await teamPanel.locator('[data-testid="squad"], [data-testid="squads-summary"]').evaluateAll((els) => els.flatMap((el) => [getComputedStyle(el).paddingTop, getComputedStyle(el).paddingBottom]));
+  if (!blockPads.length || blockPads.some((pad) => pad !== "16px")) throw new Error(`The blocks of the Squads view are not 16 px apart: ${blockPads}`);
+  if ((await sharedToggle.boundingBox()).height < 32) throw new Error("The row of a closed section is under 32 px");
   const person = teamPanel.getByTestId("team-developer").first();
   for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
     await page.setViewportSize({ width, height });
@@ -4651,6 +4666,13 @@ if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a s
   const backlog = squadsBar.getByTestId("squad-backlog").nth(backlogIndex);
   await backlog.getByTestId("squad-backlog-toggle").getByText("Backlog, 2 voci").waitFor();
   await backlog.getByTestId("squad-backlog-toggle").click();
+  // Moving an item is an icon: it has its tooltip, as well as its name.
+  {
+    const moveDown = backlog.getByTestId("backlog-item").first().getByRole("button", { name: /^Sposta giù / });
+    await moveDown.hover();
+    await page.locator(".translucent-popup").getByText(/^Sposta giù /).waitFor();
+    await page.mouse.move(0, 0);
+  }
   const backlogKeys = () => backlog.getByTestId("backlog-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-key")?.split(":").at(-1)));
   if ((await backlogKeys()).join() !== "S2,S3") throw new Error(`The backlog is not in the Coordinator's order: ${await backlogKeys()}`);
   for (const item of await backlog.getByTestId("backlog-item").all()) {
@@ -7759,6 +7781,7 @@ await renameSquadForm.getByLabel("Nome della squadra").fill("catalogo");
 await renameSquadForm.getByText("C'è già una squadra che si chiama catalogo.").waitFor();
 if (await renameSquadForm.getByRole("button", { name: "Rinomina" }).isEnabled()) throw new Error("A squad can take another squad's name");
 await renameSquadForm.getByLabel("Nome della squadra").fill("Ordini e pagamenti");
+await expectGaps("Rename a squad", renameSquadForm);
 const renameSquadButtons = await renameSquadForm.locator(".cta-row button").allTextContents();
 if (renameSquadButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not the last call to action: ${renameSquadButtons}`);
 await themeShots("51c-squad-rename");
@@ -7771,6 +7794,8 @@ const mergeForm = squadsSide.getByTestId("merge-squad");
 await mergeForm.getByText("Insieme sono 4 sviluppatori e una squadra ne ha al massimo 3.", { exact: false }).waitFor();
 const kept = await mergeForm.getByTestId("squad-keep").locator("input:checked").count();
 if (kept !== 3) throw new Error(`The proposal keeps ${kept} developers, not 3`);
+await expectGaps("Merge squads", mergeForm);
+await expectRowsTall("Merge squads", mergeForm.getByTestId("squad-keep").locator("label"));
 await mergeForm.scrollIntoViewIfNeeded();
 {
   const look = await lookOf();
@@ -7818,6 +7843,7 @@ const mergeProposalCard = squadsSide.getByTestId("squad-merge-proposal");
 await mergeProposalCard.getByText("Hai chiesto al Coordinatore di unire Catalogo a Ordini e pagamenti.", { exact: false }).waitFor({ timeout: 20_000 });
 const squadProposalButtons = await mergeProposalCard.locator(".cta-row button").allTextContents();
 if (squadProposalButtons.at(-1)?.trim() !== "Unisci") throw new Error(`Merge is not the last call to action: ${squadProposalButtons}`);
+await expectGaps("The merge proposal", mergeProposalCard);
 await themeShots("51j-squad-merge-proposal");
 await mergeProposalCard.getByRole("button", { name: "Lascia com'è" }).click();
 await mergeProposalCard.waitFor({ state: "detached", timeout: 20_000 });
@@ -7828,6 +7854,8 @@ const splitForm = squadsSide.getByTestId("split-squad");
 await splitForm.getByTestId("split-areas").getByRole("checkbox", { name: "Payments" }).check();
 if (!(await splitForm.getByTestId("split-developers").getByRole("checkbox", { name: "Marta" }).isChecked())) throw new Error("The split does not propose the developer who knows the area");
 await splitForm.getByLabel("Nome della squadra nuova").fill("Pagamenti");
+await expectGaps("Split a squad", splitForm);
+await expectRowsTall("Split a squad", splitForm.locator('[data-testid="split-areas"] label, [data-testid="split-developers"] label'));
 const splitButtons = await splitForm.locator(".cta-row button").allTextContents();
 if (splitButtons.at(-1)?.trim() !== "Dividi") throw new Error(`Split is not the last call to action: ${splitButtons}`);
 await splitForm.scrollIntoViewIfNeeded();
