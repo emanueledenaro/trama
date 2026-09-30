@@ -294,7 +294,14 @@ function ProviderList() {
               <ProviderIcon provider={id} className="size-4" />
               <span className="text-ui text-foreground">{provider.name}</span>
               {state?.checking ? <Spinner className="size-3" /> : null}
-              <span className="min-w-[6rem] flex-1 truncate text-ui-xs text-muted-foreground">{status.detail}</span>
+              {/* The provider's own words can be long: cut, whole in the tooltip. */}
+              {status.detail ? (
+                <Tooltip label={status.detail}>
+                  <span className="min-w-[6rem] flex-1 truncate text-ui-xs text-muted-foreground">{status.detail}</span>
+                </Tooltip>
+              ) : (
+                <span className="min-w-[6rem] flex-1" />
+              )}
               <Badge tone={status.tone}>{status.label}</Badge>
               {state?.account?.kind === "signedOut" ? (
                 <Button
@@ -323,7 +330,7 @@ function ProviderList() {
         type="button"
         aria-expanded={others}
         onClick={() => setOthers(!others)}
-        className="mt-1.5 inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground"
+        className="-ml-2 mt-2 inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-ui-sm text-muted-foreground hover:text-foreground"
       >
         {others ? t("welcome.onlyMainProviders") : t("welcome.otherProviders", { count: PROVIDERS.length - MAIN_PROVIDERS.length })}
         <IconChevronDown className={cn("size-3.5 transition-transform", others && "rotate-180")} stroke={1.8} />
@@ -345,7 +352,7 @@ function StepBody({ step }: { step: StepState }) {
   const setCloneAfterGitHub = useUi((s) => s.setCloneAfterGitHub);
   const setDialog = useUi((s) => s.setDialog);
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {STEP_LEAD[step.id as WelcomeStepId] ? <p className="text-ui-sm text-muted-foreground">{t(STEP_LEAD[step.id as WelcomeStepId]!)}</p> : null}
       {step.id === "provider" ? <ProviderList /> : null}
       {step.id === "github" && cloneWaiting ? (
@@ -378,11 +385,19 @@ function stepAction(t: ReturnType<typeof useT>, step: StepState): string {
   return step.id === "aiHero" ? t("welcome.action.open") : t("welcome.action.connect");
 }
 
+/**
+ * One step of Configura. A step done asks for nothing: a check, what Trama saw and a small "Cambia". A step to do
+ * says nothing about its state, its button says what to do; the state is written only when it is not that
+ * (checking, skipped, blocked). The provider, the step Trama needs, is the one with a text button; the other steps
+ * unfold with an icon.
+ */
 function StepLine({ step, open, primary, onToggle }: { step: StepState; open: boolean; primary: boolean; onToggle: () => void }) {
   const t = useT();
   const id = step.id as WelcomeStepId;
   const done = step.status === "done";
   const bodyId = `welcome-step-${id}`;
+  const label = stepAction(t, step);
+  const toggle = { "aria-expanded": open, "aria-controls": bodyId, onClick: onToggle };
   return (
     <li
       data-step={id}
@@ -390,7 +405,7 @@ function StepLine({ step, open, primary, onToggle }: { step: StepState; open: bo
       data-testid="welcome-step"
       className={cn("rounded-lg transition-colors", open && "bg-[var(--color-background-button-secondary)]")}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2">
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-2 px-2 py-2">
         <span className="flex size-4 shrink-0 items-center justify-center">
           <StepIcon status={step.status} index={WELCOME_ORDER[id]} current={open} />
         </span>
@@ -408,24 +423,23 @@ function StepLine({ step, open, primary, onToggle }: { step: StepState; open: bo
           <LanguageChoice />
         ) : (
           <>
-            <span className={cn("shrink-0 text-ui-xs", done ? "text-success" : "text-muted-foreground")} data-testid="welcome-step-status">
-              {stepStatusLabel(t, step.status)}
-            </span>
-            <Button
-              size="xs"
-              variant={primary ? "default" : "outline"}
-              aria-expanded={open}
-              aria-controls={bodyId}
-              onClick={onToggle}
-              className="min-w-[4.5rem]"
-            >
-              {stepAction(t, step)}
-            </Button>
+            {step.status !== "done" && step.status !== "pending" ? (
+              <span className="shrink-0 text-ui-xs text-muted-foreground" data-testid="welcome-step-status">
+                {stepStatusLabel(t, step.status)}
+              </span>
+            ) : null}
+            {id === "provider" && !done ? (
+              <Button variant={primary ? "default" : "outline"} className="min-w-[4.5rem]" {...toggle}>
+                {label}
+              </Button>
+            ) : (
+              <IconButton label={label} icon={<IconChevronDown className={cn("transition-transform", open && "rotate-180")} />} size="icon" {...toggle} />
+            )}
           </>
         )}
       </div>
       {open && id !== "language" ? (
-        <div id={bodyId} className="px-2 pb-3 pl-9">
+        <div id={bodyId} className="px-2 pb-4 pl-9">
           <StepBody step={step} />
         </div>
       ) : null}
@@ -437,13 +451,15 @@ const WELCOME_ORDER: Record<WelcomeStepId, number> = { language: 0, provider: 1,
 
 function SetupBlock({ steps, open, setOpen }: { steps: StepState[]; open: WelcomeStepId | null; setOpen: (id: WelcomeStepId | null) => void }) {
   const t = useT();
+  const app = useUi((s) => s.app)!;
   const done = steps.filter((s) => s.status === "done").length;
   const providerPending = steps.find((s) => s.id === "provider")?.status !== "done";
   return (
     <Block
       id="setup"
       title={t("welcome.setup.title")}
-      aside={<span className="text-ui-xs text-muted-foreground">{t("welcome.setup.count", { done, total: steps.length })}</span>}
+      // Once everything is set the header says so: the count would say it twice.
+      aside={isAllSet(app) ? null : <span className="text-ui-xs text-muted-foreground">{t("welcome.setup.count", { done, total: steps.length })}</span>}
     >
       <ol className="space-y-0.5" aria-label={t("welcome.stepsLabel")}>
         {steps.map((step) => (
