@@ -522,6 +522,18 @@ const setTheme = async (theme) => {
 // Progetti and Impostazioni. It has four blocks: Inizia, Recenti, Configura and Impara.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.getByRole("heading", { name: block, exact: true }).waitFor();
+// Design rules: without recents Inizia comes first, and with reduced motion the page enters without animating.
+{
+  const order = await page.evaluate(() => ({
+    recent: document.querySelector('[data-testid="welcome-recent"]').getBoundingClientRect().top,
+    start: document.querySelector('[data-testid="welcome-start"]').getBoundingClientRect().top,
+  }));
+  if (order.start > order.recent) throw new Error(`Without recents, Inizia is not above Recenti: ${JSON.stringify(order)}`);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const entrance = await welcome.evaluate((node) => getComputedStyle(node).animationName);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  if (entrance !== "none") throw new Error(`The Benvenuto animates its entrance with reduced motion: ${entrance}`);
+}
 if (await page.getByRole("button", { name: "Chiudi Benvenuto", exact: true }).count()) throw new Error("The Benvenuto can be closed without a project");
 const barViews = await activityBar().getByRole("button").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
 if (barViews.join("|") !== "Progetti|Impostazioni") throw new Error(`Without a project the activity bar shows more than Progetti and Impostazioni: ${barViews}`);
@@ -5005,6 +5017,20 @@ if (await page.getByTestId("launch-intro").count()) throw new Error("The launch 
 await page.evaluate(() => window.trama.invoke("project:close", undefined));
 const recentPicker = page.getByTestId("welcome").getByTestId("welcome-recent");
 await recentPicker.waitFor();
+// Design rules, order by importance: who comes back finds Recenti above Inizia, in the same column, wide and narrow.
+{
+  const above = () =>
+    page.evaluate(() => {
+      const top = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? null;
+      return { recent: top("welcome-recent"), start: top("welcome-start") };
+    });
+  for (const [size, width, height] of sizes) {
+    await page.setViewportSize({ width, height });
+    const order = await above();
+    if (order.recent === null || order.start === null || order.recent >= order.start) throw new Error(`With recents, Recenti is not above Inizia ${size}: ${JSON.stringify(order)}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
 await recentPicker.getByTestId("recent-project").filter({ hasText: /collega attivo|colleghi attivi/ }).first().waitFor({ timeout: 20_000 });
 if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played again without a first launch");
 if ((await recentPicker.getByTestId("recent-project").count()) > 5) throw new Error("Recenti lists more than five projects");
