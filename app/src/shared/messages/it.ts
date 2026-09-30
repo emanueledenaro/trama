@@ -443,6 +443,7 @@ export const it = {
   "focus.start.cancel": "Annulla",
   "focus.start.submit": "Avvia l'esame",
   "focus.summary": "Sintesi",
+  "focus.verdict": "Verdetto dell'esame",
   "focus.lens.report": "Rapporto della lente {lens}",
   "focus.column.progress": "Avanzamento",
   "focus.column.findings": "Rilievi",
@@ -854,6 +855,8 @@ export const it = {
   "architecture.strength.speculative": "ipotesi",
   // Memory view (issue #335)
   "memory.title": "Cosa ricorda il Coordinatore",
+  "memory.intro.toggle": "Cos'è questa memoria",
+  "memory.loading": "Sto caricando la memoria del progetto.",
   "memory.intro":
     "Note sul progetto, un profilo di come lavori e le procedure che funzionano, dette skill. Tutto resta nella cartella di Trama, mai nel repository, e qui puoi correggere o togliere ogni cosa. Sono note del Coordinatore: le decisioni restano quelle del Patto.",
   "memory.waiting": "{count} proposte aspettano te: {what}",
