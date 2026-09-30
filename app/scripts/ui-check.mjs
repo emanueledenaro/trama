@@ -1049,12 +1049,24 @@ await setTheme("system");
   await view.waitFor();
   const how = view.getByTestId("waiting-view-how");
   if ((await how.getAttribute("aria-expanded")) !== "false") throw new Error("Aspetta te explains itself before the person asks");
+  // ADR 0018: "Come funziona" is a secondary action, so an icon button with its name as tooltip and aria-label, and a
+  // target of at least 32 px. One question in the summary: how many wait; the order and the way it works stay folded.
+  if ((await how.getAttribute("data-icon-button")) === null || (await how.getAttribute("aria-label")) !== "Come funziona" || (await how.innerText()).trim()) {
+    throw new Error("Come funziona in Aspetta te is not an icon button with a name");
+  }
+  const howBox = await how.boundingBox();
+  if (!howBox || howBox.width < 32 || howBox.height < 32) throw new Error(`Come funziona in Aspetta te is ${howBox?.width}x${howBox?.height} px, under 32`);
+  const summaryText = await view.getByTestId("waiting-view-summary").innerText();
+  if (!/cose aspettano te$/.test(summaryText.trim()) || summaryText.includes("In ordine") || summaryText.includes("Mentre aspetti")) throw new Error(`The summary of Aspetta te says more than the count: ${summaryText}`);
+  if (await view.getByTestId("waiting-view-write").count()) throw new Error("Aspetta te shows the empty action while things wait");
+  if ((await view.getAttribute("data-state")) !== "list") throw new Error(`Aspetta te is not in its list state: ${await view.getAttribute("data-state")}`);
   const openItem = view.locator('[data-testid="waiting-item"][data-open="true"]');
   await openItem.getByTestId("waiting-open-card").waitFor();
   if (await openItem.locator(":scope > div.rounded-xl").count()) throw new Error("The open item of Aspetta te wraps its card in a second frame");
   await page.getByTestId("side-bar-header").getByRole("button", { name: "Allarga la barra laterale" }).click();
   await how.click();
   await view.getByText("Mentre aspetti, il Coordinatore lavora sul resto.", { exact: false }).waitFor();
+  await view.getByText("Sono in ordine di quanto lavoro fermano.", { exact: false }).waitFor();
   await themeShots("31e-waiting-view-side-bar-wide");
   await how.click();
   await page.getByTestId("side-bar-header").getByRole("button", { name: "Larghezza normale" }).click();
@@ -1073,6 +1085,9 @@ await setTheme("system");
   await openView("Regole", "Patto");
   const pactPointer = page.getByTestId("side-bar").getByTestId("waiting-pointer").filter({ hasText: "La domanda aspetta te" }).first();
   await pactPointer.waitFor();
+  // The line that stands for a proposal is one click target of at least 32 px, whole row.
+  const pointerBox = await pactPointer.boundingBox();
+  if (!pointerBox || pointerBox.height < 32) throw new Error(`The pointer to Aspetta te is ${pointerBox?.height} px high, under 32`);
   if (await page.getByTestId("side-bar").getByRole("button", { name: "Registra la decisione" }).count()) throw new Error("Patto still answers the question");
   await themeShots("31c-waiting-pointer-pact");
   await pactPointer.click();
@@ -1626,6 +1641,21 @@ await shot("04e9-bots-chat-light");
   await decided.waitFor();
   const toggle = decided.getByRole("button", { name: /^Decise oggi/ });
   if ((await toggle.getAttribute("aria-expanded")) !== "false" || (await decided.getByTestId("waiting-decided-item").count())) throw new Error("Decise oggi is open before the person opens it");
+  // One state at a time: a list with its count, or, with nothing waiting, one message and the way back to the conversation.
+  const waitingView = page.getByTestId("waiting-view");
+  const waitingState = await waitingView.getAttribute("data-state");
+  const summary = await waitingView.getByTestId("waiting-view-summary").innerText();
+  if (waitingState === "empty") {
+    if (!summary.includes("Niente aspetta te") || summary.includes("Nessuna domanda")) throw new Error(`The empty Aspetta te repeats itself: ${summary}`);
+    const write = waitingView.getByTestId("waiting-view-write");
+    await write.waitFor();
+    if ((await write.getAttribute("data-variant")) === "default") throw new Error("The empty Aspetta te has a filled button");
+    if (await waitingView.getByTestId("waiting-item").count()) throw new Error("The empty Aspetta te lists items");
+  } else if (waitingState === "list") {
+    if (await waitingView.getByTestId("waiting-view-write").count()) throw new Error("Aspetta te shows the empty action while things wait");
+  } else {
+    throw new Error(`Aspetta te is still ${waitingState} with the project open`);
+  }
   await toggle.click();
   await decided.getByTestId("waiting-decided-item").filter({ hasText: "Cosa succede a un ordine pagato annullato?" }).filter({ hasText: "Risposta data" }).waitFor();
   await decided.scrollIntoViewIfNeeded();
