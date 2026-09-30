@@ -2,6 +2,8 @@ import { IconExternalLink } from "@tabler/icons-react";
 import type { ActiveProjectState } from "@shared/domain";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useT } from "@/lib/i18n";
 import { openReference } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
@@ -11,13 +13,17 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 const CHECKS = { success: "Verifiche passate", failure: "Verifiche fallite", pending: "Verifiche in corso", none: "Nessuna verifica" } as const;
 const REVIEW = { approved: "Approvata", changesRequested: "Modifiche richieste", commented: "Commentata", none: null } as const;
 
+/** Opening the record on GitHub is a way out of the view: an icon with its tooltip, not the view's main action. */
 function OnGitHub({ url }: { url: string | null }) {
+  const t = useT();
   if (!url) return null;
   return (
     <div className="cta-row mt-3">
-      <Button size="sm" onClick={() => void act("shell:openExternal", { url })}>
-        <IconExternalLink stroke={1.8} /> Apri su GitHub
-      </Button>
+      <Tooltip label={t("work.branches.openOnGitHub")}>
+        <Button size="icon" variant="ghost" aria-label={t("work.branches.openOnGitHub")} onClick={() => void act("shell:openExternal", { url })}>
+          <IconExternalLink stroke={1.8} />
+        </Button>
+      </Tooltip>
     </div>
   );
 }

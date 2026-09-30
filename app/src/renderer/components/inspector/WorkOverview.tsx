@@ -431,8 +431,8 @@ function ProjectBranch() {
             </div>
           ) : null}
           <div className="cta-row">
-            <Button size="xs" variant="outline" onClick={() => askCoordinator(divergenceQuestion(t, divergence))}>
-              {t("divergence.ask")}
+            <Button size="xs" variant="outline" aria-label={t("divergence.ask")} onClick={() => askCoordinator(divergenceQuestion(t, divergence))}>
+              <IconMessageCircle stroke={1.8} /> {t("teams.person.ask")}
             </Button>
           </div>
         </div>
@@ -522,6 +522,11 @@ function Branches() {
               <IconMessageCircle stroke={1.8} /> {t("work.branches.askImpact")}
             </Button>
           </div>
+          {!snapshot && github.status === "unavailable" ? (
+            <p role="alert" className="px-2 text-ui text-destructive" data-testid="work-github-error">
+              {github.message ?? t("work.branches.error")}
+            </p>
+          ) : null}
           {snapshot ? (
             <>
               {snapshot.pullRequests.length ? (
@@ -694,8 +699,19 @@ function Issues({ creating, onCreated, filter: chosen, onFilter }: { creating: b
         <ProblemBacklog />
       ) : github.status === "unavailable" ? (
         <div className="px-2">
-          <EmptyNote>{github.message}</EmptyNote>
+          {/* With a remote, an unavailable GitHub is a failed reading: the system red. Without one it only says so. */}
+          {github.repository ? (
+            <p role="alert" className="text-ui text-destructive" data-testid="work-issues-error">
+              {github.message ?? t("work.issues.error")}
+            </p>
+          ) : (
+            <EmptyNote>{github.message}</EmptyNote>
+          )}
         </div>
+      ) : github.status === "loading" && !github.issues.length ? (
+        <p className="flex items-center gap-2 px-2 text-ui text-muted-foreground" role="status" data-testid="work-issues-loading">
+          <Spinner /> {t("work.issues.loading")}
+        </p>
       ) : (
         <>
           {!list.length ? (
