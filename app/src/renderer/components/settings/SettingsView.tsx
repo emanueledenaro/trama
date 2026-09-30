@@ -193,7 +193,7 @@ function GeneralSection() {
                   aria-checked={theme === option.value}
                   onClick={() => void act("settings:update", { theme: option.value })}
                   className={cn(
-                    "flex h-8 items-center gap-2 rounded-md px-3 text-ui-sm transition-colors",
+                    "flex h-8 items-center gap-2 rounded-md px-4 text-ui-sm transition-colors",
                     theme === option.value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
