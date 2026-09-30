@@ -7029,6 +7029,20 @@ await app.close();
   await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).and(page.locator('[aria-checked="true"]')).waitFor();
   await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
   await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
+  // Design rules: the dialog's clickable parts are at least 32 px high, and its primary is the last button on the right.
+  {
+    const parts = await focusStart.evaluate((dialog) => {
+      const buttons = [...dialog.querySelectorAll("button")].filter(
+        (node) => node.closest('[data-testid="focus-start"]') || ["Annulla", "Avvia l'esame"].some((name) => node.textContent.includes(name)),
+      );
+      const submit = buttons.find((node) => node.textContent.includes("Avvia l'esame"));
+      return { heights: buttons.map((node) => Math.round(node.getBoundingClientRect().height)), submitVariant: submit?.getAttribute("data-variant") };
+    });
+    if (parts.heights.some((h) => h < 32)) throw new Error(`A focus start button is under 32 px: ${parts.heights}`);
+    if (parts.submitVariant !== "default") throw new Error(`Avvia l'esame is not the primary action: ${JSON.stringify(parts)}`);
+    const [cancel, submit] = [await focusStart.getByRole("button", { name: "Annulla" }).boundingBox(), await focusStart.getByRole("button", { name: "Avvia l'esame" }).boundingBox()];
+    if (!cancel || !submit || submit.x < cancel.x) throw new Error("The primary of the focus start dialog is not last on the right");
+  }
   await focusStart.getByLabel("Punto fisso").fill("release-9");
   await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
   await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
@@ -7049,6 +7063,35 @@ await app.close();
   await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito del modulo Orders").waitFor();
   await focusView.getByTestId("focus-mode-notifications").getByText("Notifiche in pausa").waitFor();
   await lastAction(focusView.locator("header .cta-row"), "Esci dall'esame");
+  // Design rules for focus mode: the verdict is one block between the header and the columns, the exit is an icon with its
+  // name, nothing is filled, the actions are 32 px high, and no box sits inside another box.
+  {
+    const verdict = focusView.getByTestId("focus-audit-verdict");
+    await verdict.getByTestId("focus-audit-status").getByText("Esame concluso").waitFor();
+    const [header, verdictBox, columns] = [await focusView.locator("header").boundingBox(), await verdict.boundingBox(), await focusView.getByTestId("focus-columns").boundingBox()];
+    if (!header || !verdictBox || !columns || verdictBox.y < header.y + header.height - 1 || verdictBox.y + verdictBox.height > columns.y + 1) throw new Error("The verdict is not between the header and the columns");
+    if (verdictBox.height > 96) throw new Error(`The verdict is ${verdictBox.height} px high, not a line and its summary`);
+    const facts = await focusView.evaluate((root) => {
+      const exit = root.querySelector('header [aria-label="Esci dall\'esame"]');
+      const headerButtons = [...root.querySelectorAll("header button")];
+      return {
+        exitText: exit?.textContent.trim() ?? null,
+        exitLabel: exit?.getAttribute("aria-label") ?? null,
+        filled: [...root.querySelectorAll('button[data-variant="default"]')].filter((node) => node.getAttribute("data-filled") !== "false").length,
+        short: headerButtons.map((node) => Math.round(node.getBoundingClientRect().height)).filter((h) => h < 32),
+        boxes: root.querySelectorAll(".chat-card").length,
+        padding: ["header", '[data-testid="focus-audit-verdict"]'].map((selector) => getComputedStyle(root.querySelector(selector)).paddingLeft),
+      };
+    });
+    if (facts.exitLabel !== "Esci dall'esame" || facts.exitText !== "") throw new Error(`The exit is not an icon with its name: ${JSON.stringify(facts)}`);
+    if (facts.filled) throw new Error(`Focus mode has ${facts.filled} filled buttons`);
+    if (facts.short.length) throw new Error(`A focus mode action is under 32 px: ${facts.short}`);
+    if (facts.boxes) throw new Error(`Focus mode has ${facts.boxes} boxes inside its own frame`);
+    if (facts.padding.some((value) => value !== "16px")) throw new Error(`The header and the verdict are not on the 16 px grid: ${facts.padding}`);
+    // The state of the selected finding is in its row, not repeated in the proof.
+    if (await focusView.getByTestId("focus-proof").getByText("Verificato da Trama", { exact: true }).count()) throw new Error("The proof repeats the state of the finding");
+    if (/[–—]/.test(await verdict.innerText())) throw new Error("A dash in the verdict");
+  }
   // The examination takes the editor area with its tabs; the window's activity bar and status bar stay (issue #330).
   if (await page.getByTestId("editor-area").count()) throw new Error("Focus mode leaves the editor tabs in view");
   for (const bar of ["activity-bar", "status-bar"]) {
