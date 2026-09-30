@@ -583,14 +583,14 @@ export function WelcomeView() {
           <header className="flex items-center gap-4">
             <WelcomeMark play={intro} />
             <div className="min-w-0">
-              <h1 className="font-display text-[30px] leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-[34px]">
+              <h1 className="font-display text-3xl leading-[1.1] font-normal tracking-[-0.015em] text-foreground @min-[900px]/welcome:text-4xl">
                 {t("welcome.title")}
               </h1>
-              <p className="mt-1.5 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
+              <p className="mt-2 text-ui-lg text-muted-foreground">{t("welcome.tagline")}</p>
             </div>
           </header>
           {allSet ? (
-            <p className="mt-5 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
+            <p className="mt-6 flex items-center gap-2 text-ui text-foreground" data-testid="welcome-all-set">
               <IconCircleCheck className="size-4 text-success" stroke={1.8} aria-hidden />
               <span className="font-medium">{t("welcome.allSet.title")}</span>
               <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
