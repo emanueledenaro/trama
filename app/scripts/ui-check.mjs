@@ -417,6 +417,26 @@ const primaryLast = async (row, where) => {
   const lastRow = Math.max(...buttons.map((b) => b.top));
   if (primary[0].top !== lastRow || buttons.some((b) => b.top === lastRow && b.right > primary[0].right)) throw new Error(`${where}: the primary action is not last`);
 };
+// Design rules for Lavoro: an action that only opens or navigates is an icon (no text, an accessible name and a tooltip
+// on hover) with at least 32 px of use area; an action that starts work is an icon and a text; none is a filled button.
+const expectIconOnly = async (button, where) => {
+  const info = await button.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return { text: node.innerText.trim(), icon: Boolean(node.querySelector("svg")), label: node.getAttribute("aria-label"), width: box.width, height: box.height, filled: node.dataset.filled };
+  });
+  if (info.text || !info.icon || !info.label) throw new Error(`${where}: not an icon with an accessible name: ${JSON.stringify(info)}`);
+  if (info.width < 32 || info.height < 32) throw new Error(`${where}: the icon's use area is ${info.width}x${info.height}, under 32 px`);
+  await button.hover();
+  await page.locator(".translucent-popup").filter({ hasText: info.label }).first().waitFor({ timeout: 5_000 }).catch(() => {
+    throw new Error(`${where}: no tooltip on hover`);
+  });
+  await page.mouse.move(0, 0);
+};
+const expectIconAndText = async (button, where) => {
+  const info = await button.evaluate((node) => ({ text: node.innerText.trim(), icon: Boolean(node.querySelector("svg")), variant: node.dataset.variant, filled: node.dataset.filled }));
+  if (!info.text || !info.icon) throw new Error(`${where}: not an icon with a text: ${JSON.stringify(info)}`);
+  if (info.variant === "destructive") throw new Error(`${where}: a red button outside a confirmation`);
+};
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
@@ -2526,6 +2546,9 @@ if ((await archivedRow.getByTestId("goal-state").allTextContents()).join("|") !=
 await shot("14e-goal-archived");
 await inspectorPanel.getByRole("button", { name: new RegExp(goalTitle) }).click();
 // Issue #336: the goal opens in its editor tab.
+// Design rules: editing the expected result is an icon; an archived goal offers Ripristina as text and no Archivia.
+await expectIconOnly(detailPane().getByRole("button", { name: "Modifica", exact: true }), "Obiettivo, Modifica");
+if (await detailPane().getByRole("button", { name: "Archivia", exact: true }).count()) throw new Error("An archived goal offers Archivia");
 await detailPane().getByRole("button", { name: "Ripristina" }).click();
 await openView("Progetti");
 await page.getByTestId("sidebar-goal").filter({ hasText: goalTitle }).waitFor();
