@@ -86,7 +86,7 @@ function GoalExamplesSection({ candidateId }: { candidateId: string }) {
               </Badge>
               <span className="min-w-0 flex-1 text-foreground/90">{example.text}</span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-ui-sm">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
               {current ? (
                 <span className={current.observed ? "text-success" : "text-destructive"}>
                   {current.observed ? "Osservato" : "Non osservato"} su questa versione<Sep />{formatRelativeTime(current.at)}
@@ -250,7 +250,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
           <span className="min-w-0 flex-1">{t("candidate.diff", { count: candidate.changedFiles.length })}</span>
           <IconFileDiff className="size-4 shrink-0" stroke={1.8} aria-hidden />
         </summary>
-        <pre className="mb-4 overflow-x-auto rounded-xl bg-[var(--app-chat-code-surface)] py-2 font-mono text-[11px] leading-[1.55]">
+        <pre className="mb-4 overflow-x-auto rounded-xl bg-[var(--app-chat-code-surface)] py-2 font-mono text-ui-xs leading-[1.55]">
           {candidate.diff.split("\n").map((line, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no identity beyond their position.
             <div key={index} className={cn("px-4 whitespace-pre", lineClass(line))}>
@@ -265,7 +265,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
             {(report.interfaceFiles ?? []).map((path, index) => (
               <span key={path}>
                 {index ? ", " : null}
-                <span className="font-mono text-[11.5px]">{path}</span>
+                <span className="font-mono text-ui-xs">{path}</span>
               </span>
             ))}
           </p>
@@ -282,7 +282,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
         ) : null}
         {passed.length ? (
           <p className="flex items-start gap-2 text-ui-sm text-muted-foreground" data-testid="candidate-checks-passed">
-            <IconCircleCheck className="mt-0.5 size-3.5 shrink-0 text-success" />
+            <IconCircleCheck className="mt-0.5 size-4 shrink-0 text-success" />
             {t("candidate.checks.passed", { count: passed.length, names: passed.map((c) => checkName(t, c.check)).join(", ") })}
           </p>
         ) : null}
@@ -315,7 +315,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
       </div>
       <Block title={t("candidate.history")} testId="candidate-history">
         <HistoryRow label={t("candidate.history.version")}>
-          <span className="font-mono text-[11.5px]" title={candidate.snapshotId}>
+          <span className="font-mono text-ui-xs" title={candidate.snapshotId}>
             {candidate.snapshotId.slice(0, 12)}
           </span>
         </HistoryRow>
@@ -338,7 +338,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
               className="inline-flex min-h-8 items-center gap-2 text-[var(--color-text-accent)] hover:underline"
               onClick={() => void act("shell:openExternal", { url: candidate.pullRequest!.url })}
             >
-              <IconGitPullRequest className="size-3.5" /> {t("chat.card.candidate.pullRequest", { number: String(candidate.pullRequest.number) })}
+              <IconGitPullRequest className="size-4" /> {t("chat.card.candidate.pullRequest", { number: String(candidate.pullRequest.number) })}
             </button>
           </HistoryRow>
         ) : null}

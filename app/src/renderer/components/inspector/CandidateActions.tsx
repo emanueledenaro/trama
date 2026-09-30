@@ -95,7 +95,7 @@ export function CandidateActions({
           <p className="font-medium text-foreground" data-testid="pull-request-title">
             {preview.title}
           </p>
-          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--app-chat-code-surface)] px-2 py-2 font-mono text-[11px] text-foreground/85" data-testid="commit-message">
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--app-chat-code-surface)] px-2 py-2 font-mono text-ui-xs text-foreground/85" data-testid="commit-message">
             {preview.message}
           </pre>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>

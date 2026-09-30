@@ -43,11 +43,11 @@ export function QualityField({ items }: { items: QualityItem[] }) {
       <ul className="space-y-1" data-testid="candidate-quality" data-ready={missing ? "no" : "yes"}>
         {items.map((item) => (
           <li key={item.code} data-testid="quality-item" data-code={item.code} data-passed={item.passed ? "yes" : "no"} className="text-ui-sm">
-            <div className="flex items-start gap-1.5">
-              {item.passed ? <IconCircleCheck className="mt-0.5 size-3.5 shrink-0 text-success" /> : <IconCircleX className="mt-0.5 size-3.5 shrink-0 text-destructive" />}
+            <div className="flex items-start gap-2">
+              {item.passed ? <IconCircleCheck className="mt-0.5 size-4 shrink-0 text-success" /> : <IconCircleX className="mt-0.5 size-4 shrink-0 text-destructive" />}
               <span className="min-w-0">
                 <span className="text-foreground">{t(QUALITY_LABEL[item.code])}</span>
-                <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
+                <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-ui-xs")}>
                   <Sep />
                   {item.code === "COMMIT_MESSAGE" ? item.detail : <ReferenceText text={item.detail} />}
                 </span>
@@ -124,7 +124,7 @@ export function TechnicalReviewField({ review }: { review: TechnicalReview }) {
         {/* With the candidate gate (W10) the summary is the gate's, shown figure by figure above. */}
         {review.gateId ? null : <p>{review.summary}</p>}
         {standard ? (
-          <div className="mt-1.5" data-testid="review-measures">
+          <div className="mt-2" data-testid="review-measures">
             <div className="text-ui-xs text-muted-foreground/70">
               {t("chat.card.review.measures", { version: standard.version, files: t("chat.card.files", { count: standard.filesMeasured }) })}
               <Sep />
@@ -134,7 +134,7 @@ export function TechnicalReviewField({ review }: { review: TechnicalReview }) {
               <ul className="space-y-0.5 text-ui-sm">
                 {standard.measures.map((m) => (
                   <li key={`${m.kind}-${m.file}-${m.line}`} data-testid="review-measure" data-kind={m.kind} className="break-words">
-                    <span className="font-mono text-[11.5px]">
+                    <span className="font-mono text-ui-xs">
                       {m.file}:{m.line}
                     </span>
                     <Sep />
@@ -148,15 +148,15 @@ export function TechnicalReviewField({ review }: { review: TechnicalReview }) {
           </div>
         ) : null}
         {review.findings !== undefined ? (
-          <div className="mt-1.5" data-testid="review-findings">
+          <div className="mt-2" data-testid="review-findings">
             <div className="text-ui-xs text-muted-foreground/70">{t("chat.card.review.findings")}</div>
             {findings.length ? (
               <ul className="space-y-1 text-ui-sm">
                 {findings.map((f) => (
                   <li key={`${f.file}-${f.line}-${f.message}`} data-testid="review-finding" data-severity={f.severity} className="break-words">
-                    <span className="mr-1.5 inline-flex items-center gap-1.5 align-middle">
+                    <span className="mr-2 inline-flex items-center gap-2 align-middle">
                       <Badge tone={f.severity === "blocking" ? "destructive" : "info"}>{f.severity === "blocking" ? t("chat.card.review.blocking") : t("chat.card.review.suggestion")}</Badge>
-                      <span className="font-mono text-[11.5px] text-foreground/90">
+                      <span className="font-mono text-ui-xs text-foreground/90">
                         {f.file}
                         {f.line ? `:${f.line}` : ""}
                       </span>
