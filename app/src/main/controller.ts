@@ -2375,6 +2375,7 @@ export class TramaController {
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
           decisionChanged: (id) => this.stopWorkDependingOn(id),
           updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
+          pauseWork: (paused) => this.pauseContinuousWork(paused, { fromTurn: true }),
           proposePractice: (input) => this.proposePractice(current, input),
           readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheckInTurn(current, check, current.runningRequestId),
@@ -3797,13 +3798,18 @@ export class TramaController {
    * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
    * is saved with the project and holds after a restart.
    */
-  async pauseContinuousWork(paused: boolean): Promise<void> {
+  async pauseContinuousWork(paused: boolean, options: { fromTurn?: boolean } = {}): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     if (!setPaused(project.document, paused, new Date().toISOString())) return;
     if (paused) {
       const retried = project.providerRetry ? project.document.requests.find((r) => r.id === project.providerRetry!.requestId) : null;
       if (retried?.step?.by === "trama") this.cancelProviderRetry(project);
+      // "Fermate tutto" stops the work that runs too: before, the pause only held new moves and the developers at work
+      // went on (logic review of 1 October 2026). Trama stops it for the Pause, which holds it; the resume takes it up.
+      const running = project.document.team.specialists.flatMap((s) => s.assignments).filter((a) => isActive(a));
+      for (const assignment of running) requestStop(project.document, assignment.specialistId, "trama", t("main.controller.stoppedByPause"));
+      for (const assignment of running) void this.stopAssignmentRuntime(assignment.id);
     }
     appendEvent(
       project.document,
@@ -3819,7 +3825,8 @@ export class TramaController {
     this.changedIn(project);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
-    if (!paused) await this.runRound();
+    // From the Coordinator's own turn the round follows that turn, never inside it.
+    if (!paused && !options.fromTurn) await this.runRound();
   }
 
   /** What GitHub said about the project at the last reading, to compare with the next one (A05); null before one. */

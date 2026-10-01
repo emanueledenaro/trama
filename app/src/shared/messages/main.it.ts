@@ -320,6 +320,7 @@ export const mainIt = {
   "main.controller.cloudStopUntracked":
     "Trama non segue più la sessione cloud. La sessione si ferma dalla sua pagina di Claude Code.",
   "main.controller.personActor": "Persona",
+  "main.controller.stoppedByPause": "Fermato con la Pausa: riparte quando riprendi.",
   "main.controller.stoppedByPerson": "Fermato dalla persona",
   "main.controller.noWorktreeToRemove":
     "L'incarico non ha un worktree da rimuovere.",

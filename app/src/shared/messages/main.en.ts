@@ -312,6 +312,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.cloudStopUntracked":
     "Trama no longer follows the cloud session. Stop the session from its Claude Code page.",
   "main.controller.personActor": "Person",
+  "main.controller.stoppedByPause": "Stopped by the Pause: it starts again when you resume.",
   "main.controller.stoppedByPerson": "Stopped by the person",
   "main.controller.noWorktreeToRemove":
     "The assignment has no working copy to remove.",

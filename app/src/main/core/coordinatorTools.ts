@@ -83,7 +83,7 @@ import type { PresenceView } from "@shared/presence";
 import { activeTerms, workLeftOut } from "@shared/mandate";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 import { ITALIAN } from "@shared/i18n";
-import { confirmByMessage, PersonRequestError, requestAction } from "./personRequest";
+import { confirmByMessage, PersonRequestError, requestAction, findPersonRequest } from "./personRequest";
 import { activeDelegation, DelegationError, grantDelegation, openProposedGoals, recordChoice, requireDelegation, revokeDelegation } from "./fullDelegation";
 import { answerDecisionRequest } from "./pact";
 import { updateGoal } from "./goals";
@@ -566,6 +566,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "pause_work",
+    description:
+      "Pause or resume all the project's work because the person asked in the composer (\"fermate tutto\", \"basta per oggi\", \"riprendete\"). With paused true Trama stops every work that runs, and nothing starts again, neither a round nor new work, until the person resumes; paused false resumes. Give quote, the person's own words typed in this project's composer. Use it instead of stopping the specialists one by one.",
+    properties: { paused: { type: "boolean" }, quote: text },
+    required: ["paused", "quote"],
+    readOnly: false,
+  },
+  {
     name: "stop_specialist",
     description:
       "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take a developer out of the team once its work has stopped (composeTeam); a fixed role stays. A stop is first requested and then confirmed when the provider ends the turn; work and history are kept. Say it in the conversation.",
@@ -865,6 +873,8 @@ export interface ToolContext {
   readPractices(): Promise<JsonObject>;
   /** Reports progress on a GitHub issue with evidence; throws on refused evidence or a GitHub error. */
   updateTicket(input: TicketUpdate): Promise<TicketUpdateResult>;
+  /** The person's Pause of the project's work, or its resume: as the button, it stops the work that runs. */
+  pauseWork?(paused: boolean): Promise<void>;
   /** Stops running work that relies on a decision that changed or is being revised; returns the stopped assignment ids. */
   decisionChanged(decisionId: string): string[];
   /** Interrupts the running turn of an assignment, or confirms the stop when none runs. */
@@ -2043,6 +2053,18 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
           const message = (error as Error).message;
           return toolFailure(error instanceof TicketRefusal ? error.code : "github_failed", message);
         }
+      }
+      case "pause_work": {
+        if (!context.pauseWork) return toolFailure("unavailable", "Trama cannot pause the work here.");
+        try {
+          findPersonRequest(document, typeof args.quote === "string" ? args.quote : "");
+        } catch (error) {
+          if (error instanceof PersonRequestError) return toolFailure(error.code, error.message);
+          throw error;
+        }
+        const paused = args.paused === true;
+        await context.pauseWork(paused);
+        return toolSuccess({ paused, note: paused ? "Every work that ran is stopped; nothing starts until the person resumes." : "The work goes on." });
       }
       case "stop_specialist": {
         const specialist = findSpecialist(document, typeof args.specialist === "string" ? args.specialist : "");
