@@ -191,7 +191,7 @@ describe("full delegation (issue #423)", () => {
     );
     expect(delegationLine(delegation, "en")).toMatch(/^From now on I do everything myself, even at night/);
     revokeDelegation(document, { kind: "view" }, new Date(LATER));
-    expect(delegationLine(delegation)).toBe("Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te.");
+    expect(delegationLine(delegation)).toBe("Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te. Il mandato resta quello allargato dalla delega: puoi restringerlo qui.");
     for (const line of [delegationLine(delegation), delegationLine(delegation, "en")]) expect(line).not.toMatch(/[–—]/);
     expect(keepsAwake([{ delegated: true, openWork: true, paused: false }])).toBe(true);
     expect(keepsAwake([{ delegated: true, openWork: false, paused: false }])).toBe(false);
