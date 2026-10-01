@@ -1,8 +1,10 @@
 import { IconAlertTriangle, IconCircleCheck, IconX } from "@/components/icons";
 import { useEffect } from "react";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 
 export function Toast() {
+  const t = useT();
   const toast = useUi((s) => s.toast);
   const appError = useUi((s) => s.app?.error ?? null);
   const setToast = useUi((s) => s.setToast);
@@ -22,15 +24,19 @@ export function Toast() {
     else void act("app:dismissError", undefined);
   };
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex justify-center px-4">
-      <div role={info ? "status" : "alert"} className="translucent-popup pointer-events-auto flex max-w-lg items-start gap-2.5 rounded-xl px-3.5 py-2.5 text-ui">
+    // Top right, under the 46 px title bar: at the bottom it lay over the composer's tools.
+    <div className="pointer-events-none fixed top-[54px] right-3 z-[70] flex w-[min(32rem,calc(100%-1.5rem))] justify-end">
+      <div
+        role={info ? "status" : "alert"}
+        className="translucent-popup pointer-events-auto flex max-h-[calc(100vh-86px)] min-w-0 max-w-full items-start gap-2.5 overflow-y-auto rounded-xl px-3.5 py-2.5 text-ui"
+      >
         {info ? (
           <IconCircleCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         ) : (
           <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
         )}
-        <span className="min-w-0 flex-1 text-foreground/90">{message}</span>
-        <button type="button" onClick={dismiss} className="sidebar-icon-button size-5 rounded-md" aria-label="Chiudi">
+        <span className="min-w-0 flex-1 break-words text-foreground/90">{message}</span>
+        <button type="button" onClick={dismiss} className="sidebar-icon-button size-5 shrink-0 rounded-md" aria-label={t("toast.close")}>
           <IconX className="size-3.5" />
         </button>
       </div>

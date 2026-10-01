@@ -1456,6 +1456,7 @@ export const it = {
   "panel.label": "Pannello",
   "panel.resize": "Altezza del pannello Attività",
   "panel.close": "Chiudi il pannello",
+  "toast.close": "Chiudi",
   "activity.title": "Attività",
   "activity.filter.who": "Chi",
   "activity.filter.whoAll": "Tutti",
