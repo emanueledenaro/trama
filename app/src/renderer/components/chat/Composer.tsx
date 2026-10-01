@@ -52,7 +52,7 @@ function readImage(file: File): Promise<DraftImage> {
 }
 
 const PILL =
-  "inline-flex h-7 min-w-0 shrink cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
+  "inline-flex h-7 min-w-0 shrink cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] @min-[560px]/chat:px-2.5";
 
 /** Images and pasted texts not yet sent, kept per project while the app runs (UX02). */
 const unsentByProject = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
@@ -398,7 +398,7 @@ export function Composer() {
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
             />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-1.5 pr-2 pb-1 pl-1.5 sm:flex-nowrap sm:gap-0">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 pr-2 pb-1 pl-1.5 @min-[560px]/chat:flex-nowrap @min-[560px]/chat:gap-0">
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <Tooltip label={t("chat.composer.attach")}>
                 <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label={t("chat.composer.attach")} onClick={() => fileInput.current?.click()}>

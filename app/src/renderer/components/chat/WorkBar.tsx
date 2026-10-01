@@ -75,7 +75,7 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
       className={cn(
         "min-w-0",
         // In a tab, a flat row of the tab's own with a line above: the tab's content scrolls above it, never under it.
-        onComposer ? "mx-auto w-full max-w-[var(--app-chat-max-width)]" : "shrink-0 border-t border-[color:var(--app-surface-divider)] px-3 py-1 sm:px-5",
+        onComposer ? "mx-auto w-full max-w-[var(--app-chat-max-width)]" : "shrink-0 border-t border-[color:var(--app-surface-divider)] px-3 py-1 @min-[560px]/chat:px-5",
       )}
       data-testid="work-bar-row"
       data-placement={placement}

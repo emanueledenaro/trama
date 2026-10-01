@@ -636,7 +636,7 @@ export function WelcomeView() {
         data-testid="welcome"
         data-all-set={allSet ? "true" : "false"}
       >
-        <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 sm:px-8 @min-[900px]/welcome:pt-12">
+        <div className="mx-auto w-full max-w-[60rem] px-4 pt-8 pb-12 @min-[560px]/welcome:px-8 @min-[900px]/welcome:pt-12">
           <header className="flex items-center gap-4">
             <WelcomeMark play={intro} />
             <div className="min-w-0">
