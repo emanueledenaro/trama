@@ -10,7 +10,7 @@ import {
   IconPencilPlus,
   IconArchive,
   IconTrash,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { agentPlace } from "@shared/workPlace";
 import { DeleteGoalDialog, setArchived } from "@/components/inspector/GoalsView";
 import { StatusDot } from "@/components/inspector/TeamView";

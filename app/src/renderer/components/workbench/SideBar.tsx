@@ -1,4 +1,4 @@
-import { IconArrowNarrowLeft, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@tabler/icons-react";
+import { IconArrowNarrowLeft, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@/components/icons";
 import { InspectorBody, InspectorTitle, targetTitle } from "@/components/inspector/Inspector";
 import { ProjectsView } from "@/components/sidebar/Sidebar";
 import { FilledScope } from "@/components/ui/button";

@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconTarget, IconTrash, IconChevronDown, IconCheck, IconPencil } from "@tabler/icons-react";
+import { IconTarget, IconTrash, IconChevronDown, IconCheck, IconPencil } from "@/components/icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";

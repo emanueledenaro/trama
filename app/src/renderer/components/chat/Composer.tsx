@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconArrowUp, IconPhotoPlus, IconRoute, IconX } from "@tabler/icons-react";
+import { IconArrowUp, IconPhotoPlus, IconRoute, IconX } from "@/components/icons";
 import type { ProviderId } from "@shared/codex";
 import { coordinatorDefaultModel } from "@shared/providers";
 import type { ImageAttachmentInput } from "@shared/ipc";

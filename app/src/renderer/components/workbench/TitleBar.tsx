@@ -5,14 +5,12 @@ import {
   IconChevronDown,
   IconFolderPlus,
   IconHome,
-  IconLayoutBottombar,
   IconLayoutList,
-  IconLayoutSidebar,
-  IconLayoutSidebarRight,
   IconPencilPlus,
-  IconRefresh,
   IconSearch,
-} from "@tabler/icons-react";
+} from "@/components/icons";
+import { useState } from "react";
+import { TramaIcon } from "@/components/brand/TramaIcon";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
@@ -132,6 +130,7 @@ function NavigationButtons() {
 export function TitleBar({ isMac }: { isMac: boolean }) {
   const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
+  const [refreshing, setRefreshing] = useState(false);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const activityOpen = useUi((s) => s.panelOpen);
   const toggleSidebar = useUi((s) => s.toggleSidebar);
@@ -175,15 +174,25 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
         {/* The goal filter is in the summary of Lavoro (issue #332); the exercises start from Impara in the Benvenuto (issue #354). */}
         {project ? (
           <Tooltip label={t("workbench.title.refresh")}>
-            <button type="button" className={ICON_BUTTON} aria-label={t("workbench.title.refresh")} onClick={() => void refreshProject()}>
-              <IconRefresh className="size-4" stroke={1.7} />
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              aria-label={t("workbench.title.refresh")}
+              aria-busy={refreshing || undefined}
+              disabled={refreshing}
+              onClick={() => {
+                setRefreshing(true);
+                void refreshProject().finally(() => setRefreshing(false));
+              }}
+            >
+              <TramaIcon animated name="refresh" busy={refreshing} className="size-4" />
             </button>
           </Tooltip>
         ) : null}
         {/* Issue #338: an icon's tooltip is its name, the same words a screen reader reads. */}
         <Tooltip label={t("workbench.sideBar.toggle")}>
           <button type="button" className={cn(ICON_BUTTON, sidebarOpen && HEADER_CHIP_ACTIVE)} aria-label={t("workbench.sideBar.toggle")} aria-pressed={sidebarOpen} onClick={toggleSidebar}>
-            <IconLayoutSidebar className="size-4" stroke={1.7} />
+            <TramaIcon animated name="sideBar" className="size-4" />
           </button>
         </Tooltip>
         {project ? (
@@ -196,7 +205,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
               aria-pressed={activityOpen}
               onClick={togglePanel}
             >
-              <IconLayoutBottombar className="size-4" stroke={1.7} />
+              <TramaIcon animated name="panel" className="size-4" />
             </button>
           </Tooltip>
         ) : null}
@@ -212,7 +221,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
               data-testid="split-editor-toggle"
               onClick={toggleSplitEditor}
             >
-              <IconLayoutSidebarRight className="size-4" stroke={1.7} />
+              <TramaIcon animated name="detailsBar" className="size-4" />
             </button>
           </Tooltip>
         ) : null}

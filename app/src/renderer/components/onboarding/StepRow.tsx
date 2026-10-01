@@ -1,4 +1,4 @@
-import { IconCircleCheck, IconLock, IconPlayerSkipForward } from "@tabler/icons-react";
+import { IconCircleCheck, IconLock, IconPlayerSkipForward } from "@/components/icons";
 import type { StepState, StepStatus } from "@shared/onboarding";
 import { Spinner } from "@/components/Spinner";
 import type { MessageKey, Translate } from "@shared/i18n";

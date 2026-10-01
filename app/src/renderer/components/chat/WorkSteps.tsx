@@ -8,7 +8,7 @@ import {
   IconShieldLock,
   IconTerminal2,
   IconTool,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useState } from "react";
 import { isReadOutsideScopeTitle } from "@shared/codex";
 import { readableFailure } from "@shared/providerFailure";

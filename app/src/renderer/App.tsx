@@ -201,7 +201,8 @@ export function App() {
                 onDragChange={sidebar.setResizing}
               />
             ) : null}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* The frame around the sheet: the gap around it keeps the frame's tint, not the glass behind. */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--app-activitybar-surface)]">
               {inFocus ? (
                 // Full-screen focus mode on a module or the project (F03) takes the editor area, tabs included, inside the
                 // window's bars and above the bottom panel, until the person leaves it.

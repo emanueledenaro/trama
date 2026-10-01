@@ -15,7 +15,7 @@ import {
   IconMessages,
   IconPinned,
   IconUsers,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useId, useRef, useState } from "react";
 import type { BacklogItem, BacklogReason, SquadBacklogView } from "@shared/backlog";
 import { isUsableAccount, type ProviderId } from "@shared/codex";

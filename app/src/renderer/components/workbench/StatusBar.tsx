@@ -10,7 +10,7 @@ import {
   IconPlayerTrackNext,
   IconRepeatOff,
   IconTarget,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
 import type { StatusLineAction, StatusLineView } from "@shared/domain";
 import { needsProvider, type WelcomeStepId, welcomeSteps } from "@shared/onboarding";

@@ -1,4 +1,4 @@
-import { IconAlertTriangle, IconCircleCheck, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCircleCheck, IconX } from "@/components/icons";
 import { useEffect } from "react";
 import { act, useUi } from "@/lib/store";
 

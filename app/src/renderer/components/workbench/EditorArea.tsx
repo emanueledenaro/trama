@@ -15,7 +15,7 @@ import {
   IconTarget,
   IconUser,
   IconX,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { MessageKey } from "@shared/i18n";
 import { ChatView } from "@/components/chat/ChatView";
@@ -266,7 +266,7 @@ export function EditorArea() {
     const mainTabs = tabs.filter((tab) => tab.kind !== "detail");
     const detailTabs = tabs.filter((tab) => tab.kind === "detail");
     return (
-      <div className="flex min-h-0 min-w-0 flex-1" data-testid="editor-area" data-split="true" data-active-detail={activeDetail ?? undefined}>
+      <div className="workbench-card flex min-h-0 min-w-0 flex-1" data-testid="editor-area" data-split="true" data-active-detail={activeDetail ?? undefined}>
         <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 flex-col overflow-hidden" data-testid="editor-main">
           <TabStrip tabs={mainTabs} conversation selected={main} label={label} />
           <ChatView />
@@ -299,7 +299,7 @@ export function EditorArea() {
 
   return (
     <main
-      className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 flex-col overflow-hidden"
+      className="workbench-card chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 flex-col overflow-hidden"
       data-testid="editor-area"
       data-split="false"
       data-active-detail={activeDetail ?? undefined}

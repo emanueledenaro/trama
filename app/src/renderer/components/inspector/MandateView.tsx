@@ -1,4 +1,4 @@
-import { IconBan, IconChevronRight, IconHourglass } from "@tabler/icons-react";
+import { IconBan, IconChevronRight, IconHourglass } from "@/components/icons";
 import { useEffect, useState } from "react";
 import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
 import { fixedBans } from "@shared/fixedBans";

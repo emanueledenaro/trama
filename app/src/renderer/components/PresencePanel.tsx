@@ -1,4 +1,4 @@
-import { IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
+import { IconPlayerPause, IconPlayerPlay } from "@/components/icons";
 import { presenceLines, type PresenceView } from "@shared/presence";
 import { SwitchArea } from "@/components/settings/SwitchArea";
 import { Button } from "@/components/ui/button";

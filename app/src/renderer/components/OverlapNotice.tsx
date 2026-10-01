@@ -1,4 +1,4 @@
-import { IconCopy, IconGitPullRequest, IconMessage } from "@tabler/icons-react";
+import { IconCopy, IconGitPullRequest, IconMessage } from "@/components/icons";
 import { useState } from "react";
 import { colleagueLabel, colleagueMessage, linesLabel, overlapLabel, type OverlapItem, type OverlapLevel, type OverlapMark, overlapSummary } from "@shared/overlap";
 import { Button } from "@/components/ui/button";

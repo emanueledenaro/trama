@@ -1,4 +1,4 @@
-import { IconLockOpen } from "@tabler/icons-react";
+import { IconLockOpen } from "@/components/icons";
 import { useState } from "react";
 import type { RequestedAction } from "@shared/domain";
 import type { MessageKey } from "@shared/i18n";

@@ -20,7 +20,7 @@ import {
   IconFocus2,
   IconLock,
   IconPlayerPlay,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { readableFailure } from "@shared/providerFailure";
 import {
   type AssignmentStatus,

@@ -1,4 +1,4 @@
-import { IconFocus2, IconRotateClockwise } from "@tabler/icons-react";
+import { IconFocus2, IconRotateClockwise } from "@/components/icons";
 import { plainText } from "@shared/plainLanguage";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
 import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";

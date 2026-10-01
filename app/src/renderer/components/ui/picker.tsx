@@ -1,5 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
-import { IconCheck, IconChevronDown, IconSearch } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconSearch } from "@/components/icons";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";

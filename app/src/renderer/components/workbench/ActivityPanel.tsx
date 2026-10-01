@@ -8,7 +8,7 @@ import {
   IconMessages,
   IconUsers,
   IconX,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/activity";
 import { projectGoals } from "@shared/goals";
@@ -583,7 +583,7 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       aria-label={t("panel.label")}
       data-testid="bottom-panel"
       className={cn(
-        "chat-content-card app-panel-surface relative flex shrink-0 flex-col border-t border-[color:var(--app-panel-border)] font-system-ui",
+        "workbench-card chat-content-card app-panel-surface relative flex shrink-0 flex-col font-system-ui",
         !size.resizing && "transition-[height] duration-200 ease-out",
       )}
       style={{ height: size.height }}

@@ -932,7 +932,7 @@ await shot("02-demo-study");
         .map(({ name, box }) => `${name}: ${Math.round(box.height)}`),
     );
     if (small.length) throw new Error(`The title bar has buttons under 32 px: ${small.join(", ")}`);
-    if (await page.locator('[data-testid="title-bar"] .tabler-icon-git-branch').count()) throw new Error("The title bar repeats the branch of the status bar");
+    if (await page.locator('[data-testid="title-bar"] .trama-woven-git-branch').count()) throw new Error("The title bar repeats the branch of the status bar");
   }
   const bars = await page.evaluate(() => ({
     title: document.querySelector('[data-testid="title-bar"]').getBoundingClientRect().height,
@@ -957,7 +957,7 @@ await shot("02-demo-study");
           const painted = svg.querySelector("path");
           const style = getComputedStyle(painted);
           return {
-            tabler: svg.classList.contains("tabler-icon-folders"),
+            icon: svg.dataset.tramaIcon ?? null,
             mark: svg.dataset.tramaMark ?? null,
             size: [Math.round(box.width), Math.round(box.height)],
             paint: painted.getAttribute("fill") === "currentColor" ? style.fill : style.stroke,
@@ -967,7 +967,7 @@ await shot("02-demo-study");
     const projects = await iconOf("Progetti");
     const coordinator = await iconOf("Coordinatore");
     const other = await iconOf("Memoria");
-    if (!projects.tabler || projects.size.join() !== other.size.join()) throw new Error(`The Projects icon is not the stacked folders at the icons' size: ${JSON.stringify(projects)}`);
+    if (projects.icon !== "projects" || projects.size.join() !== other.size.join()) throw new Error(`The Projects icon is not Trama's stacked folders at the icons' size: ${JSON.stringify(projects)}`);
     if (coordinator.mark !== "mono" || coordinator.size.join() !== other.size.join() || coordinator.paint !== coordinator.color) {
       throw new Error(`The Coordinator's icon is not Trama's mark in the button's color: ${JSON.stringify(coordinator)}`);
     }
@@ -1311,7 +1311,7 @@ await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
 await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
 await page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
 await shot("04-work-expanded");
-// Issue #337: Activity in the bottom panel, attached under the editor with a horizontal sash as in VS Code. It never
+// Issue #337: Activity in the bottom panel, under the editor with a horizontal sash as in VS Code. It never
 // covers the status bar, it leaves the conversation at least 380 px at 1280x800 and it follows the provider's theme.
 {
   const panel = page.getByTestId("bottom-panel");
@@ -1334,8 +1334,10 @@ await shot("04-work-expanded");
     const box = await edges();
     if (box.height !== (width >= 1500 ? 260 : 200)) throw new Error(`The bottom panel is ${box.height}px high at ${size}`);
     if (box.bottom > box.status + 0.5) throw new Error(`The bottom panel covers the status bar at ${size}`);
-    if (Math.abs(box.top - box.main.bottom) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
-      throw new Error(`The bottom panel is not attached under the editor at ${size}`);
+    // The editor and the panel are one sheet on the frame (1 October 2026): the panel sits right under the editor, as wide.
+    const gap = box.top - box.main.bottom;
+    if (Math.abs(gap) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
+      throw new Error(`The bottom panel is not attached under the editor at ${size}: ${gap}px apart`);
     if (size === "1280x800") {
       const room = await conversationHeight();
       if (room < 380) throw new Error(`The conversation has ${room}px at 1280x800 with the bottom panel open, under 380`);
@@ -2316,10 +2318,12 @@ await shot("05-map");
       if (JSON.stringify(seen[provider].sections) !== JSON.stringify(codex.sections))
         throw new Error(`The ${mode} background with ${provider} differs from Codex: ${JSON.stringify({ codex: codex.sections, [provider]: seen[provider].sections })}`);
     const expected = mode === "light" ? "rgb(255, 255, 255)" : "rgb(33, 33, 33)";
-    if (codex.sections.surface !== expected || codex.sections.editor !== expected) throw new Error(`The ${mode} surface is not ${expected}: ${JSON.stringify(codex.sections)}`);
-    const tints = ["titleBar", "sideBar", "editor", "panel", "statusBar"].map((key) => codex.sections[key]);
+    if (codex.sections.surface !== expected) throw new Error(`The ${mode} surface is not ${expected}: ${JSON.stringify(codex.sections)}`);
+    // The work as a sheet on a frame (1 October 2026): the bars are one frame tint, and the side bar, the editor and the
+    // bottom panel each their own, apart from it.
+    const tints = ["titleBar", "sideBar", "editor", "panel"].map((key) => codex.sections[key]);
     if (tints.some((tint) => !tint) || new Set(tints).size !== tints.length) throw new Error(`The ${mode} sections do not have their own tint: ${JSON.stringify(codex.sections)}`);
-    if (codex.sections.activityBar !== codex.sections.titleBar) throw new Error(`The ${mode} activity bar and title bar differ: ${JSON.stringify(codex.sections)}`);
+    if (codex.sections.activityBar !== codex.sections.titleBar || codex.sections.statusBar !== codex.sections.titleBar) throw new Error(`The ${mode} bars are not one frame: ${JSON.stringify(codex.sections)}`);
     for (const key of ["text", "ring", "selection", "bubble", "sash"])
       if (codex.accents[key] === seen.claudeAgent.accents[key]) throw new Error(`The ${mode} ${key} accent is the same with Codex and Claude: ${codex.accents[key]}`);
     if (codex.accents.primary === seen.claudeAgent.accents.primary) throw new Error(`The ${mode} primary button is the same with Codex and Claude`);

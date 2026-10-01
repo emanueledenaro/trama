@@ -1,4 +1,4 @@
-import { IconHourglass } from "@tabler/icons-react";
+import { IconHourglass } from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { AgentThreadAuthor, AgentThreadMessage, Specialist } from "@shared/domain";
 import { authorName, findAgentThread, threadParticipants } from "@shared/agentThreads";

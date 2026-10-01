@@ -1,5 +1,5 @@
 import { ReferenceText } from "@/components/chat/ReferenceText";
-import { IconBook, IconBug, IconPlayerPlay, IconSparkles, IconStethoscope } from "@tabler/icons-react";
+import { IconBook, IconBug, IconPlayerPlay, IconSparkles, IconStethoscope } from "@/components/icons";
 import { useState } from "react";
 import type { AutomaticWorkStatus, TeamRole } from "@shared/domain";
 import { automaticWorkLabel, automaticWorkState } from "@shared/duties";

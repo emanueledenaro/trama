@@ -1,4 +1,4 @@
-import { IconCircleCheck, IconCircleX, IconGitMerge } from "@tabler/icons-react";
+import { IconCircleCheck, IconCircleX, IconGitMerge } from "@/components/icons";
 import { cleanCodeRules, type CodeMeasure } from "@shared/cleanCode";
 import type { Candidate, MergeRoute, MergeStop, QualityItem, TechnicalReview, TestedSeam } from "@shared/domain";
 import type { MessageKey, Translate } from "@shared/i18n";

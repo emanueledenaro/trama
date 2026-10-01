@@ -1,4 +1,4 @@
-import { IconCheck, IconSettings, IconX } from "@tabler/icons-react";
+import { IconCheck, IconSettings, IconX } from "@/components/icons";
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist } from "@shared/domain";

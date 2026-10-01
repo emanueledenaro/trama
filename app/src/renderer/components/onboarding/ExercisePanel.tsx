@@ -1,4 +1,4 @@
-import { IconCircleCheck, IconX } from "@tabler/icons-react";
+import { IconCircleCheck, IconX } from "@/components/icons";
 import { useMemo, useState } from "react";
 import { EXERCISE_IDS, type ExerciseId, exerciseDescriptor, exerciseSteps, hasUsableProvider, resumeStep } from "@shared/onboarding";
 import { Button, FilledScope } from "@/components/ui/button";

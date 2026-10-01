@@ -1,5 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
-import { IconAt, IconChevronDown } from "@tabler/icons-react";
+import { IconAt, IconChevronDown } from "@/components/icons";
 import type { RepositoryModule } from "@shared/repository";
 import { useState } from "react";
 import { useT } from "@/lib/i18n";

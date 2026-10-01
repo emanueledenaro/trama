@@ -1,4 +1,4 @@
-import { IconFocus2, IconFolder, IconFolders, IconPlayerPlay } from "@tabler/icons-react";
+import { IconFocus2, IconFolder, IconFolders, IconPlayerPlay } from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { RepositoryModule } from "@shared/repository";
 import { Spinner } from "@/components/Spinner";

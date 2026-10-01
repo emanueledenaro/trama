@@ -1,4 +1,4 @@
-import { IconRotateClockwise } from "@tabler/icons-react";
+import { IconRotateClockwise } from "@/components/icons";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { canMovePlace, cloudEligible, cloudWorking, offersCloud } from "@shared/workPlace";
 import { CLOUD_SESSION_TONE } from "@shared/states";

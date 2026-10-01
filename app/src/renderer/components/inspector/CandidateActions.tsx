@@ -1,4 +1,4 @@
-import { IconGitMerge, IconGitPullRequest } from "@tabler/icons-react";
+import { IconGitMerge, IconGitPullRequest } from "@/components/icons";
 import { useState } from "react";
 import type { Candidate, CandidateReport } from "@shared/domain";
 import type { ActionResult } from "@shared/ipc";
