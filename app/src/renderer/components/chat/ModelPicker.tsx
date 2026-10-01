@@ -273,7 +273,7 @@ function EffortSlider({
   return (
     <div
       className="shrink-0 border-t border-[color:var(--color-border-light)] px-3 pt-2.5 pb-3"
-      style={{ ["--slider-accent" as string]: accent }}
+      style={{ ["--slider-accent" as string]: accent, ["--thread-color" as string]: accent }}
     >
       <div className="flex items-center gap-2">
         {fast ? (
@@ -340,8 +340,8 @@ function EffortSlider({
         {/* Trama's style (person's note, 1 October 2026): the chosen effort is a twisted thread in the provider's
             color, the rest an unsewn stitch, a knot per level and the knob carries the weave of the bots. */}
         <div className="absolute inset-y-0 start-2 end-2">
-          <div className="effort-stitch absolute top-1/2 h-px w-full -translate-y-1/2" />
-          <div className="effort-thread absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full transition-[width] duration-150" style={{ width: `${percent(shown)}%` }} />
+          <div className="trama-stitch absolute top-1/2 h-px w-full -translate-y-1/2" />
+          <div className="trama-thread absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full transition-[width] duration-150" style={{ width: `${percent(shown)}%` }} />
           {levels.map((level, i) => (
             <span
               key={level}

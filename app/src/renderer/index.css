@@ -7,7 +7,6 @@
 @custom-variant dark (&:is(.dark, .dark *));
 
 @theme inline {
-  --animate-spin-stepped: spin-stepped 1.3s steps(26, end) infinite;
   --font-sans: var(--font-ui-family);
   --font-mono: var(--font-mono-family);
   --font-display: var(--font-display-family);
@@ -57,11 +56,6 @@
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
-  @keyframes spin-stepped {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 }
 
 :root {
@@ -670,18 +664,36 @@
   transition: --provider-light 1.4s ease;
 }
 
-/* The effort slider in Trama's style (ModelPicker): the chosen part is a twisted thread, the rest an unsewn stitch. */
-.effort-thread {
+/* Trama's thread (effort slider, progress bars): the part done is a twisted thread in --thread-color, the rest an
+   unsewn stitch. */
+.trama-thread {
   background: repeating-linear-gradient(
     -55deg,
-    var(--slider-accent) 0 3px,
-    color-mix(in srgb, var(--slider-accent) 62%, white) 3px 5px
+    var(--thread-color, var(--color-text-accent)) 0 3px,
+    color-mix(in srgb, var(--thread-color, var(--color-text-accent)) 62%, white) 3px 5px
   );
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--slider-accent) 70%, black) inset;
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--thread-color, var(--color-text-accent)) 70%, black) inset;
 }
-.effort-stitch {
+.trama-stitch {
   background: repeating-linear-gradient(90deg, var(--color-text-foreground-tertiary) 0 4px, transparent 4px 8px);
   opacity: 0.55;
+}
+/* The loading mark: a 3 x 3 weave whose cells light in turn, as a shuttle going back and forth, in steps. */
+.trama-loader rect {
+  opacity: 0.18;
+  animation: trama-weave 1.35s steps(1, end) infinite;
+  animation-delay: calc(var(--cell) * 0.15s);
+}
+@keyframes trama-weave {
+  0% { opacity: 1; }
+  33% { opacity: 0.55; }
+  55%, 100% { opacity: 0.18; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trama-loader rect {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 
 @layer base {

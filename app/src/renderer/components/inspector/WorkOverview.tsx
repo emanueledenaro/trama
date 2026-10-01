@@ -16,6 +16,7 @@ import {
   IconPlus,
   IconTarget,
 } from "@tabler/icons-react";
+import { ThreadBar } from "@/components/ui/thread-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { divergenceQuestion, divergenceSummary } from "@shared/conflictScope";
 import type { GitHubPullRequest, ProjectGoal, SliceState } from "@shared/domain";
@@ -154,9 +155,7 @@ function Summary({ slices, planTitle, onShow }: { slices: SliceRow[]; planTitle:
               </span>
               <span className="shrink-0 text-ui-xs tabular-nums text-muted-foreground">{percent}%</span>
             </div>
-            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--color-background-button-secondary)]" aria-hidden>
-              <div className="h-full rounded-full bg-[var(--color-text-accent)]" style={{ width: `${percent}%` }} />
-            </div>
+            <ThreadBar percent={percent} className="mt-1.5" />
           </>
         ) : (
           <p className="mt-2 text-ui-sm text-muted-foreground" data-testid="work-goal-progress">
