@@ -1084,7 +1084,7 @@ export const it = {
   "workbench.status.continuousOnHint": "Il Coordinatore riprende da solo le sue mosse. Si cambia anche in Impostazioni.",
   "workbench.status.focus": "Lavoro in primo piano",
   "workbench.status.focusOf": "Lavoro in primo piano: {title}",
-  "focus.none": "Nessun lavoro in primo piano: sono tutti sospesi.",
+  "focus.none": "Nessun lavoro in primo piano: i tuoi sono sospesi.",
   "focus.inFocus": "In primo piano",
   "focus.queued": "In coda {queued}",
   "focus.queuedPaused": "In coda {queued}, {count} sospesi",

@@ -1082,7 +1082,7 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.status.continuousOnHint": "The Coordinator takes its moves by itself again. You can also change it in Settings.",
   "workbench.status.focus": "Work in focus",
   "workbench.status.focusOf": "Work in focus: {title}",
-  "focus.none": "No work in focus: it is all suspended.",
+  "focus.none": "No work in focus: yours are all suspended.",
   "focus.inFocus": "In focus",
   "focus.queued": "Queued {queued}",
   "focus.queuedPaused": "Queued {queued}, {count} suspended",
