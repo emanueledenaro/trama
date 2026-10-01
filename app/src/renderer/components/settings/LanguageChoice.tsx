@@ -11,7 +11,7 @@ export function LanguageChoice() {
   const t = useT();
   const language = useLanguage();
   return (
-    <div role="radiogroup" aria-label={t("language.label")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="language-choice">
+    <div role="radiogroup" aria-label={t("language.label")} className="flex flex-wrap rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="language-choice">
       {LANGUAGES.map((value) => (
         <button
           key={value}
