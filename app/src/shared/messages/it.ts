@@ -1243,6 +1243,8 @@ export const it = {
   "teams.sign.working": "Al lavoro",
   "teams.sign.cloud": "Al lavoro in cloud",
   "teams.sign.local": "Al lavoro in locale",
+  "teams.sign.stoppedCloud": "Fermato in cloud",
+  "teams.sign.stoppedLocal": "Fermato in locale",
   "teams.sign.waiting": "Aspetta te",
   "teams.sign.free": "Libero",
   "teams.sign.stopped": "Fermato",

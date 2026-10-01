@@ -153,6 +153,10 @@ export const cloudWorking = (assignment: SpecialistAssignment): boolean =>
 /** Whether an agent works in a cloud session now, so wherever Trama shows it the person sees it is not on the Mac. */
 export const agentInCloud = (agent: { assignments?: readonly SpecialistAssignment[] }): boolean => (agent.assignments ?? []).some(cloudWorking);
 
+/** Where an agent's work runs: in the cloud while a session works or when its latest work went there, else here. */
+export const agentPlace = (agent: { assignments?: readonly SpecialistAssignment[] }): WorkPlace =>
+  agentInCloud(agent) || agent.assignments?.at(-1)?.place?.where === "cloud" ? "cloud" : "local";
+
 
 /** Whether the person can move the work now (Q30): before it starts, or when it waits for a resume. */
 export function canMovePlace(assignment: SpecialistAssignment): boolean {

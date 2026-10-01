@@ -55,12 +55,13 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { WaitingProposalPointer } from "@/components/WaitingPointer";
 import { ReferenceText } from "@/components/chat/ReferenceText";
-import { agentInCloud } from "@shared/workPlace";
+import { agentPlace } from "@shared/workPlace";
+import type { WorkPlace } from "@shared/domain";
 
-/** The specialist's own status, as the projects view still shows it beside an agent (W16). */
-export function StatusDot({ status, cloud = false }: { status: Specialist["status"]; cloud?: boolean }) {
-  if (cloud) return <CloudMark />;
-  if (status === "working") return <PlaceMark />;
+/** The specialist's own status, as the projects view still shows it beside an agent (W16); `place` says where it works. */
+export function StatusDot({ status, place = "local" }: { status: Specialist["status"]; place?: WorkPlace }) {
+  if (status === "working") return <PlaceMark place={place} sign="working" />;
+  if (status === "stopped") return <PlaceMark place={place} sign="stopped" />;
   if (status === "stopping") return <Spinner />;
   return (
     <span
@@ -68,7 +69,6 @@ export function StatusDot({ status, cloud = false }: { status: Specialist["statu
         "size-1.5 shrink-0 rounded-full",
         // Free reads as an empty ring, so it never looks like "at work" (issue #241).
         status === "available" && "border border-muted-foreground/60",
-        status === "stopped" && "bg-warning",
         status === "removed" && "bg-muted-foreground/40",
       )}
     />
@@ -82,31 +82,40 @@ const SIGN_LABEL: Record<MemberSign, MessageKey> = {
   stopped: "teams.sign.stopped",
 };
 
-/** The sign beside a person (issue #333): a dot at work, the hourglass of Aspetta te, an empty ring when free. */
+/** The words of a sign, with the place for work at work or stopped. */
+function signLabel(sign: MemberSign, place: WorkPlace): MessageKey {
+  if (sign === "working") return place === "cloud" ? "teams.sign.cloud" : "teams.sign.local";
+  if (sign === "stopped") return place === "cloud" ? "teams.sign.stoppedCloud" : "teams.sign.stoppedLocal";
+  return SIGN_LABEL[sign];
+}
+
 /**
- * Where an agent at work runs, in place of the dot: a cloud for a cloud session (A19), a computer on this machine, so
- * the person tells them apart at a glance.
+ * Where an agent's work runs, in place of the dot (person's note, 1 October 2026): a cloud for a cloud session (A19), a
+ * computer on this machine. The color keeps the state: green at work, amber when stopped.
  */
-function PlaceMark({ cloud = false, sign = false, className }: { cloud?: boolean; sign?: boolean; className?: string }) {
+function PlaceMark({ place, sign, className }: { place: WorkPlace; sign: Extract<MemberSign, "working" | "stopped">; className?: string }) {
   const t = useT();
-  const label = t(cloud ? "teams.sign.cloud" : "teams.sign.local");
-  const Icon = cloud ? IconCloudFilled : IconDeviceLaptop;
+  const label = t(signLabel(sign, place));
+  const Icon = place === "cloud" ? IconCloudFilled : IconDeviceLaptop;
   return (
-    <span role="img" aria-label={label} title={label} data-testid={sign ? "member-sign" : "place-mark"}
-      data-sign={sign ? "working" : undefined}
-      data-place={cloud ? "cloud" : "local"}
-      className={cn("flex shrink-0 items-center justify-center", className)}>
-      <Icon className="size-3.5 text-success" stroke={1.8} />
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="member-sign"
+      data-sign={sign}
+      data-place={place}
+      className={cn("flex shrink-0 items-center justify-center", className)}
+    >
+      <Icon className={cn("size-3.5", sign === "working" ? "text-success" : "text-warning")} stroke={1.8} />
     </span>
   );
 }
 
-const CloudMark = ({ className }: { className?: string }) => <PlaceMark cloud className={className} />;
-
-/** The sign beside a person; `cloud` when its work runs in a cloud session. */
-function SignMark({ sign, cloud = false, className }: { sign: MemberSign; cloud?: boolean; className?: string }) {
+/** The sign beside a person (issue #333): where it works while at work or stopped, the hourglass of Aspetta te, an empty ring when free. */
+function SignMark({ sign, place = "local", className }: { sign: MemberSign; place?: WorkPlace; className?: string }) {
   const t = useT();
-  if (sign === "working") return <PlaceMark cloud={cloud} sign className={cn("size-4", className)} />;
+  if (sign === "working" || sign === "stopped") return <PlaceMark place={place} sign={sign} className={cn("size-4", className)} />;
   const label = t(SIGN_LABEL[sign]);
   return (
     <span role="img" aria-label={label} title={label} data-testid="member-sign" data-sign={sign} className={cn("flex size-4 shrink-0 items-center justify-center", className)}>
@@ -116,7 +125,6 @@ function SignMark({ sign, cloud = false, className }: { sign: MemberSign; cloud?
         <span
           className={cn(
             "size-1.5 rounded-full",
-            sign === "stopped" && "bg-warning",
             // Free reads as an empty ring, so it never looks like "at work" (issue #241).
             sign === "free" && "border border-muted-foreground/60",
           )}
@@ -258,7 +266,7 @@ function PersonRow({ specialist, dutyOnHover = false, short = false, testId }: {
           </span>
         </span>
       )}
-      <SignMark sign={sign} cloud={agentInCloud(specialist)} />
+      <SignMark sign={sign} place={agentPlace(specialist)} />
     </button>
   );
 }
@@ -799,8 +807,7 @@ function SpecialistPage({ id }: { id: string }) {
               {squadLine(t, document, specialist)}
             </p>
             <span className="mt-1 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-foreground/90" data-testid="specialist-status">
-              <SignMark sign={sign} cloud={agentInCloud(specialist)} className="size-3" />{" "}
-              {t(sign === "working" ? (agentInCloud(specialist) ? "teams.sign.cloud" : "teams.sign.local") : SIGN_LABEL[sign])}
+              <SignMark sign={sign} place={agentPlace(specialist)} className="size-3" /> {t(signLabel(sign, agentPlace(specialist)))}
             </span>
             {editable ? <ModelNote specialist={specialist} /> : null}
           </div>
