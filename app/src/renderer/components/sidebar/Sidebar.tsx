@@ -11,6 +11,7 @@ import {
   IconArchive,
   IconTrash,
 } from "@tabler/icons-react";
+import { agentInCloud } from "@shared/workPlace";
 import { DeleteGoalDialog, setArchived } from "@/components/inspector/GoalsView";
 import { StatusDot } from "@/components/inspector/TeamView";
 import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
@@ -287,7 +288,7 @@ export function ProjectsView() {
                             <AgentTag agent={specialist} className="shrink-0" />
                           </span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
-                            <StatusDot status={specialist.status} />
+                            <StatusDot status={specialist.status} cloud={agentInCloud(specialist)} />
                           </span>
                         </button>
                       ))}

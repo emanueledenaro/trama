@@ -8,6 +8,7 @@ import {
   IconDots,
   IconFileDiff,
   IconFocus2,
+  IconCloudFilled,
   IconHourglass,
   IconMessageCircle,
   IconMessages,
@@ -53,9 +54,11 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { WaitingProposalPointer } from "@/components/WaitingPointer";
 import { ReferenceText } from "@/components/chat/ReferenceText";
+import { agentInCloud } from "@shared/workPlace";
 
 /** The specialist's own status, as the projects view still shows it beside an agent (W16). */
-export function StatusDot({ status }: { status: Specialist["status"] }) {
+export function StatusDot({ status, cloud = false }: { status: Specialist["status"]; cloud?: boolean }) {
+  if (cloud) return <CloudMark />;
   if (status === "working" || status === "stopping") return <Spinner />;
   return (
     <span
@@ -78,8 +81,21 @@ const SIGN_LABEL: Record<MemberSign, MessageKey> = {
 };
 
 /** The sign beside a person (issue #333): a dot at work, the hourglass of Aspetta te, an empty ring when free. */
-function SignMark({ sign, className }: { sign: MemberSign; className?: string }) {
+/** At work in a cloud session (A19): a cloud takes the place of the dot, so the person tells it from work on the Mac. */
+function CloudMark({ className }: { className?: string }) {
   const t = useT();
+  const label = t("teams.sign.cloud");
+  return (
+    <span role="img" aria-label={label} title={label} data-testid="cloud-mark" className={cn("flex shrink-0 items-center justify-center", className)}>
+      <IconCloudFilled className="size-3.5 text-success" />
+    </span>
+  );
+}
+
+/** The sign beside a person; `cloud` when its work runs in a cloud session. */
+function SignMark({ sign, cloud = false, className }: { sign: MemberSign; cloud?: boolean; className?: string }) {
+  const t = useT();
+  if (cloud && sign === "working") return <CloudMark className={cn("size-4", className)} />;
   const label = t(SIGN_LABEL[sign]);
   return (
     <span role="img" aria-label={label} title={label} data-testid="member-sign" data-sign={sign} className={cn("flex size-4 shrink-0 items-center justify-center", className)}>
@@ -232,7 +248,7 @@ function PersonRow({ specialist, dutyOnHover = false, short = false, testId }: {
           </span>
         </span>
       )}
-      <SignMark sign={sign} />
+      <SignMark sign={sign} cloud={agentInCloud(specialist)} />
     </button>
   );
 }
@@ -773,7 +789,8 @@ function SpecialistPage({ id }: { id: string }) {
               {squadLine(t, document, specialist)}
             </p>
             <span className="mt-1 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-foreground/90" data-testid="specialist-status">
-              <SignMark sign={sign} className="size-3" /> {t(SIGN_LABEL[sign])}
+              <SignMark sign={sign} cloud={agentInCloud(specialist)} className="size-3" />{" "}
+              {t(agentInCloud(specialist) && sign === "working" ? "teams.sign.cloud" : SIGN_LABEL[sign])}
             </span>
             {editable ? <ModelNote specialist={specialist} /> : null}
           </div>

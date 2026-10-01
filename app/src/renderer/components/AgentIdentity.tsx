@@ -1,9 +1,7 @@
 import { type CSSProperties, useMemo } from "react";
-import { IconCloudFilled } from "@tabler/icons-react";
 import { type AgentActivity, agentActivity, botShapeFor, teamBotShapes } from "@shared/agentBot";
 import type { Specialist } from "@shared/domain";
 import { agentTag, paletteEntry } from "@shared/identity";
-import { agentInCloud } from "@shared/workPlace";
 import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
 import { AgentBot } from "./AgentBot";
@@ -37,7 +35,7 @@ function useAgentBot(agent: Agent, activity: AgentActivity | undefined) {
   const state =
     activity ??
     (member ? agentActivity(member, { candidates: candidates ?? [] }) : "idle");
-  return { shape, activity: state, inCloud: agentInCloud(member ?? agent) };
+  return { shape, activity: state };
 }
 
 export function AgentAvatar({
@@ -53,33 +51,16 @@ export function AgentAvatar({
   activity?: AgentActivity;
   className?: string;
 }) {
-  const t = useT();
   const bot = useAgentBot(agent, activity);
-  const body = (
+  return (
     <AgentBot
       shape={bot.shape}
       color={agent.color}
       activity={bot.activity}
       seed={agent.id ?? agent.name}
       size={size}
-      className={cn("shrink-0", !bot.inCloud && className)}
+      className={cn("shrink-0", className)}
     />
-  );
-  if (!bot.inCloud) return body;
-  // A small cloud at the bottom right, away from the state knot at the top right: the agent works in a cloud session.
-  // It keeps the neutral colors, as the agent's color stays on its bot (ADR 0007).
-  const label = t("cloudSession.agentInCloud", { name: agent.name });
-  return (
-    <span className={cn("relative inline-flex shrink-0", className)} title={label} data-testid="agent-in-cloud">
-      {body}
-      <span
-        role="img"
-        aria-label={label}
-        className="absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-full bg-background p-px text-muted-foreground"
-      >
-        <IconCloudFilled size={Math.max(9, Math.round(size * 0.4))} />
-      </span>
-    </span>
   );
 }
 
