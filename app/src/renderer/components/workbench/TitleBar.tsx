@@ -8,7 +8,7 @@ import {
   IconLayoutList,
   IconPencilPlus,
   IconSearch,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useState } from "react";
 import { TramaIcon } from "@/components/brand/TramaIcon";
 import { findGoal } from "@shared/goals";
@@ -185,14 +185,14 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
                 void refreshProject().finally(() => setRefreshing(false));
               }}
             >
-              <TramaIcon name="refresh" busy={refreshing} className="size-4" />
+              <TramaIcon animated name="refresh" busy={refreshing} className="size-4" />
             </button>
           </Tooltip>
         ) : null}
         {/* Issue #338: an icon's tooltip is its name, the same words a screen reader reads. */}
         <Tooltip label={t("workbench.sideBar.toggle")}>
           <button type="button" className={cn(ICON_BUTTON, sidebarOpen && HEADER_CHIP_ACTIVE)} aria-label={t("workbench.sideBar.toggle")} aria-pressed={sidebarOpen} onClick={toggleSidebar}>
-            <TramaIcon name="sideBar" className="size-4" />
+            <TramaIcon animated name="sideBar" className="size-4" />
           </button>
         </Tooltip>
         {project ? (
@@ -205,7 +205,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
               aria-pressed={activityOpen}
               onClick={togglePanel}
             >
-              <TramaIcon name="panel" className="size-4" />
+              <TramaIcon animated name="panel" className="size-4" />
             </button>
           </Tooltip>
         ) : null}
@@ -221,7 +221,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
               data-testid="split-editor-toggle"
               onClick={toggleSplitEditor}
             >
-              <TramaIcon name="detailsBar" className="size-4" />
+              <TramaIcon animated name="detailsBar" className="size-4" />
             </button>
           </Tooltip>
         ) : null}

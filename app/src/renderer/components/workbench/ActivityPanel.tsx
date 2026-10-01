@@ -8,7 +8,7 @@ import {
   IconMessages,
   IconUsers,
   IconX,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/activity";
 import { projectGoals } from "@shared/goals";

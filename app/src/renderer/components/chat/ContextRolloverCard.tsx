@@ -1,4 +1,4 @@
-import { IconRefresh } from "@tabler/icons-react";
+import { IconRefresh } from "@/components/icons";
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";

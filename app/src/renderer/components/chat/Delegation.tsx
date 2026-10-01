@@ -1,4 +1,4 @@
-import { IconEye, IconMoon, IconSparkles } from "@tabler/icons-react";
+import { IconEye, IconMoon, IconSparkles } from "@/components/icons";
 import type { RecapDelegated } from "@shared/domain";
 import { activeDelegation, choiceKindLabel, delegationLine } from "@shared/delegation";
 import { formatDate } from "@shared/i18n";

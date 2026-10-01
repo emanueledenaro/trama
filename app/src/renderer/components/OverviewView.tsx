@@ -9,7 +9,7 @@ import {
   IconPlayerTrackNext,
   IconRefresh,
   IconTarget,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { AttentionReason, ProjectOverview, SharedCapacity } from "@shared/domain";

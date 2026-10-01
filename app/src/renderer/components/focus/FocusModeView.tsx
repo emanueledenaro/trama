@@ -1,4 +1,4 @@
-import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2, IconRotateClockwise, IconX } from "@tabler/icons-react";
+import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2, IconRotateClockwise, IconX } from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
 import type { Translate } from "@shared/i18n";

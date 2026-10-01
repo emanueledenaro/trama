@@ -1,5 +1,5 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { IconX } from "@tabler/icons-react";
+import { IconX } from "@/components/icons";
 import type * as React from "react";
 import { cn } from "@/lib/cn";
 

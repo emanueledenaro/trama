@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconChevronDown, IconFocus2, IconMessageCircle, IconPlayerPlay, IconUsers } from "@tabler/icons-react";
+import { IconChevronDown, IconFocus2, IconMessageCircle, IconPlayerPlay, IconUsers } from "@/components/icons";
 import { useState } from "react";
 import type { FocusTask } from "@shared/domain";
 import type { Translate } from "@shared/i18n";

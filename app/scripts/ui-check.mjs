@@ -932,7 +932,7 @@ await shot("02-demo-study");
         .map(({ name, box }) => `${name}: ${Math.round(box.height)}`),
     );
     if (small.length) throw new Error(`The title bar has buttons under 32 px: ${small.join(", ")}`);
-    if (await page.locator('[data-testid="title-bar"] .tabler-icon-git-branch').count()) throw new Error("The title bar repeats the branch of the status bar");
+    if (await page.locator('[data-testid="title-bar"] .trama-woven-git-branch').count()) throw new Error("The title bar repeats the branch of the status bar");
   }
   const bars = await page.evaluate(() => ({
     title: document.querySelector('[data-testid="title-bar"]').getBoundingClientRect().height,

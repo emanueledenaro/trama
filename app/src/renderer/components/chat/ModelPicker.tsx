@@ -1,5 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
-import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@tabler/icons-react";
+import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@/components/icons";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import { failureSummary } from "@shared/providerFailure";
 import type { MessageKey, Translate } from "@shared/i18n";

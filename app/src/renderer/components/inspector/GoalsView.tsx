@@ -1,5 +1,5 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
-import { IconArchive, IconArrowLeft, IconMessageCircle, IconPencil, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
+import { IconArchive, IconArrowLeft, IconMessageCircle, IconPencil, IconPlus, IconTarget, IconTrash } from "@/components/icons";
 import { useState } from "react";
 import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
 import { type GoalState, goalState } from "@shared/workOverview";

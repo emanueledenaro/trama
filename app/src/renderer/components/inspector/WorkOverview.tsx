@@ -15,7 +15,7 @@ import {
   IconPlayerPlay,
   IconPlus,
   IconTarget,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { ThreadBar } from "@/components/ui/thread-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { divergenceQuestion, divergenceSummary } from "@shared/conflictScope";

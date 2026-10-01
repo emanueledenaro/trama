@@ -17,7 +17,7 @@ import {
   IconShieldCheck,
   IconSitemap,
   IconUsersGroup,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useMemo, useState } from "react";
 import type * as React from "react";
 import { mentionCandidates } from "@shared/mentions";

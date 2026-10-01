@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconAlertTriangle, IconChevronRight, IconClockPause, IconCopy, IconFileText, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
+import { IconAlertTriangle, IconChevronRight, IconClockPause, IconCopy, IconFileText, IconPlayerPlay, IconPlayerStop } from "@/components/icons";
 import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { NextStepView } from "@shared/domain";

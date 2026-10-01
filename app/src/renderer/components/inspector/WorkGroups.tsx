@@ -1,4 +1,4 @@
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight } from "@/components/icons";
 import { useState } from "react";
 
 /** A row of a Lavoro list, the part of it that opens the detail, and its second line. */

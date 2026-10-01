@@ -1,4 +1,4 @@
-import { IconChevronRight, IconHourglass } from "@tabler/icons-react";
+import { IconChevronRight, IconHourglass } from "@/components/icons";
 import type { MessageKey } from "@shared/i18n";
 import { type WaitingItem, type WaitingKind, waitingItemFor } from "@shared/waitingForYou";
 import { Sep } from "@/components/ui/sep";

@@ -16,7 +16,7 @@ import {
   IconRotateClockwise,
   IconTool,
   IconTrash,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { ThreadBar } from "@/components/ui/thread-bar";
 import { useEffect, useRef, useState } from "react";
 import { curatorRunLine } from "@shared/curatorReport";

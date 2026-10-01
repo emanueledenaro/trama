@@ -1,4 +1,4 @@
-import { IconDots } from "@tabler/icons-react";
+import { IconDots } from "@/components/icons";
 import { useState } from "react";
 import type { ProjectDocument, Squad, SquadMergeProposal } from "@shared/domain";
 import type { Translate } from "@shared/i18n";

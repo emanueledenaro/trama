@@ -1,5 +1,5 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
-import { IconArrowLeft, IconPencil, IconPlus, IconRosetteDiscountCheck, IconTarget } from "@tabler/icons-react";
+import { IconArrowLeft, IconPencil, IconPlus, IconRosetteDiscountCheck, IconTarget } from "@/components/icons";
 import { useState } from "react";
 import { assignmentStatus, checkOutcome } from "@shared/states";
 import { isOpenQuestion } from "@shared/domain";

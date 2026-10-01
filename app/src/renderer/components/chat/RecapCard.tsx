@@ -1,4 +1,4 @@
-import { IconChevronRight, IconHourglass, IconListDetails } from "@tabler/icons-react";
+import { IconChevronRight, IconHourglass, IconListDetails } from "@/components/icons";
 import type { RecapFact, RecapNeed } from "@shared/domain";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";

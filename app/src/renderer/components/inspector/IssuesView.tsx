@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconExternalLink, IconMessageCircle, IconPlayerPlay, IconUserSearch } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconMessageCircle, IconPlayerPlay, IconUserSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { useState } from "react";
 import { issueTriage } from "@shared/duties";

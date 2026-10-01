@@ -91,7 +91,7 @@ export function ActivityBar() {
       className="flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)] bg-[var(--app-activitybar-surface)]"
     >
       <ActivityButton label={t("workbench.view.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
-        <TramaIcon name="projects" />
+        <TramaIcon animated name="projects" />
       </ActivityButton>
       {project ? (
         <>
@@ -108,11 +108,11 @@ export function ActivityBar() {
             {/* Trama's mark in one tint, like the other icons: the conversation is with the Coordinator. */}
             <TramaMark variant="mono" size={20} />
           </ActivityButton>
-          {view("waiting", <TramaIcon name="waiting" />, waiting)}
-          {view("work", <TramaIcon name="work" />)}
-          {view("teams", <TramaIcon name="teams" />)}
-          {view("rules", <TramaIcon name="rules" />)}
-          {view("memory", <TramaIcon name="memory" />)}
+          {view("waiting", <TramaIcon animated name="waiting" />, waiting)}
+          {view("work", <TramaIcon animated name="work" />)}
+          {view("teams", <TramaIcon animated name="teams" />)}
+          {view("rules", <TramaIcon animated name="rules" />)}
+          {view("memory", <TramaIcon animated name="memory" />)}
         </>
       ) : null}
       <span className="flex-1" />
@@ -121,7 +121,7 @@ export function ActivityBar() {
         active={mainView === "settings" && !covered}
         onClick={() => (mainView === "settings" && !covered ? closeSettings() : openSettings("general"))}
       >
-        <TramaIcon name="settings" />
+        <TramaIcon animated name="settings" />
       </ActivityButton>
     </nav>
   );

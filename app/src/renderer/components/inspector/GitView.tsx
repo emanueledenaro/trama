@@ -1,4 +1,4 @@
-import { IconExternalLink } from "@tabler/icons-react";
+import { IconExternalLink } from "@/components/icons";
 import type { ActiveProjectState } from "@shared/domain";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";

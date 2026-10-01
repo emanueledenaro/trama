@@ -15,7 +15,7 @@ import {
   IconTarget,
   IconUser,
   IconX,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { MessageKey } from "@shared/i18n";
 import { ChatView } from "@/components/chat/ChatView";
