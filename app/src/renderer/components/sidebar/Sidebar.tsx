@@ -161,7 +161,8 @@ export function ProjectsView() {
                         void act("project:open", { path: recent.path });
                       }}
                       title={recent.path}
-                      className={cn(SIDEBAR_ROW, "pr-8 hover:bg-[var(--sidebar-accent)]", open ? "text-foreground" : "text-foreground/89")}
+                      // The open project has no button on the right, so its counter sits in the column of its rows' signs.
+                      className={cn(SIDEBAR_ROW, !open && "pr-8", "hover:bg-[var(--sidebar-accent)]", open ? "text-foreground" : "text-foreground/89")}
                     >
                       <LeadingIcon>
                         {open ? <IconFolderOpen className="size-4" stroke={1.6} /> : <IconFolder className="size-4" stroke={1.6} />}
@@ -169,13 +170,15 @@ export function ProjectsView() {
                       <span className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground/95">{recent.name}</span>
                       {open && waiting ? (
                         // The one counter of the window is Aspetta te's (issue #331), here on the open project too.
-                        <span
-                          className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-md bg-info/12 px-1 text-ui-xs font-medium text-info-foreground dark:bg-info/20"
-                          aria-label={t("workbench.view.waitingCount", { count: waiting })}
-                          title={t("workbench.view.waitingCount", { count: waiting })}
-                          data-testid="project-waiting-count"
-                        >
-                          {waiting}
+                        <span className="flex w-[15px] shrink-0 items-center justify-center">
+                          <span
+                            className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-md bg-info/12 px-1 text-ui-xs font-medium text-info-foreground dark:bg-info/20"
+                            aria-label={t("workbench.view.waitingCount", { count: waiting })}
+                            title={t("workbench.view.waitingCount", { count: waiting })}
+                            data-testid="project-waiting-count"
+                          >
+                            {waiting}
+                          </span>
                         </span>
                       ) : null}
                       {background ? (
