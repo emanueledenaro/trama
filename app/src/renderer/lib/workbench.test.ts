@@ -142,10 +142,12 @@ describe("window layout (issue #330)", () => {
     expect(panelDefaultHeight(1680)).toBe(260);
     expect(800 - 70 - panelMaxHeight(800)).toBeGreaterThanOrEqual(EDITOR_MIN_HEIGHT);
     expect(panelMaxHeight(1050)).toBeGreaterThanOrEqual(panelDefaultHeight(1680));
-    // From 716 px the editor keeps 526 px above the panel; lower, the panel lies over the editor.
+    // From 716 px the editor keeps 526 px above the panel; lower, the panel stays under it at its lowest, never over it,
+    // so the composer stays in view.
     expect(PANEL_DOCKED_MIN_VIEWPORT).toBe(716);
     expect(panelOverlays(716)).toBe(false);
-    expect(panelOverlays(715)).toBe(true);
+    expect(panelOverlays(640)).toBe(false);
+    expect(panelMaxHeight(640)).toBe(PANEL_MIN_HEIGHT);
     expect(716 - 70 - panelMaxHeight(716)).toBe(EDITOR_MIN_HEIGHT);
     expect(panelMaxHeight(716)).toBe(PANEL_MIN_HEIGHT);
     expect(panelMaxHeight(640)).toBeGreaterThanOrEqual(PANEL_MIN_HEIGHT);

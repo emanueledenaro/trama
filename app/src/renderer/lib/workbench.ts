@@ -240,19 +240,13 @@ export const panelDefaultHeight = (viewportWidth: number) => (viewportWidth >= 1
 
 /**
  * The lowest window that holds the editor's EDITOR_MIN_HEIGHT and the bottom panel's PANEL_MIN_HEIGHT one above the
- * other: 716 px. In a lower window the bottom panel lies over the lower part of the editor instead, so the editor
- * keeps its height and Activity stays readable.
+ * other: 716 px. A lower window keeps the panel under the editor at PANEL_MIN_HEIGHT and the editor gives up the
+ * difference: the composer always stays in view, which an overlaid panel would hide (responsive pass of 1 October 2026).
  */
 export const PANEL_DOCKED_MIN_VIEWPORT = WINDOW_BARS_HEIGHT + EDITOR_MIN_HEIGHT + PANEL_MIN_HEIGHT;
 
-/** Whether the bottom panel lies over the editor: in a window lower than 716 px. */
-export const panelOverlays = (viewportHeight: number) => viewportHeight < PANEL_DOCKED_MIN_VIEWPORT;
+/** The bottom panel never lies over the editor: it would hide the composer. Kept for the callers that ask. */
+export const panelOverlays = (_viewportHeight: number) => false;
 
-/**
- * The highest the bottom panel gets: the editor keeps EDITOR_MIN_HEIGHT above it. Over the editor, in a low window,
- * it takes at most half the room between the window's bars.
- */
-export const panelMaxHeight = (viewportHeight: number) =>
-  panelOverlays(viewportHeight)
-    ? Math.max(PANEL_MIN_HEIGHT, Math.round((viewportHeight - WINDOW_BARS_HEIGHT) / 2))
-    : viewportHeight - WINDOW_BARS_HEIGHT - EDITOR_MIN_HEIGHT;
+/** The highest the bottom panel gets: the editor keeps EDITOR_MIN_HEIGHT above it, and in a low window the panel keeps its lowest. */
+export const panelMaxHeight = (viewportHeight: number) => Math.max(PANEL_MIN_HEIGHT, viewportHeight - WINDOW_BARS_HEIGHT - EDITOR_MIN_HEIGHT);

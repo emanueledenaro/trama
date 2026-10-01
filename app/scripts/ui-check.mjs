@@ -8408,16 +8408,18 @@ await themeShots("51i-squads-split");
     await closePanels();
     await page.waitForTimeout(400);
     await noContainerOverflow(`the chat at ${size}`);
-    // Lower than 716 px the bottom panel lies over the editor, which keeps its 526 px.
+    // Lower than 716 px the bottom panel stays under the editor at its lowest, and the composer stays in view.
     await clickMenu("togglePanel");
-    const overlaid = page.locator('[data-testid="bottom-panel"][data-overlay="true"]');
-    await overlaid.waitFor();
+    const docked = page.locator('[data-testid="bottom-panel"]:not([data-overlay])');
+    await docked.waitFor();
     await page.waitForTimeout(400);
-    const editorHeight = await page.getByTestId("editor-area").evaluate((el) => Math.round(el.getBoundingClientRect().height));
-    if (editorHeight < 526) throw new Error(`The editor is ${editorHeight}px high with the bottom panel open at ${size}`);
+    const composerVisible = await page.locator(".chat-composer-surface").first().isVisible();
+    const panelTop = await docked.evaluate((el) => el.getBoundingClientRect().top);
+    const composerBottom = await page.locator(".chat-composer-surface").first().evaluate((el) => el.getBoundingClientRect().bottom);
+    if (!composerVisible || composerBottom > panelTop + 0.5) throw new Error(`The bottom panel hides the composer at ${size}`);
     await noContainerOverflow(`the bottom panel at ${size}`);
     await clickMenu("togglePanel");
-    await overlaid.waitFor({ state: "detached" });
+    await docked.waitFor({ state: "detached" });
     for (const view of ["Lavoro", "Squadre", "Aspetta te", "Memoria", "Regole", "Progetti"]) {
       await openView(view);
       // The side bar eases to its width: the boxes are measured once it has settled.
