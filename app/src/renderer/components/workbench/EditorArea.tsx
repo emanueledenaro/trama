@@ -16,7 +16,7 @@ import {
   IconUser,
   IconX,
 } from "@/components/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MessageKey } from "@shared/i18n";
 import { ChatView } from "@/components/chat/ChatView";
 import { InspectorBody, targetTitle, useTargetTitle } from "@/components/inspector/Inspector";
@@ -107,10 +107,17 @@ function TabButton({
   const t = useT();
   const focusTab = useUi((s) => s.focusTab);
   const closeTab = useUi((s) => s.closeTab);
+  const ref = useRef<HTMLDivElement>(null);
+  // The tab on screen stays in view when the strip is too narrow for all of them.
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selected]);
   return (
     <div
+      ref={ref}
       className={cn(
-        "group relative flex h-full min-w-0 max-w-[14rem] shrink-0 items-center border-r border-[color:var(--app-panel-border)] text-ui-sm",
+        // Tabs share the strip down to 6rem each; past that the strip scrolls sideways.
+        "group relative flex h-full min-w-24 max-w-[14rem] shrink items-center border-r border-[color:var(--app-panel-border)] text-ui-sm",
         selected
           ? "bg-[var(--color-background-surface)] text-foreground shadow-[inset_0_1px_0_var(--color-text-accent)]"
           : "text-muted-foreground hover:text-foreground",
