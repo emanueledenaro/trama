@@ -164,7 +164,7 @@ import {
 } from "./core/document";
 import { type ProviderWait, providerWaitLine, reopeningResume } from "./core/resumeWork";
 import { recordUnknownReferences, unknownReferencesFeedback } from "./core/referenceCheck";
-import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import { candidateGoalId, findGoal, projectGoals, requestGoalId, goalPutAway } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
@@ -4354,6 +4354,7 @@ export class TramaController {
     const previous = structuredClone(project.document.goals);
     updateGoal(project.document, id, change);
     await this.saveGoalChange(project, previous, null);
+    if (change.status === "abandoned") await this.stopGoalWork(project, id);
     return id;
   }
 
@@ -4367,7 +4368,19 @@ export class TramaController {
     if (archived) archiveGoal(project.document, goal.id);
     else restoreGoal(project.document, goal.id);
     await this.saveGoalChange(project, previous, null);
+    if (archived) await this.stopGoalWork(project, goal.id);
     return goal.id;
+  }
+
+  /** The work of a goal the person put away stops as their stop, and the Coordinator learns it (logic review of 1 October 2026). */
+  private async stopGoalWork(project: ActiveProjectState, goalId: string): Promise<void> {
+    const document = project.document;
+    const ofGoal = (a: SpecialistAssignment) => (document.requests.find((r) => r.id === a.requestId)?.goalId ?? a.goalId ?? null) === goalId;
+    const running = document.team.specialists.flatMap((s) => s.assignments).filter((a) => isActive(a) && ofGoal(a));
+    if (!running.length) return;
+    for (const assignment of running) requestStop(document, assignment.specialistId, "person", t("main.controller.stoppedByGoalPutAway"));
+    this.changedIn(project);
+    await Promise.all(running.map((a) => this.stopAssignmentRuntime(a.id)));
   }
 
   /** Puts a task in focus, on pause or back in the queue (W02), saved before the person sees it. */
@@ -7512,6 +7525,8 @@ export class TramaController {
     for (const candidate of document.candidates) {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
+      // A goal the person put away merges nothing more.
+      if (goalPutAway(document, candidate.goalId)) continue;
       // A merge cut short by a restart is tried again: Trama reads the pull request before it merges anything.
       if (candidate.merge?.status === "running") candidate.merge = { ...candidate.merge, status: "waiting", detail: t("main.controller.mergeInterrupted") };
       const report = candidateReport(document, candidate, head);

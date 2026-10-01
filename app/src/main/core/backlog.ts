@@ -1,4 +1,5 @@
 import { arrangeBacklog, backlogOrder, type BacklogItem, type BacklogReason, problemBacklogKey, sliceBacklogKey, type SquadBacklogView } from "@shared/backlog";
+import { goalPutAway } from "@shared/goals";
 import type { FoundProblem, ProjectDocument, SliceTicket, SpecialistAssignment, WorkPlan } from "@shared/domain";
 import { problemBacklog } from "@shared/problems";
 import type { RepositoryModule } from "@shared/repository";
@@ -38,7 +39,8 @@ export const planAssignments = (document: ProjectDocument, planId: string) =>
 /** The plans whose approved slices are the current work of a dialog, as the phase of the work reads them (W01). */
 export function currentPlans(document: ProjectDocument): WorkPlan[] {
   const latest = new Map<string, string>();
-  for (const request of document.requests) latest.set(request.goalId ?? "", request.id);
+  // A goal the person put away offers no slice to pick.
+  for (const request of document.requests) if (!goalPutAway(document, request.goalId)) latest.set(request.goalId ?? "", request.id);
   const plans: WorkPlan[] = [];
   for (const requestId of latest.values()) {
     const state = workState(document, requestId);

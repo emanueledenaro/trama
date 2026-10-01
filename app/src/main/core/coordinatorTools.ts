@@ -36,7 +36,7 @@ import { replacedBy, retiredWork } from "@shared/conflictScope";
 import { CandidateError, candidateReport, clearCandidate, declareCandidate, findCandidate, type IntegrationHeads, latestCandidate, openCorrections, rebindTramaCandidate, supersedeCandidate, unchangedCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
-import { findGoal, requestGoalId } from "@shared/goals";
+import { findGoal, requestGoalId, goalPutAway } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
 import { squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
 import { recordCoordinatorOrder } from "@shared/backlog";
@@ -1686,6 +1686,9 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
         const goalId = namedGoal ?? requestGoalId(document, context.runningRequestId);
         // New work is a proposed goal until the person confirms it (A06, Q3): it never becomes an assignment before.
         const goal = goalId ? findGoal(document, goalId) : null;
+        if (goal && goalPutAway(document, goal.id)) {
+          return toolFailure("goal_put_away", `Goal ${goal.id} was put away by the person (archived or abandoned): assign no work for it.`);
+        }
         if (goal?.status === "proposed") {
           return toolFailure(
             "goal_not_confirmed",
