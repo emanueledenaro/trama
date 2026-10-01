@@ -1311,7 +1311,7 @@ await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
 await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
 await page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
 await shot("04-work-expanded");
-// Issue #337: Activity in the bottom panel, attached under the editor with a horizontal sash as in VS Code. It never
+// Issue #337: Activity in the bottom panel, under the editor with a horizontal sash as in VS Code. It never
 // covers the status bar, it leaves the conversation at least 380 px at 1280x800 and it follows the provider's theme.
 {
   const panel = page.getByTestId("bottom-panel");
@@ -1334,8 +1334,11 @@ await shot("04-work-expanded");
     const box = await edges();
     if (box.height !== (width >= 1500 ? 260 : 200)) throw new Error(`The bottom panel is ${box.height}px high at ${size}`);
     if (box.bottom > box.status + 0.5) throw new Error(`The bottom panel covers the status bar at ${size}`);
-    if (Math.abs(box.top - box.main.bottom) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
-      throw new Error(`The bottom panel is not attached under the editor at ${size}`);
+    // The editor and the panel are two sheets on the frame (1 October 2026): the panel sits under the editor, as wide,
+    // 8 px below it, or flush in a narrow window.
+    const gap = box.top - box.main.bottom;
+    if (!(Math.abs(gap) <= 0.5 || Math.abs(gap - 8) <= 0.5) || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
+      throw new Error(`The bottom panel is not attached under the editor at ${size}: ${gap}px apart`);
     if (size === "1280x800") {
       const room = await conversationHeight();
       if (room < 380) throw new Error(`The conversation has ${room}px at 1280x800 with the bottom panel open, under 380`);
