@@ -109,7 +109,7 @@ function FocusItem({ open, onToggle }: { open: boolean; onToggle: () => void }) 
  * and the provider limit it waits for (issue #249). On the right: Activity, the Pause of continuous work or its
  * Riprendi (A05), the stop of the automatic move that runs, and the person's move last.
  */
-function StatusLine({ line, aside }: { line: StatusLineView | null; aside: React.ReactNode }) {
+function StatusLine({ line, lead, aside }: { line: StatusLineView | null; lead: React.ReactNode; aside: React.ReactNode }) {
   const t = useT();
   const openActivity = useUi((s) => s.openActivity);
   const openDialog = useUi((s) => s.openDialog);
@@ -121,7 +121,14 @@ function StatusLine({ line, aside }: { line: StatusLineView | null; aside: React
     openDialog(action.goalId);
     window.setTimeout(() => runNextStep(action, action.requestId), 120);
   };
-  if (!line) return <div className="flex min-w-0 flex-1 items-center justify-end gap-0.5">{aside}</div>;
+  if (!line)
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-0.5">
+        {lead}
+        <div className="flex-1" />
+        {aside}
+      </div>
+    );
   // A move that answers an item of Aspetta te is taken there (issue #331): the line says it, the button is in the view.
   const action = line.action && !(line.action.actor === "person" && waiting.some((item) => item.targetId === line.action!.targetId)) ? line.action : null;
   return (
@@ -132,9 +139,11 @@ function StatusLine({ line, aside }: { line: StatusLineView | null; aside: React
       data-paused={line.paused ? "true" : "false"}
       data-provider-wait={line.providerWait ? "true" : "false"}
     >
+      {lead}
       {/* The next step is what the bar is for (UI wave of 29 September): the line in the ink, a step heavier than the
-          rest of the bar; the reason stays a quiet second part. */}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5">
+          rest of the bar; the reason stays a quiet second part. It sits in the middle, the branch on its left (person's
+          note, 1 October 2026). */}
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 px-1.5">
         <span className="flex size-3 shrink-0 items-center justify-center">
           <StatusLineIcon line={line} />
         </span>
@@ -253,10 +262,9 @@ function SetupItem({ back }: { back: NonNullable<ReturnType<typeof useSetupBack>
 }
 
 /**
- * The status bar at the bottom of the window (issue #330, ADR 0018), read left to right by importance: the status
- * line with the next step in the ink, what asks for an action (the conflict with the default branch, a step of
- * Configura that went back, marked by a warning icon and never by a tinted button), the work in focus, the branch as
- * quiet context, then a line and Activity, Pause and the person's move on the right. The work in focus sits in the bar
+ * The status bar at the bottom of the window (issue #330, ADR 0018): the branch as quiet context on the left, then in
+ * the middle the status line with the next step in the ink, what asks for an action (the conflict with the default branch, a step of
+ * Configura that went back, marked by a warning icon and never by a tinted button), the work in focus, then a line and Activity, Pause and the person's move on the right. The work in focus sits in the bar
  * above the composer while the conversation shows; over Progetti or Impostazioni it comes back here. Decisions wait
  * in Aspetta te.
  */
@@ -302,6 +310,21 @@ export function StatusBar() {
         <>
           <StatusLine
             line={line}
+            lead={
+              branch ? (
+                <Tooltip label={t("workbench.status.branch", { name: branch })}>
+                  <button
+                    type="button"
+                    className={cn(ITEM, "max-w-[10rem] shrink-0 text-[var(--color-text-foreground-tertiary)]")}
+                    data-testid="status-branch"
+                    onClick={() => setInspector({ kind: "branch", name: branch })}
+                  >
+                    <IconGitBranch className="size-3 shrink-0" stroke={1.8} />
+                    <span className="min-w-0 truncate">{branch}</span>
+                  </button>
+                </Tooltip>
+              ) : null
+            }
             aside={
               <>
                 {divergence ? (
@@ -318,19 +341,6 @@ export function StatusBar() {
                 ) : null}
                 {setup ? <SetupItem back={setup} /> : null}
                 {conversation ? null : <FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />}
-                {branch ? (
-                  <Tooltip label={t("workbench.status.branch", { name: branch })}>
-                    <button
-                      type="button"
-                      className={cn(ITEM, "max-w-[10rem] text-[var(--color-text-foreground-tertiary)]")}
-                      data-testid="status-branch"
-                      onClick={() => setInspector({ kind: "branch", name: branch })}
-                    >
-                      <IconGitBranch className="size-3 shrink-0" stroke={1.8} />
-                      <span className="min-w-0 truncate">{branch}</span>
-                    </button>
-                  </Tooltip>
-                ) : null}
                 <Divider />
               </>
             }

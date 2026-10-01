@@ -472,18 +472,18 @@ const expectIconAndText = async (button, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
-// Design rules for the status bar: read left to right by importance (status line, what asks for an action, the work in
-// focus, the branch, then a line and the icons), no button takes a state tint at rest, and the bar stays 24 px.
+// Design rules for the status bar: the branch on the left, then the status line in the middle, what asks for an action,
+// the work in focus, then a line and the icons (person's note, 1 October 2026), no button takes a state tint at rest, and the bar stays 24 px.
 const statusBarRules = async (where) => {
   const bar = await page.evaluate(() => {
     const root = document.querySelector('[data-testid="status-bar"]');
     const left = (selector) => root.querySelector(selector)?.getBoundingClientRect().left ?? null;
     const order = [
+      '[data-testid="status-branch"]',
       '[data-testid="status-line-text"]',
       '[data-testid="status-conflict"]',
       '[data-testid="status-setup"]',
       '[data-testid="status-focus"]',
-      '[data-testid="status-branch"]',
       '[data-testid="status-divider"]',
       'button[aria-label="Attività"]',
     ]
@@ -1276,6 +1276,12 @@ await setTheme("system");
   const projectCount = page.getByTestId("side-bar").getByTestId("project-waiting-count");
   await projectCount.waitFor();
   if (Number((await projectCount.innerText()).trim()) !== count) throw new Error("Progetti counts what waits differently from the icon of Aspetta te");
+  // The count sits in the column of the signs of the project's rows, not further left (person's note, 1 October 2026).
+  const rowRight = await page.getByTestId("side-bar").locator('[data-testid="sidebar-agent"], [data-testid="sidebar-goal"]').first().boundingBox().catch(() => null);
+  const countBox = await projectCount.boundingBox();
+  const createProject = page.getByTestId("side-bar").getByRole("button", { name: "Crea un progetto" });
+  if ((await createProject.evaluate((el) => getComputedStyle(el.parentElement).opacity)) !== "1") throw new Error("Creating a project shows only on hover");
+  if (rowRight && countBox && Math.abs(rowRight.x + rowRight.width - (countBox.x + countBox.width)) > 12) throw new Error(`The count of the open project is not in the column of the signs: ${countBox.x + countBox.width} vs ${rowRight.x + rowRight.width}`);
   await openView("Regole", "Patto");
   const pactPointer = page.getByTestId("side-bar").getByTestId("waiting-pointer").filter({ hasText: "La domanda aspetta te" }).first();
   await pactPointer.waitFor();
@@ -7615,6 +7621,19 @@ for (const [name, testid, file] of [
   }
 }
 if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+// In Squadre a cloud takes the place of the dot of whom works in a cloud session: Ada yes, Bruno (back on the Mac) and Carla no.
+await page.getByRole("button", { name: /^Squadre/ }).first().click();
+const cloudRow = (name) => page.locator('[data-testid="team-developer"]').filter({ hasText: name }).first();
+await cloudRow("Ada").locator('[data-place="cloud"]').waitFor();
+for (const name of ["Bruno", "Carla"]) if (await cloudRow(name).locator('[data-place="cloud"]').count()) throw new Error(`Cloud sessions: ${name} shows the cloud without a session at work`);
+// Whoever works on this computer shows a computer instead, never with a cloud session.
+if (await cloudRow("Ada").locator('[data-place="local"]').count()) throw new Error("Cloud sessions: Ada in the cloud shows the computer");
+await cloudRow("Ada").scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`31e-cloud-agents-squads-${dark ? "dark" : "light"}`);
+}
 // Design rules: a repeated check is secondary, so it is an icon with the name as tooltip and no visible text.
 if ((await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).innerText()).trim() !== "") throw new Error("Cloud sessions: the check of the session shows text, not only an icon");
 if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");

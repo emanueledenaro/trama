@@ -247,50 +247,27 @@ function EffortSlider({
   const track = useRef<HTMLDivElement>(null);
   const index = Math.max(0, levels.indexOf(value));
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const shown = dragIndex ?? index;
+  // The level just chosen shows until the new value comes back, so the label never jumps back to the old one for a
+  // moment (person's note, 1 October 2026).
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => setPending(null), [value]);
+  const pendingIndex = pending ? levels.indexOf(pending) : -1;
+  const shown = dragIndex ?? (pendingIndex >= 0 ? pendingIndex : index);
   const last = Math.max(1, levels.length - 1);
   const percent = (i: number) => (levels.length === 1 ? 50 : (i / last) * 100);
 
   const indexAt = (clientX: number) => {
     const box = track.current!.getBoundingClientRect();
-    const inset = box.height / 2;
+    const inset = 8;
     const ratio = Math.min(1, Math.max(0, (clientX - box.left - inset) / Math.max(1, box.width - inset * 2)));
     return Math.round(ratio * last);
   };
-  const field = useRef<HTMLDivElement>(null);
-  const energy = shown / last;
-
-  // A few soft particles drift into the knob, more with more effort. Only while the slider is on screen.
-  useEffect(() => {
-    const host = field.current;
-    if (!host || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const orbAt = () => ({ x: (percent(shown) / 100) * host.clientWidth, y: host.clientHeight / 2 });
-    const particle = () => {
-      const { x, y } = orbAt();
-      const angle = Math.random() * Math.PI * 2;
-      const distance = 18 + Math.random() * 16;
-      const dot = document.createElement("span");
-      dot.className = "effort-particle";
-      dot.style.left = `${x + Math.cos(angle) * distance}px`;
-      dot.style.top = `${y + Math.sin(angle) * distance}px`;
-      if (Math.random() < 0.5) dot.style.background = "var(--slider-accent)";
-      host.appendChild(dot);
-      dot.animate(
-        [
-          { transform: "translate(0, 0)", opacity: 0 },
-          { opacity: 1, offset: 0.3 },
-          { transform: `translate(${-Math.cos(angle) * distance}px, ${-Math.sin(angle) * distance}px)`, opacity: 0 },
-        ],
-        { duration: 1100 + Math.random() * 600, easing: "ease-in-out" },
-      ).onfinish = () => dot.remove();
-    };
-    const particles = window.setInterval(particle, Math.max(160, 900 - energy * 700));
-    return () => window.clearInterval(particles);
-  }, [shown, energy]);
 
   const commit = (i: number) => {
     setDragIndex(null);
-    if (levels[i] && levels[i] !== value) onChange(levels[i]);
+    if (!levels[i] || levels[i] === value) return;
+    setPending(levels[i]);
+    onChange(levels[i]);
   };
 
   return (
@@ -358,41 +335,34 @@ function EffortSlider({
           else return;
           event.preventDefault();
         }}
-        className="relative mt-2.5 h-8 cursor-pointer touch-none rounded-full bg-[var(--color-background-elevated-secondary)] outline-none select-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--slider-accent)_40%,transparent)]"
+        className="relative mt-2 h-6 cursor-pointer touch-none rounded-full outline-none select-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--slider-accent)_40%,transparent)]"
       >
-        <div ref={field} className="absolute inset-y-0 start-4 end-4">
-          {/* The fill is an energy beam; the knob is a charged orb. Both grow with the effort. */}
-          <div
-            className="effort-beam"
-            style={{
-              width: `${percent(shown)}%`,
-              // The beam fills the whole track; effort widens its white core and speeds it up.
-              ["--beam-core" as string]: `${Math.round(3 + energy * 13)}%`,
-              ["--beam-flicker" as string]: `${(3 - energy * 1.6).toFixed(2)}s`,
-            }}
-          >
-            <div className="effort-beam-aura" />
-            <div className="effort-beam-core" />
-          </div>
+        {/* Trama's style (person's note, 1 October 2026): the chosen effort is a twisted thread in the provider's
+            color, the rest an unsewn stitch, a knot per level and the knob carries the weave of the bots. */}
+        <div className="absolute inset-y-0 start-2 end-2">
+          <div className="effort-stitch absolute top-1/2 h-px w-full -translate-y-1/2" />
+          <div className="effort-thread absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full transition-[width] duration-150" style={{ width: `${percent(shown)}%` }} />
           {levels.map((level, i) => (
             <span
               key={level}
               aria-hidden
               className={cn(
-                "absolute top-1/2 z-[1] size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
-                i <= shown ? "bg-white shadow-[0_0_4px_rgb(255_255_255/0.9)]" : "bg-white/35",
+                "absolute top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full",
+                // A knot on the thread stays in view over the stripes: white with the provider's color around it.
+                i < shown ? "size-2 border-[1.5px] border-[var(--slider-accent)] bg-white" : "size-1.5 border border-muted-foreground/60 bg-[var(--color-background-surface)]",
               )}
               style={{ left: `${percent(i)}%` }}
             />
           ))}
           <span
             aria-hidden
-            className="effort-orb"
-            style={{
-              left: `${percent(shown)}%`,
-              ["--orb-size" as string]: "28px",
-            }}
+            data-testid="effort-knob"
+            className="absolute top-1/2 z-[2] flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[var(--slider-accent)] bg-white shadow-sm transition-[left] duration-150"
+            style={{ left: `${percent(shown)}%` }}
           >
+            <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="var(--slider-accent)" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M1.5 3H4.5M7.5 9H10.5M9 1.5V4.5M3 7.5V10.5" />
+            </svg>
           </span>
         </div>
       </div>

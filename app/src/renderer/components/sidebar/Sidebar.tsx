@@ -11,6 +11,7 @@ import {
   IconArchive,
   IconTrash,
 } from "@tabler/icons-react";
+import { agentPlace } from "@shared/workPlace";
 import { DeleteGoalDialog, setArchived } from "@/components/inspector/GoalsView";
 import { StatusDot } from "@/components/inspector/TeamView";
 import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
@@ -84,7 +85,8 @@ function SectionHeader({ label, children }: { label: string; children?: React.Re
         <span className="truncate">{label}</span>
       </div>
       {children ? (
-        <div className="absolute top-1 right-1.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover/project-header:opacity-100 focus-within:opacity-100">
+        // Always in view: the person finds how to create a project without hovering (person's note, 1 October 2026).
+        <div className="absolute top-1 right-1.5 flex items-center gap-1.5">
           {children}
         </div>
       ) : null}
@@ -160,7 +162,8 @@ export function ProjectsView() {
                         void act("project:open", { path: recent.path });
                       }}
                       title={recent.path}
-                      className={cn(SIDEBAR_ROW, "pr-8 hover:bg-[var(--sidebar-accent)]", open ? "text-foreground" : "text-foreground/89")}
+                      // The open project has no button on the right, so its counter sits in the column of its rows' signs.
+                      className={cn(SIDEBAR_ROW, !open && "pr-8", "hover:bg-[var(--sidebar-accent)]", open ? "text-foreground" : "text-foreground/89")}
                     >
                       <LeadingIcon>
                         {open ? <IconFolderOpen className="size-4" stroke={1.6} /> : <IconFolder className="size-4" stroke={1.6} />}
@@ -168,13 +171,15 @@ export function ProjectsView() {
                       <span className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground/95">{recent.name}</span>
                       {open && waiting ? (
                         // The one counter of the window is Aspetta te's (issue #331), here on the open project too.
-                        <span
-                          className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-md bg-info/12 px-1 text-ui-xs font-medium text-info-foreground dark:bg-info/20"
-                          aria-label={t("workbench.view.waitingCount", { count: waiting })}
-                          title={t("workbench.view.waitingCount", { count: waiting })}
-                          data-testid="project-waiting-count"
-                        >
-                          {waiting}
+                        <span className="flex w-[15px] shrink-0 items-center justify-center">
+                          <span
+                            className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-md bg-info/12 px-1 text-ui-xs font-medium text-info-foreground dark:bg-info/20"
+                            aria-label={t("workbench.view.waitingCount", { count: waiting })}
+                            title={t("workbench.view.waitingCount", { count: waiting })}
+                            data-testid="project-waiting-count"
+                          >
+                            {waiting}
+                          </span>
                         </span>
                       ) : null}
                       {background ? (
@@ -287,7 +292,7 @@ export function ProjectsView() {
                             <AgentTag agent={specialist} className="shrink-0" />
                           </span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
-                            <StatusDot status={specialist.status} />
+                            <StatusDot status={specialist.status} place={agentPlace(specialist)} />
                           </span>
                         </button>
                       ))}
