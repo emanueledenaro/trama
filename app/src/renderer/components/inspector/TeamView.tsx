@@ -9,6 +9,7 @@ import {
   IconFileDiff,
   IconFocus2,
   IconCloudFilled,
+  IconDeviceLaptop,
   IconHourglass,
   IconMessageCircle,
   IconMessages,
@@ -59,7 +60,8 @@ import { agentInCloud } from "@shared/workPlace";
 /** The specialist's own status, as the projects view still shows it beside an agent (W16). */
 export function StatusDot({ status, cloud = false }: { status: Specialist["status"]; cloud?: boolean }) {
   if (cloud) return <CloudMark />;
-  if (status === "working" || status === "stopping") return <Spinner />;
+  if (status === "working") return <PlaceMark />;
+  if (status === "stopping") return <Spinner />;
   return (
     <span
       className={cn(
@@ -81,21 +83,30 @@ const SIGN_LABEL: Record<MemberSign, MessageKey> = {
 };
 
 /** The sign beside a person (issue #333): a dot at work, the hourglass of Aspetta te, an empty ring when free. */
-/** At work in a cloud session (A19): a cloud takes the place of the dot, so the person tells it from work on the Mac. */
-function CloudMark({ className }: { className?: string }) {
+/**
+ * Where an agent at work runs, in place of the dot: a cloud for a cloud session (A19), a computer on this machine, so
+ * the person tells them apart at a glance.
+ */
+function PlaceMark({ cloud = false, sign = false, className }: { cloud?: boolean; sign?: boolean; className?: string }) {
   const t = useT();
-  const label = t("teams.sign.cloud");
+  const label = t(cloud ? "teams.sign.cloud" : "teams.sign.local");
+  const Icon = cloud ? IconCloudFilled : IconDeviceLaptop;
   return (
-    <span role="img" aria-label={label} title={label} data-testid="cloud-mark" className={cn("flex shrink-0 items-center justify-center", className)}>
-      <IconCloudFilled className="size-3.5 text-success" />
+    <span role="img" aria-label={label} title={label} data-testid={sign ? "member-sign" : "place-mark"}
+      data-sign={sign ? "working" : undefined}
+      data-place={cloud ? "cloud" : "local"}
+      className={cn("flex shrink-0 items-center justify-center", className)}>
+      <Icon className="size-3.5 text-success" stroke={1.8} />
     </span>
   );
 }
 
+const CloudMark = ({ className }: { className?: string }) => <PlaceMark cloud className={className} />;
+
 /** The sign beside a person; `cloud` when its work runs in a cloud session. */
 function SignMark({ sign, cloud = false, className }: { sign: MemberSign; cloud?: boolean; className?: string }) {
   const t = useT();
-  if (cloud && sign === "working") return <CloudMark className={cn("size-4", className)} />;
+  if (sign === "working") return <PlaceMark cloud={cloud} sign className={cn("size-4", className)} />;
   const label = t(SIGN_LABEL[sign]);
   return (
     <span role="img" aria-label={label} title={label} data-testid="member-sign" data-sign={sign} className={cn("flex size-4 shrink-0 items-center justify-center", className)}>
@@ -105,7 +116,6 @@ function SignMark({ sign, cloud = false, className }: { sign: MemberSign; cloud?
         <span
           className={cn(
             "size-1.5 rounded-full",
-            sign === "working" && "bg-success",
             sign === "stopped" && "bg-warning",
             // Free reads as an empty ring, so it never looks like "at work" (issue #241).
             sign === "free" && "border border-muted-foreground/60",
@@ -790,7 +800,7 @@ function SpecialistPage({ id }: { id: string }) {
             </p>
             <span className="mt-1 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-foreground/90" data-testid="specialist-status">
               <SignMark sign={sign} cloud={agentInCloud(specialist)} className="size-3" />{" "}
-              {t(agentInCloud(specialist) && sign === "working" ? "teams.sign.cloud" : SIGN_LABEL[sign])}
+              {t(sign === "working" ? (agentInCloud(specialist) ? "teams.sign.cloud" : "teams.sign.local") : SIGN_LABEL[sign])}
             </span>
             {editable ? <ModelNote specialist={specialist} /> : null}
           </div>

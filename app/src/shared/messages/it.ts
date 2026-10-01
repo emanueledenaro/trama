@@ -1242,6 +1242,7 @@ export const it = {
   "settings.squads.default": "Tre, se non lo cambi.",
   "teams.sign.working": "Al lavoro",
   "teams.sign.cloud": "Al lavoro in cloud",
+  "teams.sign.local": "Al lavoro in locale",
   "teams.sign.waiting": "Aspetta te",
   "teams.sign.free": "Libero",
   "teams.sign.stopped": "Fermato",

@@ -7618,8 +7618,10 @@ if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione"
 // In Squadre a cloud takes the place of the dot of whom works in a cloud session: Ada yes, Bruno (back on the Mac) and Carla no.
 await page.getByRole("button", { name: /^Squadre/ }).first().click();
 const cloudRow = (name) => page.locator('[data-testid="team-developer"]').filter({ hasText: name }).first();
-await cloudRow("Ada").getByTestId("cloud-mark").waitFor();
-for (const name of ["Bruno", "Carla"]) if (await cloudRow(name).getByTestId("cloud-mark").count()) throw new Error(`Cloud sessions: ${name} shows the cloud without a session at work`);
+await cloudRow("Ada").locator('[data-place="cloud"]').waitFor();
+for (const name of ["Bruno", "Carla"]) if (await cloudRow(name).locator('[data-place="cloud"]').count()) throw new Error(`Cloud sessions: ${name} shows the cloud without a session at work`);
+// Whoever works on this computer shows a computer instead, never with a cloud session.
+if (await cloudRow("Ada").locator('[data-place="local"]').count()) throw new Error("Cloud sessions: Ada in the cloud shows the computer");
 await cloudRow("Ada").scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");

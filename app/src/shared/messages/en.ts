@@ -1240,6 +1240,7 @@ export const en: Record<keyof typeof it, string> = {
   "settings.squads.default": "Three, unless you change it.",
   "teams.sign.working": "At work",
   "teams.sign.cloud": "At work in the cloud",
+  "teams.sign.local": "At work locally",
   "teams.sign.waiting": "Waiting for you",
   "teams.sign.free": "Free",
   "teams.sign.stopped": "Stopped",
