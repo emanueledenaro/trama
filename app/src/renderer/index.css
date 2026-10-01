@@ -190,7 +190,7 @@
   --app-card-border: rgb(255 255 255 / 0.07);
   --app-card-shadow: 0 0 0 1px rgb(0 0 0 / 0.4), 0 6px 24px rgb(0 0 0 / 0.35);
   /* A quiet line on the black frame, a step above the side bar, never a light seam. */
-  --app-panel-border: #1c1c1f;
+  --app-panel-border: #232327;
   --glass-light: #ffffff;
 }
 
