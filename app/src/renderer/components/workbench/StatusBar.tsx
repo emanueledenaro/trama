@@ -1,6 +1,5 @@
 import {
   IconAlertTriangle,
-  IconCircleDashed,
   IconClockPause,
   IconGitBranch,
   IconHandStop,
@@ -51,7 +50,8 @@ const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
   next: <IconPlayerTrackNext className="size-3 shrink-0 text-foreground" stroke={1.8} />,
   waiting: <IconHandStop className="size-3 shrink-0 text-foreground" stroke={1.8} />,
   blocked: <IconAlertTriangle className="size-3 shrink-0 text-warning" stroke={1.8} />,
-  idle: <IconCircleDashed className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />,
+  // At rest: the empty ring of someone free, never the stitch of work to do (visual language, 1 October 2026).
+  idle: <span aria-hidden className="block size-1.5 shrink-0 rounded-full border border-muted-foreground/60" />,
 };
 
 /**
