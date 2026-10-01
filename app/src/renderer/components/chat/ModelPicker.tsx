@@ -337,28 +337,32 @@ function EffortSlider({
         }}
         className="relative mt-2 h-6 cursor-pointer touch-none rounded-full outline-none select-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--slider-accent)_40%,transparent)]"
       >
-        {/* A thin line, its filled part in the provider's color, a dot per level and a small knob (person's note,
-            1 October 2026: more minimal). */}
+        {/* Trama's style (person's note, 1 October 2026): the chosen effort is a twisted thread in the provider's
+            color, the rest an unsewn stitch, a knot per level and the knob carries the weave of the bots. */}
         <div className="absolute inset-y-0 start-2 end-2">
-          <div className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-[var(--color-background-elevated-secondary)]" />
-          <div
-            className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-[var(--slider-accent)] transition-[width] duration-150"
-            style={{ width: `${percent(shown)}%` }}
-          />
+          <div className="effort-stitch absolute top-1/2 h-px w-full -translate-y-1/2" />
+          <div className="effort-thread absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full transition-[width] duration-150" style={{ width: `${percent(shown)}%` }} />
           {levels.map((level, i) => (
             <span
               key={level}
               aria-hidden
-              className={cn("absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full", i < shown ? "bg-white/70" : "bg-muted-foreground/45")}
+              className={cn(
+                "absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
+                i < shown ? "bg-white/80" : "border border-muted-foreground/60 bg-[var(--color-background-surface)]",
+              )}
               style={{ left: `${percent(i)}%` }}
             />
           ))}
           <span
             aria-hidden
             data-testid="effort-knob"
-            className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--slider-accent)] bg-white shadow-sm transition-[left] duration-150"
+            className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[var(--slider-accent)] bg-white shadow-sm transition-[left] duration-150"
             style={{ left: `${percent(shown)}%` }}
-          />
+          >
+            <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="var(--slider-accent)" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M1.5 3H4.5M7.5 9H10.5M9 1.5V4.5M3 7.5V10.5" />
+            </svg>
+          </span>
         </div>
       </div>
     </div>

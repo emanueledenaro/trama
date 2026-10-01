@@ -670,6 +670,20 @@
   transition: --provider-light 1.4s ease;
 }
 
+/* The effort slider in Trama's style (ModelPicker): the chosen part is a twisted thread, the rest an unsewn stitch. */
+.effort-thread {
+  background: repeating-linear-gradient(
+    -55deg,
+    var(--slider-accent) 0 3px,
+    color-mix(in srgb, var(--slider-accent) 62%, white) 3px 5px
+  );
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--slider-accent) 70%, black) inset;
+}
+.effort-stitch {
+  background: repeating-linear-gradient(90deg, var(--color-text-foreground-tertiary) 0 4px, transparent 4px 8px);
+  opacity: 0.55;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/30;
