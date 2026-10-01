@@ -88,8 +88,8 @@ describe("squads by product area (A10)", () => {
     ]);
     // Every squad has its own lead and QA: the project's QA goes to the first squad, the second gets one of its own.
     expect(squads.map((s) => names(document, [s.leadId, s.qaId]))).toEqual([
-      ["Capo Catalogo", "QA"],
-      ["Capo Checkout", "QA Checkout"],
+      ["Capo Catalogo", "Prove"],
+      ["Capo Checkout", "Prove Checkout"],
     ]);
     expect(squads.map((s) => findSpecialist(document, s.leadId)!.role)).toEqual(["squadLead", "squadLead"]);
     expect(squads.map((s) => findSpecialist(document, s.qaId)!.role)).toEqual(["qa", "qa"]);
@@ -104,10 +104,10 @@ describe("squads by product area (A10)", () => {
     const document = project([["Ada", "Sources/Catalog"]]);
     const formation = formSquads(document, MODULES, at(1))!;
     const step = recordSquadFormation(document, formation, at(1));
-    expect(step).toMatchObject({ move: "formSquads", summary: "Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e QA (QA dedicato)." });
+    expect(step).toMatchObject({ move: "formSquads", summary: "Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e Prove (prove della squadra)." });
     const entry = activityLog(ITALIAN, [], [], [], [], document.autonomousSteps).find((e) => e.id === step.id)!;
     expect(entry).toMatchObject({ kind: "step", label: "Squadre formate dal Coordinatore", outcome: "done", move: null });
-    expect(doneSince(document, null).map((f) => f.text)).toContain("Squadre formate dal Coordinatore: Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e QA (QA dedicato).");
+    expect(doneSince(document, null).map((f) => f.text)).toContain("Squadre formate dal Coordinatore: Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e Prove (prove della squadra).");
     expect(formSquads(document, MODULES, at(2))).toBeNull();
   });
 

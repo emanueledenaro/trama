@@ -1357,7 +1357,7 @@ export const it = {
   "teams.former.title": "Usciti dal team",
   "teams.about.title": "Come funzionano le squadre",
   "teams.about.squads":
-    "Ogni squadra si prende il lavoro di un'area del prodotto: ha un capo squadra, da uno a {developers} sviluppatori al lavoro e un QA dedicato. Il Coordinatore forma le squadre dopo lo studio, dalle aree della Mappa, e dirige tutte le squadre; tu decidi il prodotto. Lavorano insieme al massimo {squads}: i limiti si cambiano nelle impostazioni.",
+    "Ogni squadra si prende il lavoro di un'area del prodotto: ha un capo squadra, da uno a {developers} sviluppatori al lavoro e chi prova il suo lavoro. Il Coordinatore forma le squadre dopo lo studio, dalle aree della Mappa, e dirige tutte le squadre; tu decidi il prodotto. Lavorano insieme al massimo {squads}: i limiti si cambiano nelle impostazioni.",
   "teams.about.oneSquad": "una squadra",
   "teams.about.squadsCount": "{count} squadre",
   "teams.about.automatic":
@@ -1365,7 +1365,7 @@ export const it = {
   "teams.about.demo": "Nel progetto di esempio restano fermi.",
   "teams.about.needsMandate": "Si attivano quando concedi un mandato.",
   "teams.part.lead": "Squadra {squad}, capo squadra.",
-  "teams.part.qa": "Squadra {squad}, QA dedicato.",
+  "teams.part.qa": "Squadra {squad}, prove della squadra.",
   "teams.part.developer": "Squadra {squad}, sviluppatore.",
   "teams.part.outside": "Fuori dalle squadre, finché non si libera un posto.",
   "teams.part.unformed": "Le squadre non sono ancora formate.",

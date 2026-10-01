@@ -143,7 +143,7 @@ describe("the candidate gate (W10)", () => {
     closeGate(gate, at(7));
     expect(gate.status).toBe("blocked");
     expect(gateSummary(document, gate)).toBe(
-      "Verifiche non superate: swift_test. Guardiano delle regressioni: 1 rilievo bloccante, il primo: Regressione: swift test. Gli altri revisori non sono partiti: la verifica fallita passa al debugger.",
+      "Verifiche non superate: swift_test. Niente si rompe: 1 rilievo bloccante, il primo: Regressione: swift test. Gli altri revisori non sono partiti: la verifica fallita passa al debugger.",
     );
   });
 
@@ -247,7 +247,7 @@ describe("the candidate gate (W10)", () => {
     finishReview(gate, "devops", { failure: "timeout" }, at(5));
     closeGate(gate, at(6));
     expect(gate.status).toBe("failed");
-    expect(gate.failure).toContain("DevOps");
+    expect(gate.failure).toContain("Pubblicazione e server");
   });
 
   it("maps Clean Code's technical review: a request for changes blocks even without a blocking finding", () => {
@@ -333,7 +333,7 @@ describe("the candidate gate (W10)", () => {
     closeGate(gate, at(6));
     expect(gate.status).toBe("blocked");
     expect(gateSummary(document, gate)).toBe(
-      "Guardiano delle regressioni: 1 suggerimento. Sicurezza: 1 rilievo bloccante, il primo: Segreto nel diff: chiave API in NOTE.md. Gli altri revisori non sono partiti: il diff contiene un segreto, e Trama non lo manda ai modelli.",
+      "Niente si rompe: 1 suggerimento. Sicurezza: 1 rilievo bloccante, il primo: Segreto nel diff: chiave API in NOTE.md. Gli altri revisori non sono partiti: il diff contiene un segreto, e Trama non lo manda ai modelli.",
     );
   });
 

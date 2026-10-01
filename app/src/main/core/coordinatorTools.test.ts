@@ -46,9 +46,9 @@ describe("Coordinator tools for the full team (W09)", () => {
     const team = parse(await runCoordinatorTool("read_team", {}, context));
     expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(11);
     const guardian = team.specialists.find((s: { role: string }) => s.role === "regressionGuardian");
-    expect(guardian).toMatchObject({ name: "Guardiano delle regressioni", fixedRole: true });
+    expect(guardian).toMatchObject({ name: "Niente si rompe", fixedRole: true });
     expect(parse(await runCoordinatorTool("read_team", { specialistID: guardian.id }, context))).toMatchObject({
-      name: "Guardiano delle regressioni",
+      name: "Niente si rompe",
       moments: [{ moment: "candidate", skills: ["diagnosing-bugs"] }],
     });
     expect(parse(await runCoordinatorTool("read_team", { specialistID: "Sicurezza" }, context)).moments[0].skills).toEqual([]);
@@ -58,7 +58,7 @@ describe("Coordinator tools for the full team (W09)", () => {
     const document = emptyDocument("p");
     const refused = await runCoordinatorTool(
       "propose_team",
-      { specialists: [{ name: "Clean Code", competence: "Standard", reason: "r", moduleIDs: [] }] },
+      { specialists: [{ name: "Ordine del codice", competence: "Standard", reason: "r", moduleIDs: [] }] },
       teamContext(document),
     );
     expect(refused.isError).toBe(true);
@@ -84,7 +84,7 @@ describe("Coordinator tools for the full team (W09)", () => {
     const order = { ...CONTRACT, kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: ["git_status"], tools: ["edits"], instructions: "i" };
     grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
 
-    const alone = await runCoordinatorTool("assign_task", { ...order, specialist: "QA" }, context);
+    const alone = await runCoordinatorTool("assign_task", { ...order, specialist: "Prove" }, context);
     expect(alone.isError).toBe(true);
     expect(alone.content[0]!.text).toContain("fixed_role");
     expect(alone.content[0]!.text).toContain("no developers yet");
