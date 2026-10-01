@@ -1749,8 +1749,8 @@ export const it = {
   // Full delegation: "fai tutto tu" (issue #423)
   "delegation.line.granted": "Da ora faccio tutto io, anche di notte, perché me l'hai chiesto: «{quote}». Ti chiedo solo le conferme di cancellazione.",
   "delegation.line.grantedTickets": "Da ora faccio tutto io, anche di notte, e prendo le issue aperte con criteri chiari, perché me l'hai chiesto: «{quote}». Ti chiedo solo le conferme di cancellazione.",
-  "delegation.line.revokedInChat": "Ho ritirato la delega piena, come mi hai scritto: «{quote}». Da ora le scelte tornano a te.",
-  "delegation.line.revokedInView": "Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te.",
+  "delegation.line.revokedInChat": "Ho ritirato la delega piena, come mi hai scritto: «{quote}». Da ora le scelte tornano a te. Il mandato resta quello allargato dalla delega: puoi restringerlo dalla vista Mandato.",
+  "delegation.line.revokedInView": "Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te. Il mandato resta quello allargato dalla delega: puoi restringerlo qui.",
   "delegation.kind.decision": "Decisione di prodotto",
   "delegation.kind.interfaceCandidate": "Candidato di interfaccia approvato",
   "delegation.kind.goal": "Lavoro nuovo per l'obiettivo",

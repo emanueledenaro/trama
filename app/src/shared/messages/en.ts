@@ -1747,8 +1747,8 @@ export const en: Record<keyof typeof it, string> = {
   // Full delegation: "fai tutto tu" (issue #423)
   "delegation.line.granted": "From now on I do everything myself, even at night, because you asked me: “{quote}”. I only ask you to confirm deletions.",
   "delegation.line.grantedTickets": "From now on I do everything myself, even at night, and I take the open issues with clear criteria, because you asked me: “{quote}”. I only ask you to confirm deletions.",
-  "delegation.line.revokedInChat": "I withdrew the full delegation, as you wrote me: “{quote}”. From now on the choices are yours again.",
-  "delegation.line.revokedInView": "You withdrew the full delegation from the Mandate view. From now on the choices are yours again.",
+  "delegation.line.revokedInChat": "I withdrew the full delegation, as you wrote me: “{quote}”. From now on the choices are yours again. The mandate stays as the delegation widened it: you can narrow it from the Mandate view.",
+  "delegation.line.revokedInView": "You withdrew the full delegation from the Mandate view. From now on the choices are yours again. The mandate stays as the delegation widened it: you can narrow it here.",
   "delegation.kind.decision": "Product decision",
   "delegation.kind.interfaceCandidate": "Interface candidate approved",
   "delegation.kind.goal": "New work for the goal",
