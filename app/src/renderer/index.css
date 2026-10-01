@@ -789,10 +789,20 @@ button {
   /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are rounded
      cards with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. */
   .workbench-card {
-    margin: 0 8px 8px;
-    border-radius: 12px;
+    /* The sheet rests on the status bar: rounded at the top, off the frame on the sides, so the editor keeps its height
+       (the conversation's 380 px with the bottom panel at its highest). */
+    margin: 0 8px;
+    border-radius: 12px 12px 0 0;
     overflow: hidden;
     box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
+  }
+  /* The bottom panel is the lower part of the same sheet, under a hairline. */
+  .workbench-card.app-panel-surface {
+    border-radius: 0;
+    box-shadow: 0 0 0 1px var(--app-card-border), inset 0 1px 0 var(--app-card-border);
+  }
+  .workbench-card:has(+ .workbench-card.app-panel-surface) {
+    border-radius: 12px 12px 0 0;
   }
   /* In a narrow window the chat needs the room (420 px with the widest side bar): the sheet lies flush on the frame,
      kept apart only by its hairline. */
