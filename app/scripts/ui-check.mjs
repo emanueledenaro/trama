@@ -957,7 +957,7 @@ await shot("02-demo-study");
           const painted = svg.querySelector("path");
           const style = getComputedStyle(painted);
           return {
-            tabler: svg.classList.contains("tabler-icon-folders"),
+            icon: svg.dataset.tramaIcon ?? null,
             mark: svg.dataset.tramaMark ?? null,
             size: [Math.round(box.width), Math.round(box.height)],
             paint: painted.getAttribute("fill") === "currentColor" ? style.fill : style.stroke,
@@ -967,7 +967,7 @@ await shot("02-demo-study");
     const projects = await iconOf("Progetti");
     const coordinator = await iconOf("Coordinatore");
     const other = await iconOf("Memoria");
-    if (!projects.tabler || projects.size.join() !== other.size.join()) throw new Error(`The Projects icon is not the stacked folders at the icons' size: ${JSON.stringify(projects)}`);
+    if (projects.icon !== "projects" || projects.size.join() !== other.size.join()) throw new Error(`The Projects icon is not Trama's stacked folders at the icons' size: ${JSON.stringify(projects)}`);
     if (coordinator.mark !== "mono" || coordinator.size.join() !== other.size.join() || coordinator.paint !== coordinator.color) {
       throw new Error(`The Coordinator's icon is not Trama's mark in the button's color: ${JSON.stringify(coordinator)}`);
     }

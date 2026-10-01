@@ -678,6 +678,27 @@
   background: repeating-linear-gradient(90deg, var(--color-text-foreground-tertiary) 0 4px, transparent 4px 8px);
   opacity: 0.55;
 }
+/* Trama's icons: over their button the threads sew themselves in steps; a busy icon turns in steps. */
+:hover > .trama-icon path {
+  stroke-dasharray: 1;
+  animation: trama-sew 0.5s steps(10, end);
+}
+@keyframes trama-sew {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.trama-icon[data-busy] {
+  animation: trama-turn 1.2s steps(8, end) infinite;
+}
+@keyframes trama-turn {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :hover > .trama-icon path,
+  .trama-icon[data-busy] {
+    animation: none;
+  }
+}
 /* The loading mark: a 3 x 3 weave whose cells light in turn, as a shuttle going back and forth, in steps. */
 .trama-loader rect {
   opacity: 0.18;
