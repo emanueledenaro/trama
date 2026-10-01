@@ -782,6 +782,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} has an external effect that Trama does not check: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Candidate {id} conflicts with the work on GitHub: {detail}",
+  "main.workPhase.blockerChecksRed": "The checks of pull request #{number} of candidate {id} are red.",
+  "main.workPhase.whyChecksRed": "{work} has red checks on GitHub: it goes back to the developer to fix them, then Trama merges it.",
   "main.workPhase.blockerPullRequestConflict":
     "GitHub finds conflicts between pull request #{number} of candidate {id} and its base: the merge is stopped and is not the person's to do. Realign the candidate's branch with the base in the same working copy: a correction to the same developer (replaces) that merges the updated base and resolves the conflicts. Then the new candidate goes through checks and reviewers and Trama publishes it again on the same pull request.",
   "main.workPhase.blockerWorktreeConflict":

@@ -813,6 +813,8 @@ export const mainIt = {
     "Il candidato {id} ha un effetto esterno che Trama non verifica: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
+  "main.workPhase.blockerChecksRed": "Le verifiche della pull request #{number} del candidato {id} sono rosse.",
+  "main.workPhase.whyChecksRed": "{work} ha le verifiche rosse su GitHub: torna allo sviluppatore per sistemarle, poi Trama la unisce.",
   "main.workPhase.blockerPullRequestConflict":
     "GitHub trova conflitti tra la pull request #{number} del candidato {id} e la sua base: l'unione è ferma e non tocca alla persona. Riallinea il branch del candidato con la base nella stessa copia di lavoro: una correzione allo stesso sviluppatore (replaces) che unisce la base aggiornata e risolve i conflitti. Poi il candidato nuovo passa verifiche e revisori e Trama lo pubblica di nuovo sulla stessa pull request.",
   "main.workPhase.blockerWorktreeConflict":

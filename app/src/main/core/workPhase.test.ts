@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { recordMerge } from "./merge";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
@@ -318,6 +319,23 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     // Once it has the green light, the work goes on towards the merge as before.
     clearCandidate(document, ready.id, "Coordinatore", null);
     expect(workState(document, "r3")).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person", targetId: ready.id }] });
+  });
+
+  it("keeps a merge Trama runs off the person, and sends red checks back to work (logic review of 1 October 2026)", () => {
+    const { document, assignment } = withAssignment();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    // GitHub out of reach: Trama retries the publication itself, nothing waits for the person.
+    recordMerge(document, ready, "coordinator", "failed", "GitHub non risponde");
+    expect(workState(document, "r3").moves.filter((m) => m.actor === "person")).toEqual([]);
+    // Published with red checks: a technical block for the Coordinator, not a merge for the person.
+    ready.pullRequest = { number: 25, url: "https://github.com/o/r/pull/25", headSHA: "abc", draft: false, openedAt: at(9).toISOString(), mergedAt: null } as never;
+    recordMerge(document, ready, "coordinator", "failed", "verifiche rosse");
+    ready.merge!.checksRed = true;
+    const red = workState(document, "r3");
+    expect(red).toMatchObject({ phase: "blocked", block: "checkFailed" });
+    expect(red.moves.filter((m) => m.actor === "person")).toEqual([]);
   });
 
   it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {

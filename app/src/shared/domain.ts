@@ -1480,6 +1480,11 @@ export interface CandidateMerge {
    * and its base: the Coordinator realigns the candidate's branch and publishes it again, the person has nothing to merge.
    */
   baseConflict?: boolean;
+  /**
+   * True when the pull request's checks are red at the merge: the work goes back to its developer to fix them, and the
+   * person has nothing to merge (logic review of 1 October 2026).
+   */
+  checksRed?: boolean;
 }
 
 /** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */

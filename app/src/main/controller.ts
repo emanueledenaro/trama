@@ -7579,7 +7579,15 @@ export class TramaController {
         this.changedIn(project);
         return;
       }
-      if (checks?.checks === "failure") throw new DomainError(t("main.controller.mergeChecksRed", { number: `${pull.number}` }));
+      if (checks?.checks === "failure") {
+        // Red checks wait for a fix, not for time: the work goes back to its developer, and nothing retries meanwhile.
+        const reason = t("main.controller.mergeChecksRed", { number: `${pull.number}` });
+        recordMerge(document, candidate, by, "failed", reason);
+        candidate.merge!.checksRed = true;
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason }, by));
+        this.changedIn(project);
+        return;
+      }
       // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
       const drift = checks ? stopOnDrift(document, candidate, by, pull.headSHA, checks) : null;
       if (drift) {
