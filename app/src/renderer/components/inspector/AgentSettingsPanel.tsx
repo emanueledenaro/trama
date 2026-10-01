@@ -222,7 +222,7 @@ function LookPreview({ specialist }: { specialist: Specialist }) {
   return (
     <div data-testid="agent-look-preview">
       <h6 className="text-ui-xs text-muted-foreground">{t("teams.look.preview")}</h6>
-      <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-[var(--color-background-elevated-secondary)] p-2 sm:grid-cols-2">
+      <div className="mt-2 grid grid-cols-1 gap-2 rounded-lg bg-[var(--color-background-elevated-secondary)] p-2 @min-[480px]/inspector:grid-cols-2">
         <div className="flex min-w-0 items-center gap-2" data-testid="agent-look-preview-chat">
           <AgentAvatar agent={specialist} activity="idle" size={24} />
           <span className="min-w-0 truncate text-ui-sm font-medium text-foreground">{specialist.name}</span>

@@ -105,12 +105,15 @@ export function CardFrame({
 }) {
   return (
     <div data-anchor={anchor} className={cn("chat-card my-3 overflow-hidden", className)}>
-      <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 text-ui">
-        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={hint} data-record-id={hint}>
-          {title}
+      {/* In a narrow pane the badges wrap under the title instead of squeezing it under 8rem. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3.5 pt-2.5 pb-1 text-ui">
+        <span className="flex min-w-[8rem] flex-1 items-center gap-2">
+          <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
+          <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={hint} data-record-id={hint}>
+            {title}
+          </span>
         </span>
-        {aside}
+        {aside ? <span className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1.5">{aside}</span> : null}
       </div>
       <div className="px-3.5 pb-3">{children}</div>
     </div>
@@ -531,7 +534,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       title={grilling ? t("shared.settled.question", { number: grilling.number }) : t("shared.settled.decision")}
       className={grilling ? "my-2" : undefined}
       aside={
-        <span className="flex items-center gap-1.5">
+        <span className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           {request.blocksWork && !closed ? (
             <span data-testid="blocks-work">
               <Badge tone="warning">{t("chat.card.decision.blocksWork")}</Badge>
@@ -887,8 +890,11 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
         {assignment.requiredChecks.length ? <span>{t("chat.card.assignment.checks", { checks: assignment.requiredChecks.map((check) => checkName(t, check)).join(", ") })}</span> : null}
       </div>
       {assignment.workspace ? (
-        <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-          <IconGitBranch className="size-3" /> {assignment.workspace.branch}
+        <div className="mt-1.5 flex min-w-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
+          <IconGitBranch className="size-3 shrink-0" />
+          <span className="min-w-0 truncate" title={assignment.workspace.branch}>
+            {assignment.workspace.branch}
+          </span>
         </div>
       ) : null}
     </>
@@ -936,7 +942,7 @@ export function AssignmentCard({ assignmentId, fold = false }: { assignmentId: s
       title={record ? asTitle(record.label) : t("chat.card.assignment.title")}
       hint={assignment.id}
       aside={
-        <span className="flex items-center gap-1.5">
+        <span className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           {active ? <Spinner /> : null}
           <Badge tone={status.tone}>{status.label}</Badge>
         </span>
@@ -1112,7 +1118,7 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
       </div>
       {failed && open ? (
         <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2" data-testid="evidence-output">
-          <p className="font-mono text-[11px] text-muted-foreground">{evidence.command}</p>
+          <p className="font-mono text-[11px] break-all text-muted-foreground">{evidence.command}</p>
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-foreground/85">
             {evidence.output || t("chat.card.evidence.noOutput")}
           </pre>
@@ -1585,7 +1591,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
             {(report.interfaceFiles ?? []).map((path, index) => (
               <span key={path}>
                 {index ? ", " : null}
-                <span className="font-mono text-[11.5px]">{path}</span>
+                <span className="font-mono text-[11.5px] break-all">{path}</span>
               </span>
             ))}
           </p>
@@ -1776,7 +1782,7 @@ export function PlanCard({ planId }: { planId: string }) {
       hint={plan.id}
       aside={
         status.busy ? (
-          <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
+          <span className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-ui-sm text-muted-foreground">
             <Spinner /> {status.label}
             {plan.status === "planning" ? (
               <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
@@ -1850,7 +1856,7 @@ export function PlanCard({ planId }: { planId: string }) {
                   key={path}
                   type="button"
                   onClick={() => setInspector({ kind: "file", path })}
-                  className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground"
+                  className="max-w-full rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 text-left font-mono text-[11px] break-all text-muted-foreground hover:text-foreground"
                 >
                   {path}
                 </button>
@@ -1997,7 +2003,7 @@ function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<strin
   return (
     <div className="flex flex-wrap items-center gap-1" data-testid="conflict-files">
       {shown.map((file) => (
-        <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+        <span key={file} className="max-w-full rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] break-all text-muted-foreground">
           {file}
           {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(t, lines[file]!)}</span> : null}
         </span>

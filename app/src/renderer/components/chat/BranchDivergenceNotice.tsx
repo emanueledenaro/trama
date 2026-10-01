@@ -51,7 +51,7 @@ export function BranchDivergencePanel({ divergence, onDone, filesOpen = false }:
       {open ? (
         <div id="branch-divergence-files" className="mt-1.5 flex max-h-[30vh] flex-wrap gap-1 overflow-y-auto pl-6" data-testid="branch-divergence-files">
           {files.map((file) => (
-            <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <span key={file} className="max-w-full rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] break-all text-muted-foreground">
               {file}
             </span>
           ))}

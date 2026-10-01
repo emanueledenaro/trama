@@ -115,7 +115,7 @@ function FileList({ item }: { item: OverlapItem }) {
   return (
     <ul className="mt-1 flex flex-wrap gap-1" aria-label="File in comune">
       {item.files.slice(0, 8).map((file) => (
-        <li key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+        <li key={file} className="max-w-full rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] break-all text-muted-foreground">
           {file}
           {item.lines[file]?.length ? <span className="font-sans">, {linesLabel(t, item.lines[file]!)}</span> : null}
         </li>

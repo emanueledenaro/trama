@@ -64,7 +64,7 @@ export function ContextMeter() {
         <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
           <Popover.Popup
             data-testid="context-meter-popup"
-            className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="translucent-popup max-h-(--available-height) w-[min(20rem,calc(100vw-1.5rem))] overflow-y-auto rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <div className="font-medium text-foreground" title={tokens}>
               {known ? t("context.meter.title", { percent: reading.percent! }) : t("context.meter.unknown")}

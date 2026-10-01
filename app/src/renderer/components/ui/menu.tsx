@@ -26,7 +26,7 @@ export function MenuPopup({
       <MenuPrimitive.Positioner className="z-50 min-w-32" side={side} align={align} sideOffset={sideOffset}>
         <MenuPrimitive.Popup
           className={cn(
-            "translucent-popup relative flex origin-(--transform-origin) text-[var(--color-text-foreground)] outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            "translucent-popup relative flex max-w-[calc(100vw-1.5rem)] origin-(--transform-origin) text-[var(--color-text-foreground)] outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
             composer ? "rounded-[0.875rem] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]" : "rounded-2xl",
             className,
           )}

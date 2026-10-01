@@ -1454,6 +1454,7 @@ export const en: Record<keyof typeof it, string> = {
   "panel.label": "Panel",
   "panel.resize": "Height of the Activity panel",
   "panel.close": "Close the panel",
+  "toast.close": "Close",
   "activity.title": "Activity",
   "activity.filter.who": "Who",
   "activity.filter.whoAll": "Everyone",

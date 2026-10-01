@@ -16,7 +16,7 @@ import {
   IconUser,
   IconX,
 } from "@/components/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MessageKey } from "@shared/i18n";
 import { ChatView } from "@/components/chat/ChatView";
 import { InspectorBody, targetTitle, useTargetTitle } from "@/components/inspector/Inspector";
@@ -25,18 +25,9 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
-import { Sash, useResizableWidth } from "@/lib/resizable";
+import { Sash } from "@/lib/resizable";
 import { type InspectorTarget, type MainView, useUi } from "@/lib/store";
-import {
-  CONVERSATION_TAB,
-  DETAIL_PANE_MIN_WIDTH,
-  type EditorTab,
-  type TargetKind,
-  detailPaneDefaultWidth,
-  detailPaneMaxWidth,
-  splitsEditor,
-  tabKey,
-} from "@/lib/workbench";
+import { CHAT_MIN_WIDTH, CONVERSATION_TAB, type EditorTab, type TargetKind, splitsEditor, tabKey } from "@/lib/workbench";
 
 const ICON = "size-3.5 shrink-0";
 
@@ -64,6 +55,28 @@ export function useViewportWidth(): number {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   return width;
+}
+
+/** The window's height, followed as it changes: below 716 px the bottom panel lies over the editor. */
+export function useViewportHeight(): number {
+  const [height, setHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const onResize = () => setHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return height;
+}
+
+/** The detail pane's width beside the conversation, owned by the window so the side bar can fit beside it. */
+export interface DetailPaneSize {
+  width: number;
+  min: number;
+  max: number;
+  setWidth(width: number): void;
+  reset(): void;
+  resizing: boolean;
+  setResizing(resizing: boolean): void;
 }
 
 /** Whether the editor shows the details beside the conversation now. */
@@ -94,10 +107,17 @@ function TabButton({
   const t = useT();
   const focusTab = useUi((s) => s.focusTab);
   const closeTab = useUi((s) => s.closeTab);
+  const ref = useRef<HTMLDivElement>(null);
+  // The tab on screen stays in view when the strip is too narrow for all of them.
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selected]);
   return (
     <div
+      ref={ref}
       className={cn(
-        "group relative flex h-full min-w-0 max-w-[14rem] shrink-0 items-center border-r border-[color:var(--app-panel-border)] text-ui-sm",
+        // Tabs share the strip down to 6rem each; past that the strip scrolls sideways.
+        "group relative flex h-full min-w-24 max-w-[14rem] shrink items-center border-r border-[color:var(--app-panel-border)] text-ui-sm",
         selected
           ? "bg-[var(--color-background-surface)] text-foreground shadow-[inset_0_1px_0_var(--color-text-accent)]"
           : "text-muted-foreground hover:text-foreground",
@@ -244,7 +264,7 @@ const mainKey = (view: MainView, hasProject: boolean) =>
  * conversation, with a sash between them; in a narrower one a tab covers the conversation, and the row above the
  * composer and the status bar stay in view.
  */
-export function EditorArea() {
+export function EditorArea({ detailSize }: { detailSize: DetailPaneSize }) {
   const t = useT();
   const tabs = useUi((s) => s.editorTabs);
   const mainView = useUi((s) => s.mainView);
@@ -252,7 +272,6 @@ export function EditorArea() {
   const focus = useUi((s) => s.editorFocus);
   const hasProject = useUi((s) => Boolean(s.app?.project));
   const split = useSplitEditor();
-  const detailWidth = useResizableWidth("trama.detailPaneWidth", { initial: detailPaneDefaultWidth, min: DETAIL_PANE_MIN_WIDTH, max: detailPaneMaxWidth });
   const detail = tabs.find((tab): tab is Extract<EditorTab, { kind: "detail" }> => tab.kind === "detail" && tabKey(tab) === activeDetail) ?? null;
   const main = mainKey(mainView, hasProject);
   // Without a project there is no conversation: the Benvenuto is the first tab, and the only one until another opens.
@@ -267,28 +286,32 @@ export function EditorArea() {
     const detailTabs = tabs.filter((tab) => tab.kind === "detail");
     return (
       <div className="workbench-card flex min-h-0 min-w-0 flex-1" data-testid="editor-area" data-split="true" data-active-detail={activeDetail ?? undefined}>
-        <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 flex-col overflow-hidden" data-testid="editor-main">
+        <main
+          className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 flex-col overflow-hidden"
+          style={{ minWidth: CHAT_MIN_WIDTH }}
+          data-testid="editor-main"
+        >
           <TabStrip tabs={mainTabs} conversation selected={main} label={label} />
           <ChatView />
         </main>
         <section
           className={cn(
             "chat-content-card relative z-[16] flex h-full shrink-0 flex-col border-l border-[color:var(--app-panel-border)]",
-            !detailWidth.resizing && "transition-[width] duration-200 ease-out",
+            !detailSize.resizing && "transition-[width] duration-200 ease-out",
           )}
-          style={{ width: detailWidth.width }}
+          style={{ width: detailSize.width }}
           aria-label={t("workbench.editor.details")}
           data-testid="editor-side"
         >
           <Sash
             side="left"
             label={t("workbench.editor.resize")}
-            size={detailWidth.width}
-            min={detailWidth.bounds.min}
-            max={detailWidth.bounds.max}
-            onResize={detailWidth.setWidth}
-            onReset={detailWidth.reset}
-            onDragChange={detailWidth.setResizing}
+            size={detailSize.width}
+            min={detailSize.min}
+            max={detailSize.max}
+            onResize={detailSize.setWidth}
+            onReset={detailSize.reset}
+            onDragChange={detailSize.setResizing}
           />
           <TabStrip tabs={detailTabs} conversation={false} selected={activeDetail ?? ""} label={t("workbench.editor.details")} />
           <DetailPane key={activeDetail} target={detail.target} />

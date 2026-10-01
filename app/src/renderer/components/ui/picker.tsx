@@ -24,7 +24,7 @@ export function PickerPopup({
       <Popover.Positioner side={side} align={align} sideOffset={8} className="z-50">
         <Popover.Popup
           className={cn(
-            "translucent-popup flex max-h-(--available-height) w-[22rem] max-w-[92vw] flex-col rounded-2xl bg-popover/95 text-ui text-[var(--color-text-foreground)] outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            "translucent-popup flex max-h-(--available-height) w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-2xl bg-popover/95 text-ui text-[var(--color-text-foreground)] outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
             className,
           )}
         >

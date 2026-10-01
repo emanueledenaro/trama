@@ -250,11 +250,11 @@ function Timeline() {
         const element = event.currentTarget;
         pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
       }}
-      className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
+      className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] @min-[560px]/chat:py-4"
     >
       {/* The dock (the bar above the composer and the composer) lies over the bottom of the timeline: the timeline leaves
           room for all of it, measured, so the last message ends above the bar however tall the draft or the bar grow. */}
-      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-[max(10rem,calc(var(--chat-dock,8rem)+2rem))] sm:px-5">
+      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-[max(10rem,calc(var(--chat-dock,8rem)+2rem))] @min-[560px]/chat:px-5">
         {empty ? <ProjectIntro /> : null}
         {goalId ? <GoalDialogHeader goalId={goalId} /> : null}
         {rows.map((row, index) => (
@@ -345,6 +345,8 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const goalId = useUi((s) => s.dialogGoalId);
   const page: EditorPage = mainView === "dialog" && !project ? "welcome" : mainView;
   const [dock, dockHeight] = useHeight();
+  // The conversation's own height: the focus panel over the composer takes at most 40% of it (WorkBar).
+  const [pane, paneHeight] = useHeight();
   return (
     <div className="@container/chat relative flex min-h-0 min-w-0 flex-1 flex-col">
       {page === "overview" ? (
@@ -360,8 +362,14 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
         <>
           <div
             key={`pane-${project.id}`}
+            ref={pane}
             className="chat-pane-enter relative flex min-h-0 flex-1 flex-col"
-            style={dockHeight ? ({ "--chat-dock": `${dockHeight}px` } as React.CSSProperties) : undefined}
+            style={
+              {
+                ...(dockHeight ? { "--chat-dock": `${dockHeight}px` } : {}),
+                ...(paneHeight ? { "--chat-pane-height": `${paneHeight}px` } : {}),
+              } as React.CSSProperties
+            }
           >
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
             {/* Under a covering tab the timeline stays mounted, out of sight, and keeps its place in the chat. */}
@@ -374,7 +382,7 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
               <ExercisePanel />
             </FilledScope>
             {/* The status bar sits right below: 8 px keep the composer off it and leave the conversation 580 px at 1280x800 (issue #330). */}
-            <div ref={dock} className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
+            <div ref={dock} className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 @min-[560px]/chat:px-5">
               <div className="pointer-events-auto">
                 {/* Over a covering tab the bar is the tab's own last row (CoverPane): here it would lie over the tab. */}
                 {cover ? null : <WorkBar placement="composer" />}

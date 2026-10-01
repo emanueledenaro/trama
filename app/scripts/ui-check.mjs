@@ -472,6 +472,42 @@ const expectIconAndText = async (button, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
+// Size rules (720x640 up): no box of the editor, the side bar, the bottom panel or the status bar is wider inside than
+// outside. The flex, grid and scrolling boxes on screen keep scrollWidth <= clientWidth + 1; what is meant to scroll
+// sideways (code, the tab strip) and text that truncates with an ellipsis on purpose are left out.
+const noContainerOverflow = async (where) => {
+  const overflowing = await page.evaluate(() => {
+    const roots = ['[data-testid="editor-area"]', "main", '[data-testid="side-bar"]', '[data-testid="bottom-panel"]', '[data-testid="status-bar"]'];
+    const scrollsSideways = 'pre, code, [data-testid="editor-tabs"], [data-scrolls-x]';
+    const seen = new Set();
+    const found = [];
+    for (const root of document.querySelectorAll(roots.join(", "))) {
+      for (const node of [root, ...root.querySelectorAll("*")]) {
+        if (seen.has(node) || !(node instanceof HTMLElement)) continue;
+        seen.add(node);
+        if (node.closest(scrollsSideways)) continue;
+        if (!node.checkVisibility({ visibilityProperty: true })) continue;
+        const style = getComputedStyle(node);
+        const layout = /flex|grid/.test(style.display);
+        const scrolls = style.overflowX !== "visible" || style.overflowY !== "visible";
+        if (!layout && !scrolls) continue;
+        if (style.textOverflow === "ellipsis") continue;
+        // The screen reader's text is 1 px wide by design.
+        if (node.clientWidth <= 1) continue;
+        if (node.scrollWidth > node.clientWidth + 1) {
+          found.push({
+            node: `${node.tagName.toLowerCase()}${node.dataset.testid ? `[data-testid=${node.dataset.testid}]` : ""}`,
+            className: String(node.className).slice(0, 80),
+            scrollWidth: node.scrollWidth,
+            clientWidth: node.clientWidth,
+          });
+        }
+      }
+    }
+    return found;
+  });
+  if (overflowing.length) throw new Error(`A box overflows sideways in ${where}: ${JSON.stringify(overflowing.slice(0, 5))}`);
+};
 // Design rules for the status bar: the branch on the left, then the status line in the middle, what asks for an action,
 // the work in focus, then a line and the icons (person's note, 1 October 2026), no button takes a state tint at rest, and the bar stays 24 px.
 const statusBarRules = async (where) => {
@@ -8353,5 +8389,56 @@ await paymentsSquad.locator('[data-testid="team-figure"][data-role="squadLead"]'
 await paymentsSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
 await expectNoRawIds(squadsSide.getByTestId("squad").first(), "The squads after the split");
 await themeShots("51i-squads-split");
+// Size rules: at the narrowest window and at 1280x800 zoomed to 120% no box of the views, the chat, Impostazioni and
+// Progetti overflows sideways, with a project full of work.
+{
+  const closeEditorTab = async (tab) => {
+    const button = page.locator(`[data-testid="editor-tab"][data-tab="${tab}"]`);
+    if (await button.count()) {
+      await button.getByRole("button", { name: /^Chiudi / }).click();
+      await button.waitFor({ state: "detached" });
+    }
+  };
+  for (const [width, height] of [
+    [720, 640],
+    [1066, 666],
+  ]) {
+    const size = `${width}x${height}`;
+    await page.setViewportSize({ width, height });
+    await closePanels();
+    await page.waitForTimeout(400);
+    await noContainerOverflow(`the chat at ${size}`);
+    // Lower than 716 px the bottom panel stays under the editor at its lowest, and the composer stays in view.
+    await clickMenu("togglePanel");
+    const docked = page.locator('[data-testid="bottom-panel"]:not([data-overlay])');
+    await docked.waitFor();
+    await page.waitForTimeout(400);
+    const composerVisible = await page.locator(".chat-composer-surface").first().isVisible();
+    const panelTop = await docked.evaluate((el) => el.getBoundingClientRect().top);
+    const composerBottom = await page.locator(".chat-composer-surface").first().evaluate((el) => el.getBoundingClientRect().bottom);
+    if (!composerVisible || composerBottom > panelTop + 0.5) throw new Error(`The bottom panel hides the composer at ${size}`);
+    await noContainerOverflow(`the bottom panel at ${size}`);
+    await clickMenu("togglePanel");
+    await docked.waitFor({ state: "detached" });
+    for (const view of ["Lavoro", "Squadre", "Aspetta te", "Memoria", "Regole", "Progetti"]) {
+      await openView(view);
+      // The side bar eases to its width: the boxes are measured once it has settled.
+      await page.waitForTimeout(400);
+      await noContainerOverflow(`${view} at ${size}`);
+    }
+    await closePanels();
+    await clickMenu("settings");
+    await page.getByTestId("settings").waitFor();
+    await noContainerOverflow(`Impostazioni at ${size}`);
+    await closeEditorTab("settings");
+    await (await overviewButton()).click();
+    await page.getByTestId("overview").waitFor();
+    await page.waitForTimeout(400);
+    await noContainerOverflow(`the projects overview at ${size}`);
+    await closeEditorTab("projects");
+    await closePanels();
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

@@ -72,14 +72,15 @@ export function SettingsView() {
     >
       <nav
         aria-label={t("settings.sections")}
-        className="flex shrink-0 gap-0.5 overflow-x-auto [scrollbar-width:none] border-b border-[color:var(--app-surface-divider)] px-3 py-2 @2xl/chat:w-52 @2xl/chat:flex-col @2xl/chat:overflow-visible @2xl/chat:border-r @2xl/chat:border-b-0 @2xl/chat:px-2 @2xl/chat:py-4"
+        className="flex shrink-0 flex-wrap gap-x-2 gap-y-0.5 border-b border-[color:var(--app-surface-divider)] px-3 py-2 @2xl/chat:w-52 @2xl/chat:flex-col @2xl/chat:flex-nowrap @2xl/chat:border-r @2xl/chat:border-b-0 @2xl/chat:px-2 @2xl/chat:py-4"
       >
         {/* The app's sections, then the project's (issue #336). */}
         {[
           { title: t("settings.group.app"), entries: SECTIONS.filter((entry) => APP_SECTIONS.includes(entry.id)) },
           { title: projectName ? t("settings.group.projectOf", { name: projectName }) : t("settings.group.project"), entries: SECTIONS.filter((entry) => !APP_SECTIONS.includes(entry.id)) },
         ].map((group) => (
-          <div key={group.title} className="flex shrink-0 gap-0.5 @2xl/chat:mb-3 @2xl/chat:flex-col" role="group" aria-label={group.title}>
+          // Under 672 px the sections wrap on more lines instead of scrolling sideways out of sight.
+          <div key={group.title} className="flex min-w-0 max-w-full flex-wrap gap-0.5 @2xl/chat:mb-3 @2xl/chat:flex-col @2xl/chat:flex-nowrap" role="group" aria-label={group.title}>
             <span className="hidden truncate px-2 pb-1 text-ui-xs text-muted-foreground @2xl/chat:block">{group.title}</span>
             {group.entries.map((entry) => (
               <button
@@ -88,7 +89,7 @@ export function SettingsView() {
                 aria-current={section === entry.id ? "page" : undefined}
                 onClick={() => openSettings(entry.id)}
                 className={cn(
-                  "flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
+                  "flex h-8 min-w-0 max-w-full items-center gap-2 rounded-md px-2 text-left text-ui transition-colors [&_svg]:size-3.5 [&_svg]:shrink-0",
                   section === entry.id
                     ? "bg-[var(--sidebar-selected)] text-foreground"
                     : "text-foreground/80 hover:bg-[var(--sidebar-accent)] hover:text-foreground",
@@ -104,7 +105,7 @@ export function SettingsView() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* The one filled button of the window is the one of Aspetta te (ADR 0018): a primary here is drawn as an outline. */}
         <FilledScope allowed={false}>
-          <div key={section} className="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-8">
+          <div key={section} className="mx-auto w-full max-w-[40rem] px-4 py-6 @min-[560px]/chat:px-8">
             {section === "general" ? <GeneralSection /> : null}
             {section === "connections" ? <ConnectionsSection /> : null}
             {section === "method" ? <MethodSection /> : null}
@@ -121,12 +122,12 @@ export function SettingsView() {
 
 function PageHeader({ title, description, actions }: { title: string; description?: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <header className="mb-6 flex items-start gap-4">
-      <div className="min-w-0 flex-1">
+    <header className="mb-6 flex flex-wrap items-start gap-x-4 gap-y-2">
+      <div className="min-w-[12rem] flex-1">
         <h2 className="text-ui-lg font-medium text-foreground">{title}</h2>
         {description ? <p className="mt-1 text-ui-sm text-muted-foreground">{description}</p> : null}
       </div>
-      {actions ? <div className="cta-row shrink-0">{actions}</div> : null}
+      {actions ? <div className="cta-row ml-auto min-w-0 max-w-full">{actions}</div> : null}
     </header>
   );
 }
@@ -154,7 +155,7 @@ function Row({ label, description, control, children }: { label: React.ReactNode
           <div className="text-ui text-foreground">{label}</div>
           {description ? <div className="mt-0.5 text-ui-sm text-muted-foreground">{description}</div> : null}
         </div>
-        {control ? <div className="cta-row ml-auto shrink-0">{control}</div> : null}
+        {control ? <div className="cta-row ml-auto min-w-0 max-w-full">{control}</div> : null}
       </div>
       {children}
     </div>
@@ -184,7 +185,7 @@ function GeneralSection() {
           label={t("settings.theme")}
           description={t("settings.theme.description")}
           control={
-            <div role="radiogroup" aria-label={t("settings.theme")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
+            <div role="radiogroup" aria-label={t("settings.theme")} className="flex flex-wrap rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
               {options.map((option) => (
                 <button
                   key={option.value}
@@ -594,7 +595,7 @@ const ACTIVE_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_ACTIVE_SQUADS);
 /** One limit as a row of numbers to pick from. */
 function LimitPicker({ label, testId, options, value, onPick }: { label: string; testId: string; options: number[]; value: number | null; onPick: (value: number) => void }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={testId}>
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={testId}>
       {options.map((option) => (
         <button
           key={option}
@@ -700,7 +701,7 @@ function WorkPlaceGroup() {
         }
         control={
           usable ? (
-            <div role="radiogroup" aria-label={t("settings.workPlace.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="work-place">
+            <div role="radiogroup" aria-label={t("settings.workPlace.title")} className="flex flex-col rounded-lg bg-[var(--color-background-button-secondary)] p-0.5 @min-[560px]/chat:flex-row" data-testid="work-place">
               {options.map((value) => (
                 <button
                   key={value}
@@ -710,7 +711,7 @@ function WorkPlaceGroup() {
                   disabled={!cloud}
                   onClick={() => void act("project:settings", { workPlace: value })}
                   className={cn(
-                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-4 text-ui-sm transition-colors",
+                    "flex h-8 min-w-0 items-center justify-center rounded-md px-3 text-ui-sm transition-colors @min-[560px]/chat:px-4",
                     selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -738,7 +739,7 @@ function DiscussionModelGroup() {
         description={!project ? t("settings.discussions.openProject") : t(`settings.discussions.${setting!}.description`)}
         control={
           usable ? (
-            <div role="radiogroup" aria-label={t("settings.discussions.inOpenProject")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="discussion-model">
+            <div role="radiogroup" aria-label={t("settings.discussions.inOpenProject")} className="flex flex-col rounded-lg bg-[var(--color-background-button-secondary)] p-0.5 @min-[560px]/chat:flex-row" data-testid="discussion-model">
               {(["light", "role"] as const).map((value) => (
                 <button
                   key={value}
@@ -747,7 +748,7 @@ function DiscussionModelGroup() {
                   aria-checked={setting === value}
                   onClick={() => void act("project:settings", { discussionModel: value })}
                   className={cn(
-                    "flex h-8 items-center justify-center whitespace-nowrap rounded-md px-4 text-ui-sm transition-colors",
+                    "flex h-8 min-w-0 items-center justify-center rounded-md px-3 text-ui-sm transition-colors @min-[560px]/chat:px-4",
                     setting === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >

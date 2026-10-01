@@ -75,7 +75,7 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
       className={cn(
         "min-w-0",
         // In a tab, a flat row of the tab's own with a line above: the tab's content scrolls above it, never under it.
-        onComposer ? "mx-auto w-full max-w-[var(--app-chat-max-width)]" : "shrink-0 border-t border-[color:var(--app-surface-divider)] px-3 py-1 sm:px-5",
+        onComposer ? "mx-auto w-full max-w-[var(--app-chat-max-width)]" : "shrink-0 border-t border-[color:var(--app-surface-divider)] px-3 py-1 @min-[560px]/chat:px-5",
       )}
       data-testid="work-bar-row"
       data-placement={placement}
@@ -93,7 +93,8 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
         )}
       >
         {open && hasFocus ? (
-          <div className="max-h-[45vh] overflow-y-auto border-b border-[color:var(--app-surface-divider)]" data-testid="work-bar-focus-panel">
+          // At most 40% of the conversation's height (--chat-pane-height, ChatView), not of the window's.
+          <div className="max-h-[calc(var(--chat-pane-height,100vh)*0.4)] overflow-y-auto border-b border-[color:var(--app-surface-divider)]" data-testid="work-bar-focus-panel">
             {/* While something waits, Decidi is the window's one filled button: the panel's primaries are outlines. */}
             <FilledScope allowed={!waiting}>
               <FocusPanel goTo={waiting} />

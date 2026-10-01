@@ -12,6 +12,7 @@ import {
   opensInEditor,
   splitsEditor,
   EDITOR_MIN_HEIGHT,
+  PANEL_DOCKED_MIN_VIEWPORT,
   PANEL_MIN_HEIGHT,
   SIDE_BAR_MIN_WIDTH,
   TAB_LABELS,
@@ -22,6 +23,9 @@ import {
   isDetail,
   panelDefaultHeight,
   panelMaxHeight,
+  panelOverlays,
+  fitPanels,
+  sheetMargins,
   parentOf,
   sideBarDefaultWidth,
   sideBarMaxWidth,
@@ -118,6 +122,14 @@ describe("window layout (issue #330)", () => {
     // 1066x666 is a 1280x800 window at 120% zoom.
     expect(1066 - 48 - sideBarMaxWidth(1066)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
     expect(sideBarMaxWidth(720)).toBeGreaterThanOrEqual(SIDE_BAR_MIN_WIDTH);
+    // The narrowest window: the side bar goes from 240 to 252 px and the chat keeps 420.
+    expect(sideBarMaxWidth(720)).toBe(252);
+    // Above 1200 px the sheet has 8 px on each side, and they count.
+    for (const viewport of [1201, 1208, 1280, 1400]) {
+      expect(viewport - 48 - sheetMargins(viewport) - sideBarMaxWidth(viewport)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
+    }
+    expect(sheetMargins(1200)).toBe(0);
+    expect(sheetMargins(1201)).toBe(16);
   });
 
   it("keeps Activity out of the side bar: it opens in the bottom panel (issue #337)", () => {
@@ -130,7 +142,16 @@ describe("window layout (issue #330)", () => {
     expect(panelDefaultHeight(1680)).toBe(260);
     expect(800 - 70 - panelMaxHeight(800)).toBeGreaterThanOrEqual(EDITOR_MIN_HEIGHT);
     expect(panelMaxHeight(1050)).toBeGreaterThanOrEqual(panelDefaultHeight(1680));
-    expect(panelMaxHeight(500)).toBe(PANEL_MIN_HEIGHT);
+    // From 716 px the editor keeps 526 px above the panel; lower, the panel stays under it at its lowest, never over it,
+    // so the composer stays in view.
+    expect(PANEL_DOCKED_MIN_VIEWPORT).toBe(716);
+    expect(panelOverlays(716)).toBe(false);
+    expect(panelOverlays(640)).toBe(false);
+    expect(panelMaxHeight(640)).toBe(PANEL_MIN_HEIGHT);
+    expect(716 - 70 - panelMaxHeight(716)).toBe(EDITOR_MIN_HEIGHT);
+    expect(panelMaxHeight(716)).toBe(PANEL_MIN_HEIGHT);
+    expect(panelMaxHeight(640)).toBeGreaterThanOrEqual(PANEL_MIN_HEIGHT);
+    expect(panelMaxHeight(640)).toBeLessThan(640 - 70);
   });
 });
 
@@ -173,5 +194,25 @@ describe("editor tabs (issue #336)", () => {
       expect(detail).toBeGreaterThanOrEqual(DETAIL_PANE_MIN_WIDTH);
       expect(viewport - ACTIVITY_BAR_WIDTH - sideBarDefaultWidth(viewport) - detailPaneMaxWidth(viewport)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
     }
+  });
+
+  it("fits the side bar and the details together, whatever widths the person chose", () => {
+    for (const viewport of [1500, 1680, 1920, 2560]) {
+      for (const [side, detail] of [
+        [720, 900],
+        [240, 900],
+        [720, 360],
+        [300, 440],
+      ] as const) {
+        const fit = fitPanels(viewport, side, detail);
+        expect(fit.detail).toBeGreaterThanOrEqual(DETAIL_PANE_MIN_WIDTH);
+        expect(fit.sideBar).toBeGreaterThanOrEqual(SIDE_BAR_MIN_WIDTH);
+        expect(viewport - ACTIVITY_BAR_WIDTH - sheetMargins(viewport) - fit.sideBar - fit.detail).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
+      }
+    }
+    // A closed panel takes no room: the other may grow into it.
+    expect(fitPanels(1500, null, 900).sideBar).toBe(0);
+    expect(fitPanels(1500, null, 900).detail).toBe(900);
+    expect(fitPanels(1066, 720, null)).toEqual({ sideBar: 1066 - 48 - 420, detail: 0 });
   });
 });
