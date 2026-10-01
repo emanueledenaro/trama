@@ -2318,10 +2318,12 @@ await shot("05-map");
       if (JSON.stringify(seen[provider].sections) !== JSON.stringify(codex.sections))
         throw new Error(`The ${mode} background with ${provider} differs from Codex: ${JSON.stringify({ codex: codex.sections, [provider]: seen[provider].sections })}`);
     const expected = mode === "light" ? "rgb(255, 255, 255)" : "rgb(33, 33, 33)";
-    if (codex.sections.surface !== expected || codex.sections.editor !== expected) throw new Error(`The ${mode} surface is not ${expected}: ${JSON.stringify(codex.sections)}`);
-    const tints = ["titleBar", "sideBar", "editor", "panel", "statusBar"].map((key) => codex.sections[key]);
+    if (codex.sections.surface !== expected) throw new Error(`The ${mode} surface is not ${expected}: ${JSON.stringify(codex.sections)}`);
+    // The work as a sheet on a frame (1 October 2026): the bars are one frame tint, and the side bar, the editor and the
+    // bottom panel each their own, apart from it.
+    const tints = ["titleBar", "sideBar", "editor", "panel"].map((key) => codex.sections[key]);
     if (tints.some((tint) => !tint) || new Set(tints).size !== tints.length) throw new Error(`The ${mode} sections do not have their own tint: ${JSON.stringify(codex.sections)}`);
-    if (codex.sections.activityBar !== codex.sections.titleBar) throw new Error(`The ${mode} activity bar and title bar differ: ${JSON.stringify(codex.sections)}`);
+    if (codex.sections.activityBar !== codex.sections.titleBar || codex.sections.statusBar !== codex.sections.titleBar) throw new Error(`The ${mode} bars are not one frame: ${JSON.stringify(codex.sections)}`);
     for (const key of ["text", "ring", "selection", "bubble", "sash"])
       if (codex.accents[key] === seen.claudeAgent.accents[key]) throw new Error(`The ${mode} ${key} accent is the same with Codex and Claude: ${codex.accents[key]}`);
     if (codex.accents.primary === seen.claudeAgent.accents.primary) throw new Error(`The ${mode} primary button is the same with Codex and Claude`);

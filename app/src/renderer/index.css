@@ -189,7 +189,8 @@
   --app-statusbar-tint: #0a0a0b;
   --app-card-border: rgb(255 255 255 / 0.07);
   --app-card-shadow: 0 0 0 1px rgb(0 0 0 / 0.4), 0 6px 24px rgb(0 0 0 / 0.35);
-  --app-panel-border: color-mix(in srgb, var(--surface) 95%, white);
+  /* A quiet line on the black frame, a step above the side bar, never a light seam. */
+  --app-panel-border: #1c1c1f;
   --glass-light: #ffffff;
 }
 
@@ -812,10 +813,6 @@ button {
       border-radius: 0;
       box-shadow: inset 1px 0 0 var(--app-card-border);
     }
-  }
-  /* The side bar meets the frame, not the sheet: no line between them. */
-  .app-sidebar-surface {
-    border-right-color: transparent !important;
   }
   .workbench-card .workbench-card {
     margin: 0;
