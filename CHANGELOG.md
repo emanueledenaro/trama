@@ -6,6 +6,61 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-30
+
+### Added
+
+- **app:** Apply the design rules to the Progetti overview and its dialogs ([#518](https://github.com/emanueledenaro/trama/pull/518)).
+- **app:** Apply the design rules to the Monitor and Presenza settings ([#517](https://github.com/emanueledenaro/trama/pull/517)).
+- **app:** Apply the design rules to the Metodo settings ([#516](https://github.com/emanueledenaro/trama/pull/516)).
+- **app:** Apply the design rules to the Collegamenti settings ([#515](https://github.com/emanueledenaro/trama/pull/515)).
+- **app:** Apply the design rules to the Generale settings ([#514](https://github.com/emanueledenaro/trama/pull/514)).
+- **app:** Answer the Ask Trama route before its steps ([#493](https://github.com/emanueledenaro/trama/pull/493)).
+- **app:** Put the candidate verdict and its actions first in the chat card ([#520](https://github.com/emanueledenaro/trama/pull/520)).
+- **app:** Give the empty chat an action and align chat spacing to 16 px ([#512](https://github.com/emanueledenaro/trama/pull/512)).
+- **app:** Show the context meter only near the threshold ([#511](https://github.com/emanueledenaro/trama/pull/511)).
+- **app:** Apply the design rules to automatic work and agent conversations ([#509](https://github.com/emanueledenaro/trama/pull/509)).
+- **app:** Put Recenti above Inizia for who comes back ([#507](https://github.com/emanueledenaro/trama/pull/507)).
+- **app:** Give Impara and the exercise panel the design rules ([#506](https://github.com/emanueledenaro/trama/pull/506)).
+- **app:** Rebuild the agent screen around a settings gear ([#501](https://github.com/emanueledenaro/trama/pull/501)).
+- **app:** Make Apri un progetto the one main action of Inizia ([#503](https://github.com/emanueledenaro/trama/pull/503)).
+- **app:** Make the steps of Configura ask for nothing once done ([#505](https://github.com/emanueledenaro/trama/pull/505)).
+- **app:** Give Recenti its four states and icon-only navigation ([#504](https://github.com/emanueledenaro/trama/pull/504)).
+- **app:** Put the squads list on the 8 px grid and name its icons ([#508](https://github.com/emanueledenaro/trama/pull/508)).
+- **app:** Show the outcome and its actions first on the candidate page ([#500](https://github.com/emanueledenaro/trama/pull/500)).
+- **app:** Show the assignment actions before its contract ([#492](https://github.com/emanueledenaro/trama/pull/492)).
+- **app:** Put the plan decision and its slices above the long spec ([#491](https://github.com/emanueledenaro/trama/pull/491)).
+- **app:** Put the verdict first in the in-depth review ([#498](https://github.com/emanueledenaro/trama/pull/498)).
+- **app:** Show what a candidate is missing first in its chat card ([#487](https://github.com/emanueledenaro/trama/pull/487)).
+- **app:** Open the agent's whole look from one button ([#483](https://github.com/emanueledenaro/trama/pull/483)).
+
+### Changed
+
+- **app:** Share the identical candidate fields between chat and inspector ([#524](https://github.com/emanueledenaro/trama/pull/524)).
+- **app:** Apply the design rules to the Standard view ([#523](https://github.com/emanueledenaro/trama/pull/523)).
+- **app:** Apply the design rules to the Mandato and Moduli views ([#522](https://github.com/emanueledenaro/trama/pull/522)).
+- **app:** Apply the design rules to the Patto view ([#521](https://github.com/emanueledenaro/trama/pull/521)).
+- **app:** Give the title bar 32 px buttons and drop its branch copy ([#497](https://github.com/emanueledenaro/trama/pull/497)).
+- **app:** Make the goal detail's secondary actions icons ([#513](https://github.com/emanueledenaro/trama/pull/513)).
+- **app:** Apply the button rules to Lavoro, issues and git detail ([#502](https://github.com/emanueledenaro/trama/pull/502)).
+- **app:** Order Aspetta te by importance ([#499](https://github.com/emanueledenaro/trama/pull/499)).
+- **app:** Read the status bar by importance ([#495](https://github.com/emanueledenaro/trama/pull/495)).
+
+### Fixed
+
+- **app:** Keep the chat and the composer free of filled buttons ([#510](https://github.com/emanueledenaro/trama/pull/510)).
+- **app:** Apply the design rules to the examination view ([#489](https://github.com/emanueledenaro/trama/pull/489)).
+- **app:** Apply the design rules to the memory view ([#494](https://github.com/emanueledenaro/trama/pull/494)).
+- **app:** Give up the waiting item's title before the work bar cuts it ([#485](https://github.com/emanueledenaro/trama/pull/485)).
+- **app:** Let a stopped controller save nothing more ([#484](https://github.com/emanueledenaro/trama/pull/484)).
+- **app:** Let a correction continue the candidate of the work it replaces ([#481](https://github.com/emanueledenaro/trama/pull/481)).
+- **app:** Tell Security's overruled findings apart by their title ([#480](https://github.com/emanueledenaro/trama/pull/480)).
+- **app:** Keep a merged candidate decided when the integration base moves on ([#482](https://github.com/emanueledenaro/trama/pull/482)).
+- **app:** Make Clean Code follow the whole Pact ([#477](https://github.com/emanueledenaro/trama/pull/477)).
+- **app:** Keep punctuation on the line of the link before it ([#478](https://github.com/emanueledenaro/trama/pull/478)).
+- **app:** Resume replaced work as the replacement of its whole line ([#474](https://github.com/emanueledenaro/trama/pull/474)).
+- **app:** Take delegated steps after an automatic turn the person's message set aside ([#475](https://github.com/emanueledenaro/trama/pull/475)).
+
 ## [0.3.0] - 2026-09-29
 
 ### Added
@@ -171,6 +226,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **app:** Bring main back to green with the three pending fixes ([#225](https://github.com/emanueledenaro/trama/pull/225)).
 - **app:** Keep agent sessions inside the project ([#221](https://github.com/emanueledenaro/trama/pull/221)).
 
-[Unreleased]: https://github.com/emanueledenaro/trama/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/emanueledenaro/trama/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/emanueledenaro/trama/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/emanueledenaro/trama/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/emanueledenaro/trama/releases/tag/v0.2.0
