@@ -1,7 +1,8 @@
-// Builds Trama's woven icons (person's note, 1 October 2026) from the Tabler icons the renderer imports: the geometry
-// stays Tabler's (MIT, see THIRD_PARTY_NOTICES.md). Where two strokes truly cross, or a stroke ends on the middle of
-// another one, the one beneath gets a gap, as the threads of the logo, and a closed outline opens at the top right. Run with `node scripts/build-trama-icons.mjs`
-// after adding an icon; it writes src/renderer/components/icons/woven.generated.ts.
+// Builds Trama's icons (person's note, 1 October 2026) from the Tabler icons the renderer imports: the geometry stays
+// Tabler's (MIT, see THIRD_PARTY_NOTICES.md) and each icon gets two threads, as the two ribbons of the logo. The stroke
+// the others pass over (where they cross or one ends on another), or else the longest one, is the back thread and is
+// drawn faint; the rest stays full. Run with `node scripts/build-trama-icons.mjs` after adding an icon; it writes
+// src/renderer/components/icons/woven.generated.ts.
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
@@ -25,18 +26,22 @@ for (const name of [...used].sort()) {
   icons[name] = { filled: /createReactComponent\("filled"/.test(source), node: __iconNode.map(([tag, { key, ...attrs }]) => [tag, attrs]) };
 }
 
-// Icons whose outline must stay whole: a ring that opens reads as "in progress", and a lock tells shut from open by its
-// outline (analysis of 1 October 2026).
-const WHOLE = ["IconAlertCircle", "IconCircleCheck", "IconCircleDashed", "IconCircleDot", "IconCircleX", "IconClockPause", "IconInfoCircle", "IconLock", "IconLockOpen", "IconBan"];
+// Where the rule picks the wrong thread, the back threads by hand ([] keeps the icon in one thread): twin marks such as
+// two arrows or three dots have no back, and a few drawings read better with a chosen one.
+const BACK = {
+  IconArrowsSort: [], IconArrowsDiagonal: [], IconArrowsDiagonalMinimize2: [], IconArrowsSplit: [], IconDots: [], IconX: [],
+  IconPlus: [], IconPlayerPause: [], IconPlayerTrackNext: [], IconSun: [], IconHandStop: [], IconLanguage: [], IconTools: [],
+  IconBug: [], IconPin: [], IconPinned: [], IconPinnedOff: [],
+};
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 await page.setContent("<svg id=s xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'></svg>");
-const gaps = await page.evaluate(([icons, WHOLE]) => {
+const backs = await page.evaluate((icons) => {
   const svg = document.getElementById("s");
   const out = {};
   for (const [name, { filled, node }] of Object.entries(icons)) {
-    out[name] = { gaps: [], dashes: {} };
+    out[name] = [];
     if (filled) continue;
     svg.innerHTML = node.map(([t, a]) => `<${t} ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(" ")}/>`).join("");
     const all = [...svg.children];
@@ -50,7 +55,6 @@ const gaps = await page.evaluate(([icons, WHOLE]) => {
       });
     });
     const found = [];
-    const dashes = {};
     // Crossings: the earlier stroke passes under, alternating when the same two cross again.
     for (let i = 0; i < samples.length; i++)
       for (let j = i + 1; j < samples.length; j++) {
@@ -85,25 +89,14 @@ const gaps = await page.evaluate(([icons, WHOLE]) => {
           if (near && !found.some((g) => Math.hypot(g.x - end[0], g.y - end[1]) < 1.2)) found.push({ x: +end[0].toFixed(2), y: +end[1].toFixed(2), under: all.indexOf(els[i]), r: 1.7 });
         }
     }
-    // Closed outlines (rings, boxes, bubbles, shields) do not close: a thread starts and ends at the top right with a
-    // small gap, as the ball of Memoria. Small dots stay whole.
-    for (let i = 0; i < samples.length; i++) {
-      const A = samples[i];
-      const s0 = A[0], s1 = A[A.length - 1];
-      const closed = ["circle", "rect", "ellipse"].includes(els[i].tagName) || Math.hypot(s0[0] - s1[0], s0[1] - s1[1]) < 0.1;
-      const box = els[i].getBBox();
-      if (!closed || Math.min(box.width, box.height) < 6 || WHOLE.includes(name)) continue;
-      // The point of the outline nearest to the top right corner of its box, as a share of the outline's length: the
-      // gap is a dash pattern, which leaves no trace at its edges.
-      const corner = [box.x + box.width, box.y];
-      const at = A.reduce((best, q) => (Math.hypot(q[0] - corner[0], q[1] - corner[1]) < Math.hypot(best[0] - corner[0], best[1] - corner[1]) ? q : best));
-      const gap = (4.2 / at[3]) * 100;
-      dashes[all.indexOf(els[i])] = { array: `${(100 - gap).toFixed(2)} ${gap.toFixed(2)}`, offset: -((at[2] / at[3]) * 100 + gap / 2).toFixed(2) };
-    }
-    out[name] = { gaps: found, dashes };
+    const strokes = els.filter((e) => e.getTotalLength() > 2);
+    if (strokes.length < 2) continue;
+    const under = [...new Set(found.map((g) => g.under))];
+    if (under.length && under.length < strokes.length) out[name] = under;
+    else out[name] = [all.indexOf(els.reduce((a, e) => (e.getTotalLength() > a.getTotalLength() ? e : a)))];
   }
   return out;
-}, [icons, WHOLE]);
+}, icons);
 await browser.close();
 
 const lines = [
@@ -112,9 +105,9 @@ const lines = [
   'import type { WovenIcon } from "./woven";',
   "",
   "export const WOVEN_ICONS: Record<string, WovenIcon> = {",
-  ...Object.entries(icons).map(([name, { filled, node }]) => `  ${name}: ${JSON.stringify({ filled, node, ...gaps[name] })},`),
+  ...Object.entries(icons).map(([name, { filled, node }]) => `  ${name}: ${JSON.stringify({ filled, node, back: BACK[name] ?? backs[name] })},`),
   "};",
   "",
 ];
 writeFileSync(join(root, "src/renderer/components/icons/woven.generated.ts"), lines.join("\n"));
-console.log(`${Object.keys(icons).length} icons, ${Object.values(gaps).reduce((n, g) => n + g.gaps.length + Object.keys(g.dashes).length, 0)} gaps`);
+console.log(`${Object.keys(icons).length} icons, ${Object.keys(icons).filter((n) => (BACK[n] ?? backs[n]).length).length} in two threads`);

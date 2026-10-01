@@ -70,7 +70,7 @@ SOFTWARE.
 ## Tabler Icons
 
 - Fonte: <https://github.com/tabler/tabler-icons>, pacchetto `@tabler/icons-react` 3.48.
-- Cosa ne deriva Trama: il disegno delle icone del renderer in `app/src/renderer/components/icons/woven.generated.ts`, generato da `app/scripts/build-trama-icons.mjs`, che aggiunge gli stacchi dove i tratti si incrociano.
+- Cosa ne deriva Trama: il disegno delle icone del renderer in `app/src/renderer/components/icons/woven.generated.ts`, generato da `app/scripts/build-trama-icons.mjs`, che disegna tenue il tratto di fondo di ogni icona.
 - Copyright: `Copyright (c) 2020-2026 Paweł Kuna`.
 
 ```text

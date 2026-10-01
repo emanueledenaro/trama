@@ -1,5 +1,5 @@
 // Trama's icons (person's note, 1 October 2026): 24 x 24, drawn as threads; where two cross, one passes under the
-// other with a gap, as in the logo.
+// other with a gap, as in the logo. TRAMA_ICON_BACK names the strokes drawn faint, the thread behind.
 
 export const TRAMA_ICONS = {
   refresh: [
@@ -67,3 +67,18 @@ export const TRAMA_ICONS = {
 } as const;
 
 export type TramaIconName = keyof typeof TRAMA_ICONS;
+
+/** The back thread of each icon, drawn faint as in the woven set (components/icons/woven.tsx). */
+export const TRAMA_ICON_BACK: Record<TramaIconName, number[]> = {
+  refresh: [],
+  projects: [1],
+  waiting: [3, 4],
+  work: [0, 1],
+  teams: [1, 2, 4, 5],
+  rules: [0],
+  memory: [0],
+  settings: [0],
+  sideBar: [0],
+  panel: [0],
+  detailsBar: [0],
+};

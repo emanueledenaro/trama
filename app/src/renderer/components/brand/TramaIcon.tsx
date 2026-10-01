@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn";
-import { TRAMA_ICONS, type TramaIconName } from "./tramaIcons";
+import { BACK_THREAD_OPACITY } from "@/components/icons/woven";
+import { TRAMA_ICON_BACK, TRAMA_ICONS, type TramaIconName } from "./tramaIcons";
 
 /**
  * One of Trama's icons, drawn as threads. When `animated`, over its button the threads sew themselves from one end to the other; with
@@ -36,8 +37,8 @@ export function TramaIcon({
       strokeLinejoin="round"
       aria-hidden
     >
-      {TRAMA_ICONS[name].map((d) => (
-        <path key={d} d={d} pathLength={1} />
+      {TRAMA_ICONS[name].map((d, i) => (
+        <path key={d} d={d} pathLength={1} opacity={TRAMA_ICON_BACK[name].includes(i) ? BACK_THREAD_OPACITY : undefined} />
       ))}
     </svg>
   );
