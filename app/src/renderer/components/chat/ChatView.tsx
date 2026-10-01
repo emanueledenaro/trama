@@ -345,6 +345,8 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
   const goalId = useUi((s) => s.dialogGoalId);
   const page: EditorPage = mainView === "dialog" && !project ? "welcome" : mainView;
   const [dock, dockHeight] = useHeight();
+  // The conversation's own height: the focus panel over the composer takes at most 40% of it (WorkBar).
+  const [pane, paneHeight] = useHeight();
   return (
     <div className="@container/chat relative flex min-h-0 min-w-0 flex-1 flex-col">
       {page === "overview" ? (
@@ -360,8 +362,14 @@ export function ChatView({ cover }: { cover?: React.ReactNode }) {
         <>
           <div
             key={`pane-${project.id}`}
+            ref={pane}
             className="chat-pane-enter relative flex min-h-0 flex-1 flex-col"
-            style={dockHeight ? ({ "--chat-dock": `${dockHeight}px` } as React.CSSProperties) : undefined}
+            style={
+              {
+                ...(dockHeight ? { "--chat-dock": `${dockHeight}px` } : {}),
+                ...(paneHeight ? { "--chat-pane-height": `${paneHeight}px` } : {}),
+              } as React.CSSProperties
+            }
           >
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
             {/* Under a covering tab the timeline stays mounted, out of sight, and keeps its place in the chat. */}
