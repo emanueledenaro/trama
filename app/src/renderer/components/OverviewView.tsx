@@ -2,7 +2,6 @@ import {
   IconAlertTriangle,
   IconChevronDown,
   IconChevronUp,
-  IconCircleDashed,
   IconHandStop,
   IconHourglass,
   IconPlayerPause,
@@ -255,7 +254,8 @@ const LINE_ICONS: Record<NonNullable<ProjectOverview["coordinator"]>["state"], R
   next: <IconPlayerTrackNext className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />,
   waiting: <IconHandStop className="size-3 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />,
   blocked: <IconAlertTriangle className="size-3 shrink-0 text-warning" stroke={1.8} />,
-  idle: <IconCircleDashed className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />,
+  // At rest: the empty ring of someone free, never the stitch of work to do (visual language, 1 October 2026).
+  idle: <span aria-hidden className="block size-1.5 shrink-0 rounded-full border border-muted-foreground/60" />,
 };
 
 /** What the Coordinator of the project does now, in the words of its status line. */
