@@ -2658,6 +2658,7 @@
     "The documentation role started writing outside the mandate",
     "The domain proposal does not show \"${expected}\"",
     "The dragged sash is not lit: ${JSON.stringify(dragged)}",
+    "The editor is ${editorHeight}px high with the bottom panel open at ${size}",
     "The empty Aspetta te has a filled button",
     "The empty Aspetta te lists items",
     "The empty Aspetta te repeats itself: ${summary}",
