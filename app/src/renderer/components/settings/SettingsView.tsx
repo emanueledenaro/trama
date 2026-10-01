@@ -15,7 +15,7 @@ import {
   IconSun,
   IconTools,
   IconUsers,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { ProviderAccount } from "@shared/codex";
 import type { GitHubCliState } from "@shared/onboarding";

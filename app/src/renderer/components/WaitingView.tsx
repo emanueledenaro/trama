@@ -14,7 +14,7 @@ import {
   IconTarget,
   IconUsers,
   IconUsersGroup,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
 import { type DecidedItem, decidedToday, type WaitingItem, type WaitingKind, waitingItemFor } from "@shared/waitingForYou";
 import { findGoal } from "@shared/goals";

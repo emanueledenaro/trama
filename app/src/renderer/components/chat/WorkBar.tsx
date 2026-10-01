@@ -1,4 +1,4 @@
-import { IconChevronUp, IconFocus2, IconHourglass } from "@tabler/icons-react";
+import { IconChevronUp, IconFocus2, IconHourglass } from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
 import { strongest } from "@shared/overlap";
 import { OverlapBadge } from "@/components/OverlapNotice";

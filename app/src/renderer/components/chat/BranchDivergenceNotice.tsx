@@ -1,4 +1,4 @@
-import { IconChevronDown, IconGitBranch } from "@tabler/icons-react";
+import { IconChevronDown, IconGitBranch } from "@/components/icons";
 import { useState } from "react";
 import { divergenceQuestion, divergenceSummary } from "@shared/conflictScope";
 import type { BranchDivergence } from "@shared/domain";

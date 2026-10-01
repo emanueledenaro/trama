@@ -35,18 +35,18 @@ Gli accenti usati per il testo sono una tonalità più scura del colore del marc
 | --- | --- | --- |
 | `--surface` | `#FFFFFF` | `#212121` |
 | `--ink` | `#0D0D0D` | `#ECECEC` |
-| `--app-editor-tint` (area dell'editor) | `#FFFFFF` | `#212121` |
-| `--app-panel-tint` (pannello in basso) | `#FAFAFA` | `#1D1D1D` |
-| `--app-sidebar-tint` (barra laterale, striscia delle schede, ispettore) | `#F7F7F7` | `#1A1A1A` |
-| `--app-activitybar-tint` (barra delle attività e barra del titolo) | `#F2F2F2` | `#171717` |
-| `--app-statusbar-tint` (barra di stato) | `#EEEEEE` | `#141414` |
+| `--app-editor-tint` (il foglio: editor) | `#FBFBFC` | `#161618` |
+| `--app-panel-tint` (il foglio: pannello in basso) | `#F8F8FA` | `#141416` |
+| `--app-sidebar-tint` (barra laterale) | `#F0F1F3` | `#0E0E10` |
+| `--app-activitybar-tint` (cornice: barra delle attività, del titolo e spazio intorno al foglio) | `#E9EAEC` | `#0A0A0B` |
+| `--app-statusbar-tint` (barra di stato) | `#E9EAEC` | `#0A0A0B` |
 | `--glass-light` (luce sul vetro) | `#8E8EA0` | `#FFFFFF` |
 
-Ogni sezione ha una tinta neutra leggermente diversa, così le sezioni si distinguono senza linee in più. Sugli altri sistemi le tinte sono opache (`--app-*-surface` vale la tinta). Su macOS e Windows la finestra è vetro: editor e pannello in basso usano la loro tinta all'80% (78% in scuro) con il 7% della luce neutra, le barre la loro tinta al 55% (60% in scuro); il velo sul vetro è la luce neutra al 18% (32% in scuro).
+Regola del 1° ottobre 2026: il lavoro è un foglio appoggiato su una cornice. Editor e pannello in basso sono fogli con angoli di 12 px, 8 px di distanza dalla cornice e un bordo morbido (`--app-card-border`, `--app-card-shadow`): in chiaro un'ombra leggera su un grigio perla con una punta di azzurro, in scuro un nero elegante con un filo di luce sul bordo. Sugli altri sistemi le tinte sono opache. Su macOS e Windows la finestra resta vetro, ma quasi opaca: i fogli al 98% e la cornice al 95-97%, così le tinte si leggono qualunque sia il desktop dietro.
 
 ## Pannelli e separatori
 
-I pannelli seguono la disposizione di Visual Studio Code (temi predefiniti Light Modern e Dark Modern): barra laterale, editor e pannello in basso sono attaccati e occupano tutta l'altezza, separati da un bordo di 1 px. Le tinte della tabella sopra stanno vicino a quelle di VS Code (`sideBar.background` `#F8F8F8` / `#181818`, `editor.background` `#FFFFFF` / `#1F1F1F`).
+I pannelli seguono la disposizione di Visual Studio Code (temi predefiniti Light Modern e Dark Modern), con editor e pannello in basso come fogli staccati dalla cornice (regola del 1° ottobre 2026). Le tinte della tabella sopra stanno vicino a quelle di VS Code (`sideBar.background` `#F8F8F8` / `#181818`, `editor.background` `#FFFFFF` / `#1F1F1F`).
 
 | Token | Chiaro | Scuro | VS Code |
 | --- | --- | --- | --- |

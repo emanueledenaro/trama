@@ -27,19 +27,27 @@ describe("provider themes (issue #457)", () => {
     for (const block of providerBlocks()) expect(declared(block.body), block.selector).toEqual(ACCENTS);
   });
 
-  it("keep the surface white in light and dark in dark, with the section tints a step apart from each other", () => {
+  it("keep the surface white in light and dark in dark, and lay the work as a sheet on a darker neutral frame", () => {
+    const channels = (tint: string) => [1, 3, 5].map((i) => parseInt(tint.slice(i, i + 2), 16));
+    const light = (tint: string) => channels(tint).reduce((sum, c) => sum + c, 0);
     for (const [selector, surface] of [
       [":root", "#ffffff"],
       [":root.dark", "#212121"],
     ] as const) {
       const body = rootBlock(selector);
       expect(hex(body, "--surface"), selector).toBe(surface);
-      const tints = ["editor", "panel", "sidebar", "activitybar", "statusbar"].map((section) => hex(body, `--app-${section}-tint`));
-      expect(tints[0], selector).toBe(surface);
-      expect(tints.every(Boolean), selector).toBe(true);
-      expect(new Set(tints).size, selector).toBe(tints.length);
-      // Slightly different: each tint stays within a small step of the editor.
-      for (const tint of tints) expect(Math.abs(parseInt(tint!.slice(1, 3), 16) - parseInt(surface.slice(1, 3), 16)), `${selector} ${tint}`).toBeLessThanOrEqual(20);
+      const [editor, panel, sidebar, activitybar, statusbar] = ["editor", "panel", "sidebar", "activitybar", "statusbar"].map((section) => hex(body, `--app-${section}-tint`)!);
+      for (const tint of [editor, panel, sidebar, activitybar, statusbar]) {
+        expect(tint, selector).toBeDefined();
+        // Neutral: no channel strays more than a few steps from the others (pearl and black, never a hue).
+        const [r, g, bl] = channels(tint!);
+        expect(Math.max(r!, g!, bl!) - Math.min(r!, g!, bl!), `${selector} ${tint}`).toBeLessThanOrEqual(6);
+      }
+      // The sheet (editor, bottom panel) stands apart from the frame, the side bar between them (1 October 2026).
+      expect(light(editor!), selector).toBeGreaterThan(light(sidebar!));
+      expect(light(panel!), selector).toBeGreaterThan(light(sidebar!));
+      expect(light(sidebar!), selector).toBeGreaterThan(light(activitybar!));
+      expect(statusbar, selector).toBe(activitybar);
     }
   });
 

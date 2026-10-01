@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import type { Element, ElementContent, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import { IconAlertCircle, IconAlertTriangle, IconArrowsSplit, IconBulb, IconFlame, IconInfoCircle, IconLock, type Icon } from "@tabler/icons-react";
+import { IconAlertCircle, IconAlertTriangle, IconArrowsSplit, IconBulb, IconFlame, IconInfoCircle, IconLock, type Icon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import type { CalloutKind } from "@/lib/remarkCallouts";

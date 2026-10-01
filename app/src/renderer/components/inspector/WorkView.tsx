@@ -1,4 +1,4 @@
-import { IconHourglass, IconRosetteDiscountCheck } from "@tabler/icons-react";
+import { IconHourglass, IconRosetteDiscountCheck } from "@/components/icons";
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import { useWaiting } from "@/components/WaitingView";
 import { Button } from "@/components/ui/button";

@@ -6,7 +6,7 @@ import {
   IconRosetteDiscountCheck,
   IconShieldCheck,
   IconUsersGroup,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import type { CandidateState } from "@shared/domain";

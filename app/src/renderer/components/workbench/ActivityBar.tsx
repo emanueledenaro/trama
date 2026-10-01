@@ -1,4 +1,4 @@
-import { IconBrain, IconFileDiff, IconFolders, IconHourglass, IconSettings, IconShieldCheck, IconUsersGroup } from "@tabler/icons-react";
+import { TramaIcon } from "@/components/brand/TramaIcon";
 import type * as React from "react";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { useWaiting } from "@/components/WaitingView";
@@ -91,7 +91,7 @@ export function ActivityBar() {
       className="flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)] bg-[var(--app-activitybar-surface)]"
     >
       <ActivityButton label={t("workbench.view.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
-        <IconFolders className="size-5" stroke={1.6} />
+        <TramaIcon animated name="projects" />
       </ActivityButton>
       {project ? (
         <>
@@ -108,11 +108,11 @@ export function ActivityBar() {
             {/* Trama's mark in one tint, like the other icons: the conversation is with the Coordinator. */}
             <TramaMark variant="mono" size={20} />
           </ActivityButton>
-          {view("waiting", <IconHourglass className="size-5" stroke={1.6} />, waiting)}
-          {view("work", <IconFileDiff className="size-5" stroke={1.6} />)}
-          {view("teams", <IconUsersGroup className="size-5" stroke={1.6} />)}
-          {view("rules", <IconShieldCheck className="size-5" stroke={1.6} />)}
-          {view("memory", <IconBrain className="size-5" stroke={1.6} />)}
+          {view("waiting", <TramaIcon animated name="waiting" />, waiting)}
+          {view("work", <TramaIcon animated name="work" />)}
+          {view("teams", <TramaIcon animated name="teams" />)}
+          {view("rules", <TramaIcon animated name="rules" />)}
+          {view("memory", <TramaIcon animated name="memory" />)}
         </>
       ) : null}
       <span className="flex-1" />
@@ -121,7 +121,7 @@ export function ActivityBar() {
         active={mainView === "settings" && !covered}
         onClick={() => (mainView === "settings" && !covered ? closeSettings() : openSettings("general"))}
       >
-        <IconSettings className="size-5" stroke={1.6} />
+        <TramaIcon animated name="settings" />
       </ActivityButton>
     </nav>
   );

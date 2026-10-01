@@ -13,7 +13,7 @@ import {
   IconTarget,
   IconUsers,
   IconX,
-} from "@tabler/icons-react";
+} from "@/components/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderId } from "@shared/codex";
 import type { ProjectOverview, RecentProject } from "@shared/domain";

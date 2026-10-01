@@ -1,4 +1,4 @@
-import { IconCheck, IconCircleCheck, IconCircleDashed, IconFileDiff, IconGitPullRequest, IconX } from "@tabler/icons-react";
+import { IconCheck, IconCircleCheck, IconCircleDashed, IconFileDiff, IconGitPullRequest, IconX } from "@/components/icons";
 import { useEffect, useRef } from "react";
 import { explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
 import { candidateGoalId, exampleChecks, findGoal } from "@shared/goals";

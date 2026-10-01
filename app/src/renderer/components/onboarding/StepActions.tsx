@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconRefresh, IconSettings } from "@tabler/icons-react";
+import { IconRefresh, IconSettings } from "@/components/icons";
 import type { GuideStepId, StepState } from "@shared/onboarding";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";

@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle, IconShieldCheck } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle, IconShieldCheck } from "@/components/icons";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";

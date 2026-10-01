@@ -1,4 +1,4 @@
-import { IconFileCode, IconGitBranch, IconGitPullRequest, IconTarget } from "@tabler/icons-react";
+import { IconFileCode, IconGitBranch, IconGitPullRequest, IconTarget } from "@/components/icons";
 import { presenceActivity } from "@shared/agentBot";
 import { isAgentColor } from "@shared/identity";
 import type { MessageKey, Translate } from "@shared/i18n";
