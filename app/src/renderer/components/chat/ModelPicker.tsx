@@ -347,8 +347,9 @@ function EffortSlider({
               key={level}
               aria-hidden
               className={cn(
-                "absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
-                i < shown ? "bg-white/80" : "border border-muted-foreground/60 bg-[var(--color-background-surface)]",
+                "absolute top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full",
+                // A knot on the thread stays in view over the stripes: white with the provider's color around it.
+                i < shown ? "size-2 border-[1.5px] border-[var(--slider-accent)] bg-white" : "size-1.5 border border-muted-foreground/60 bg-[var(--color-background-surface)]",
               )}
               style={{ left: `${percent(i)}%` }}
             />
@@ -356,7 +357,7 @@ function EffortSlider({
           <span
             aria-hidden
             data-testid="effort-knob"
-            className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[var(--slider-accent)] bg-white shadow-sm transition-[left] duration-150"
+            className="absolute top-1/2 z-[2] flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[var(--slider-accent)] bg-white shadow-sm transition-[left] duration-150"
             style={{ left: `${percent(shown)}%` }}
           >
             <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="var(--slider-accent)" strokeWidth="1.6" strokeLinecap="round">
