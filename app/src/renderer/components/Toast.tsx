@@ -25,7 +25,7 @@ export function Toast() {
   };
   return (
     // Top right, under the 46 px title bar: at the bottom it lay over the composer's tools.
-    <div className="pointer-events-none fixed top-[54px] right-3 z-[70] flex w-[min(32rem,calc(100%-1.5rem))] justify-end">
+    <div className="pointer-events-none fixed top-14 right-3 z-[70] flex w-[min(32rem,calc(100%-1.5rem))] justify-end">
       <div
         role={info ? "status" : "alert"}
         className="translucent-popup pointer-events-auto flex max-h-[calc(100vh-86px)] min-w-0 max-w-full items-start gap-2.5 overflow-y-auto rounded-xl px-3.5 py-2.5 text-ui"

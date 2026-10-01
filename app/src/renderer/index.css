@@ -814,9 +814,9 @@ button {
       box-shadow: inset 1px 0 0 var(--app-card-border);
     }
   }
-  /* In a window lower than 716 px the bottom panel lies over the editor: its top edge casts the card's shadow upwards. */
+  /* In a window lower than 716 px the bottom panel lies over the editor: it casts the card's shadow. */
   .workbench-card.app-panel-surface[data-overlay="true"] {
-    box-shadow: 0 0 0 1px var(--app-card-border), inset 0 1px 0 var(--app-card-border), 0 -6px 20px rgb(0 0 0 / 0.12);
+    box-shadow: 0 0 0 1px var(--app-card-border), inset 0 1px 0 var(--app-card-border), var(--app-card-shadow);
   }
   .workbench-card .workbench-card {
     margin: 0;
