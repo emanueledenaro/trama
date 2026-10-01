@@ -1988,11 +1988,11 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.document.assignmentCrashNote":
     "Trama stopped without a controlled shutdown (a crash or a forced quit) while the developer was working.",
   "main.document.specInterrupted":
-    "Writing the spec stopped before the end: answer again on the test points.",
+    "Writing the spec stopped at the closing: Trama takes it up by itself with your answer.",
   "main.document.planInterrupted":
-    "The preparation stopped before the end: ask for the plan again.",
+    "The preparation stopped at the closing: the Coordinator does it again by itself.",
   "main.document.slicingInterrupted":
-    "The split into slices stopped before the end: ask for it again.",
+    "The split into slices stopped at the closing: the Coordinator does it again by itself.",
   "main.storage.symlink": "The state file is a symbolic link: {path}",
   "main.storage.unreadable":
     "The project state cannot be read and stays unchanged in {path}. {detail}",

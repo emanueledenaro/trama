@@ -2052,11 +2052,11 @@ export const mainIt = {
   "main.document.assignmentCrashNote":
     "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.",
   "main.document.specInterrupted":
-    "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui punti di prova.",
+    "La scrittura della spec si è interrotta alla chiusura: Trama la riprende da sola con la tua risposta.",
   "main.document.planInterrupted":
-    "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.",
+    "La preparazione si è interrotta alla chiusura: il Coordinatore la rifà da solo.",
   "main.document.slicingInterrupted":
-    "La divisione in fette si è interrotta prima della fine: chiedila di nuovo.",
+    "La divisione in fette si è interrotta alla chiusura: il Coordinatore la rifà da solo.",
   "main.storage.symlink":
     "Il file di stato è un collegamento simbolico: {path}",
   "main.storage.unreadable":

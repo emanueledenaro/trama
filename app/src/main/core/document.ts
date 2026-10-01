@@ -103,9 +103,9 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   // A plan still "planning" on disk lost its planner: it would block a new plan for the same request.
   for (const plan of document.plans) {
     if (plan.status === "planning" && plan.spec?.seamsAnswer) {
-      // The spec was being written after the seam check (M04): the seams wait for the person's answer again.
+      // The spec was being written after the seam check (M04): the person's answer stays, and Trama writes the spec
+      // again on its own when the project opens (welcomeBack). A "seams" plan with an answer marks it.
       plan.status = "seams";
-      plan.spec.seamsAnswer = null;
       plan.failure = t("main.document.specInterrupted");
     } else if (plan.status === "planning") {
       plan.status = "failed";

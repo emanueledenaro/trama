@@ -5142,6 +5142,14 @@ export class TramaController {
     const left = Date.parse(document.personLeftAt ?? document.events.at(-1)?.createdAt ?? "");
     if (document.personLeftAt !== undefined) delete document.personLeftAt;
     if (Number.isFinite(left)) this.tellReturn(project, left);
+    // A spec cut short by the closing keeps the person's answer on the test points: Trama writes it again by itself
+    // instead of asking them to answer again (logic review of 1 October 2026).
+    if (project.stateWritable && !project.isDemo) {
+      for (const plan of document.plans.filter((p) => p.status === "seams" && p.spec?.seamsAnswer)) {
+        const answer = plan.spec!.seamsAnswer!;
+        this.applySeamsAnswer(project, plan, { confirmed: answer.confirmed, note: answer.note, by: null });
+      }
+    }
   }
 
   /** Writes the recap of the person's return when they were away long enough and something was decided meanwhile. */
