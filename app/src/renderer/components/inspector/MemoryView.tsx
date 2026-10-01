@@ -17,6 +17,7 @@ import {
   IconTool,
   IconTrash,
 } from "@tabler/icons-react";
+import { ThreadBar } from "@/components/ui/thread-bar";
 import { useEffect, useRef, useState } from "react";
 import { curatorRunLine } from "@shared/curatorReport";
 import { DEFAULT_LEARNING_SETTINGS, type LearnedSkillView, type LearningReviewRun, type LearningSettings, type LearningView, type MemoryStoreView, type PracticeView } from "@shared/domain";
@@ -120,9 +121,7 @@ function UsageLine({ store }: { store: MemoryStoreView }) {
   const percent = Math.min(100, Math.floor((store.chars / store.limit) * 100));
   return (
     <div className="mb-2">
-      <div className="h-1 overflow-hidden rounded-full bg-[var(--color-border)]">
-        <div className={nearlyFull(store) ? "h-full bg-[var(--destructive)]" : "h-full bg-[var(--color-text-accent)]"} style={{ width: `${percent}%` }} />
-      </div>
+      <ThreadBar percent={percent} danger={nearlyFull(store)} />
       <p className="mt-1 text-ui-xs text-muted-foreground">{t("memory.usage", { chars: store.chars, limit: store.limit })}</p>
     </div>
   );

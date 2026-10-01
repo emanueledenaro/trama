@@ -28,7 +28,7 @@ Con la issue #213 i file di Trama non nominano più Synara: in testa dicono che 
 | `app/src/renderer/index.css` | `apps/web/src/index.css`, `theme/theme.logic.ts` |
 | `app/src/renderer/components/ProviderIcon.tsx` | marchi di Claude, Cursor, Devin, Grok, Pi, OpenCode, Droid e Antigravity da `apps/web/src/components/Icons.tsx` e `AntigravityIcon.tsx`; il marchio OpenAI è il percorso di Simple Icons (CC0-1.0) che Synara usa tramite react-icons. I marchi appartengono ai rispettivi titolari |
 | `app/src/renderer/components/SearchPalette.tsx` | disposizione e classi di `SidebarSearchPalette` |
-| `app/src/renderer/components/Spinner.tsx`, `chat/ChatView.tsx`, `chat/Composer.tsx`, `chat/FocusBar.tsx`, `chat/TimelineRows.tsx`, `sidebar/Sidebar.tsx`, `ui/button.tsx`, `ui/menu.tsx`, `ui/tooltip.tsx` | disposizione e classi dei componenti corrispondenti di `apps/web/src` |
+| `app/src/renderer/components/chat/ChatView.tsx`, `chat/Composer.tsx`, `chat/FocusBar.tsx`, `chat/TimelineRows.tsx`, `sidebar/Sidebar.tsx`, `ui/button.tsx`, `ui/menu.tsx`, `ui/tooltip.tsx` | disposizione e classi dei componenti corrispondenti di `apps/web/src` |
 | `app/src/shared/mentions.ts` | `composerMentions.ts`, `workspaceEntries.ts` |
 | `app/src/shared/pastedText.ts` | `composerPastedText.ts` |
 
