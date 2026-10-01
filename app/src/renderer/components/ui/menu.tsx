@@ -27,7 +27,7 @@ export function MenuPopup({
         <MenuPrimitive.Popup
           className={cn(
             "translucent-popup relative flex max-w-[calc(100vw-1.5rem)] origin-(--transform-origin) text-[var(--color-text-foreground)] outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
-            composer ? "rounded-[0.875rem] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]" : "rounded-2xl",
+            composer ? " shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]" : "rounded-2xl",
             className,
           )}
         >
@@ -46,7 +46,7 @@ export function MenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "flex min-h-[26px] cursor-default select-none items-center gap-2 rounded-[0.625rem] px-2 py-1 text-ui text-[var(--color-text-foreground)] outline-none data-disabled:pointer-events-none data-highlighted:bg-[var(--color-background-button-secondary-hover)] data-disabled:opacity-64 [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg]:size-4 [&>svg]:shrink-0",
+        "flex min-h-[26px] cursor-default select-none items-center gap-2 px-2 py-1 text-ui text-[var(--color-text-foreground)] outline-none data-disabled:pointer-events-none data-highlighted:bg-[var(--color-background-button-secondary-hover)] data-disabled:opacity-64 [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg]:size-4 [&>svg]:shrink-0",
         destructive && "text-destructive",
         className,
       )}
@@ -69,7 +69,7 @@ export function MenuRadioItem({ className, children, ...props }: MenuPrimitive.R
   return (
     <MenuPrimitive.RadioItem
       className={cn(
-        "flex min-h-[26px] cursor-default select-none items-center gap-2 rounded-[0.625rem] px-2 py-1 text-ui text-[var(--color-text-foreground)] outline-none data-highlighted:bg-[var(--color-background-button-secondary-hover)]",
+        "flex min-h-[26px] cursor-default select-none items-center gap-2 px-2 py-1 text-ui text-[var(--color-text-foreground)] outline-none data-highlighted:bg-[var(--color-background-button-secondary-hover)]",
         className,
       )}
       {...props}

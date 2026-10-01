@@ -180,7 +180,7 @@ export function SearchPalette() {
                         onMouseEnter={() => setIndex(position)}
                         onClick={item.run}
                         className={cn(
-                          "flex min-h-[30px] w-full cursor-pointer items-center gap-3 rounded-[20px] px-2.5 text-left text-foreground",
+                          "flex min-h-[30px] w-full cursor-pointer items-center gap-3 px-2.5 text-left text-foreground",
                           position === selected && "bg-zinc-500/8 dark:bg-zinc-400/10",
                         )}
                       >

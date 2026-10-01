@@ -123,11 +123,12 @@ export const sideBarDefaultWidth = (viewport: number) => (viewport >= 1500 ? 340
 export const SIDE_BAR_MAX_WIDTH = 720;
 
 /**
- * The sheet's margins: PANE_GAP on each side above a 1200 px window, flush at 1200 and below (index.css, .workbench-card).
+ * The sheet's margin: the PANE_GAP beside the open side bar above a 1200 px window, flush at 1200 and below and at the
+ * window's other edges (index.css, .workbench-card).
  * Every maximum below counts them, so the conversation keeps CHAT_MIN_WIDTH: window - 48 - side bar - detail - margins.
  */
 export const SHEET_FLUSH_MAX_VIEWPORT = 1200;
-export const sheetMargins = (viewport: number) => (viewport > SHEET_FLUSH_MAX_VIEWPORT ? 2 * PANE_GAP : 0);
+export const sheetMargins = (viewport: number) => (viewport > SHEET_FLUSH_MAX_VIEWPORT ? PANE_GAP : 0);
 
 /**
  * The gap between two panes of the sheet, which is also their sash (person's note, 2 October 2026): 8 px above a

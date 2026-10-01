@@ -23,8 +23,9 @@ export function StepIcon({ status, index, current }: { status: StepStatus; index
   return (
     <span
       className={cn(
+        // A step still to do is a stitch, a dashed ring, as every "to do" in Trama; the one in front is a full thread.
         "flex size-4 items-center justify-center rounded-full border text-[10px] leading-none",
-        current ? "border-[color:var(--color-text-accent)] text-[var(--color-text-accent)]" : "border-[color:var(--color-border-heavy)] text-muted-foreground",
+        current ? "border-[color:var(--color-text-accent)] text-[var(--color-text-accent)]" : "border-dashed border-[color:var(--color-border-heavy)] text-muted-foreground",
       )}
     >
       {index + 1}

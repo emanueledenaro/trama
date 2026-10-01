@@ -649,12 +649,12 @@ for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   if (entrance !== "none") throw new Error(`The Benvenuto animates its entrance with reduced motion: ${entrance}`);
 }
-// Recenti, empty (design rules, four states): a message and the way to a first project, an outline: the filled button of
+// Recenti, empty (design rules, four states): a message and the way to a first project, as a link: the filled button of
 // the Benvenuto is the one of Inizia. The message no longer repeats the ways to start.
 const recentEmpty = welcome.getByTestId("recent-empty");
 await recentEmpty.waitFor();
 if (!(await recentEmpty.getByText("Nessun progetto recente.").count())) throw new Error("Recenti, empty, has no message");
-if ((await recentEmpty.locator('button[data-variant="default"]').count()) !== 0 || (await recentEmpty.getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant")) !== "outline") {
+if ((await recentEmpty.locator('button[data-variant="default"]').count()) !== 0 || (await recentEmpty.getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant")) !== "ghost") {
   throw new Error("Recenti, empty, has a second main action");
 }
 if (/clonane|Clona|esempio/.test(await recentEmpty.innerText())) throw new Error("Recenti, empty, repeats the ways to start of Inizia");
@@ -851,8 +851,7 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
 await setLookTo(startLook.provider, startLook.dark);
-await seamShots("logo", "logo");
-await expectContrastFallback();
+await expectSeam(null);
 // Clona da GitHub goes through GitHub CLI (issue #354): without it the GitHub row of Configura unfolds, and says the
 // clone starts again by itself once gh is ready; a public repository can still be cloned from there.
 await picker.getByRole("button", { name: /^Clona da GitHub/ }).click();
@@ -900,7 +899,7 @@ if ((await page.getByTestId("welcome").count()) !== 1) throw new Error("More tha
 const learn = welcome.getByTestId("welcome-learn");
 if ((await learn.getByTestId("welcome-exercise").count()) !== 4) throw new Error("Impara does not list the four exercises");
 // Design rules: the state of an exercise is its number or check and its button, not a word beside a button that says the
-// same; the button starts work, so it has an icon and its text, 32 px high, an outline (the filled button is Inizia's).
+// same; the button starts work, so it has an icon and its text, 32 px high, written as a link (no outline in a row).
 const exerciseRows = await learn.getByTestId("welcome-exercise").evaluateAll((nodes) =>
   nodes.map((node) => {
     const button = node.querySelector("button");
@@ -909,7 +908,7 @@ const exerciseRows = await learn.getByTestId("welcome-exercise").evaluateAll((no
 );
 for (const row of exerciseRows) {
   if (/Da fare|In corso|Fatto/.test(row.text)) throw new Error(`An exercise repeats its state beside its button: ${row.text}`);
-  if (row.height < 32 || !row.icon || row.variant !== "outline") throw new Error(`An exercise button is not an icon and text outline of 32 px: ${JSON.stringify(row)}`);
+  if (row.height < 32 || !row.icon || row.variant !== "ghost") throw new Error(`An exercise button is not an icon and text link of 32 px: ${JSON.stringify(row)}`);
 }
 await learn.getByRole("button", { name: "Inizia: Conosci il progetto" }).click();
 await page.getByRole("complementary", { name: "Esercizio" }).waitFor({ timeout: 20_000 });
@@ -1125,6 +1124,7 @@ await page.locator('[data-testid="waiting-reference"][data-waiting-kind="goal"]'
 // A place to fill: the project has no goal yet. Files dragged over the composer take the seam while they are there.
 await page.getByTestId("first-goal").scrollIntoViewIfNeeded();
 await seamShots("firstGoal", "first-goal");
+await expectContrastFallback();
 await dragFiles("dragover");
 await page.getByText("Rilascia le immagini per allegarle al messaggio").waitFor();
 await seamShots("fileDrop", "file-drop");

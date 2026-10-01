@@ -2204,7 +2204,7 @@ export function RouteCard({ routeId }: { routeId: string }) {
             {route.steps.map((step, index) => (
               <li key={step.skill} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
-                <code className="rounded bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
+                <code className="rounded-none bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
                 {step.kind === "unavailable" ? (
                   <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge>
                 ) : (

@@ -87,9 +87,10 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
         data-placement={placement}
         data-open={open ? "true" : "false"}
         className={cn(
-          // On the composer, inset past its rounded corners, so its straight edge closes the bar from below. In a tab,
-          // the column of the tab's content (DetailPane), so the bar lines up with what it follows.
-          onComposer ? "translucent-popup mx-5 -mb-px rounded-t-[0.875rem] rounded-b-none border-b-0 shadow-none" : "mx-auto w-full max-w-[52rem]",
+          // On the composer, as wide as it and square like it, so the bar and the composer are one piece and the
+          // composer's edge closes the bar from below. In a tab, the column of the tab's content (DetailPane), so the
+          // bar lines up with what it follows.
+          onComposer ? "translucent-popup -mb-px border-b-0 shadow-none" : "mx-auto w-full max-w-[52rem]",
         )}
       >
         {open && hasFocus ? (
