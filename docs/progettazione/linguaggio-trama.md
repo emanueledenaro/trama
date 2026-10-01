@@ -11,6 +11,11 @@ Il motivo di partenza è il nome: una trama è un tessuto, fatto di fili che pas
 | Il filo di fondo si accende al passaggio del mouse (150 ms) | Questa vista, se la apri, viene in primo piano | Barra delle attività e barra del titolo, mai altrove |
 | Aggiorna che gira piano | Trama sta rileggendo il progetto, e quando smette ha finito | Barra del titolo |
 | Griglia che si tesse | Qualcuno del team, o Trama, sta lavorando adesso | Rotella di caricamento (`Spinner`) |
+| Cucitura tratteggiata in cerchio | Da fare: qui manca ancora qualcosa | Fette in attesa, passi non ancora partiti (`stateTodo`) |
+| Filo chiuso in cerchio con la spunta davanti | Fatto: questo è tessuto | Fette, verifiche e passi finiti (`stateDone`) |
+| Filo spezzato con i capi staccati e la X davanti | Si è fermato o non è riuscito: serve un intervento | Verifiche fallite, lavoro non riuscito (`stateBroken`) |
+| Clessidra | Aspetta te | Aspetta te e le richieste alla persona |
+| Anello vuoto | A riposo: nessuno lavora ora | Persone libere, riga di stato senza lavoro |
 | Filo ritorto con la cucitura | Quanto lavoro è fatto (il filo) e quanto manca (la cucitura) | Barre di avanzamento (`ThreadBar`), slider dello sforzo |
 | Foglio sulla cornice | Dove si lavora (il foglio) e cosa fa da contorno (la cornice) | Editor e pannello in basso |
 | Fessura tra due schede, con il segno a due fili | Qui si prende per allargare o stringere: tutta la fessura (12 px) fa da maniglia, e al passaggio del mouse il filo davanti corre lungo il bordo | Splitter (`Sash`) tra barra laterale, conversazione, dettaglio e Attività |

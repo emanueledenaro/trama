@@ -64,6 +64,26 @@ export const TRAMA_ICONS = {
     "M14.5 22V5.4",
     "M14.5 2.6V2",
   ],
+  stateDone: [
+    "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17",
+    "M8.4 12.3l2.5 2.5l4.8-5.2",
+  ],
+  stateTodo: [
+    "M20.42 13.18A8.5 8.5 0 0 1 19.36 16.25",
+    "M17.12 18.79A8.5 8.5 0 0 1 14.20 20.21",
+    "M10.82 20.42A8.5 8.5 0 0 1 7.75 19.36",
+    "M5.21 17.12A8.5 8.5 0 0 1 3.79 14.20",
+    "M3.58 10.82A8.5 8.5 0 0 1 4.64 7.75",
+    "M6.88 5.21A8.5 8.5 0 0 1 9.80 3.79",
+    "M13.18 3.58A8.5 8.5 0 0 1 16.25 4.64",
+    "M18.79 6.88A8.5 8.5 0 0 1 20.21 9.80",
+  ],
+  stateBroken: [
+    "M19.36 7.75A8.5 8.5 0 1 1 9.09 4.01",
+    "M17.6 4.9l1.4-1.4",
+    "M9.6 9.6l4.8 4.8",
+    "M14.4 9.6l-4.8 4.8",
+  ],
 } as const;
 
 export type TramaIconName = keyof typeof TRAMA_ICONS;
@@ -81,4 +101,9 @@ export const TRAMA_ICON_BACK: Record<TramaIconName, number[]> = {
   sideBar: [0],
   panel: [0],
   detailsBar: [0],
+  // The states (logic of the visual language, 1 October 2026): done is the thread closed in a ring with the check in
+  // front, to do the ring as an unsewn stitch, broken the ring snapped with its ends apart.
+  stateDone: [0],
+  stateTodo: [],
+  stateBroken: [0, 1],
 };
