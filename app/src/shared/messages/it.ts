@@ -1709,6 +1709,7 @@ export const it = {
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
   "fixedBan.card.handle": "Nessun mandato la concede. Se vuoi che la faccia, scrivilo al Coordinatore in chat: la fa perché gliel'hai chiesto, e prima di cancellare qualcosa ti chiede conferma.",
   "requestedAction.ban.branchPush": "un push del branch",
+  "requestedAction.ban.issueState": "la chiusura o la riapertura di una issue",
   "requestedAction.ban.forcePush": "un force push",
   "requestedAction.ban.pushMainBranch": "un push diretto sul branch principale",
   "requestedAction.ban.deleteRemoteRef": "la cancellazione di un branch o di un tag remoto",

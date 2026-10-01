@@ -491,8 +491,12 @@ export interface FixedBanRefusal {
  */
 export interface RequestedAction {
   id: string;
-  /** The fixed ban the action meets; `branchPush` is a push of another branch, which the mandate alone would not allow. */
-  ban: import("./fixedBans").FixedBan | "branchPush";
+  /**
+   * The fixed ban the action meets; `branchPush` is a push of another branch, which the mandate alone would not allow;
+   * `issueState` closes or reopens an issue of the project because the person said so, without the evidence a ticket
+   * closed as done needs.
+   */
+  ban: import("./fixedBans").FixedBan | "branchPush" | "issueState";
   /** The git or gh command Trama runs in the project's checkout. */
   command: string;
   /** What happens, in the Coordinator's words for the person. */

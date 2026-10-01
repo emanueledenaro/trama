@@ -1707,6 +1707,7 @@ export const en: Record<keyof typeof it, string> = {
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
   "fixedBan.card.handle": "No mandate grants it. If you want it done, write it to the Coordinator in the chat: it does it because you asked, and before deleting something it asks you to confirm.",
   "requestedAction.ban.branchPush": "a push of the branch",
+  "requestedAction.ban.issueState": "closing or reopening an issue",
   "requestedAction.ban.forcePush": "a force push",
   "requestedAction.ban.pushMainBranch": "a direct push to the main branch",
   "requestedAction.ban.deleteRemoteRef": "the deletion of a remote branch or tag",
