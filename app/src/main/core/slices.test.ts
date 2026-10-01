@@ -290,7 +290,7 @@ describe("assigning only unblocked slices (M05)", () => {
     candidate.pullRequest = { number: 7, url: "https://github.com/o/r/pull/7", mergedAt: null } as never;
     // Published and not merged: the next slices would start from a main branch without its code.
     expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["verifying", "blocked", "blocked"]);
-    candidate.pullRequest!.mergedAt = "2026-10-01T12:00:00.000Z";
+    (candidate.pullRequest as { mergedAt: string | null }).mergedAt = "2026-10-01T12:00:00.000Z";
     expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["done", "ready", "ready"]);
   });
 

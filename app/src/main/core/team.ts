@@ -101,9 +101,30 @@ function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Speciali
  * each missing role is added. Agents written before W15 get a color and a tag, in the order they joined.
  * Calling it again changes nothing.
  */
+/**
+ * The names and tags the fixed roles had before the plain names (person's note, 1 October 2026: "usi parole molto
+ * difficili"). A role still named so takes the plain one; a name the person chose stays.
+ */
+const OLD_ROLE_NAMES: Partial<Record<string, { name: string; tag: string }>> = {
+  qa: { name: "QA", tag: "QA" },
+  ux: { name: "UX", tag: "UX" },
+  documentation: { name: "Documentazione e dominio", tag: "Documentazione" },
+  bugTriage: { name: "Bug triage e debugger", tag: "Triage" },
+  specReviewer: { name: "Revisore della spec", tag: "Spec" },
+  cleanCode: { name: "Clean Code", tag: "Clean Code" },
+  regressionGuardian: { name: "Guardiano delle regressioni", tag: "Regressioni" },
+  devops: { name: "DevOps", tag: "DevOps" },
+};
+
 export function completeTeam(team: ProjectTeam, now = new Date()): Specialist[] {
   const identified: Specialist[] = team.specialists.filter((s) => isAgentColor(s.color));
   for (const specialist of team.specialists) {
+    const old = specialist.role ? OLD_ROLE_NAMES[specialist.role] : undefined;
+    if (old && isFixedRole(specialist.role)) {
+      const plain = roleProfile(ITALIAN, specialist.role);
+      if (specialist.name === old.name) specialist.name = plain.name;
+      if (specialist.tag === old.tag) specialist.tag = plain.tag;
+    }
     if (!specialist.role) specialist.role = "developer";
     if (!isAgentColor(specialist.color)) {
       specialist.color = freeAgentColor(identified);

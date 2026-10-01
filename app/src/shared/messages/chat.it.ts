@@ -127,8 +127,8 @@ export const chatIt = {
   "chat.card.domain.fromDecisions": "Dalle decisioni del Patto",
   "chat.card.domain.terms": "Termini per {path}",
   "chat.card.domain.waitingMandate": "Il Coordinatore non scrive file: la proposta aspetta il mandato.",
-  "chat.card.domain.writtenNote": "Documentazione e dominio ha scritto la proposta nella copia di lavoro dell'incarico {id}. La rivedi come candidato.",
-  "chat.card.domain.writingNote": "Documentazione e dominio la scrive nella copia di lavoro dell'incarico {id}, con la skill domain-modeling.",
+  "chat.card.domain.writtenNote": "Documenti ha scritto la proposta nella copia di lavoro dell'incarico {id}. La rivedi come candidato.",
+  "chat.card.domain.writingNote": "Documenti la scrive nella copia di lavoro dell'incarico {id}, con la skill domain-modeling.",
   "chat.card.domain.stoppedNote": "L'incarico {id} si è fermato prima di finire: lo trovi nella sua scheda.",
 
   // Publishing standard (Q01)

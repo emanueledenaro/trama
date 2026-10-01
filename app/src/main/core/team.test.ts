@@ -4,6 +4,7 @@ import { AGENT_PALETTE, isAgentColor } from "@shared/identity";
 import { FIXED_ROLES, roleProfile } from "@shared/roster";
 import { emptyDocument, normalizeDocument } from "./document";
 import {
+  completeTeam,
   assign,
   type AssignmentOrder,
   authorize,
@@ -230,7 +231,7 @@ describe("agent identity (W13, W15)", () => {
     const colors = document.team.specialists.map((s) => s.color);
     expect(colors.slice(0, AGENT_PALETTE.length)).toEqual(AGENT_PALETTE.map((e) => e.color));
     for (const specialist of document.team.specialists) expect(specialist.tag).toBe(roleProfile(t, specialist.role).tag);
-    expect(document.team.specialists.find((s) => s.role === "regressionGuardian")!.tag).toBe("Regressioni");
+    expect(document.team.specialists.find((s) => s.role === "regressionGuardian")!.tag).toBe("Stabilità");
     const proposal = proposeTeam(document, {
       requestId: null,
       summary: null,
@@ -258,7 +259,7 @@ describe("agent identity (W13, W15)", () => {
     }
     const migrated = normalizeDocument(JSON.parse(JSON.stringify(document)), "p");
     expect(migrated.team.specialists.every((s) => isAgentColor(s.color) && s.tag.length > 0)).toBe(true);
-    expect(migrated.team.specialists.find((s) => s.role === "qa")!.tag).toBe("QA");
+    expect(migrated.team.specialists.find((s) => s.role === "qa")!.tag).toBe("Prove");
   });
 
   it("renames a developer, keeping its id, and refuses fixed roles and taken names", () => {
@@ -387,5 +388,18 @@ describe("team texts in the person's language (issue #301)", () => {
     expect(assignment.lastUpdate).toBe(`Assignment received: ${assignment.objective}`);
     beginTurn(document, assignment.id, "t1", "gpt-5.5");
     expect(findSpecialist(document, "Ada")!.assignments.at(-1)!.lastUpdate).toBe("Turn 1 running with gpt-5.5");
+  });
+
+  it("gives the fixed roles still named the old way their plain names, and keeps a name the person chose (1 October 2026)", () => {
+    const document = emptyDocument("p");
+    completeTeam(document.team);
+    const guardian = document.team.specialists.find((s) => s.role === "regressionGuardian")!;
+    const devops = document.team.specialists.find((s) => s.role === "devops")!;
+    guardian.name = "Guardiano delle regressioni";
+    guardian.tag = "Regressioni";
+    devops.name = "Gianni";
+    completeTeam(document.team);
+    expect(guardian).toMatchObject({ name: "Niente si rompe", tag: "Stabilità" });
+    expect(devops.name).toBe("Gianni");
   });
 });

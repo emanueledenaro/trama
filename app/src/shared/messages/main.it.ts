@@ -637,7 +637,7 @@ export const mainIt = {
     "Il mandato non permette di scrivere la proposta {id} su {modules}: aspetta una correzione del mandato.",
   "main.duties.domainNoMandate": "La proposta {id} aspetta un mandato.",
   "main.duties.domainWaitsRole":
-    "La proposta {id} aspetta che il ruolo Documentazione e dominio finisca l'incarico {assignment}.",
+    "La proposta {id} aspetta che il ruolo Documenti finisca l'incarico {assignment}.",
   "main.duties.domainWaitsWork":
     "La scrittura della proposta {id} aspetta che finisca il lavoro in corso su {modules} (incarico {assignment}).",
   "main.duties.domainWaitsRunner": "La proposta {id} aspetta.",
@@ -651,13 +651,13 @@ export const mainIt = {
   "main.duties.writingNotAllowedOn":
     "Il mandato non permette di lavorare in una copia di lavoro su {modules}: la proposta aspetta una correzione del mandato.",
   "main.duties.writingNoRunner":
-    "Nessun provider può eseguire ora il lavoro del ruolo Documentazione e dominio.",
+    "Nessun provider può eseguire ora il lavoro del ruolo Documenti.",
   "main.duties.writingRoleBusy":
-    "Il ruolo Documentazione e dominio è occupato: scrive la proposta appena è libero.",
+    "Il ruolo Documenti è occupato: scrive la proposta appena è libero.",
   "main.duties.writingWaitsWork":
     "La scrittura aspetta che finisca il lavoro in corso su {modules}.",
   "main.duties.writingRoleUnavailable":
-    "La scrittura aspetta: il ruolo Documentazione e dominio non può prenderla ora.",
+    "La scrittura aspetta: il ruolo Documenti non può prenderla ora.",
   // duties.ts: why Trama picked the model of the automatic work.
   "main.duties.modelLight":
     "Scelto da Trama: il modello più leggero del catalogo, per il lavoro automatico dei ruoli fissi.",
