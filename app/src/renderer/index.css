@@ -793,31 +793,25 @@ button {
   [data-testid="side-bar"] {
     overflow-wrap: anywhere;
   }
-  /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are rounded
-     cards with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. */
+  /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are cards
+     with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. Their
+     corners are square (person's note, 2 October 2026). */
   .workbench-card {
-    /* The sheet rests on the status bar: rounded at the top, off the frame on the sides, so the editor keeps its height
-       (the conversation's 380 px with the bottom panel at its highest). */
-    margin: 0 8px;
-    border-radius: 12px 12px 0 0;
+    /* The sheet rests on the status bar, off the frame on the sides, so the editor keeps its height (the
+       conversation's 380 px with the bottom panel at its highest). */
+    margin: 0 var(--pane-gap);
     overflow: hidden;
     box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
   }
-  /* The bottom panel is the lower part of the same sheet, under a hairline. */
-  .workbench-card.app-panel-surface {
-    border-radius: 0;
-    box-shadow: 0 0 0 1px var(--app-card-border), inset 0 1px 0 var(--app-card-border);
-  }
-  .workbench-card:has(+ .workbench-card.app-panel-surface) {
-    border-radius: 12px 12px 0 0;
-  }
   /* In a narrow window the chat needs the room (420 px with the widest side bar): the sheet lies flush on the frame,
-     kept apart only by its hairline. */
+     kept apart only by its hairline, and the bottom panel is the lower part of it, under a hairline. */
   @media (max-width: 1200px) {
     .workbench-card {
       margin: 0;
-      border-radius: 0;
       box-shadow: inset 1px 0 0 var(--app-card-border);
+    }
+    .workbench-card.app-panel-surface {
+      box-shadow: inset 1px 0 0 var(--app-card-border), inset 0 1px 0 var(--app-card-border);
     }
   }
   /* In a window lower than 716 px the bottom panel lies over the editor: it casts the card's shadow. */
@@ -826,8 +820,26 @@ button {
   }
   .workbench-card .workbench-card {
     margin: 0;
-    border-radius: 0;
     box-shadow: none;
+  }
+  /* Above 1200 px the panes are separate cards, as in VS Code: the bottom panel and the detail pane stand 12 px off the
+     conversation, and that gap is the sash between them (person's note, 2 October 2026). Their sash sits in the gap,
+     so they do not clip. */
+  @media (min-width: 1201px) {
+    .workbench-card.app-panel-surface {
+      margin-top: var(--pane-gap);
+      overflow: visible;
+    }
+    .workbench-card[data-split="true"] {
+      gap: var(--pane-gap);
+      overflow: visible;
+      box-shadow: none;
+      background: transparent;
+    }
+    .workbench-card[data-split="true"] > :is(main, section) {
+      border-left-width: 0;
+      box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
+    }
   }
   /* The editor's surface; the bottom panel sets its own tint with app-panel-surface. */
   .chat-content-card {
@@ -1500,6 +1512,11 @@ button {
    It draws nothing at rest: the 1px line is the panel's own border. It is an absolute 4px grip centered on that
    border, above the content. The `hover` class, added after 300ms (Sash), the `active` class of a drag and the
    keyboard focus paint its 4px ::before in VS Code's focusBorder (--app-focus-border). */
+:root {
+  /* The gap between the panes of the sheet, which is also their sash (person's note, 2 October 2026): 12 px, as
+     lib/workbench.ts PANE_GAP counts it. */
+  --pane-gap: 12px;
+}
 .sash {
   --sash-size: 4px;
   --sash-hover-border: var(--app-focus-border);
@@ -1563,6 +1580,59 @@ button {
 .sash.active::before,
 .sash:focus-visible::before {
   background: var(--sash-hover-border);
+}
+/* At rest the edge shows where to take hold, as VS Code's three dots do, in Trama's own mark: a short stitch of two
+   threads, the back one faint and the front one full (docs/progettazione/linguaggio-trama.md). On hover the front
+   thread runs the whole edge, so the stitch gives way to the line. */
+.sash::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  border-radius: 1px;
+  background: var(--muted-foreground);
+  opacity: 0.75;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sash::after {
+    transition: opacity 0.1s ease-out;
+  }
+}
+.sash--vertical::after {
+  top: calc(50% - 6px);
+  left: calc(50% + 1px);
+  width: 1.5px;
+  height: 12px;
+  box-shadow: -3.5px 0 0 color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+}
+.sash--horizontal::after {
+  left: calc(50% - 6px);
+  top: calc(50% + 1px);
+  width: 12px;
+  height: 1.5px;
+  box-shadow: 0 -3.5px 0 color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+}
+.sash.hover::after,
+.sash.active::after,
+.sash:focus-visible::after {
+  opacity: 0;
+}
+/* The side bar's sash is the whole gap between the frame and the sheet (person's note, 2 October 2026): the 8px
+   space is there to be taken hold of, so all of it grips, and the stitch and the line sit in its middle. In a narrow
+   window the sheet is flush with the frame (.workbench-card) and the sash is back on the edge. */
+@media (min-width: 1201px) {
+  .sash--gap {
+    left: 0;
+    width: var(--pane-gap);
+  }
+  /* The detail pane and the bottom panel are cards of their own: their sash is the gap before them. */
+  .sash--gap-before.sash--vertical {
+    left: calc(var(--pane-gap) * -1);
+    width: var(--pane-gap);
+  }
+  .sash--gap-before.sash--horizontal {
+    top: calc(var(--pane-gap) * -1);
+    height: var(--pane-gap);
+  }
 }
 body:has(.sash.active) {
   user-select: none;

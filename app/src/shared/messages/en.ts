@@ -1084,6 +1084,7 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.status.focusOf": "Work in focus: {title}",
   "focus.none": "No work in focus: yours are all suspended.",
   "focus.inFocus": "In focus",
+  "focus.carriedOn": "Stage: {phase}. The Coordinator carries it on by itself.",
   "focus.queued": "Queued {queued}",
   "focus.queuedPaused": "Queued {queued}, {count} suspended",
   "focus.queuedPaused.one": "Queued {queued}, 1 suspended",

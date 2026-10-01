@@ -3583,11 +3583,12 @@ await openFocusPanel();
 const focusBar = page.getByTestId("focus-bar");
 if (!(await page.getByTestId("work-bar").getByTestId("focus-bar").count())) throw new Error("The focus panel does not unfold inside the bar above the composer");
 if (await page.getByTestId("status-focus").count()) throw new Error("The status bar repeats the work in focus while the conversation shows");
-const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
+// The bar names the work in focus; the panel it unfolds shows what to do with it and never repeats the title (1 October 2026).
+const focusTitle = async () => (await page.getByTestId("work-bar-focus-title").textContent()).trim();
+if (await focusBar.getByTestId("focus-title").count()) throw new Error("The focus panel repeats the title of the work bar");
 const firstFocus = await focusTitle();
 // Issue #241: the bar is titled with the goal, never with the first message of a dialog.
 if (/^\[/.test(firstFocus)) throw new Error(`The focus bar is titled with a message: ${firstFocus}`);
-await focusBar.getByTestId("focus-phase").first().waitFor();
 const queueToggle = focusBar.getByRole("button", { name: /^In coda/ });
 await queueToggle.click();
 const queue = focusBar.getByTestId("focus-queue");
@@ -3628,7 +3629,7 @@ await actionsOnRight("1280x820");
 await shot("17-focus-bar-queue");
 await pause.click();
 const focusIs = (title, equal) =>
-  page.waitForFunction(([text, same]) => (document.querySelector('[data-testid="focus-title"]')?.textContent?.trim() === text) === same, [title, equal], {
+  page.waitForFunction(([text, same]) => (document.querySelector('[data-testid="work-bar-focus-title"]')?.textContent?.trim() === text) === same, [title, equal], {
     timeout: 10_000,
   });
 await focusIs(firstFocus, false);
@@ -3640,8 +3641,8 @@ await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
 await shot("17b-focus-back");
-// The work going on now: the task in focus takes the seam.
-await seamShots("focus", "focus");
+// The work in focus is a full thread, not the seam: the stitch says "to do" in Trama's visual language (1 October 2026).
+await expectSeam(null);
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
@@ -8150,7 +8151,7 @@ const englishTexts = [
   await englishLine.getByTestId("status-line-text").innerText(),
   // Issue #330: in the status bar the person's move is a text button and the Coordinator's actions are icons.
   ...(await englishLine.locator("button:not([aria-label])").allInnerTexts()),
-  ...(await page.getByTestId("focus-title").allInnerTexts()),
+  ...(await page.getByTestId("work-bar-focus-title").allInnerTexts()),
 ];
 const stillItalian = englishTexts.filter((text) => italianWords.test(text));
 if (stillItalian.length) throw new Error(`Main texts still in Italian after the switch: ${stillItalian.join(" | ")}`);

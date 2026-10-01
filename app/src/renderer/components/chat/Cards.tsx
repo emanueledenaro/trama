@@ -53,7 +53,7 @@ import { PROVIDERS } from "@shared/providers";
 import { boundaryLabel, findRoute, firstRunnableStep, flowLabel, routePathLabel, type RouteStatus, stepKindLabel } from "@shared/askTrama";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
-import { useState } from "react";
+import { useContext, useState } from "react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -64,6 +64,7 @@ import { useT, withNodes } from "@/lib/i18n";
 import type { MessageKey, Translate } from "@shared/i18n";
 import { actionLabel } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { FOLD_BODY, InFold } from "./Fold";
 import { RecordName, ReferenceText } from "./ReferenceText";
 import { blockerText, plainConflictReference, plainText } from "@shared/plainLanguage";
 import { asTitle, useRecord } from "@/lib/references";
@@ -103,6 +104,13 @@ export function CardFrame({
   /** Lets the exercise guide find the card in the timeline. */
   anchor?: string;
 }) {
+  if (useContext(InFold)) {
+    return (
+      <div data-anchor={anchor} className={cn(FOLD_BODY, className)}>
+        {children}
+      </div>
+    );
+  }
   return (
     <div data-anchor={anchor} className={cn("chat-card my-3 overflow-hidden", className)}>
       {/* In a narrow pane the badges wrap under the title instead of squeezing it under 8rem. */}

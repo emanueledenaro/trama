@@ -1086,6 +1086,7 @@ export const it = {
   "workbench.status.focusOf": "Lavoro in primo piano: {title}",
   "focus.none": "Nessun lavoro in primo piano: i tuoi sono sospesi.",
   "focus.inFocus": "In primo piano",
+  "focus.carriedOn": "Fase: {phase}. Il Coordinatore la porta avanti da solo.",
   "focus.queued": "In coda {queued}",
   "focus.queuedPaused": "In coda {queued}, {count} sospesi",
   "focus.queuedPaused.one": "In coda {queued}, 1 sospeso",

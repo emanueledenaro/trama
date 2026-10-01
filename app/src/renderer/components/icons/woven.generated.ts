@@ -7,6 +7,7 @@ export const WOVEN_ICONS: Record<string, WovenIcon> = {
   IconAlertTriangle: {"filled":false,"node":[["path",{"d":"M12 9v4"}],["path",{"d":"M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0"}],["path",{"d":"M12 16h.01"}]],"back":[1]},
   IconArchive: {"filled":false,"node":[["path",{"d":"M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2"}],["path",{"d":"M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-10"}],["path",{"d":"M10 12l4 0"}]],"back":[1]},
   IconArchiveOff: {"filled":false,"node":[["path",{"d":"M8 4h11a2 2 0 1 1 0 4h-7m-4 0h-3a2 2 0 0 1 -.826 -3.822"}],["path",{"d":"M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 1.824 -1.18m.176 -3.82v-7"}],["path",{"d":"M10 12h2"}],["path",{"d":"M3 3l18 18"}]],"back":[0]},
+  IconArrowBackUp: {"filled":false,"node":[["path",{"d":"M9 14l-4 -4l4 -4"}],["path",{"d":"M5 10h11a4 4 0 1 1 0 8h-1"}]],"back":[1]},
   IconArrowLeft: {"filled":false,"node":[["path",{"d":"M5 12l14 0"}],["path",{"d":"M5 12l6 6"}],["path",{"d":"M5 12l6 -6"}]],"back":[0]},
   IconArrowNarrowLeft: {"filled":false,"node":[["path",{"d":"M5 12l14 0"}],["path",{"d":"M5 12l4 4"}],["path",{"d":"M5 12l4 -4"}]],"back":[0]},
   IconArrowNarrowRight: {"filled":false,"node":[["path",{"d":"M5 12l14 0"}],["path",{"d":"M15 16l4 -4"}],["path",{"d":"M15 8l4 4"}]],"back":[0]},

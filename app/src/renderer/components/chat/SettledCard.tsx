@@ -19,6 +19,8 @@ import { REVEAL_EVENT } from "@/lib/nextStep";
 import { useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
 import { DisclosureChevron } from "./WorkSteps";
+import { foldLine, foldSheet, InFold } from "./Fold";
+import { cn } from "@/lib/cn";
 
 function lineIcon(row: TimelineRow) {
   if (row.kind === "grillingRound") return <IconListCheck stroke={1.8} />;
@@ -78,11 +80,11 @@ export function SettledOr({ row, children }: { row: TimelineRow; children: React
   }, [settled !== null]);
   if (!settled) return <>{children}</>;
   return (
-    <div ref={ref} className="my-2" data-testid="settled-card" data-open={open || undefined}>
+    <div ref={ref} className={foldSheet(open)} data-testid="settled-card" data-open={open || undefined}>
       {/* The line is not a button: the subject's references are links of their own. */}
       <div
         onClick={() => setOpen(!open)}
-        className="group/settled flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-ui transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
+        className={cn("group/settled cursor-pointer", foldLine(open))}
       >
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{lineIcon(row)}</span>
         <span className="min-w-0 flex-1">
@@ -116,7 +118,7 @@ export function SettledOr({ row, children }: { row: TimelineRow; children: React
           <DisclosureChevron open={open} />
         </button>
       </div>
-      {open ? <div className="-mt-1">{children}</div> : null}
+      {open ? <InFold.Provider value={true}>{children}</InFold.Provider> : null}
     </div>
   );
 }

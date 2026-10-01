@@ -1,11 +1,11 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconChevronDown, IconFocus2, IconMessageCircle, IconPlayerPlay, IconUsers } from "@/components/icons";
+import { Spinner } from "@/components/Spinner";
+import { IconChevronDown, IconFocus2, IconMessageCircle, IconPlayerPlay, IconUsers, IconCircleX, IconHourglass, IconPlayerPause } from "@/components/icons";
 import { useState } from "react";
 import type { FocusTask } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
 import { type OverlapItem, overlapSummary, strongest } from "@shared/overlap";
 import { OverlapBadge, OverlapRow } from "@/components/OverlapNotice";
-import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/cn";
@@ -140,15 +140,13 @@ function QueueRow({ task }: { task: FocusTask }) {
  * September), or from the status bar over Progetti and Impostazioni (issue #330). `goTo` false leaves "Vai al lavoro"
  * to the bar, which shows it itself while nothing waits for the person.
  */
-export function FocusPanel({ goTo = true }: { goTo?: boolean }) {
+export function FocusPanel({ goTo = true, titled = true }: { goTo?: boolean; titled?: boolean }) {
   const t = useT();
   const view = useUi((s) => s.app?.project?.focus);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
   const openDialog = useUi((s) => s.openDialog);
   const overlaps = useUi((s) => s.app?.project?.overlaps);
   const [queueOpen, setQueueOpen] = useState(false);
-  // The work going on now (W17): the task in focus is stitched.
-  const seam = useSeam("focus", { active: Boolean(view?.focus), radius: "10px" });
   const overlapItems = focusOverlaps(overlaps, view?.focus?.id ?? null);
   if (!view) return null;
   const focus = view.focus;
@@ -160,8 +158,16 @@ export function FocusPanel({ goTo = true }: { goTo?: boolean }) {
     <section aria-label={t("workbench.status.focus")} className="flex min-w-0 flex-col gap-2 p-4" data-testid="focus-bar">
       {focus || view.queue.length ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className={cn("relative flex min-w-[12rem] flex-1 items-start gap-2", seam.shown && "-mx-2 px-2 py-1.5")}>
-            {seam.stitch}
+          {/* Opened from the work bar the title and its state are already on the bar: the panel shows only what to do. */}
+          {titled ? (
+          <div
+            className={cn(
+              "relative flex min-w-[12rem] flex-1 items-start gap-2",
+              // In front is a full thread (visual language, 1 October 2026): a thin accent line, never the stitch,
+              // which says "to do".
+              focus && "border-l-2 border-[var(--color-text-accent)] pl-2.5",
+            )}
+          >
             <IconFocus2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
             {focus ? (
               <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -177,6 +183,20 @@ export function FocusPanel({ goTo = true }: { goTo?: boolean }) {
               <span className="min-w-0 text-ui text-muted-foreground">{t("focus.none")}</span>
             )}
           </div>
+          ) : focus ? (
+            // Under the bar: where the work stands, with the mark of its state, and nothing the bar already says: why it
+            // is held, else who carries it on.
+            <p className="flex min-w-[12rem] flex-1 items-start gap-2 text-ui-sm text-muted-foreground" data-testid="focus-hold">
+              {focus.phase === "blocked" ? (
+                <IconCircleX className="mt-0.5 size-3.5 shrink-0 text-[var(--destructive)]" />
+              ) : holdText(focus, t) ? (
+                <IconHourglass className="mt-0.5 size-3.5 shrink-0 text-warning" stroke={1.8} />
+              ) : (
+                <Spinner className="mt-0.5 size-3.5" />
+              )}
+              <span className="min-w-0">{holdText(focus, t) ?? t("focus.carriedOn", { phase: focus.phaseLabel })}</span>
+            </p>
+          ) : null}
           <div className="cta-row ml-auto">
             {view.queue.length ? (
               <Button size="xs" variant="ghost" aria-expanded={queueOpen} aria-controls="focus-queue" onClick={() => setQueueOpen(!queueOpen)}>
@@ -185,9 +205,13 @@ export function FocusPanel({ goTo = true }: { goTo?: boolean }) {
               </Button>
             ) : null}
             {focus ? (
-              <Button size="xs" variant="outline" title={t("focus.pauseHint")} onClick={() => void change("pause", focus.id)}>
-                {t("focus.pause")}
-              </Button>
+              // A quiet icon with its name on hover (person's note, 1 October 2026: the outlined button disturbed).
+              <IconButton
+                label={t("focus.pause")}
+                icon={<IconPlayerPause className="size-3.5" stroke={1.8} />}
+                onClick={() => void change("pause", focus.id)}
+                data-testid="focus-pause"
+              />
             ) : null}
             {focus && elsewhere && goTo ? (
               <Button size="xs" onClick={() => openDialog(focus.goalId)}>
