@@ -116,7 +116,7 @@ function OverviewBody() {
 
   return (
     <div className="chat-pane-enter min-h-0 flex-1 overflow-y-auto" data-testid="overview">
-      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] px-4 py-6 sm:px-6">
+      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] px-4 py-6 @min-[560px]/chat:px-6">
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-ui-lg font-medium text-foreground">{t("overview.title")}</h2>
@@ -184,7 +184,8 @@ function OverviewBody() {
                       {entry.coordinator ? <CoordinatorLine line={entry.coordinator} /> : null}
                       {entry.problem ? <p className="mt-1 text-ui-xs text-destructive">{entry.problem}</p> : null}
                     </div>
-                    <div className="cta-row shrink-0 flex-nowrap">
+                    {/* At most half the row, so the project's name keeps its room in a narrow conversation. */}
+                    <div className="cta-row max-w-[50%] min-w-0 flex-nowrap">
                       <WaitingCell entry={entry} onOpen={() => void openWaiting(entry)} />
                       <IconButton
                         label={detailsOpen ? t("overview.details.hide") : t("overview.details.show")}
@@ -277,12 +278,12 @@ function WaitingCell({ entry, onOpen }: { entry: ProjectOverview; onOpen: () => 
   const t = useT();
   const { count, first } = entry.waiting;
   if (!count || !first) {
-    return <span className="flex h-8 shrink-0 items-center text-ui-sm text-muted-foreground">{t("overview.nothingWaiting")}</span>;
+    return <span className="block h-8 min-w-0 truncate text-ui-sm leading-8 text-muted-foreground">{t("overview.nothingWaiting")}</span>;
   }
   return (
     <button
       type="button"
-      className="flex h-8 max-w-64 min-w-0 shrink items-center gap-2 rounded-md px-2 text-ui-sm text-foreground hover:bg-[var(--sidebar-accent)]"
+      className="flex h-8 max-w-[min(16rem,100%)] min-w-0 shrink items-center gap-2 rounded-md px-2 text-ui-sm text-foreground hover:bg-[var(--sidebar-accent)]"
       aria-label={t("overview.openWaiting", { title: first.title })}
       title={first.title}
       onClick={onOpen}
