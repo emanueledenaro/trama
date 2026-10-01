@@ -179,15 +179,16 @@ const sliceAssignments = (document: ProjectDocument, planId: string, sliceId: st
 
 /**
  * Whether the work of an assignment is done for its slice: read-only work that completed, or work in a worktree whose
- * latest candidate Trama verified (checks, Pact, technical review) or whose pull request was merged. A verified slice
- * unblocks the slices that depend on it (spec #137).
+ * code is on the main branch. A published candidate counts once its pull request merged: a dependent slice starts from
+ * the main branch, and before the merge it would start without this code (logic review of 1 October 2026). A project
+ * without GitHub, whose merges Trama does not see, counts the candidate Trama verified (spec #137).
  */
 export function delivered(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
   if (assignment.status !== "completed") return false;
   if (!needsWorktree(assignment)) return true;
   const candidate = latestCandidate(document, assignment.id);
   if (!candidate) return false;
-  if (candidate.pullRequest?.mergedAt) return true;
+  if (candidate.pullRequest) return Boolean(candidate.pullRequest.mergedAt);
   return !inspectCandidate(document, candidate, null).length && candidate.technicalReview?.verdict === "approved";
 }
 

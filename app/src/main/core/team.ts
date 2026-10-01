@@ -101,9 +101,31 @@ function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Speciali
  * each missing role is added. Agents written before W15 get a color and a tag, in the order they joined.
  * Calling it again changes nothing.
  */
+/**
+ * The names and tags the fixed roles had before the plain names (person's note, 1 October 2026: "usi parole molto
+ * difficili"). A role still named so takes the plain one; a name the person chose stays.
+ * @model-text: these are the names an older Trama stored in projects, only compared, never shown.
+ */
+const OLD_ROLE_NAMES: Partial<Record<string, { name: string; tag: string }>> = {
+  qa: { name: "QA", tag: "QA" },
+  ux: { name: "UX", tag: "UX" },
+  documentation: { name: "Documentazione e dominio", tag: "Documentazione" },
+  bugTriage: { name: "Bug triage e debugger", tag: "Triage" },
+  specReviewer: { name: "Revisore della spec", tag: "Spec" },
+  cleanCode: { name: "Clean Code", tag: "Clean Code" },
+  regressionGuardian: { name: "Guardiano delle regressioni", tag: "Regressioni" },
+  devops: { name: "DevOps", tag: "DevOps" },
+};
+
 export function completeTeam(team: ProjectTeam, now = new Date()): Specialist[] {
   const identified: Specialist[] = team.specialists.filter((s) => isAgentColor(s.color));
   for (const specialist of team.specialists) {
+    const old = specialist.role ? OLD_ROLE_NAMES[specialist.role] : undefined;
+    if (old && isFixedRole(specialist.role)) {
+      const plain = roleProfile(ITALIAN, specialist.role);
+      if (specialist.name === old.name) specialist.name = plain.name;
+      if (specialist.tag === old.tag) specialist.tag = plain.tag;
+    }
     if (!specialist.role) specialist.role = "developer";
     if (!isAgentColor(specialist.color)) {
       specialist.color = freeAgentColor(identified);
@@ -514,9 +536,11 @@ export function assign(
   for (const dependency of dependencies) {
     const found = findAssignment(document, dependency);
     if (!found) throw new TeamError("unknown_assignment", `Unknown assignment: ${dependency}.`);
-    if (found.status !== "completed") pending.push(dependency);
+    // Work in a worktree counts once its pull request merged: the new work starts from the main branch.
+    const published = needsWorktree(found) ? document.candidates.filter((c) => c.assignmentId === found.id).at(-1)?.pullRequest : null;
+    if (found.status !== "completed" || (published && !published.mergedAt)) pending.push(dependency);
   }
-  if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
+  if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed and merged yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
   const owner = foreignSquad(document, specialist, moduleIds);
   if (owner && !continuesOwnWork(document, specialist, order, moduleIds, requestId)) {

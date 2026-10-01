@@ -81,7 +81,14 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | Missione | Mission |
 | Traguardo | Milestone |
 | Sospendere un lavoro | Suspend work |
-| Guardiano delle regressioni | Regression guardian |
+| Niente si rompe (il guardiano delle regressioni) | Regression guardian |
+| Controllo della richiesta | Spec reviewer |
+| Ordine del codice | Clean Code |
+| Pubblicazione e server | DevOps |
+| Ricerca dei guasti | Bug triage and debugger |
+| Prove | QA |
+| Facilità d'uso | UX |
+| Documenti | Documentation and domain |
 | Unire | Merge |
 | Standard di pubblicazione | Publishing standard |
 | Sforzo (del modello) | Effort |

@@ -1626,7 +1626,7 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
 }
 await openSharedRoles();
 const sharedRoles = teamPanel.getByTestId("shared-roles");
-await sharedRoles.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).waitFor();
+await sharedRoles.getByTestId("team-figure").filter({ hasText: "Niente si rompe" }).waitFor();
 if (await sharedRoles.locator('[data-role="qa"], [data-role="squadLead"]').count()) throw new Error("A member of the squad is among the shared roles");
 if (await teamPanel.getByText("Chiarimento e spec", { exact: true }).count()) throw new Error("The Squads view still lists the team moment by moment");
 await themeShots("04e-squads");
@@ -1700,11 +1700,11 @@ await agentPanel.getByTestId("agent-look-preview-chat").waitFor();
 await agentPanel.getByTestId("agent-look-preview-list").waitFor();
 // W13: the person renames the developer from the name field; a fixed role's name is refused, and the name saves on Enter.
 const nameField = agentPanel.getByLabel("Nuovo nome");
-await nameField.fill("Clean Code");
+await nameField.fill("Ordine del codice");
 await agentPanel.getByText("È il nome di un ruolo fisso").waitFor();
 await nameField.blur();
 await page.waitForTimeout(400);
-if (await personTab.getByRole("heading", { name: "Clean Code" }).count()) throw new Error("A fixed role's name can be chosen");
+if (await personTab.getByRole("heading", { name: "Ordine del codice" }).count()) throw new Error("A fixed role's name can be chosen");
 await nameField.fill("Giulia");
 await shot("04e3-team-rename");
 await nameField.press("Enter");
@@ -1764,7 +1764,7 @@ await teamPanel.getByTestId("team-developer").filter({ hasText: "Giulia" }).wait
 await openSharedRoles();
 await sharedRoles.scrollIntoViewIfNeeded();
 await themeShots("04e1-squads-shared-roles");
-await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).first().click();
+await teamPanel.getByTestId("team-figure").filter({ hasText: "Niente si rompe" }).first().click();
 await personTab.getByText("Quando interviene").waitFor();
 // Reopening a person brings back their tab: the fixed role takes a tab of its own, Giulia's stays one.
 if ((await page.locator('[data-testid="editor-tab"][data-tab^="detail:specialist:"]').count()) !== 2) throw new Error("A person of the team opened in more than one tab");
@@ -2243,7 +2243,7 @@ for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in atte
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
 // The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
-const documentationWork = page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico / }).filter({ hasText: "Documentazione e dominio" });
+const documentationWork = page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico / }).filter({ hasText: "Documenti" });
 if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
@@ -5933,7 +5933,7 @@ await startReview.click();
 // The review runs on request and ends with its Pact card; the card waits for the person, so the button says why it waits.
 // The finished review may already be one settled line (issue #271): the line opens the card that says why it ran.
 const onRequest = page.getByRole("main").getByText("Su richiesta tua: revisione al commit", { exact: false }).first();
-const reviewLine = page.getByRole("main").getByTestId("settled-card").filter({ hasText: "Clean Code" }).filter({ hasText: "Concluso" }).last();
+const reviewLine = page.getByRole("main").getByTestId("settled-card").filter({ hasText: "Ordine del codice" }).filter({ hasText: "Concluso" }).last();
 await onRequest.or(reviewLine).first().waitFor({ timeout: 30_000 });
 if (!(await onRequest.isVisible())) {
   await reviewLine.getByRole("button", { name: /^Apri: / }).click();
@@ -5943,7 +5943,7 @@ if (!(await onRequest.isVisible())) {
 await page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first().waitFor({ timeout: 60_000 });
 await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
 await openSharedRoles();
-await dutyPanel.getByTestId("team-figure").filter({ hasText: "Clean Code" }).first().click();
+await dutyPanel.getByTestId("team-figure").filter({ hasText: "Ordine del codice" }).first().click();
 // Issue #336: the role opens in its editor tab.
 const roleWork = detailPane().locator('[data-testid="automatic-work"][data-work="architectureReview"]');
 await roleWork.waitFor();
