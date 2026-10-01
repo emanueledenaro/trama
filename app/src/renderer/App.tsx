@@ -7,7 +7,7 @@ import { Dialogs } from "@/components/Dialogs";
 import { FocusModeView } from "@/components/focus/FocusModeView";
 import { Sash, useResizableHeight, useResizableWidth } from "@/lib/resizable";
 import { ActivityBar } from "@/components/workbench/ActivityBar";
-import { EditorArea } from "@/components/workbench/EditorArea";
+import { EditorArea, useSplitEditor, useViewportHeight, useViewportWidth } from "@/components/workbench/EditorArea";
 import { ActivityPanel } from "@/components/workbench/ActivityPanel";
 import { SideBar } from "@/components/workbench/SideBar";
 import { StatusBar } from "@/components/workbench/StatusBar";
@@ -19,7 +19,23 @@ import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
-import { CONVERSATION_TAB, PANEL_MIN_HEIGHT, SIDE_BAR_MIN_WIDTH, SIDE_BAR_VIEWS, SPLIT_EDITOR_MIN_VIEWPORT, type SideBarView, panelDefaultHeight, panelMaxHeight, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
+import {
+  CONVERSATION_TAB,
+  DETAIL_PANE_MIN_WIDTH,
+  PANEL_MIN_HEIGHT,
+  SIDE_BAR_MIN_WIDTH,
+  SIDE_BAR_VIEWS,
+  SPLIT_EDITOR_MIN_VIEWPORT,
+  type SideBarView,
+  detailPaneDefaultWidth,
+  detailPaneMaxWidth,
+  fitPanels,
+  panelDefaultHeight,
+  panelMaxHeight,
+  panelOverlays,
+  sideBarDefaultWidth,
+  sideBarMaxWidth,
+} from "@/lib/workbench";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -63,7 +79,25 @@ export function App() {
   // A module opens in an editor tab (issue #336): the exercise still sees it opened.
   const openedModule = useUi((s) => s.editorFocus === "detail" && (s.activeDetail?.startsWith("detail:module:") ?? false));
   // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
-  const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
+  // The detail pane of the split editor: 440 px, 520 from a 1900 px window, remembered (issue #336). Each one's maximum
+  // counts the other's width on screen, so the two together never take the conversation's 420 px.
+  const shown = useRef({ sideBar: 0, detail: 0 });
+  const sidebar = useResizableWidth("trama.sideBarWidth", {
+    initial: sideBarDefaultWidth,
+    min: SIDE_BAR_MIN_WIDTH,
+    max: (viewport) => sideBarMaxWidth(viewport, shown.current.detail),
+  });
+  const detailPane = useResizableWidth("trama.detailPaneWidth", {
+    initial: detailPaneDefaultWidth,
+    min: DETAIL_PANE_MIN_WIDTH,
+    max: (viewport) => detailPaneMaxWidth(viewport, shown.current.sideBar),
+  });
+  const viewportWidth = useViewportWidth();
+  const split = useSplitEditor();
+  const fit = fitPanels(viewportWidth, sidebarOpen ? sidebar.width : null, split ? detailPane.width : null);
+  shown.current = fit;
+  const sideBarMax = sideBarMaxWidth(viewportWidth, fit.detail);
+  const detailMax = detailPaneMaxWidth(viewportWidth, fit.sideBar);
   // While something waits, the window's one filled button is Aspetta te's (issue #338).
   const waiting = useWaiting().length > 0;
   // The bottom panel with Activity: 200 px, 260 from a 1500 px wide window, remembered; the editor keeps its height above (issue #337).
@@ -73,6 +107,8 @@ export function App() {
     min: PANEL_MIN_HEIGHT,
     max: panelMaxHeight,
   });
+  // Below 716 px the editor cannot keep 526 px above the panel: the panel lies over it instead (lib/workbench.ts).
+  const panelOver = panelOverlays(useViewportHeight());
 
   useEffect(() => {
     void window.trama.getState().then(setApp);
@@ -179,9 +215,9 @@ export function App() {
           {sidebarOpen ? (
             <SideBar
               size={{
-                width: sidebar.width,
-                max: sidebar.bounds.max,
-                widen: () => sidebar.setWidth(sidebar.bounds.max),
+                width: fit.sideBar,
+                max: sideBarMax,
+                widen: () => sidebar.setWidth(sideBarMax),
                 reset: sidebar.reset,
                 resizing: sidebar.resizing,
               }}
@@ -192,9 +228,9 @@ export function App() {
               <Sash
                 side="right"
                 label={t("workbench.sideBar.resize")}
-                size={sidebar.width}
+                size={fit.sideBar}
                 min={sidebar.bounds.min}
-                max={sidebar.bounds.max}
+                max={sideBarMax}
                 onResize={sidebar.setWidth}
                 onReset={sidebar.reset}
                 onClick={() => useUi.getState().toggleSidebar()}
@@ -202,7 +238,7 @@ export function App() {
               />
             ) : null}
             {/* The frame around the sheet: the gap around it keeps the frame's tint, not the glass behind. */}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--app-activitybar-surface)]">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--app-activitybar-surface)]">
               {inFocus ? (
                 // Full-screen focus mode on a module or the project (F03) takes the editor area, tabs included, inside the
                 // window's bars and above the bottom panel, until the person leaves it.
@@ -210,11 +246,22 @@ export function App() {
                   <FocusModeView />
                 </main>
               ) : (
-                <EditorArea />
+                <EditorArea
+                  detailSize={{
+                    width: fit.detail || detailPane.width,
+                    min: detailPane.bounds.min,
+                    max: detailMax,
+                    setWidth: detailPane.setWidth,
+                    reset: detailPane.reset,
+                    resizing: detailPane.resizing,
+                    setResizing: detailPane.setResizing,
+                  }}
+                />
               )}
               {panelOpen ? (
                 <FilledScope allowed={!waiting}>
                   <ActivityPanel
+                    overlay={panelOver}
                     size={{
                       height: panel.height,
                       min: panel.bounds.min,

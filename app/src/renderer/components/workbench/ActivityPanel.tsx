@@ -543,7 +543,7 @@ export interface PanelHeight {
  * The bottom panel (issue #337): attached under the editor with a horizontal sash, its height remembered, closed with
  * its X. It shows Activity; the status bar's icon and the title bar's toggle open it.
  */
-export function ActivityPanel({ size }: { size: PanelHeight }) {
+export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; overlay?: boolean }) {
   const t = useT();
   const language = useLanguage();
   const document = useUi((s) => s.app?.project?.document);
@@ -583,10 +583,13 @@ export function ActivityPanel({ size }: { size: PanelHeight }) {
       aria-label={t("panel.label")}
       data-testid="bottom-panel"
       className={cn(
-        "workbench-card chat-content-card app-panel-surface relative flex shrink-0 flex-col font-system-ui",
+        "workbench-card chat-content-card app-panel-surface flex shrink-0 flex-col font-system-ui",
+        // In a window lower than 716 px the panel lies over the lower part of the editor, which keeps its height.
+        overlay ? "absolute inset-x-0 bottom-0 z-[20]" : "relative",
         !size.resizing && "transition-[height] duration-200 ease-out",
       )}
-      style={{ height: size.height }}
+      style={{ height: Math.min(size.height, size.max) }}
+      data-overlay={overlay ? "true" : undefined}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented && (event.target as HTMLElement).tagName !== "TEXTAREA") closePanel();
       }}
