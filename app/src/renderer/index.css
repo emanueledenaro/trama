@@ -787,6 +787,12 @@ button {
     backdrop-filter: var(--app-sidebar-backdrop-filter, none);
   }
 
+  /* A long word with no space, such as a file path or a URL, breaks where it must instead of pushing a card or the side
+     bar past its edge (responsive pass of 1 October 2026); ordinary words keep wrapping between them. */
+  .chat-card,
+  [data-testid="side-bar"] {
+    overflow-wrap: anywhere;
+  }
   /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are rounded
      cards with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. */
   .workbench-card {

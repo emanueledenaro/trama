@@ -121,7 +121,9 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
         title={t("chat.timeline.openSteps")}
         className="-ml-0.5 inline-flex max-w-full items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >
-        <WorkLabel row={row} />
+        <span className="min-w-0 truncate">
+          <WorkLabel row={row} />
+        </span>
         {tools ? <span className="shrink-0 text-muted-foreground/60"><Sep />{t("chat.timeline.tools", { count: tools })}</span> : null}
         {failed ? <span className="shrink-0 text-destructive/80"><Sep />{t("chat.timeline.errors", { count: failed })}</span> : null}
         <IconChevronRight className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
