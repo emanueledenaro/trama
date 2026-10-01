@@ -1427,7 +1427,7 @@
     "src/renderer/lib/launchIntro.test.ts :: launch intro > stays under a second and a half, fade included, even when the app is slow",
     "src/renderer/lib/providerTheme.test.ts :: provider themes (issue #457) > color the lit sash with the provider's accent and the glass veil with the neutral light",
     "src/renderer/lib/providerTheme.test.ts :: provider themes (issue #457) > have a light and a dark block for each of the nine providers",
-    "src/renderer/lib/providerTheme.test.ts :: provider themes (issue #457) > keep the surface white in light and dark in dark, with the section tints a step apart from each other",
+    "src/renderer/lib/providerTheme.test.ts :: provider themes (issue #457) > keep the surface white in light and dark in dark, and lay the work as a sheet on a darker neutral frame",
     "src/renderer/lib/providerTheme.test.ts :: provider themes (issue #457) > set only the accents, never the surface, the ink, the glass light, the section tints or the status colors",
     "src/renderer/lib/remarkCallouts.test.ts :: remarkCallouts > accepts the body on the marker's line and any letter case",
     "src/renderer/lib/remarkCallouts.test.ts :: remarkCallouts > leaves plain quotes and unknown markers alone",

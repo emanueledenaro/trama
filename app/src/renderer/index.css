@@ -138,11 +138,16 @@
      stand apart without extra lines (issue #457): the editor on the surface, then the bottom panel, the side bar, the
      activity bar with the title bar, and the status bar, a step darker each. The same for every provider. 1px borders
      separate the panels edge to edge (sideBar.border and panel.border #E5E5E5 in VS Code). */
-  --app-editor-tint: #ffffff;
-  --app-panel-tint: #fafafa;
-  --app-sidebar-tint: #f7f7f7;
-  --app-activitybar-tint: #f2f2f2;
-  --app-statusbar-tint: #eeeeee;
+  /* Person's note of 1 October 2026: the work sits on a sheet laid on a frame. In light the sheet is a pearl white and
+     the frame a pearl grey with a touch of blue around it (title bar, activity bar, side bar, status bar), the side bar
+     a step lighter than the bars: the light twin of the dark theme's black. */
+  --app-editor-tint: #fbfbfc;
+  --app-panel-tint: #f8f8fa;
+  --app-sidebar-tint: #f0f1f3;
+  --app-activitybar-tint: #e9eaec;
+  --app-statusbar-tint: #e9eaec;
+  --app-card-border: rgb(20 30 50 / 0.07);
+  --app-card-shadow: 0 1px 2px rgb(20 30 50 / 0.05), 0 6px 20px rgb(20 30 50 / 0.06);
   --app-editor-surface: var(--app-editor-tint);
   --app-panel-surface: var(--app-panel-tint);
   --app-sidebar-surface: var(--app-sidebar-tint);
@@ -176,11 +181,14 @@
   --ring: #737373;
   --destructive: color-mix(in srgb, #ef4444 90%, white);
   /* Dark Modern on the neutral surface: sideBar.background #181818, borders #2B2B2B, editor #1F1F1F. */
-  --app-editor-tint: #212121;
-  --app-panel-tint: #1d1d1d;
-  --app-sidebar-tint: #1a1a1a;
-  --app-activitybar-tint: #171717;
-  --app-statusbar-tint: #141414;
+  /* An elegant black: the frame nearly black, the sheet a deep graphite edged by a hairline of light, not a shadow. */
+  --app-editor-tint: #161618;
+  --app-panel-tint: #141416;
+  --app-sidebar-tint: #0e0e10;
+  --app-activitybar-tint: #0a0a0b;
+  --app-statusbar-tint: #0a0a0b;
+  --app-card-border: rgb(255 255 255 / 0.07);
+  --app-card-shadow: 0 0 0 1px rgb(0 0 0 / 0.4), 0 6px 24px rgb(0 0 0 / 0.35);
   --app-panel-border: color-mix(in srgb, var(--surface) 95%, white);
   --glass-light: #ffffff;
 }
@@ -192,12 +200,13 @@
   --app-shell-background: transparent;
   /* The editor and the bottom panel are opaque enough that their tint reads, whatever desktop is behind, with a touch of
      the neutral glass light; left transparent they took the color of whatever sat behind the window. The bars show more. */
-  --app-editor-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-editor-tint) 80%, transparent));
-  --app-panel-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-panel-tint) 80%, transparent));
+  /* Nearly opaque, so the pearl tints read whatever desktop is behind. */
+  --app-editor-surface: color-mix(in srgb, var(--app-editor-tint) 98%, transparent);
+  --app-panel-surface: color-mix(in srgb, var(--app-panel-tint) 98%, transparent);
   --card: color-mix(in srgb, var(--surface) 78%, transparent);
-  --app-sidebar-surface: color-mix(in srgb, var(--app-sidebar-tint) 55%, transparent);
-  --app-activitybar-surface: color-mix(in srgb, var(--app-activitybar-tint) 55%, transparent);
-  --app-statusbar-surface: color-mix(in srgb, var(--app-statusbar-tint) 55%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, var(--app-sidebar-tint) 95%, transparent);
+  --app-activitybar-surface: color-mix(in srgb, var(--app-activitybar-tint) 96%, transparent);
+  --app-statusbar-surface: color-mix(in srgb, var(--app-statusbar-tint) 96%, transparent);
   /* The inspector can float over the chat: it keeps an opaque surface. */
   --app-inspector-surface: var(--color-background-surface);
   --app-sidebar-backdrop-filter: none;
@@ -205,12 +214,13 @@
 
 :root.dark[data-platform="darwin"],
 :root.dark[data-platform="win32"] {
-  --app-editor-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-editor-tint) 78%, transparent));
-  --app-panel-surface: color-mix(in srgb, var(--glass-light) 7%, color-mix(in srgb, var(--app-panel-tint) 78%, transparent));
+  /* The black stays black whatever desktop is behind: the glass barely shows through. */
+  --app-editor-surface: color-mix(in srgb, var(--app-editor-tint) 98%, transparent);
+  --app-panel-surface: color-mix(in srgb, var(--app-panel-tint) 98%, transparent);
   --card: color-mix(in srgb, var(--surface) 70%, transparent);
-  --app-sidebar-surface: color-mix(in srgb, var(--app-sidebar-tint) 60%, transparent);
-  --app-activitybar-surface: color-mix(in srgb, var(--app-activitybar-tint) 60%, transparent);
-  --app-statusbar-surface: color-mix(in srgb, var(--app-statusbar-tint) 60%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, var(--app-sidebar-tint) 96%, transparent);
+  --app-activitybar-surface: color-mix(in srgb, var(--app-activitybar-tint) 97%, transparent);
+  --app-statusbar-surface: color-mix(in srgb, var(--app-statusbar-tint) 97%, transparent);
 }
 
 :root[data-platform="darwin"] body,
@@ -773,6 +783,23 @@ button {
     backdrop-filter: var(--app-sidebar-backdrop-filter, none);
   }
 
+  /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are rounded
+     cards with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. */
+  .workbench-card {
+    margin: 0 8px 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
+  }
+  /* The side bar meets the frame, not the sheet: no line between them. */
+  .app-sidebar-surface {
+    border-right-color: transparent !important;
+  }
+  .workbench-card .workbench-card {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
   /* The editor's surface; the bottom panel sets its own tint with app-panel-surface. */
   .chat-content-card {
     background: var(--app-content-surface, var(--app-editor-surface));
