@@ -174,7 +174,7 @@ describe("the reviewers and the guardian talk to the developer (W07)", () => {
     const review = document.agentThreads!.find((t) => t.kind === "review")!;
     expect(review.specialistIds).toEqual([ada(document).id, role(document, "cleanCode").id, role(document, "security").id]);
     expect(review.withCoordinator).toBe(false);
-    expect(threadParticipants(t, review, document.team.specialists)).toBe("Ada, Clean Code e Sicurezza");
+    expect(threadParticipants(t, review, document.team.specialists)).toBe("Ada, Ordine del codice e Sicurezza");
     // A reviewer with nothing to report writes nothing.
     expect(review.messages.map((m) => m.author)).toEqual([
       { kind: "specialist", specialistId: role(document, "cleanCode").id },

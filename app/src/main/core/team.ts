@@ -104,6 +104,7 @@ function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Speciali
 /**
  * The names and tags the fixed roles had before the plain names (person's note, 1 October 2026: "usi parole molto
  * difficili"). A role still named so takes the plain one; a name the person chose stays.
+ * @model-text: these are the names an older Trama stored in projects, only compared, never shown.
  */
 const OLD_ROLE_NAMES: Partial<Record<string, { name: string; tag: string }>> = {
   qa: { name: "QA", tag: "QA" },
