@@ -85,7 +85,8 @@ function SectionHeader({ label, children }: { label: string; children?: React.Re
         <span className="truncate">{label}</span>
       </div>
       {children ? (
-        <div className="absolute top-1 right-1.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover/project-header:opacity-100 focus-within:opacity-100">
+        // Always in view: the person finds how to create a project without hovering (person's note, 1 October 2026).
+        <div className="absolute top-1 right-1.5 flex items-center gap-1.5">
           {children}
         </div>
       ) : null}

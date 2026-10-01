@@ -1279,6 +1279,8 @@ await setTheme("system");
   // The count sits in the column of the signs of the project's rows, not further left (person's note, 1 October 2026).
   const rowRight = await page.getByTestId("side-bar").locator('[data-testid="sidebar-agent"], [data-testid="sidebar-goal"]').first().boundingBox().catch(() => null);
   const countBox = await projectCount.boundingBox();
+  const createProject = page.getByTestId("side-bar").getByRole("button", { name: "Crea un progetto" });
+  if ((await createProject.evaluate((el) => getComputedStyle(el.parentElement).opacity)) !== "1") throw new Error("Creating a project shows only on hover");
   if (rowRight && countBox && Math.abs(rowRight.x + rowRight.width - (countBox.x + countBox.width)) > 12) throw new Error(`The count of the open project is not in the column of the signs: ${countBox.x + countBox.width} vs ${rowRight.x + rowRight.width}`);
   await openView("Regole", "Patto");
   const pactPointer = page.getByTestId("side-bar").getByTestId("waiting-pointer").filter({ hasText: "La domanda aspetta te" }).first();
