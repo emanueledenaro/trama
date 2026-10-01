@@ -688,37 +688,40 @@
   background: repeating-linear-gradient(90deg, var(--color-text-foreground-tertiary) 0 4px, transparent 4px 8px);
   opacity: 0.55;
 }
-/* Trama's icons: over their button the threads sew themselves in steps; a busy icon turns in steps. */
-:hover > .trama-icon[data-animated] path {
-  stroke-dasharray: 1;
-  animation: trama-sew 0.5s steps(10, end);
+/* Trama's icons, kept quiet (person's note, 1 October 2026: light, professional motion). Over its button the back
+   thread of an animated icon lights up to full in 150 ms; a busy icon turns slowly and smoothly. */
+.trama-icon[data-animated] path {
+  transition: opacity 150ms ease-out;
 }
-@keyframes trama-sew {
-  from { stroke-dashoffset: 1; }
-  to { stroke-dashoffset: 0; }
+/* A full thread means "in front": the open view's icon has both threads full, and the hover previews it. */
+:hover > .trama-icon[data-animated] path,
+[data-active] > .trama-icon[data-animated] path {
+  opacity: 1;
 }
 .trama-icon[data-busy] {
-  animation: trama-turn 1.2s steps(8, end) infinite;
+  animation: trama-turn 1.6s linear infinite;
 }
 @keyframes trama-turn {
   to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  :hover > .trama-icon[data-animated] path,
+  .trama-icon[data-animated] path {
+    transition: none;
+  }
   .trama-icon[data-busy] {
     animation: none;
   }
 }
-/* The loading mark: a 3 x 3 weave whose cells light in turn, as a shuttle going back and forth, in steps. */
+/* The loading mark: a 3 x 3 weave whose cells light in turn, as a shuttle going back and forth, slowly and softly. */
 .trama-loader rect {
-  opacity: 0.18;
-  animation: trama-weave 1.35s steps(1, end) infinite;
-  animation-delay: calc(var(--cell) * 0.15s);
+  opacity: 0.25;
+  animation: trama-weave 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--cell) * 0.2s);
 }
 @keyframes trama-weave {
-  0% { opacity: 1; }
-  33% { opacity: 0.55; }
-  55%, 100% { opacity: 0.18; }
+  0%, 100% { opacity: 0.25; }
+  30% { opacity: 0.85; }
+  60% { opacity: 0.25; }
 }
 @media (prefers-reduced-motion: reduce) {
   .trama-loader rect {
@@ -790,6 +793,15 @@ button {
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
+  }
+  /* In a narrow window the chat needs the room (420 px with the widest side bar): the sheet lies flush on the frame,
+     kept apart only by its hairline. */
+  @media (max-width: 1200px) {
+    .workbench-card {
+      margin: 0;
+      border-radius: 0;
+      box-shadow: inset 1px 0 0 var(--app-card-border);
+    }
   }
   /* The side bar meets the frame, not the sheet: no line between them. */
   .app-sidebar-surface {
