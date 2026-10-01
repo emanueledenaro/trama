@@ -514,9 +514,11 @@ export function assign(
   for (const dependency of dependencies) {
     const found = findAssignment(document, dependency);
     if (!found) throw new TeamError("unknown_assignment", `Unknown assignment: ${dependency}.`);
-    if (found.status !== "completed") pending.push(dependency);
+    // Work in a worktree counts once its pull request merged: the new work starts from the main branch.
+    const published = needsWorktree(found) ? document.candidates.filter((c) => c.assignmentId === found.id).at(-1)?.pullRequest : null;
+    if (found.status !== "completed" || (published && !published.mergedAt)) pending.push(dependency);
   }
-  if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
+  if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed and merged yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
   const owner = foreignSquad(document, specialist, moduleIds);
   if (owner && !continuesOwnWork(document, specialist, order, moduleIds, requestId)) {

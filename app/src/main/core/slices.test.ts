@@ -281,6 +281,19 @@ describe("assigning only unblocked slices (M05)", () => {
     expect(sliceViews(document, { ...plan, slicing: slicing("proposed") })).toEqual([]);
   });
 
+  it("keeps the dependents blocked while the verified slice's pull request is not merged (logic review of 1 October 2026)", () => {
+    const { document, plan } = project();
+    const first = work(document, "Ada", "S1", 3);
+    endTurn(document, first.id, null, { kind: "completed", text: "Fatto" });
+    verified(document, first.id);
+    const candidate = document.candidates.filter((c) => c.assignmentId === first.id).at(-1)!;
+    candidate.pullRequest = { number: 7, url: "https://github.com/o/r/pull/7", mergedAt: null } as never;
+    // Published and not merged: the next slices would start from a main branch without its code.
+    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["verifying", "blocked", "blocked"]);
+    candidate.pullRequest!.mergedAt = "2026-10-01T12:00:00.000Z";
+    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["done", "ready", "ready"]);
+  });
+
   it("refuses a blocked slice, a slice at work and a done one", () => {
     const { document, plan } = project();
     expect(sliceAssignmentProblem(document, plan, "S2")).toBe("Slice S2 is blocked by S1: assign it when they are done.");
