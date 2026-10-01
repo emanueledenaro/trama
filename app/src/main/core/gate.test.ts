@@ -361,7 +361,8 @@ describe("the candidate gate (W10)", () => {
     interruptGates(document, at(5));
     expect(gate.status).toBe("failed");
     expect(gate.reviews.every((r) => r.status === "failed")).toBe(true);
-    expect(gate.failure).toContain("rilanciala");
+    // The person reads that the Coordinator runs it again, never a step left to them.
+    expect(gate.failure).toContain("Il Coordinatore la rifà da solo");
   });
 });
 

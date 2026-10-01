@@ -1137,12 +1137,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.gate.notComparable": "{check} cannot be compared",
   "main.gate.alreadyFailing": "{check} already fails on the base",
   "main.gate.changesRequested": "The reviewer asks for changes",
-  "main.gate.reviewsFailed": "{names}: review failed. Start the review again.",
+  "main.gate.reviewsFailed": "{names}: the review did not finish. The Coordinator runs it again by itself.",
   "main.gate.interrupted":
-    "The review stopped when Trama closed: start it again.",
+    "The review stopped when Trama closed. The Coordinator runs it again by itself.",
   "main.gate.summary.skipped": "{name}: {report}.",
   "main.gate.summary.skippedDefault": "skipped",
-  "main.gate.summary.failed": "{name}: review failed.",
+  "main.gate.summary.failed": "{name}: the review did not finish, it runs again.",
   "main.gate.summary.running": "{name}: in progress.",
   "main.gate.summary.blocking":
     "{name}: {count} blocking findings, the first: {first}.",

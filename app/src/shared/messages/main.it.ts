@@ -1185,12 +1185,12 @@ export const mainIt = {
   "main.gate.alreadyFailing": "{check} fallisce già sulla base",
   "main.gate.changesRequested": "Il revisore chiede modifiche",
   "main.gate.reviewsFailed":
-    "{names}: revisione non riuscita. Rilancia la revisione.",
+    "{names}: la revisione non è riuscita. Il Coordinatore la rifà da solo.",
   "main.gate.interrupted":
-    "La revisione si è interrotta alla chiusura di Trama: rilanciala.",
+    "La revisione si è fermata quando Trama si è chiuso. Il Coordinatore la rifà da solo.",
   "main.gate.summary.skipped": "{name}: {report}.",
   "main.gate.summary.skippedDefault": "saltato",
-  "main.gate.summary.failed": "{name}: revisione non riuscita.",
+  "main.gate.summary.failed": "{name}: la revisione non è riuscita, si rifà.",
   "main.gate.summary.running": "{name}: in corso.",
   "main.gate.summary.blocking":
     "{name}: {count} rilievi bloccanti, il primo: {first}.",
