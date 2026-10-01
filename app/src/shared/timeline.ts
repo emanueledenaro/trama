@@ -126,7 +126,8 @@ export function deriveTimelineRows(
       row.running = runningWork.has(key);
       const first = row.activities[0];
       const last = row.activities.at(-1);
-      if (!row.running && first && last) row.durationMs = Math.max(0, Date.parse(last.createdAt) - Date.parse(first.createdAt));
+      // The work's own events give its length; a single event gives none, and "worked for 0 ms" said nothing true.
+      if (!row.running && first && last && last !== first) row.durationMs = Math.max(0, Date.parse(last.createdAt) - Date.parse(first.createdAt));
       continue;
     }
     if (!row.requestId) continue;
