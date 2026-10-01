@@ -472,18 +472,18 @@ const expectIconAndText = async (button, where) => {
 const noHorizontalScroll = async (where) => {
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
 };
-// Design rules for the status bar: read left to right by importance (status line, what asks for an action, the work in
-// focus, the branch, then a line and the icons), no button takes a state tint at rest, and the bar stays 24 px.
+// Design rules for the status bar: the branch on the left, then the status line in the middle, what asks for an action,
+// the work in focus, then a line and the icons (person's note, 1 October 2026), no button takes a state tint at rest, and the bar stays 24 px.
 const statusBarRules = async (where) => {
   const bar = await page.evaluate(() => {
     const root = document.querySelector('[data-testid="status-bar"]');
     const left = (selector) => root.querySelector(selector)?.getBoundingClientRect().left ?? null;
     const order = [
+      '[data-testid="status-branch"]',
       '[data-testid="status-line-text"]',
       '[data-testid="status-conflict"]',
       '[data-testid="status-setup"]',
       '[data-testid="status-focus"]',
-      '[data-testid="status-branch"]',
       '[data-testid="status-divider"]',
       'button[aria-label="Attività"]',
     ]
