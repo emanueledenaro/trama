@@ -666,7 +666,11 @@ function assignedWork(
   }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
-    moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
+    // A publication Trama is already running on the Coordinator's green light, also while GitHub is out of reach and it
+    // tries again, is Trama's: the person has nothing to review there (logic review of 1 October 2026).
+    const candidate = unpublished.candidate!;
+    const trama = candidate.merge?.by === "coordinator" && candidate.merge.status !== "stopped" && candidate.merge.fingerprint === contentFingerprint(document, candidate);
+    if (!trama) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));
     return { phase: "candidate", blocker: null };
   }
   // GitHub finds conflicts between a pull request and its base: the Coordinator realigns the candidate's branch in its
@@ -682,10 +686,26 @@ function assignedWork(
       block: "worktreeConflict",
     };
   }
+  // Red checks on the pull request: a technical block the Coordinator settles by sending the work back to fix them.
+  // Only while the candidate is the one the red merge was for: the fixed work changes its content.
+  const red = edits.find(
+    (i) => !i.candidate!.pullRequest!.mergedAt && i.candidate!.merge?.checksRed && i.candidate!.merge.fingerprint === contentFingerprint(document, i.candidate!),
+  );
+  if (red) {
+    moves.assignWork();
+    return {
+      phase: "blocked",
+      blocker: t("main.workPhase.blockerChecksRed", { id: red.candidate!.id, number: red.candidate!.pullRequest!.number }),
+      why: sentence(t("main.workPhase.whyChecksRed", { work: workOf(document, red.assignment) })),
+      block: "checkFailed",
+    };
+  }
   const unmerged = edits.find((i) => !i.candidate!.pullRequest!.mergedAt);
   if (unmerged) {
     const candidate = unmerged.candidate!;
-    moves.add(person("mergePullRequest", PERSON_MOVE_LABELS.mergePullRequest, candidate.id, { url: candidate.pullRequest!.url }));
+    // A merge Trama runs itself (the Coordinator's green light, checks still running) waits for nobody.
+    const tramaMerges = candidate.merge?.by === "coordinator" && candidate.merge.status !== "stopped";
+    if (!tramaMerges) moves.add(person("mergePullRequest", PERSON_MOVE_LABELS.mergePullRequest, candidate.id, { url: candidate.pullRequest!.url }));
     return { phase: "candidate", blocker: null };
   }
   return { phase: "merged", blocker: null };

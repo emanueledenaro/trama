@@ -51,6 +51,15 @@ export function goalDialogIsEmpty(document: ProjectDocument, goalId: string): bo
   );
 }
 
+/**
+ * Whether the person put the goal away, archived or abandoned: its work stops and nothing of it starts or merges
+ * (logic review of 1 October 2026).
+ */
+export function goalPutAway(document: ProjectDocument, id: string | null | undefined): boolean {
+  const goal = findGoal(document, id);
+  return Boolean(goal && (goal.archivedAt || goal.status === "abandoned"));
+}
+
 export function findGoal(document: ProjectDocument, id: string | null | undefined): ProjectGoal | null {
   if (!id) return null;
   return projectGoals(document).find((g) => g.id === id.trim()) ?? null;

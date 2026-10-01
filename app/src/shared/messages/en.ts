@@ -1082,7 +1082,7 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.status.continuousOnHint": "The Coordinator takes its moves by itself again. You can also change it in Settings.",
   "workbench.status.focus": "Work in focus",
   "workbench.status.focusOf": "Work in focus: {title}",
-  "focus.none": "No work in focus: it is all suspended.",
+  "focus.none": "No work in focus: yours are all suspended.",
   "focus.inFocus": "In focus",
   "focus.queued": "Queued {queued}",
   "focus.queuedPaused": "Queued {queued}, {count} suspended",
@@ -1707,6 +1707,7 @@ export const en: Record<keyof typeof it, string> = {
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
   "fixedBan.card.handle": "No mandate grants it. If you want it done, write it to the Coordinator in the chat: it does it because you asked, and before deleting something it asks you to confirm.",
   "requestedAction.ban.branchPush": "a push of the branch",
+  "requestedAction.ban.issueState": "closing or reopening an issue",
   "requestedAction.ban.forcePush": "a force push",
   "requestedAction.ban.pushMainBranch": "a direct push to the main branch",
   "requestedAction.ban.deleteRemoteRef": "the deletion of a remote branch or tag",
@@ -1746,8 +1747,8 @@ export const en: Record<keyof typeof it, string> = {
   // Full delegation: "fai tutto tu" (issue #423)
   "delegation.line.granted": "From now on I do everything myself, even at night, because you asked me: “{quote}”. I only ask you to confirm deletions.",
   "delegation.line.grantedTickets": "From now on I do everything myself, even at night, and I take the open issues with clear criteria, because you asked me: “{quote}”. I only ask you to confirm deletions.",
-  "delegation.line.revokedInChat": "I withdrew the full delegation, as you wrote me: “{quote}”. From now on the choices are yours again.",
-  "delegation.line.revokedInView": "You withdrew the full delegation from the Mandate view. From now on the choices are yours again.",
+  "delegation.line.revokedInChat": "I withdrew the full delegation, as you wrote me: “{quote}”. From now on the choices are yours again. The mandate stays as the delegation widened it: you can narrow it from the Mandate view.",
+  "delegation.line.revokedInView": "You withdrew the full delegation from the Mandate view. From now on the choices are yours again. The mandate stays as the delegation widened it: you can narrow it here.",
   "delegation.kind.decision": "Product decision",
   "delegation.kind.interfaceCandidate": "Interface candidate approved",
   "delegation.kind.goal": "New work for the goal",

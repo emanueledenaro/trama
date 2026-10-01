@@ -650,8 +650,8 @@
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 9999px;
     font-size: var(--text-ui-2xs);
     font-weight: 600;

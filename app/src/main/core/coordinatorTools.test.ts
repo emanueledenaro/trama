@@ -997,6 +997,20 @@ describe("run_requested_action: the person's written request unlocks a banned ac
     return { context, cards, ran };
   }
 
+  it("pauses all the work when the person asks, and only with their words (logic review of 1 October 2026)", async () => {
+    const document = emptyDocument("p");
+    typedMessage(document, "Fermate tutto per oggi", "2020-01-01T00:00:00.000Z");
+    const pauses: boolean[] = [];
+    const { context } = requestContext(document);
+    const withPause = { ...context, pauseWork: async (paused: boolean) => void pauses.push(paused) } as ToolContext;
+    const done = await runCoordinatorTool("pause_work", { paused: true, quote: "fermate tutto per oggi" }, withPause);
+    expect(done.isError).toBeFalsy();
+    expect(pauses).toEqual([true]);
+    const refused = await runCoordinatorTool("pause_work", { paused: true, quote: "basta lavorare stanotte" }, withPause);
+    expect(parse(refused).error.code).toBe("not_the_person");
+    expect(pauses).toEqual([true]);
+  });
+
   it("runs a reversible action at once and puts the line in the chat", async () => {
     const document = emptyDocument("p");
     typedMessage(document, "Sistema tu la situazione al meglio, pubblica anche il tag v1.2.0", "2020-01-01T00:00:00.000Z");

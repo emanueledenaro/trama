@@ -11,11 +11,29 @@ import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { InspectorSection } from "./Inspector";
 import { PresenceStatus } from "@/components/PresencePanel";
+import { useState } from "react";
 
 const TASK_KIND: Record<PresenceTask["kind"], MessageKey> = { goal: "work.group.task.goal", work: "work.group.task.work", assignment: "work.group.task.assignment" };
 
-/** A person's avatar: the initial on a neutral tint, since the colors and the bots belong to the agents (W15, W16). */
-function PersonAvatar({ name }: { name: string }) {
+/**
+ * A person's avatar: their GitHub photo when the login is known (person's note, 1 October 2026), so a colleague is
+ * recognised at a glance; else, or while the photo cannot load, the initial on a neutral tint, since the colors and
+ * the bots belong to the agents (W15, W16).
+ */
+function PersonAvatar({ name, login }: { name: string; login: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (login && !failed) {
+    return (
+      <img
+        aria-hidden
+        alt=""
+        src={`https://github.com/${encodeURIComponent(login)}.png?size=64`}
+        className="person-avatar object-cover"
+        data-testid="person-photo"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
   return (
     <span aria-hidden className="person-avatar bg-secondary text-secondary-foreground">
       {[...name.trim()][0]?.toLocaleUpperCase("it") ?? "?"}
@@ -39,7 +57,7 @@ function Identity({ row }: { row: BoardRow }) {
   }
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <PersonAvatar name={row.name} />
+      <PersonAvatar name={row.name} login={row.login} />
       <span className="min-w-0 truncate text-foreground/90">{row.self ? t("work.group.you", { name: row.name }) : row.name}</span>
       {row.login && row.login !== row.name ? <span className="min-w-0 truncate text-ui-xs text-muted-foreground">@{row.login}</span> : null}
     </span>

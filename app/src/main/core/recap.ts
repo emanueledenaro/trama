@@ -248,7 +248,7 @@ export function doneSince(document: ProjectDocument, since: string | null): Reca
 }
 
 /** When the last recap was written, or null before the first. */
-const lastRecapAt = (document: ProjectDocument) => document.recap?.recaps.at(-1)?.at ?? null;
+export const lastRecapAt = (document: ProjectDocument) => document.recap?.recaps.at(-1)?.at ?? null;
 
 /**
  * Writes the recap from the records and keeps it. Pure apart from the document: `runningRequestId` is the Coordinator

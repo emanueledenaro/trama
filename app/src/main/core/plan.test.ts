@@ -260,13 +260,14 @@ describe("the plan as a spec with to-spec (M04)", () => {
     expect(() => checkSpecSections({ ...sections, solution: "" })).toThrow(PlanError);
   });
 
-  it("sends a spec interrupted while being written back to the seam check when Trama reopens the project", () => {
+  it("keeps the person's answer of a spec interrupted while being written, for Trama to write it again on reopening", () => {
     const document = emptyDocument("p");
     const seamsAnswer = { confirmed: false, note: "Testa anche il rimborso", at: "t" };
     const base = { seams: [seam], sections: null, affectedModuleIDs: [], references: [], requiredDecisionIDs: [], issue: null, publishFailure: null };
     document.plans.push(plan({ id: "P-1", spec: { ...base, seamsAnswer } }), plan({ id: "P-2" }), plan({ id: "P-3", status: "seams", spec: { ...base, seamsAnswer: null } }));
     const [writing, lost, waiting] = normalizeDocument(JSON.parse(JSON.stringify(document)), "p").plans;
-    expect(writing).toMatchObject({ status: "seams", spec: { seams: [seam], seamsAnswer: null }, failure: expect.stringMatching(/rispondi di nuovo sui punti di prova/) });
+    // The person never answers twice (logic review of 1 October 2026): the answer stays and Trama takes the spec up.
+    expect(writing).toMatchObject({ status: "seams", spec: { seams: [seam], seamsAnswer }, failure: expect.stringMatching(/Trama la riprende da sola/) });
     expect(lost).toMatchObject({ status: "failed" });
     expect(waiting).toMatchObject({ status: "seams", failure: null });
   });

@@ -82,6 +82,17 @@ describe("deriveTimelineRows", () => {
     expect(second!.activities).toHaveLength(2);
   });
 
+  it("gives no length to a turn of one event, never \"worked for 0 ms\"", () => {
+    const one: ConversationEvent = {
+      ...event(1, { type: "activity", title: "Arresto confermato", detail: null, tone: "tool" }, null),
+      createdAt: "2026-09-24T12:00:00.000Z",
+      assignmentId: "A-1",
+      workKey: "A-1:1",
+    };
+    const [row] = deriveTimelineRows([one], [], null, new Set()) as Extract<ReturnType<typeof deriveTimelineRows>[number], { kind: "work" }>[];
+    expect(row).toMatchObject({ assignmentId: "A-1", running: false, durationMs: null });
+  });
+
   it("groups the decision cards of a grilling round into one row per round (M01)", () => {
     const question = (id: string, round: number | null): DecisionRequest => ({
       id,

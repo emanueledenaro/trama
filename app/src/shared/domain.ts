@@ -491,8 +491,12 @@ export interface FixedBanRefusal {
  */
 export interface RequestedAction {
   id: string;
-  /** The fixed ban the action meets; `branchPush` is a push of another branch, which the mandate alone would not allow. */
-  ban: import("./fixedBans").FixedBan | "branchPush";
+  /**
+   * The fixed ban the action meets; `branchPush` is a push of another branch, which the mandate alone would not allow;
+   * `issueState` closes or reopens an issue of the project because the person said so, without the evidence a ticket
+   * closed as done needs.
+   */
+  ban: import("./fixedBans").FixedBan | "branchPush" | "issueState";
   /** The git or gh command Trama runs in the project's checkout. */
   command: string;
   /** What happens, in the Coordinator's words for the person. */
@@ -1476,6 +1480,11 @@ export interface CandidateMerge {
    * and its base: the Coordinator realigns the candidate's branch and publishes it again, the person has nothing to merge.
    */
   baseConflict?: boolean;
+  /**
+   * True when the pull request's checks are red at the merge: the work goes back to its developer to fix them, and the
+   * person has nothing to merge (logic review of 1 October 2026).
+   */
+  checksRed?: boolean;
 }
 
 /** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */

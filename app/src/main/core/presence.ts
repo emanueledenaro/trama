@@ -340,6 +340,11 @@ export class PresenceService {
   private lastActivity = 0;
   private publishedAt: string | null = null;
   private lastRecord: PresenceRecord | null = null;
+  /**
+   * The person's GitHub login once known. Right after start GitHub CLI may not have answered yet: without it the person
+   * was named by git, and their own record published under the login came back as a colleague's, the same person twice.
+   */
+  private knownLogin: string | null = null;
   private others: PresenceRecord[] = [];
   private collaborators: boolean | null = null;
   private message: string | null = null;
@@ -426,7 +431,10 @@ export class PresenceService {
     if (this.source === undefined) this.source = await resolvePresenceRemote(context.root);
     const source = this.source;
     if (source && !this.cache) this.cache = await presenceCache(this.options.cacheRoot, context.root, source);
-    const identity = await personIdentity(context.root, source, context.githubLogin);
+    if (context.githubLogin) this.knownLogin = context.githubLogin;
+    // Until GitHub answers, the person's own record already published names them: it is theirs, never a colleague.
+    const login = this.knownLogin ?? (source?.kind === "github" ? (this.lastRecord?.user ?? null) : null);
+    const identity = await personIdentity(context.root, source, login);
     const local = await readLocalActivity(context.root);
 
     const choice = chooseActiveBranch({ focusBranch: context.focusBranch, branches: local.branches, now });

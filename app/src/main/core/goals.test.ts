@@ -6,6 +6,7 @@ import type { Candidate, CandidateReport, GitHubSnapshot, ProjectDocument, Recen
 import { waitingForYou } from "@shared/waitingForYou";
 import {
   candidateGoalId,
+  goalPutAway,
   chatComposer,
   decisionDependents,
   dialogEvents,
@@ -760,3 +761,18 @@ describe("goal errors in English (issue #301)", () => {
     expect(() => archiveGoal(document, "G-00000000")).toThrow("Goal G-00000000 not found.");
   });
 });
+
+describe("a goal the person put away", () => {
+  it("counts as put away once archived or abandoned, never while open (logic review of 1 October 2026)", () => {
+    const document = { goals: [
+      { id: "G-1", title: "Aperto", status: "open" },
+      { id: "G-2", title: "Archiviato", status: "open", archivedAt: "2026-10-01T10:00:00.000Z" },
+      { id: "G-3", title: "Abbandonato", status: "abandoned" },
+    ] } as unknown as ProjectDocument;
+    expect(goalPutAway(document, "G-1")).toBe(false);
+    expect(goalPutAway(document, "G-2")).toBe(true);
+    expect(goalPutAway(document, "G-3")).toBe(true);
+    expect(goalPutAway(document, null)).toBe(false);
+  });
+});
+

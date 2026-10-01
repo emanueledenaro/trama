@@ -78,17 +78,21 @@ export function requestAction(
     throw new PersonRequestError("not_runnable", "Give one git or gh command, without a shell, pipes, wrappers, environment variables or git options before the subcommand.");
   }
   // A push the person asks for goes even where the mandate would not publish: the Push rule gives way to their words.
-  const ban = commandBan(command, options.mainBranches ?? MAIN_BRANCHES, options.currentBranch) ?? (words[0] === "git" && words[1] === "push" ? "branchPush" : null);
+  // So does closing or reopening an issue: the issues are the person's, and update_ticket closes one only as done.
+  const ban =
+    commandBan(command, options.mainBranches ?? MAIN_BRANCHES, options.currentBranch) ??
+    (words[0] === "git" && words[1] === "push" ? "branchPush" : issueStateCommand(words) ? "issueState" : null);
   if (!ban) {
     throw new PersonRequestError(
       "not_banned",
-      "No fixed ban stops this command and it is not a push: this tool runs only what a fixed ban would stop, and pushes. Use your other tools for the rest.",
+      "No fixed ban stops this command and it is neither a push nor closing or reopening an issue: this tool runs only those. Use your other tools for the rest.",
     );
   }
   const message = findPersonRequest(document, input.quote);
   const waiting = (document.requestedActions ?? []).find((a) => a.status === "waiting" && a.command === command);
   if (waiting) return waiting;
-  const confirm = ban !== "branchPush" && needsConfirmation(ban);
+  // Closing an issue comes back with a reopen, so it runs at once like a push of a branch.
+  const confirm = ban !== "branchPush" && ban !== "issueState" && needsConfirmation(ban);
   const action: RequestedAction = {
     id: shortId("RA", randomUUID()),
     ban,
@@ -103,6 +107,11 @@ export function requestAction(
   };
   document.requestedActions = [...(document.requestedActions ?? []), action];
   return action;
+}
+
+/** `gh issue close N ...` or `gh issue reopen N ...`: the person's own decision on one issue of the project. */
+function issueStateCommand(words: string[]): boolean {
+  return words[0] === "gh" && words[1] === "issue" && (words[2] === "close" || words[2] === "reopen") && /^\d+$/.test(words[3] ?? "");
 }
 
 function waitingAction(document: ProjectDocument, id: string): RequestedAction {

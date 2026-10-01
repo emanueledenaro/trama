@@ -92,6 +92,15 @@ describe("the person's written request unlocks a banned action (issue #422)", ()
     expect(codeOf(() => requestAction(document, { command: "git tag v1", quote: "ok", summary: "Tag" }))).toBe("quote_too_short");
   });
 
+  it("closes or reopens an issue at once when the person asks, the issues being theirs", () => {
+    const document = documentWith("cancella tutti i ticket per adesso");
+    const closed = requestAction(document, { command: 'gh issue close 12 --reason "not planned" --comment "Messo da parte su richiesta"', quote: "cancella tutti i ticket", summary: "Chiudo la issue #12" });
+    expect(closed).toMatchObject({ ban: "issueState", status: "running", confirmation: null });
+    expect(requestAction(document, { command: "gh issue reopen 12", quote: "cancella tutti i ticket", summary: "Riapro la #12" }).ban).toBe("issueState");
+    expect(codeOf(() => requestAction(document, { command: "gh issue list", quote: "cancella tutti i ticket", summary: "x" }))).toBe("not_banned");
+    expect(codeOf(() => requestAction(document, { command: "gh issue close 12", quote: "chiudi la issue dodici", summary: "x" }))).toBe("not_the_person");
+  });
+
   it("runs only one git or gh command, and only one a fixed ban stops", () => {
     const document = documentWith("Sistema tu la situazione al meglio");
     const quote = "sistema tu la situazione";

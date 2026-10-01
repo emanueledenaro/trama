@@ -1084,7 +1084,7 @@ export const it = {
   "workbench.status.continuousOnHint": "Il Coordinatore riprende da solo le sue mosse. Si cambia anche in Impostazioni.",
   "workbench.status.focus": "Lavoro in primo piano",
   "workbench.status.focusOf": "Lavoro in primo piano: {title}",
-  "focus.none": "Nessun lavoro in primo piano: sono tutti sospesi.",
+  "focus.none": "Nessun lavoro in primo piano: i tuoi sono sospesi.",
   "focus.inFocus": "In primo piano",
   "focus.queued": "In coda {queued}",
   "focus.queuedPaused": "In coda {queued}, {count} sospesi",
@@ -1709,6 +1709,7 @@ export const it = {
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
   "fixedBan.card.handle": "Nessun mandato la concede. Se vuoi che la faccia, scrivilo al Coordinatore in chat: la fa perché gliel'hai chiesto, e prima di cancellare qualcosa ti chiede conferma.",
   "requestedAction.ban.branchPush": "un push del branch",
+  "requestedAction.ban.issueState": "la chiusura o la riapertura di una issue",
   "requestedAction.ban.forcePush": "un force push",
   "requestedAction.ban.pushMainBranch": "un push diretto sul branch principale",
   "requestedAction.ban.deleteRemoteRef": "la cancellazione di un branch o di un tag remoto",
@@ -1748,8 +1749,8 @@ export const it = {
   // Full delegation: "fai tutto tu" (issue #423)
   "delegation.line.granted": "Da ora faccio tutto io, anche di notte, perché me l'hai chiesto: «{quote}». Ti chiedo solo le conferme di cancellazione.",
   "delegation.line.grantedTickets": "Da ora faccio tutto io, anche di notte, e prendo le issue aperte con criteri chiari, perché me l'hai chiesto: «{quote}». Ti chiedo solo le conferme di cancellazione.",
-  "delegation.line.revokedInChat": "Ho ritirato la delega piena, come mi hai scritto: «{quote}». Da ora le scelte tornano a te.",
-  "delegation.line.revokedInView": "Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te.",
+  "delegation.line.revokedInChat": "Ho ritirato la delega piena, come mi hai scritto: «{quote}». Da ora le scelte tornano a te. Il mandato resta quello allargato dalla delega: puoi restringerlo dalla vista Mandato.",
+  "delegation.line.revokedInView": "Hai ritirato la delega piena dalla vista Mandato. Da ora le scelte tornano a te. Il mandato resta quello allargato dalla delega: puoi restringerlo qui.",
   "delegation.kind.decision": "Decisione di prodotto",
   "delegation.kind.interfaceCandidate": "Candidato di interfaccia approvato",
   "delegation.kind.goal": "Lavoro nuovo per l'obiettivo",

@@ -320,6 +320,8 @@ export const mainIt = {
   "main.controller.cloudStopUntracked":
     "Trama non segue più la sessione cloud. La sessione si ferma dalla sua pagina di Claude Code.",
   "main.controller.personActor": "Persona",
+  "main.controller.stoppedByGoalPutAway": "Fermato: hai messo da parte il suo obiettivo.",
+  "main.controller.stoppedByPause": "Fermato con la Pausa: riparte quando riprendi.",
   "main.controller.stoppedByPerson": "Fermato dalla persona",
   "main.controller.noWorktreeToRemove":
     "L'incarico non ha un worktree da rimuovere.",
@@ -812,6 +814,8 @@ export const mainIt = {
     "Il candidato {id} ha un effetto esterno che Trama non verifica: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
+  "main.workPhase.blockerChecksRed": "Le verifiche della pull request #{number} del candidato {id} sono rosse.",
+  "main.workPhase.whyChecksRed": "{work} ha le verifiche rosse su GitHub: torna allo sviluppatore per sistemarle, poi Trama la unisce.",
   "main.workPhase.blockerPullRequestConflict":
     "GitHub trova conflitti tra la pull request #{number} del candidato {id} e la sua base: l'unione è ferma e non tocca alla persona. Riallinea il branch del candidato con la base nella stessa copia di lavoro: una correzione allo stesso sviluppatore (replaces) che unisce la base aggiornata e risolve i conflitti. Poi il candidato nuovo passa verifiche e revisori e Trama lo pubblica di nuovo sulla stessa pull request.",
   "main.workPhase.blockerWorktreeConflict":
@@ -1185,12 +1189,12 @@ export const mainIt = {
   "main.gate.alreadyFailing": "{check} fallisce già sulla base",
   "main.gate.changesRequested": "Il revisore chiede modifiche",
   "main.gate.reviewsFailed":
-    "{names}: revisione non riuscita. Rilancia la revisione.",
+    "{names}: la revisione non è riuscita. Il Coordinatore la rifà da solo.",
   "main.gate.interrupted":
-    "La revisione si è interrotta alla chiusura di Trama: rilanciala.",
+    "La revisione si è fermata quando Trama si è chiuso. Il Coordinatore la rifà da solo.",
   "main.gate.summary.skipped": "{name}: {report}.",
   "main.gate.summary.skippedDefault": "saltato",
-  "main.gate.summary.failed": "{name}: revisione non riuscita.",
+  "main.gate.summary.failed": "{name}: la revisione non è riuscita, si rifà.",
   "main.gate.summary.running": "{name}: in corso.",
   "main.gate.summary.blocking":
     "{name}: {count} rilievi bloccanti, il primo: {first}.",
@@ -2048,11 +2052,11 @@ export const mainIt = {
   "main.document.assignmentCrashNote":
     "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.",
   "main.document.specInterrupted":
-    "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui punti di prova.",
+    "La scrittura della spec si è interrotta alla chiusura: Trama la riprende da sola con la tua risposta.",
   "main.document.planInterrupted":
-    "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.",
+    "La preparazione si è interrotta alla chiusura: il Coordinatore la rifà da solo.",
   "main.document.slicingInterrupted":
-    "La divisione in fette si è interrotta prima della fine: chiedila di nuovo.",
+    "La divisione in fette si è interrotta alla chiusura: il Coordinatore la rifà da solo.",
   "main.storage.symlink":
     "Il file di stato è un collegamento simbolico: {path}",
   "main.storage.unreadable":

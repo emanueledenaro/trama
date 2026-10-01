@@ -164,7 +164,7 @@ import {
 } from "./core/document";
 import { type ProviderWait, providerWaitLine, reopeningResume } from "./core/resumeWork";
 import { recordUnknownReferences, unknownReferencesFeedback } from "./core/referenceCheck";
-import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import { candidateGoalId, findGoal, projectGoals, requestGoalId, goalPutAway } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
@@ -255,7 +255,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, type CheckResult, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
-import { asksForRecap, decidedSinceLastRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
+import { asksForRecap, decidedSinceLastRecap, doneSince, lastRecapAt, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
 import { moveBacklogItem, releaseBacklogItem } from "@shared/backlog";
 import { squadBacklogs } from "./core/backlog";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
@@ -2375,6 +2375,7 @@ export class TramaController {
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
           decisionChanged: (id) => this.stopWorkDependingOn(id),
           updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
+          pauseWork: (paused) => this.pauseContinuousWork(paused, { fromTurn: true }),
           proposePractice: (input) => this.proposePractice(current, input),
           readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheckInTurn(current, check, current.runningRequestId),
@@ -3797,13 +3798,18 @@ export class TramaController {
    * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
    * is saved with the project and holds after a restart.
    */
-  async pauseContinuousWork(paused: boolean): Promise<void> {
+  async pauseContinuousWork(paused: boolean, options: { fromTurn?: boolean } = {}): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     if (!setPaused(project.document, paused, new Date().toISOString())) return;
     if (paused) {
       const retried = project.providerRetry ? project.document.requests.find((r) => r.id === project.providerRetry!.requestId) : null;
       if (retried?.step?.by === "trama") this.cancelProviderRetry(project);
+      // "Fermate tutto" stops the work that runs too: before, the pause only held new moves and the developers at work
+      // went on (logic review of 1 October 2026). Trama stops it for the Pause, which holds it; the resume takes it up.
+      const running = project.document.team.specialists.flatMap((s) => s.assignments).filter((a) => isActive(a));
+      for (const assignment of running) requestStop(project.document, assignment.specialistId, "trama", t("main.controller.stoppedByPause"));
+      for (const assignment of running) void this.stopAssignmentRuntime(assignment.id);
     }
     appendEvent(
       project.document,
@@ -3819,7 +3825,8 @@ export class TramaController {
     this.changedIn(project);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
-    if (!paused) await this.runRound();
+    // From the Coordinator's own turn the round follows that turn, never inside it.
+    if (!paused && !options.fromTurn) await this.runRound();
   }
 
   /** What GitHub said about the project at the last reading, to compare with the next one (A05); null before one. */
@@ -4347,6 +4354,7 @@ export class TramaController {
     const previous = structuredClone(project.document.goals);
     updateGoal(project.document, id, change);
     await this.saveGoalChange(project, previous, null);
+    if (change.status === "abandoned") await this.stopGoalWork(project, id);
     return id;
   }
 
@@ -4360,7 +4368,19 @@ export class TramaController {
     if (archived) archiveGoal(project.document, goal.id);
     else restoreGoal(project.document, goal.id);
     await this.saveGoalChange(project, previous, null);
+    if (archived) await this.stopGoalWork(project, goal.id);
     return goal.id;
+  }
+
+  /** The work of a goal the person put away stops as their stop, and the Coordinator learns it (logic review of 1 October 2026). */
+  private async stopGoalWork(project: ActiveProjectState, goalId: string): Promise<void> {
+    const document = project.document;
+    const ofGoal = (a: SpecialistAssignment) => (document.requests.find((r) => r.id === a.requestId)?.goalId ?? a.goalId ?? null) === goalId;
+    const running = document.team.specialists.flatMap((s) => s.assignments).filter((a) => isActive(a) && ofGoal(a));
+    if (!running.length) return;
+    for (const assignment of running) requestStop(document, assignment.specialistId, "person", t("main.controller.stoppedByGoalPutAway"));
+    this.changedIn(project);
+    await Promise.all(running.map((a) => this.stopAssignmentRuntime(a.id)));
   }
 
   /** Puts a task in focus, on pause or back in the queue (W02), saved before the person sees it. */
@@ -5122,13 +5142,26 @@ export class TramaController {
     const left = Date.parse(document.personLeftAt ?? document.events.at(-1)?.createdAt ?? "");
     if (document.personLeftAt !== undefined) delete document.personLeftAt;
     if (Number.isFinite(left)) this.tellReturn(project, left);
+    // A spec cut short by the closing keeps the person's answer on the test points: Trama writes it again by itself
+    // instead of asking them to answer again (logic review of 1 October 2026).
+    if (project.stateWritable && !project.isDemo) {
+      for (const plan of document.plans.filter((p) => p.status === "seams" && p.spec?.seamsAnswer)) {
+        const answer = plan.spec!.seamsAnswer!;
+        this.applySeamsAnswer(project, plan, { confirmed: answer.confirmed, note: answer.note, by: null });
+      }
+    }
   }
 
   /** Writes the recap of the person's return when they were away long enough and something was decided meanwhile. */
   private tellReturn(project: ActiveProjectState, leftAt: number, absence = returnAfterMs(), now = Date.now()): boolean {
-    if (now - leftAt < absence || !project.stateWritable || project.isDemo || !decidedSinceLastRecap(project.document)) return false;
+    if (now - leftAt < absence || !project.stateWritable || project.isDemo) return false;
     const sources = this.waitingSources(project);
-    this.appendRecap(project, "return", newMilestones(project.document, sources.sliceViews ?? {}), sources);
+    const milestones = newMilestones(project.document, sources.sliceViews ?? {});
+    // Whatever happened while the person was away earns the recap: a decision, a milestone or work done, merged or
+    // failed (logic review of 1 October 2026); before, only the Coordinator's own decisions did.
+    const happened = decidedSinceLastRecap(project.document) || milestones.length > 0 || doneSince(project.document, lastRecapAt(project.document)).length > 0;
+    if (!happened) return false;
+    this.appendRecap(project, "return", milestones, sources);
     this.changed();
     return true;
   }
@@ -7505,6 +7538,8 @@ export class TramaController {
     for (const candidate of document.candidates) {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
+      // A goal the person put away merges nothing more.
+      if (goalPutAway(document, candidate.goalId)) continue;
       // A merge cut short by a restart is tried again: Trama reads the pull request before it merges anything.
       if (candidate.merge?.status === "running") candidate.merge = { ...candidate.merge, status: "waiting", detail: t("main.controller.mergeInterrupted") };
       const report = candidateReport(document, candidate, head);
@@ -7572,7 +7607,15 @@ export class TramaController {
         this.changedIn(project);
         return;
       }
-      if (checks?.checks === "failure") throw new DomainError(t("main.controller.mergeChecksRed", { number: `${pull.number}` }));
+      if (checks?.checks === "failure") {
+        // Red checks wait for a fix, not for time: the work goes back to its developer, and nothing retries meanwhile.
+        const reason = t("main.controller.mergeChecksRed", { number: `${pull.number}` });
+        recordMerge(document, candidate, by, "failed", reason);
+        candidate.merge!.checksRed = true;
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason }, by));
+        this.changedIn(project);
+        return;
+      }
       // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
       const drift = checks ? stopOnDrift(document, candidate, by, pull.headSHA, checks) : null;
       if (drift) {

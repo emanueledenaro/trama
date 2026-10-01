@@ -312,6 +312,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.cloudStopUntracked":
     "Trama no longer follows the cloud session. Stop the session from its Claude Code page.",
   "main.controller.personActor": "Person",
+  "main.controller.stoppedByGoalPutAway": "Stopped: you put its goal away.",
+  "main.controller.stoppedByPause": "Stopped by the Pause: it starts again when you resume.",
   "main.controller.stoppedByPerson": "Stopped by the person",
   "main.controller.noWorktreeToRemove":
     "The assignment has no working copy to remove.",
@@ -781,6 +783,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} has an external effect that Trama does not check: {detail}",
   "main.workPhase.blockerRemoteConflict":
     "Candidate {id} conflicts with the work on GitHub: {detail}",
+  "main.workPhase.blockerChecksRed": "The checks of pull request #{number} of candidate {id} are red.",
+  "main.workPhase.whyChecksRed": "{work} has red checks on GitHub: it goes back to the developer to fix them, then Trama merges it.",
   "main.workPhase.blockerPullRequestConflict":
     "GitHub finds conflicts between pull request #{number} of candidate {id} and its base: the merge is stopped and is not the person's to do. Realign the candidate's branch with the base in the same working copy: a correction to the same developer (replaces) that merges the updated base and resolves the conflicts. Then the new candidate goes through checks and reviewers and Trama publishes it again on the same pull request.",
   "main.workPhase.blockerWorktreeConflict":
@@ -1137,12 +1141,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.gate.notComparable": "{check} cannot be compared",
   "main.gate.alreadyFailing": "{check} already fails on the base",
   "main.gate.changesRequested": "The reviewer asks for changes",
-  "main.gate.reviewsFailed": "{names}: review failed. Start the review again.",
+  "main.gate.reviewsFailed": "{names}: the review did not finish. The Coordinator runs it again by itself.",
   "main.gate.interrupted":
-    "The review stopped when Trama closed: start it again.",
+    "The review stopped when Trama closed. The Coordinator runs it again by itself.",
   "main.gate.summary.skipped": "{name}: {report}.",
   "main.gate.summary.skippedDefault": "skipped",
-  "main.gate.summary.failed": "{name}: review failed.",
+  "main.gate.summary.failed": "{name}: the review did not finish, it runs again.",
   "main.gate.summary.running": "{name}: in progress.",
   "main.gate.summary.blocking":
     "{name}: {count} blocking findings, the first: {first}.",
@@ -1984,11 +1988,11 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.document.assignmentCrashNote":
     "Trama stopped without a controlled shutdown (a crash or a forced quit) while the developer was working.",
   "main.document.specInterrupted":
-    "Writing the spec stopped before the end: answer again on the test points.",
+    "Writing the spec stopped at the closing: Trama takes it up by itself with your answer.",
   "main.document.planInterrupted":
-    "The preparation stopped before the end: ask for the plan again.",
+    "The preparation stopped at the closing: the Coordinator does it again by itself.",
   "main.document.slicingInterrupted":
-    "The split into slices stopped before the end: ask for it again.",
+    "The split into slices stopped at the closing: the Coordinator does it again by itself.",
   "main.storage.symlink": "The state file is a symbolic link: {path}",
   "main.storage.unreadable":
     "The project state cannot be read and stays unchanged in {path}. {detail}",
