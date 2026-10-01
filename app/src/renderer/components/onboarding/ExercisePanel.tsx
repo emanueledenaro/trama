@@ -110,7 +110,8 @@ export function ExercisePanel() {
     <FilledScope allowed={!waiting}>
       <aside
         aria-label={t("exercise.panel")}
-        className="no-drag absolute top-14 right-3 z-20 flex max-h-[calc(100%-170px)] w-80 flex-col overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-popover text-popover-foreground shadow-lg"
+        // Never wider than the conversation less its margins, and it ends above the composer's dock (--chat-dock, ChatView).
+        className="no-drag absolute top-14 right-3 z-20 flex max-h-[calc(100%-var(--chat-dock,8rem)-4.5rem)] w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-popover text-popover-foreground shadow-lg"
       >
         <div className="flex items-center gap-2 pt-2 pr-2 pl-4">
           <span className="min-w-0 flex-1 truncate text-ui-xs text-muted-foreground">{t("exercise.panel")}<Sep />{t("exercise.localCopy")}</span>
