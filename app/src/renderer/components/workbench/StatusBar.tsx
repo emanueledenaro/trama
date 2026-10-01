@@ -28,9 +28,12 @@ import { useT } from "@/lib/i18n";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 
-/** An item of the status bar: text or an icon, 20 px high inside the 24 px bar. */
+/**
+ * An item of the status bar: text or an icon, 20 px high inside the 24 px bar. Items may shrink: one with text holds it
+ * in a `min-w-0 truncate` span, an icon keeps its own width.
+ */
 const ITEM =
-  "no-drag inline-flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-ui-xs text-[var(--color-text-foreground-secondary)] outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]";
+  "no-drag inline-flex h-5 min-w-0 items-center gap-1 rounded-sm px-1.5 text-ui-xs text-[var(--color-text-foreground-secondary)] outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]";
 
 /**
  * A problem of the status bar: the conflict with the default branch or a step of Configura that went back. The state
@@ -70,7 +73,8 @@ function StatusPopup({ children }: { children: React.ReactNode }) {
   const waiting = useWaiting().length > 0;
   return (
     <div
-      className="translucent-popup absolute right-2 bottom-full z-40 mb-2 w-[min(560px,calc(100vw-24px))] rounded-xl"
+      // The popup never rises past the title bar: the window less the two bars and its margin.
+      className="translucent-popup absolute right-2 bottom-full z-40 mb-2 max-h-[calc(100vh-86px)] w-[min(560px,calc(100vw-24px))] overflow-y-auto rounded-xl"
     >
       <FilledScope allowed={!waiting}>{children}</FilledScope>
     </div>
@@ -89,7 +93,7 @@ function FocusItem({ open, onToggle }: { open: boolean; onToggle: () => void }) 
   return (
     <button
       type="button"
-      className={cn(ITEM, "max-w-[min(260px,28vw)] min-w-0")}
+      className={cn(ITEM, "max-w-[min(260px,28vw)]")}
       aria-label={t("workbench.status.focusOf", { title })}
       title={title}
       aria-expanded={open}
@@ -133,7 +137,8 @@ function StatusLine({ line, lead, aside }: { line: StatusLineView | null; lead: 
   const action = line.action && !(line.action.actor === "person" && waiting.some((item) => item.targetId === line.action!.targetId)) ? line.action : null;
   return (
     <div
-      className="flex min-w-0 flex-1 items-center gap-1"
+      // A container of its own, so the bar's popups stay out of it; the window less 16 px of padding.
+      className="@container/status flex min-w-0 flex-1 items-center gap-1"
       data-testid="status-line"
       data-state={line.state}
       data-paused={line.paused ? "true" : "false"}
@@ -143,7 +148,7 @@ function StatusLine({ line, lead, aside }: { line: StatusLineView | null; lead: 
       {/* The next step is what the bar is for (UI wave of 29 September): the line in the ink, a step heavier than the
           rest of the bar; the reason stays a quiet second part. It sits in the middle, the branch on its left (person's
           note, 1 October 2026). */}
-      <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 px-1.5">
+      <div className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 px-1.5">
         <span className="flex size-3 shrink-0 items-center justify-center">
           <StatusLineIcon line={line} />
         </span>
@@ -152,36 +157,37 @@ function StatusLine({ line, lead, aside }: { line: StatusLineView | null; lead: 
             <ReferenceText text={line.text} />
           </span>
           {line.reason ? (
-            <>
+            // In a narrow window the reason gives way to the next step; it stays on the hover.
+            <span className="hidden @min-[880px]/status:inline">
               <span className="px-1.5 text-muted-foreground/60" aria-hidden>
                 ·
               </span>
               <span className="text-ui-xs text-muted-foreground" data-testid="status-line-reason">
                 <ReferenceText text={line.reason} />
               </span>
-            </>
+            </span>
           ) : null}
         </span>
       </div>
       {aside}
       <Tooltip label={t("workbench.status.activity")}>
         <button type="button" className={ITEM} aria-label={t("workbench.status.activity")} onClick={() => openActivity()}>
-          <IconListDetails className="size-3.5" stroke={1.8} />
+          <IconListDetails className="size-3.5 shrink-0" stroke={1.8} />
         </button>
       </Tooltip>
       {line.paused ? (
         // Riprendi starts the work again: icon and text (issue #338), with the Coordinator in its name.
         <Tooltip label={t("workbench.status.resumeHint")}>
           <button type="button" className={ITEM} aria-label={t("workbench.status.resume")} onClick={() => void act("coordinator:pause", { paused: false })}>
-            <IconPlayerPlay className="size-3.5" stroke={1.8} />
-            {t("workbench.status.resumeShort")}
+            <IconPlayerPlay className="size-3.5 shrink-0" stroke={1.8} />
+            <span className="min-w-0 truncate">{t("workbench.status.resumeShort")}</span>
           </button>
         </Tooltip>
       ) : (
         // Pause is an icon whose tooltip is its name (issue #338).
         <Tooltip label={t("workbench.status.pause")}>
           <button type="button" className={ITEM} aria-label={t("workbench.status.pause")} onClick={() => void act("coordinator:pause", { paused: true })}>
-            <IconPlayerPause className="size-3.5" stroke={1.8} />
+            <IconPlayerPause className="size-3.5 shrink-0" stroke={1.8} />
           </button>
         </Tooltip>
       )}
@@ -192,7 +198,7 @@ function StatusLine({ line, lead, aside }: { line: StatusLineView | null; lead: 
           aria-label={t("workbench.status.stopMove", { move: line.runningMove.label })}
           onClick={() => void act("coordinator:interrupt", undefined)}
         >
-          {t("workbench.status.stop")}
+          <span className="min-w-0 truncate">{t("workbench.status.stop")}</span>
         </button>
       ) : null}
       {line.continuousWorkOff ? (
@@ -205,15 +211,15 @@ function StatusLine({ line, lead, aside }: { line: StatusLineView | null; lead: 
             data-testid="status-continuous-on"
             onClick={() => void act("settings:update", { continuousWork: true })}
           >
-            <IconPlayerPlay className="size-3.5" stroke={1.8} />
-            {t("workbench.status.continuousOn")}
+            <IconPlayerPlay className="size-3.5 shrink-0" stroke={1.8} />
+            <span className="min-w-0 truncate">{t("workbench.status.continuousOn")}</span>
           </button>
         </Tooltip>
       ) : null}
       {action ? (
         // The person's move: text, not a filled button, since the one filled button of the window is Aspetta te's.
-        <button type="button" className={cn(ITEM, "font-medium text-[var(--color-text-accent)]")} onClick={() => take(action)}>
-          {action.label}
+        <button type="button" className={cn(ITEM, "max-w-[14rem] font-medium text-[var(--color-text-accent)]")} title={action.label} onClick={() => take(action)}>
+          <span className="min-w-0 truncate">{action.label}</span>
         </button>
       ) : null}
     </div>
@@ -248,7 +254,7 @@ function SetupItem({ back }: { back: NonNullable<ReturnType<typeof useSetupBack>
     <Tooltip label={back.detail}>
       <button
         type="button"
-        className={cn(ITEM, PROBLEM, "min-w-0")}
+        className={cn(ITEM, PROBLEM)}
         data-testid="status-setup"
         data-step={back.id}
         aria-label={label}
@@ -315,7 +321,7 @@ export function StatusBar() {
                 <Tooltip label={t("workbench.status.branch", { name: branch })}>
                   <button
                     type="button"
-                    className={cn(ITEM, "max-w-[10rem] shrink-0 text-[var(--color-text-foreground-tertiary)]")}
+                    className={cn(ITEM, "max-w-[10rem] text-[var(--color-text-foreground-tertiary)]")}
                     data-testid="status-branch"
                     onClick={() => setInspector({ kind: "branch", name: branch })}
                   >
@@ -336,7 +342,7 @@ export function StatusBar() {
                     onClick={() => toggle("divergence")}
                   >
                     <IconAlertTriangle className="size-3 shrink-0 text-warning" stroke={1.8} />
-                    {t("workbench.status.conflicts", { count: divergence.conflictingFiles.length })}
+                    <span className="min-w-0 truncate">{t("workbench.status.conflicts", { count: divergence.conflictingFiles.length })}</span>
                   </button>
                 ) : null}
                 {setup ? <SetupItem back={setup} /> : null}
