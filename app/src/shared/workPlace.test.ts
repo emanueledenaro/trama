@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SpecialistAssignment } from "./domain";
 import { translator } from "./i18n";
-import { type CloudConditions, canMovePlace, chooseWorkPlace, cloudBlock, cloudEligible, cloudWorking, offersCloud, workPlaceSetting } from "./workPlace";
+import { type CloudConditions, canMovePlace, chooseWorkPlace, cloudBlock, cloudEligible, cloudWorking, agentInCloud, offersCloud, workPlaceSetting } from "./workPlace";
 
 const NOW = new Date(Date.UTC(2026, 8, 28, 10, 0));
 
@@ -130,5 +130,15 @@ describe("the place of a developer's work (A19)", () => {
     const session = { provider: "claudeAgent" as const, url: null, branch: "b", baseBranch: "main", pullRequest: null, startedAt: "", checkedAt: null, failure: null, instructions: [], macChecks: null };
     expect(cloudWorking(assignment({ cloud: { ...session, status: "working" } }))).toBe(true);
     expect(cloudWorking(assignment({ cloud: { ...session, status: "returned" } }))).toBe(false);
+  });
+});
+
+describe("agentInCloud", () => {
+  const session = { provider: "claudeAgent" as const, url: "https://claude.ai/code/s", branch: "b", baseBranch: "main", status: "working" as const, pullRequest: null, startedAt: NOW.toISOString(), checkedAt: null, failure: null, instructions: [], macChecks: null };
+  it("marks an agent with a cloud session at work, and only while it works", () => {
+    expect(agentInCloud({ assignments: [assignment(), assignment({ cloud: session })] })).toBe(true);
+    expect(agentInCloud({ assignments: [assignment({ cloud: { ...session, status: "returned" } })] })).toBe(false);
+    expect(agentInCloud({ assignments: [assignment()] })).toBe(false);
+    expect(agentInCloud({})).toBe(false);
   });
 });

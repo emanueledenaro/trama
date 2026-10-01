@@ -789,6 +789,7 @@ export const it = {
   "workPlace.moveToCloud": "Sposta in cloud",
   "workPlace.moveToLocal": "Sposta in locale",
   "cloudSession.label": "Sessione cloud",
+  "cloudSession.agentInCloud": "{name} lavora in cloud",
   "cloudSession.status.starting": "In preparazione",
   "cloudSession.status.working": "Al lavoro",
   "cloudSession.status.draft": "Pull request in bozza aperta",

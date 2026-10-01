@@ -7615,6 +7615,9 @@ for (const [name, testid, file] of [
   }
 }
 if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+// Wherever an agent shows, a cloud on its bot says it works in a cloud session: Ada yes, Bruno (back on the Mac) and Carla no.
+await page.getByRole("img", { name: "Ada lavora in cloud" }).first().waitFor();
+for (const name of ["Bruno", "Carla"]) if (await page.getByRole("img", { name: `${name} lavora in cloud` }).count()) throw new Error(`Cloud sessions: ${name} shows the cloud mark without a session at work`);
 // Design rules: a repeated check is secondary, so it is an icon with the name as tooltip and no visible text.
 if ((await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).innerText()).trim() !== "") throw new Error("Cloud sessions: the check of the session shows text, not only an icon");
 if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");

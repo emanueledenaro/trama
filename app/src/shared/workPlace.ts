@@ -150,6 +150,9 @@ export function chooseWorkPlace(input: {
 export const cloudWorking = (assignment: SpecialistAssignment): boolean =>
   assignment.cloud?.status === "starting" || assignment.cloud?.status === "working" || assignment.cloud?.status === "draft";
 
+/** Whether an agent works in a cloud session now, so wherever Trama shows it the person sees it is not on the Mac. */
+export const agentInCloud = (agent: { assignments?: readonly SpecialistAssignment[] }): boolean => (agent.assignments ?? []).some(cloudWorking);
+
 
 /** Whether the person can move the work now (Q30): before it starts, or when it waits for a resume. */
 export function canMovePlace(assignment: SpecialistAssignment): boolean {

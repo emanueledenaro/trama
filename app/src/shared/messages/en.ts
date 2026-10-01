@@ -786,6 +786,7 @@ export const en: Record<keyof typeof it, string> = {
   "workPlace.moveToCloud": "Move to the cloud",
   "workPlace.moveToLocal": "Move to local",
   "cloudSession.label": "Cloud session",
+  "cloudSession.agentInCloud": "{name} works in the cloud",
   "cloudSession.status.starting": "Preparing",
   "cloudSession.status.working": "At work",
   "cloudSession.status.draft": "Draft pull request open",
