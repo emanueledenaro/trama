@@ -63,3 +63,11 @@ describe("repository scanner", () => {
     await expect(readRepositoryFile("../etc/passwd", root)).rejects.toThrow();
   });
 });
+
+describe("a project with no code yet (2 October 2026)", () => {
+  it("is one part, the whole project, so the mandate has something to name", async () => {
+    const root = await fixture({ "README.md": "# sito\n", "docs/idea.md": "idea\n" });
+    const snapshot = await scanRepository(root);
+    expect(snapshot.modules.map((m) => [m.id, m.relativePath, m.files.length])).toEqual([["root", ".", 0]]);
+  });
+});
