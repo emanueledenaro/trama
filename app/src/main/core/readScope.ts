@@ -87,6 +87,22 @@ export function toolchainRoots(pathEntries: readonly string[], home = homedir(),
   return roots;
 }
 
+/**
+ * The search path of a sandboxed shell: only the folders it may read, in their order, then the system's. A folder the
+ * sandbox denies answers EPERM instead of "not found", and a program looked up by name stops there: npm could not
+ * start its scripts' `sh` behind ~/.codeium/windsurf/bin (2 October 2026).
+ */
+export function sandboxSearchPath(entries: readonly string[], readable: readonly string[]): string {
+  const kept: string[] = [];
+  for (const entry of [...entries, "/usr/bin", "/bin", "/usr/sbin", "/sbin"]) {
+    if (!isAbsolute(entry)) continue;
+    const folder = resolve(entry);
+    const allowed = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].includes(folder) || readable.some((root) => isInside(root, folder));
+    if (allowed && !kept.includes(folder)) kept.push(folder);
+  }
+  return kept.join(process.platform === "win32" ? ";" : ":");
+}
+
 /** Top-level folders of the platform that a sandboxed shell needs; every other one may hold projects or data. */
 const SYSTEM_TOP_LEVEL = new Set([
   "bin", "sbin", "usr", "lib", "lib32", "lib64", "libx32", "etc", "dev", "proc", "sys", "run", "tmp", "var", "opt", "nix", "boot",

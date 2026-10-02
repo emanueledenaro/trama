@@ -10,6 +10,7 @@ import {
   privatePathsInCommand,
   readableRoots,
   sandboxGitEnvironment,
+  sandboxSearchPath,
   toolchainRoots,
 } from "../readScope";
 import { t } from "../personLanguage";
@@ -79,7 +80,8 @@ export class CodexRuntime implements AgentRuntime {
     const writableRoot = options.sandbox === "workspace-write" ? resolve(options.cwd) : null;
     const roots = readableRoots(options.cwd, options.readableRoots ?? []);
     this.scope = { roots, writableRoot };
-    const shellRoots = [...roots, ...toolchainRoots([...executableFolders(this.options.executable), ...searchPath()]), ...browserCacheRoots()];
+    const searchEntries = [...executableFolders(this.options.executable), ...searchPath()];
+    const shellRoots = [...roots, ...toolchainRoots(searchEntries), ...browserCacheRoots()];
     const tempRoot = writableRoot ? agentTempFolder(writableRoot) : null;
     return this.client.openThread({
       model: options.model,
@@ -106,6 +108,7 @@ export class CodexRuntime implements AgentRuntime {
         // home folder they default to is hidden.
         "shell_environment_policy.set": {
           ...sandboxGitEnvironment(),
+          PATH: sandboxSearchPath(searchEntries, shellRoots),
           ...(tempRoot ? { TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot, npm_config_cache: join(tempRoot, "npm") } : {}),
         },
         ...(toolServer
