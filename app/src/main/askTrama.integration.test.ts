@@ -134,7 +134,11 @@ describe("Ask Trama in the conversation (M07)", () => {
     // Nobody presses "Avvia il percorso": Trama starts it and the grilling of its first step opens.
     await until(() => route.status === "started");
     await until(() => document.decisionRequests.length === 2);
-    expect(document.requests.some((r) => r.text.startsWith(`Avvia il percorso ${route.id} di Ask Trama`))).toBe(true);
+    const start = document.requests.find((r) => r.text.startsWith(`Avvia il percorso ${route.id} di Ask Trama`))!;
+    expect(start.step).toMatchObject({ move: "startRoute", by: "trama" });
+    // The route's message, with the skills' names, reaches only the Coordinator: the chat shows Trama's own line.
+    expect(document.events.some((e) => e.content.type === "personMessage" && e.content.text === start.text)).toBe(false);
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "automaticStep" && e.content.title === "Avvia il percorso di Ask Trama")).toBe(true);
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Percorso ${route.id} di Ask Trama avviato da Trama dentro il mandato`)).toBe(true);
     // Without the delegation there is no choice to review.
     expect(document.delegatedChoices ?? []).toEqual([]);

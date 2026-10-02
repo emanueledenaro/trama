@@ -389,7 +389,9 @@ export type NextMove =
   /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
   | "decideWithDelegation"
   /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
-  | "takeTicket";
+  | "takeTicket"
+  /** An Ask Trama route the mandate or the delegation lets Trama start without the person's answer (issue #423). */
+  | "startRoute";
 
 /** The move the Coordinator chose among the allowed ones, with its one-line reason. */
 export interface NextStep {

@@ -506,6 +506,9 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
       const issue = document.requests.find((r) => r.id === requestId)?.step?.issue;
       return issue === undefined || ticketWorked(document, issue) ? null : t("main.delegation.ticketStalled", { number: issue });
     }
+    case "startRoute":
+      // The route's first step is a conversation of the Coordinator's: the route is started, there is nothing to miss.
+      return null;
   }
 }
 

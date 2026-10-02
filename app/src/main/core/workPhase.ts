@@ -177,7 +177,8 @@ export type CoordinatorMove =
   | "settleReview"
   | "clearCandidate"
   | "decideWithDelegation"
-  | "takeTicket";
+  | "takeTicket"
+  | "startRoute";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -202,6 +203,8 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
   decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
   takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
+  // The route's own message carries its steps: the chat shows the start as Trama's line, not as the person's words.
+  startRoute: moveWords("main.askTrama.startLabel", "main.askTrama.startLabel"),
 };
 
 /** The name of the move that resolves a technical block (A06), as the status line, Activity and the recap show it. */

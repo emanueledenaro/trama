@@ -714,7 +714,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       const automatic = text.match(/Mossa automatica di Trama: (\w+)/);
-      if (automatic) {
+      // A route Trama started by itself is answered like the person's start below: its message carries the steps.
+      if (automatic && automatic[1] !== "startRoute") {
         // A move Trama started by itself (W04). FAKE_CODEX_AUTOMATIC=wait keeps the turn running until interrupted,
         // =idle answers without making the move; otherwise the fake makes it like a Coordinator that follows the rules.
         const call = async (tool, args) => {

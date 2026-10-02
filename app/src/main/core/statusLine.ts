@@ -82,6 +82,8 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
       return t("delegation.move.decide.running");
     case "takeTicket":
       return t("delegation.move.ticket.running");
+    case "startRoute":
+      return t("main.statusLine.running.startRoute");
   }
 }
 
@@ -104,6 +106,8 @@ function nextPhrase(move: CoordinatorMove, target: string | null): string {
       return t("delegation.move.decide.next");
     case "takeTicket":
       return t("delegation.move.ticket.next");
+    case "startRoute":
+      return t("main.statusLine.next.startRoute");
   }
 }
 
