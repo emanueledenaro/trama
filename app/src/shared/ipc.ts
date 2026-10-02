@@ -20,7 +20,7 @@ export interface ActionMap {
   "project:openDialog": [void, void];
   "project:open": [{ path: string }, void];
   "project:openDemo": [void, void];
-  "project:create": [{ name: string; idea: string }, void];
+  "project:create": [{ name: string; idea: string; github?: boolean }, void];
   /** Clones a GitHub repository (`owner/name` or its URL) into a folder the person chooses, then opens it (B02). */
   "project:clone": [{ repository: string }, void];
   "project:close": [void, void];

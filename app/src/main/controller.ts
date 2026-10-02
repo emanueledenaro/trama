@@ -445,7 +445,7 @@ import { runnableCommand } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
-import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { cloneRepository, createGitHubRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
@@ -1535,7 +1535,7 @@ export class TramaController {
     await this.openProject(path, true);
   }
 
-  async createProject(parent: string, name: string, idea: string): Promise<void> {
+  async createProject(parent: string, name: string, idea: string, github = false): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed || /[/\\]/.test(trimmed) || trimmed.startsWith(".")) throw new DomainError(t("main.controller.folderNameInvalid"));
     const root = join(parent, trimmed);
@@ -1543,7 +1543,16 @@ export class TramaController {
     await mkdir(root, { recursive: true });
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
     await initializeRepository(root);
+    // The private repository on GitHub (2 October 2026): the slices become its issues and the work its pull requests.
+    // A repository that cannot be created leaves the project open, local, and says why.
+    let repositoryProblem: string | null = null;
+    if (github) {
+      if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
+      if (this.state.gitHubCli.status !== "ready") repositoryProblem = t("main.controller.repositoryNeedsGh");
+      else await createGitHubRepository(root, trimmed).catch((error: Error) => (repositoryProblem = error.message));
+    }
     await this.openProject(root, false, idea.trim() || null);
+    if (repositoryProblem) throw new DomainError(t("main.controller.repositoryNotCreated", { reason: repositoryProblem }));
   }
 
   /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */
