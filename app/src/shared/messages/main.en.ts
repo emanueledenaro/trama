@@ -293,6 +293,13 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "It is not the account quota. Trama resumes the assignment by itself in {seconds} seconds, if the mandate still covers it.",
   "main.controller.dependenciesInstalledTitle": "Packages installed by Trama",
   "main.controller.dependenciesInstalledDetail": "Trama installed the project's {count} packages in the worktree, without running their install scripts.",
+  "main.controller.baseAlignedTitle": "{target} brought into the working copy",
+  "main.controller.baseAlignFailedTitle": "Realignment with the base failed",
+  "main.controller.baseAligned.conflicts": "The merge waits for the Coordinator's commit. Files in conflict: {files}.",
+  "main.controller.baseAligned.merged": "The merge has no conflicts and waits for the Coordinator's commit.",
+  "main.controller.baseAligned.upToDate": "The working copy already has the whole base branch.",
+  "main.controller.baseAligned.savedWork": "The work that was not saved yet was put in a commit of Trama's before the merge.",
+  "main.controller.baseAligned.fetchError": "The base branch could not be fetched ({error}): Trama used the last known copy.",
   "main.controller.dependenciesFailedTitle": "Package install failed",
   "main.controller.developerQuestionTitle":
     "Question {question} to the Coordinator",
