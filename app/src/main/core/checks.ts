@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { lstat, mkdir, readdir, readFile, readlink, realpath, rm, symlink } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { t } from "./personLanguage";
 import { git, runProcess } from "./process";
 
@@ -234,8 +234,22 @@ export async function lendNodeDependencies(worktreeRoot: string, projectRoot: st
   return null;
 }
 
-/** Folders build tools write inside node_modules (Vite and Vitest), which is read-only in the sandbox. */
-const TOOL_CACHES = [".vite", ".vite-temp"];
+/** Folders build tools write inside node_modules (Vite, Vitest and Astro), which is read-only in the sandbox. */
+const TOOL_CACHES = [".vite", ".vite-temp", ".astro"];
+
+/**
+ * Node checks build the project, and build tools write generated files beside the sources (Astro's .astro, dist/).
+ * The checkout stays read-only, so they run on a fresh copy of its files in the check's scratch folder, with the
+ * checkout's node_modules linked (2 October 2026). Returns the copy's root.
+ */
+export async function nodeCheckCopy(root: string, scratch: string): Promise<string> {
+  const copy = join(scratch, "checkout");
+  await rm(copy, { recursive: true, force: true });
+  await cp(root, copy, { recursive: true, verbatimSymlinks: true, filter: (source) => !["node_modules", ".git"].includes(basename(source)) });
+  const dir = nodePackage(root)?.dir ?? "";
+  if (existsSync(join(root, dir, "node_modules"))) await symlink(join(root, dir, "node_modules"), join(copy, dir, "node_modules"));
+  return copy;
+}
 
 /** Points the tool caches of node_modules at the check's scratch folder, the only place the sandbox lets it write. */
 async function redirectToolCaches(nodeModules: string, scratch: string): Promise<void> {
@@ -277,7 +291,7 @@ export async function runReadOnlyCheck(
   }
   const isNode = check === "node_test" || check === "node_typecheck";
   if (isNode) await redirectToolCaches(join(root, nodePackage(root)?.dir ?? "", "node_modules"), resolvedScratch);
-  const inner = checkCommand(check, root, resolvedScratch);
+  const inner = checkCommand(check, isNode ? await nodeCheckCopy(root, resolvedScratch) : root, resolvedScratch);
   // Node tests often open a server on 127.0.0.1: they get Trama's sandbox, which keeps loopback, when the system has one.
   const local = isNode ? (options.localSandbox === undefined ? await detectLocalSandbox() : options.localSandbox) : null;
   const [executable, ...args] = local ? localSandboxedCommand(local, inner, resolvedScratch) : sandboxedCommand(options.codexExecutable, inner, resolvedScratch);

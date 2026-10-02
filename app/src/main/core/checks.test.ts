@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,14 +82,16 @@ describe("read-only checks", () => {
     await writeFile(
       join(repo, "probe.mjs"),
       `import net from "node:net";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 const reach = (port, host) => new Promise((ok) => net.connect(port, host).on("connect", function () { this.destroy(); ok(true); }).on("error", () => ok(false)));
 const server = net.createServer((c) => c.end()).listen(0, "127.0.0.1");
 await new Promise((ok) => server.on("listening", ok));
 console.log("loopback", await reach(server.address().port, "127.0.0.1"));
 server.close();
 console.log("internet", await reach(443, "1.1.1.1"));
-try { writeFileSync("escaped.txt", "x"); console.log("write", true); } catch { console.log("write", false); }
+try { writeFileSync(${JSON.stringify(join(repo, "escaped.txt"))}, "x"); console.log("write", true); } catch { console.log("write", false); }
+// A build writes its generated files beside the sources: in the copy it runs on, never in the checkout.
+try { mkdirSync(".astro", { recursive: true }); writeFileSync(".astro/types.d.ts", "x"); console.log("generated", true); } catch { console.log("generated", false); }
 `,
     );
     await git(["add", "."], repo, false);
@@ -97,6 +100,8 @@ try { writeFileSync("escaped.txt", "x"); console.log("write", true); } catch { c
     expect(result.output).toContain("loopback true");
     expect(result.output).toContain("internet false");
     expect(result.output).toContain("write false");
+    expect(result.output).toContain("generated true");
+    expect(existsSync(join(repo, ".astro"))).toBe(false);
     expect(result.checkoutUnchanged).toBe(true);
   });
 });
