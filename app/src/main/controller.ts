@@ -3456,7 +3456,7 @@ export class TramaController {
       case "confirmSeams": {
         if (!plan?.spec || plan.status !== "seams") return null;
         this.applySeamsAnswer(project, plan, { confirmed: true, note: null, by: "coordinator" });
-        return t("main.controller.stepSeamsSummary", { plan: plan.id, seams: plan.spec.seams.map((seam) => seam.seam).join("; ") });
+        return t("main.controller.stepSeamsSummary", { plan: plan.id, seams: plan.spec.seams.map((seam) => seam.seam.trim().replace(/[.\s]+$/, "")).join("; ") });
       }
       case "confirmSlices": {
         if (!plan || plan.slicing?.status !== "proposed") return null;
