@@ -519,6 +519,15 @@ function answerQuestions(open: DecisionRequest[]): MoveOption {
   return person("answerQuestions", open.length === 1 ? PERSON_MOVE_LABELS.answerQuestions : t("main.workPhase.answerQuestionsMany", { count: open.length }), open[0]!.id);
 }
 
+/** Whether a fixed role's work is running in the worktree of `assignment`, as the fix of a diagnosed failed check. */
+function fixUnderway(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
+  const root = assignment.workspace?.worktreeRoot;
+  if (!root) return false;
+  return document.team.specialists.some((s) =>
+    s.assignments.some((other) => other.id !== assignment.id && other.duty && isActive(other) && other.workspace?.worktreeRoot === root),
+  );
+}
+
 /** The phase of assigned work: execution, verification, candidate, merged or blocked. Null when only read-only work ended. */
 function assignedWork(
   document: ProjectDocument,
@@ -595,6 +604,9 @@ function assignedWork(
         block: "reviewLoop",
       };
     }
+    // A fixed role already fixes this work in its worktree (a diagnosed failed check): the work is in progress. Asking the
+    // Coordinator to assign it again only made its automatic move stall, round after round (2 October 2026).
+    if (blocker && fixUnderway(document, assignment)) return { phase: "execution", blocker: null };
     if (blocker) {
       // A blocker only the person settles waits for them (issue #390): new work would not settle it.
       if (PERSON_BLOCKERS.includes(blocker.code)) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));
