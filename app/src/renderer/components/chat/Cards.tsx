@@ -48,7 +48,7 @@ import { candidateSuperseded, conflictSide, conflictSideTitle, explainedByDiverg
 import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
 import { fixedBanInfo, fixedBans } from "@shared/fixedBans";
-import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
+import { adrMarkdown, adrPath, findDomainProposal } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
 import { boundaryLabel, findRoute, firstRunnableStep, flowLabel, routePathLabel, type RouteStatus, stepKindLabel } from "@shared/askTrama";
 import type { ActionResult } from "@shared/ipc";
@@ -1043,7 +1043,12 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
         {proposal.terms.length ? (
           <Field label={t("chat.card.domain.terms", { path: proposal.contextPath })}>
             <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
-              <ChatMarkdown text={proposal.terms.map(glossaryEntry).join("\n\n")} />
+              {/* The terms in the person's words; the file keeps the format of the domain-modeling skill (2 October 2026). */}
+              <ChatMarkdown
+                text={proposal.terms
+                  .map((term) => [`**${term.term}**: ${term.definition}`, ...(term.avoid.length ? [t("chat.card.domain.avoid", { words: term.avoid.join(", ") })] : [])].join("\n"))
+                  .join("\n\n")}
+              />
             </div>
           </Field>
         ) : null}

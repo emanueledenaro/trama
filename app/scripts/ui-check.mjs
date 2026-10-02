@@ -2245,7 +2245,7 @@ await page.keyboard.press("Enter");
 const domainCard = page.locator(".chat-card", { has: page.getByTestId("domain-proposal") }).last();
 await domainCard.getByText("In attesa", { exact: true }).waitFor({ timeout: 20_000 });
 await domainCard.getByText(/Il mandato non permette di lavorare in una copia di lavoro su root/).waitFor();
-for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
+for (const expected of ["Ordine in revisione", "Parole da non usare: Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
 // The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
