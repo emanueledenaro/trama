@@ -108,6 +108,8 @@ export const mainIt = {
   "main.controller.folderIsRoot":
     "Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.",
   "main.controller.folderNameInvalid": "Scegli un nome di cartella valido.",
+  "main.controller.repositoryNeedsGh": "GitHub CLI non è collegato: collegalo dal Benvenuto e crea il repository da lì.",
+  "main.controller.repositoryNotCreated": "Il progetto è creato, ma il repository su GitHub no: {reason}",
   "main.controller.folderExists":
     "Esiste già una cartella {name} in questa posizione.",
   "main.controller.cloneRepositoryInvalid":
@@ -2074,6 +2076,7 @@ export const mainIt = {
     "La clonazione di {repository} non è finita entro 10 minuti.",
   "main.onboarding.cloneNeedsAccess":
     "{repository} non si clona senza accesso. Se è privato, collega GitHub CLI con gh auth login e riprova.",
+  "main.onboarding.repositoryCreateFailed": "Non sono riuscito a creare il repository {name} su GitHub.",
   "main.onboarding.cloneFailed":
     "La clonazione di {repository} non è riuscita.",
   "main.onboarding.cloneFailedReason":

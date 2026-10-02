@@ -145,9 +145,9 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   },
   "project:open": ({ path }) => controller.openProject(path),
   "project:openDemo": () => controller.openDemo(),
-  "project:create": async ({ name, idea }) => {
+  "project:create": async ({ name, idea, github }) => {
     const parent = await chooseFolder(t("main.dialog.chooseFolder"));
-    if (parent) await controller.createProject(parent, name, idea);
+    if (parent) await controller.createProject(parent, name, idea, Boolean(github));
   },
   "project:clone": async ({ repository }) => {
     const parent = await chooseFolder(t("main.dialog.chooseCloneFolder"));

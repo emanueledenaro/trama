@@ -107,6 +107,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.folderIsRoot":
     "Choose a project folder, not the disk root or the Home folder.",
   "main.controller.folderNameInvalid": "Choose a valid folder name.",
+  "main.controller.repositoryNeedsGh": "GitHub CLI is not connected: connect it from the Welcome page and create the repository from there.",
+  "main.controller.repositoryNotCreated": "The project is created, but the GitHub repository is not: {reason}",
   "main.controller.folderExists":
     "A folder named {name} already exists in this location.",
   "main.controller.cloneRepositoryInvalid":
@@ -2010,6 +2012,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Cloning {repository} did not finish within 10 minutes.",
   "main.onboarding.cloneNeedsAccess":
     "{repository} cannot be cloned without access. If it is private, connect GitHub CLI with gh auth login and try again.",
+  "main.onboarding.repositoryCreateFailed": "Could not create the repository {name} on GitHub.",
   "main.onboarding.cloneFailed": "Cloning {repository} failed.",
   "main.onboarding.cloneFailedReason": "Cloning {repository} failed: {reason}",
   "main.onboarding.unsafePath": "Unsafe path in the exercise: {path}",
