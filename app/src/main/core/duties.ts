@@ -685,7 +685,8 @@ export function startDomainWriting(
         issueNumber: null,
         ...runner,
         tools: ["commands", "edits"],
-        requiredChecks: [],
+        // The written files become a candidate the person reviews: it needs checks to be declared (2 October 2026).
+        requiredChecks: ["git_status", "git_diff_check"],
         workspace: null,
         duty: { skill: "domain-modeling", trigger: { kind: "domainProposal", proposalId: proposal.id }, outcome: null },
       },
