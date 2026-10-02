@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { codexPermissionProfiles, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, sandboxGitEnvironment, toolchainRoots } from "./readScope";
+import { codexPermissionProfiles,
+  SYSTEM_READ_ROOTS, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, sandboxGitEnvironment, toolchainRoots } from "./readScope";
 
 const home = "/home/rita";
 const codexHome = "/home/rita/.codex";
@@ -98,10 +99,13 @@ describe("read scope of agent sessions (issue #206)", () => {
 
   it("builds Codex profiles that read only the roots and write only the worktree, without network", () => {
     const worktree = "/data/Worktrees/a1";
+    // The system folders a runtime reads as it starts, such as OpenSSL's configuration for node (2 October 2026).
+    const system = Object.fromEntries(SYSTEM_READ_ROOTS.map((root) => [root, "read"]));
     expect(codexPermissionProfiles([worktree, "/home/rita/negozio"], worktree)).toEqual({
-      "permissions.trama_read": { filesystem: { ":minimal": "read", [worktree]: "read", "/home/rita/negozio": "read" }, network: { enabled: false } },
-      "permissions.trama_write": { filesystem: { ":minimal": "read", [worktree]: "write", "/home/rita/negozio": "read" }, network: { enabled: false } },
+      "permissions.trama_read": { filesystem: { ":minimal": "read", ...system, [worktree]: "read", "/home/rita/negozio": "read" }, network: { enabled: false } },
+      "permissions.trama_write": { filesystem: { ":minimal": "read", ...system, [worktree]: "write", "/home/rita/negozio": "read" }, network: { enabled: false } },
     });
+    if (process.platform === "darwin") expect(SYSTEM_READ_ROOTS).toContain("/System/Library/OpenSSL");
     expect(Object.keys(codexPermissionProfiles(["/home/rita/negozio"], null))).toEqual(["permissions.trama_read"]);
   });
 });

@@ -140,8 +140,17 @@ export const CODEX_WRITE_PROFILE = "trama_write";
  * Codex permission profiles (`permissions.<id>` in the thread config): the platform's minimal folders, the
  * readable roots and nothing else, with no network. The write profile can also write `writableRoot` only.
  */
+/**
+ * System folders every runtime reads as it starts, beyond Codex's minimal set: OpenSSL's configuration and the
+ * certificates. Without them `node` fails before running anything ("OpenSSL configuration error ... fopen
+ * /System/Library/OpenSSL/openssl.cnf: Operation not permitted"), so a JavaScript project could not run its checks
+ * (2 October 2026). They hold no data of the person.
+ */
+export const SYSTEM_READ_ROOTS = process.platform === "darwin" ? ["/System/Library/OpenSSL", "/private/etc/ssl", "/etc/ssl"] : ["/etc/ssl", "/usr/lib/ssl"];
+
 export function codexPermissionProfiles(roots: readonly string[], writableRoot: string | null): Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> {
   const read: Record<string, string> = { ":minimal": "read" };
+  for (const root of SYSTEM_READ_ROOTS) read[root] = "read";
   for (const root of roots) read[root] = "read";
   const profiles: Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> = {
     [`permissions.${CODEX_READ_PROFILE}`]: { filesystem: read, network: { enabled: false } },
