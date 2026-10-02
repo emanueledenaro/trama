@@ -2594,7 +2594,7 @@
     "The bottom panel covers the status bar at ${size}",
     "The bottom panel hides focus mode",
     "The bottom panel hides the composer at ${size}",
-    "The bottom panel is ${box.height}px high at ${size}",
+    "The bottom panel is ${box.height}px high at ${size}, not ${expected}",
     "The bottom panel is not attached under the editor at ${size}: ${gap}px apart",
     "The breakdown does not show the three slices of to-tickets",
     "The candidate card shows raw ids: ${await demoCandidate.innerText()}",

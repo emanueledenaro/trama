@@ -1369,11 +1369,14 @@ await shot("04-work-expanded");
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(400);
     const box = await edges();
-    if (box.height !== (width >= 1500 ? 260 : 200)) throw new Error(`The bottom panel is ${box.height}px high at ${size}`);
+    // The default height, within the highest the editor leaves: at 1280x800 the 12 px gap above the panel takes 8 px
+    // of its 200, so the conversation keeps its 380 px.
+    const expected = Math.min(width >= 1500 ? 260 : 200, height - 70 - 526 - 12);
+    if (box.height !== expected) throw new Error(`The bottom panel is ${box.height}px high at ${size}, not ${expected}`);
     if (box.bottom > box.status + 0.5) throw new Error(`The bottom panel covers the status bar at ${size}`);
-    // The editor and the panel are one sheet on the frame (1 October 2026): the panel sits right under the editor, as wide.
+    // The panel is a card of its own under the editor (2 October 2026): 12 px below it, the gap being its sash, as wide.
     const gap = box.top - box.main.bottom;
-    if (Math.abs(gap) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
+    if (Math.abs(gap - 12) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
       throw new Error(`The bottom panel is not attached under the editor at ${size}: ${gap}px apart`);
     if (size === "1280x800") {
       const room = await conversationHeight();
