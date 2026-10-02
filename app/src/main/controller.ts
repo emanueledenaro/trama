@@ -3567,7 +3567,7 @@ export class TramaController {
     );
     const starting = { projectId: project.id };
     this.automaticStarting = starting;
-    void this.answerRoute(route.id, true)
+    void this.answerRoute(route.id, true, true)
       .catch((error) => this.fail(error))
       .finally(() => {
         if (this.automaticStarting === starting) this.automaticStarting = null;
@@ -4251,7 +4251,7 @@ export class TramaController {
    * Coordinator's session (PHASE-BOUNDARIES.md) and writes the start message, with the original text of the route's
    * bundled skills that have no Trama flow.
    */
-  async answerRoute(routeId: string, start: boolean): Promise<void> {
+  async answerRoute(routeId: string, start: boolean, byTrama = false): Promise<void> {
     const project = this.requireProject();
     const document = project.document;
     const route = findRoute(document, routeId);
@@ -4298,7 +4298,9 @@ export class TramaController {
     }
     this.changed();
     const routeSkills = start ? route.steps.filter((step) => step.kind === "skill").map((step) => step.skill) : [];
-    await this.send(message, null, null, null, [], null, route.goalId, false, null, null, routeSkills);
+    // Started by Trama, the route is Trama's line in the chat: its message, with the skills' names, reaches only the Coordinator.
+    const step: RequestStep | null = byTrama ? { move: "startRoute", by: "trama" } : null;
+    await this.send(message, null, null, null, [], null, route.goalId, false, step, null, routeSkills);
   }
 
   /** The provider refused `model` for this account: the picker keeps it visible but disabled until Trama restarts. */

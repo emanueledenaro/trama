@@ -1469,6 +1469,7 @@ export const mainIt = {
   "main.statusLine.running.assignWork": "Sto assegnando il lavoro",
   "main.statusLine.running.verifyTarget": "Sto verificando {target}",
   "main.statusLine.running.verifyWork": "Sto verificando il lavoro",
+  "main.statusLine.running.startRoute": "Sto avviando il percorso",
   "main.statusLine.running.answerQuestion":
     "Sto rispondendo a uno sviluppatore",
   "main.statusLine.running.answerMessage": "Sto rispondendo al tuo messaggio",
@@ -1484,6 +1485,7 @@ export const mainIt = {
   "main.statusLine.next.settleReview": "decido fra lo sviluppatore e i revisori",
   "main.statusLine.next.clearCandidate": "do il via libera al candidato",
   "main.statusLine.next.answerQuestion": "rispondo allo sviluppatore",
+  "main.statusLine.next.startRoute": "avvio il percorso",
   "main.statusLine.next.waitForYou": "aspetto te",
   "main.statusLine.nowThen": "{now}, poi {next}.",
   "main.statusLine.waitingForYou": "Aspetto te per andare avanti.",
