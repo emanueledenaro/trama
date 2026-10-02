@@ -463,6 +463,7 @@
     "src/main/core/coordinatorTools.test.ts :: the full delegation in the Coordinator's tools (issue #423) > refuses to decide for the person without the delegation",
     "src/main/core/coordinatorTools.test.ts :: the full delegation in the Coordinator's tools (issue #423) > refuses words that are not the person's",
     "src/main/core/coordinatorTools.test.ts :: the size of the reading tools > caps what a reading tool returns and says how to ask for the rest",
+    "src/main/core/dependencyInstall.test.ts :: npm dependencies of a project created from nothing (2 October 2026) > brings the lockfile up to date with npm install when the developer added a dependency",
     "src/main/core/dependencyInstall.test.ts :: npm dependencies of a project created from nothing (2 October 2026) > installs them in the worktree without install scripts and writes the lockfile npm produced",
     "src/main/core/dependencyInstall.test.ts :: npm dependencies of a project created from nothing (2 October 2026) > says why when npm fails or is missing",
     "src/main/core/dependencyInstall.test.ts :: npm dependencies of a project created from nothing (2 October 2026) > uses npm ci with a lockfile, and refuses while node_modules is not ignored",

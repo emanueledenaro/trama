@@ -5648,7 +5648,7 @@ export class TramaController {
       outcome.ok ? "info" : "error",
     );
     return outcome.ok
-      ? toolSuccess({ status: "installed", packages: outcome.packages, lockfileWritten: outcome.lockfileWritten })
+      ? toolSuccess({ status: "installed", packages: outcome.packages, lockfileChanged: outcome.lockfileChanged })
       : toolFailure("install_failed", outcome.reason);
   }
 
