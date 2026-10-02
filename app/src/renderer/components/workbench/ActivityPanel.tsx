@@ -2,7 +2,9 @@ import {
   IconAlertTriangle,
   IconArrowBackUp,
   IconChevronDown,
+  IconCircleCheck,
   IconCircleDot,
+  IconCopy,
   IconFilter,
   IconGitPullRequest,
   IconMessageCircle,
@@ -17,13 +19,14 @@ import { type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/a
 import { projectGoals } from "@shared/goals";
 import { undoProblem } from "@shared/squadChanges";
 import { formatDate, formatTime } from "@shared/i18n";
+import { entryHasError, entryLog, joinLogs, turnLog } from "@/lib/errorLog";
 import type { MessageKey } from "@shared/i18n";
 import { compactSteps, workTurns, type WorkRow } from "@shared/technicalSteps";
 import { formatDuration } from "@shared/timeline";
 import { AgentAvatar } from "@/components/AgentIdentity";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ReferenceText } from "@/components/chat/ReferenceText";
-import { DisclosureChevron, StepList, WorkLabel } from "@/components/chat/WorkSteps";
+import { DisclosureChevron, StepList, WorkLabel, useWorkSpecialist } from "@/components/chat/WorkSteps";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { PickerSelect } from "@/components/ui/picker";
@@ -247,6 +250,7 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
         </button>
         <Badge tone={OUTCOME_TONES[entry.outcome]}>{t(OUTCOME_LABELS[entry.outcome])}</Badge>
         <div className="cta-row shrink-0 gap-0.5">
+          {entryHasError(entry) ? <CopyLog label={t("activity.log.copy")} text={() => entryLog(entry, t(OUTCOME_LABELS[entry.outcome]), language, t)} /> : null}
           {entry.issue ? (
             <Tooltip label={t("activity.openIssue", { number: entry.issue.number })}>
               <button
@@ -326,6 +330,47 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
   );
 }
 
+/**
+ * Copies the log of what went wrong (person's note, 2 October 2026), to paste into an issue or a chat with an AI. The
+ * done mark says it was copied, for a moment, as the refresh of the title bar does.
+ */
+function CopyLog({ label, text }: { label: string; text: () => string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  return (
+    <RowIcon
+      label={copied ? t("activity.log.copied") : label}
+      onClick={() =>
+        void navigator.clipboard.writeText(text()).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        })
+      }
+    >
+      {copied ? <IconCircleCheck className="size-3.5 text-success" stroke={1.8} /> : <IconCopy className="size-3.5" stroke={1.8} />}
+    </RowIcon>
+  );
+}
+
+/** The logs of every row with an error among those shown, newest first; null when none has one. */
+function useErrorLogs(items: ActivityItem[]): (() => string) | null {
+  const t = useT();
+  const language = useLanguage();
+  const document = useUi((s) => s.app?.project?.document);
+  const withError = items.filter((item) => (item.type === "turn" ? item.failed > 0 : entryHasError(item.entry)));
+  if (!withError.length || !document) return null;
+  return () =>
+    joinLogs(
+      withError.map((item) => {
+        if (item.type === "entry") return entryLog(item.entry, t(OUTCOME_LABELS[item.entry.outcome]), language, t);
+        const row = item.row;
+        const specialist = row.assignmentId ? document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId)) : null;
+        const request = row.requestId ? document.requests.find((r) => r.id === row.requestId) : null;
+        return turnLog({ who: specialist?.name ?? t("activity.coordinator"), at: item.at, request: request?.text ?? null, steps: compactSteps(row.activities) }, language, t);
+      }),
+    );
+}
+
 /** Opens the whole chat and brings the person's message that asked for an action into view (issue #422). */
 function showMessageInChat(eventId: string) {
   const find = () => document.querySelector<HTMLElement>(`[data-testid="person-message"][data-event="${CSS.escape(eventId)}"]`);
@@ -362,6 +407,8 @@ function TurnRow({ item, focused, open, onToggle }: { item: Extract<ActivityItem
   const row = item.row;
   const request = useUi((s) => (row.requestId ? s.app?.project?.document.requests.find((r) => r.id === row.requestId) : undefined));
   const steps = useMemo(() => compactSteps(row.activities), [row.activities]);
+  const specialist = useWorkSpecialist(row);
+  const whoName = specialist?.name ?? t("activity.coordinator");
   return (
     <li className="py-0.5" data-testid="work-turn" data-work={row.id} data-row={item.id} data-focused={focused || undefined}>
       <div className="flex min-h-7 items-center gap-2">
@@ -376,6 +423,7 @@ function TurnRow({ item, focused, open, onToggle }: { item: Extract<ActivityItem
           <DisclosureChevron open={open} />
         </button>
         <div className="cta-row shrink-0 gap-0.5">
+          {item.failed ? <CopyLog label={t("activity.log.copy")} text={() => turnLog({ who: whoName, at: item.at, request: request?.text ?? null, steps }, language, t)} /> : null}
           <RowIcon label={t("activity.showInChat")} onClick={() => showInChat(row)}>
             <IconMessages className="size-3.5" stroke={1.8} />
           </RowIcon>
@@ -581,6 +629,7 @@ export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; ov
     if (focusHidden) setFilter({ who: "all", kind: "all" });
   }, [focusHidden]);
   const shown = filterActivity(items, filter);
+  const errorLogs = useErrorLogs(shown);
   return (
     <section
       aria-label={t("panel.label")}
@@ -612,6 +661,7 @@ export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; ov
         <h2 className="shrink-0 text-ui-xs font-medium tracking-wide text-foreground uppercase">{t("activity.title")}</h2>
         <div className="ml-auto flex min-w-0 items-center gap-1">
           <Filters filter={filter} onChange={setFilter} people={people} />
+          {errorLogs ? <CopyLog label={t("activity.log.copyAll")} text={errorLogs} /> : null}
           <Tooltip label={t("panel.close")}>
             <button type="button" aria-label={t("panel.close")} className={ICON_BUTTON} onClick={closePanel}>
               <IconX className="size-3.5" />
