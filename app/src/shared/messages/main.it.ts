@@ -1473,6 +1473,7 @@ export const mainIt = {
     "Sto rispondendo a uno sviluppatore",
   "main.statusLine.running.answerMessage": "Sto rispondendo al tuo messaggio",
   "main.statusLine.running.clearCandidate": "Sto dando il via libera al candidato",
+  "main.statusLine.running.study": "Sto studiando il progetto",
   "main.statusLine.running.writingPlan": "Sto scrivendo il piano",
   "main.statusLine.running.slicingPlan": "Sto dividendo il piano in fette",
   "main.statusLine.next.preparePlan": "preparo il piano",

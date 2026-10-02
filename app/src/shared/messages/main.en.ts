@@ -1421,6 +1421,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.running.answerQuestion": "Answering a developer",
   "main.statusLine.running.answerMessage": "Answering your message",
   "main.statusLine.running.clearCandidate": "Giving the candidate the green light",
+  "main.statusLine.running.study": "Studying the project",
   "main.statusLine.running.writingPlan": "Writing the plan",
   "main.statusLine.running.slicingPlan": "Splitting the plan into slices",
   "main.statusLine.next.preparePlan": "prepare the plan",
