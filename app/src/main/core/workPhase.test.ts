@@ -338,6 +338,23 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(red.moves.filter((m) => m.actor === "person")).toEqual([]);
   });
 
+  it("waits for a fixed role's fix in the worktree instead of assigning the red work again (2 October 2026)", () => {
+    const { document, assignment } = withAssignment();
+    assignment.workspace = { sourceRoot: "/p", worktreeRoot: "/w/a", branch: "feature/s1", baseSHA: "base" };
+    candidate(document, assignment.id, "fail", null);
+    expect(moves(document, "r3")).toContain("assignWork");
+    // Trama gave the diagnosed failure to a fixed role, which works in the same worktree.
+    const specialist = document.team.specialists.find((s) => s.assignments.includes(assignment))!;
+    specialist.assignments.push({
+      ...assignment,
+      id: "A-FIX",
+      status: "running",
+      duty: { skill: "diagnosing-bugs", trigger: { kind: "diagnosisFix", diagnosisId: "A-DIAG" }, outcome: null },
+    });
+    expect(workState(document, "r3")).toMatchObject({ phase: "execution", blocker: null });
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
   it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {
     const { document, assignment } = withAssignment();
     const ready = candidate(document, assignment.id, "pass", "approved");

@@ -1308,6 +1308,7 @@
     "src/main/core/workPhase.test.ts :: workState: the phase and the allowed moves of a request (W01) > speaks the person's language: buttons, phases and the reasons of a block (issue #301)",
     "src/main/core/workPhase.test.ts :: workState: the phase and the allowed moves of a request (W01) > starts a new task with a new grilling in the same dialog and keeps dialogs apart",
     "src/main/core/workPhase.test.ts :: workState: the phase and the allowed moves of a request (W01) > stays clarification once every question is answered: the person confirms, the Coordinator plans within the mandate",
+    "src/main/core/workPhase.test.ts :: workState: the phase and the allowed moves of a request (W01) > waits for a fixed role's fix in the worktree instead of assigning the red work again (2 October 2026)",
     "src/main/core/workPhase.test.ts :: workState: the phase and the allowed moves of a request (W01) > waits for the person, not for new work, on a candidate stopped by a changed decision or a choice left open (issue #390)",
     "src/main/core/workspace.test.ts :: removeWorktree (T08) > refuses to lose work and removes a clean worktree",
     "src/main/core/workspace.test.ts :: worktrees > creates a trama branch and reviews tracked and untracked changes",
