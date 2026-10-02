@@ -3442,9 +3442,18 @@ export class TramaController {
       for (const step of steps) {
         const summary = this.takeDelegatedStep(project, step);
         if (!summary) continue;
-        // Told in Activity and in the recap from the record, not in the chat: the single moves stay out of it (Q6).
+        // Told in Activity and in the recap from the record (Q6). The seams and the slices also get one line in the chat,
+        // without a question: the person sees what the plan became and can correct it (person's choice, 2 October 2026).
         const record = recordAutonomousStep(document, step, summary);
         taken.push(STEP_LABELS[record.move]);
+        const plan = document.plans.find((p) => p.id === record.targetId);
+        if (plan && (record.move === "confirmSeams" || record.move === "confirmSlices")) {
+          const title =
+            record.move === "confirmSlices"
+              ? t("main.controller.stepInChatSlices", { plan: plan.id, count: plan.slicing?.tickets.length ?? 0 })
+              : t("main.controller.stepInChatSeams", { plan: plan.id });
+          appendEvent(document, "trama", { type: "card", kind: "contextNotice", title, detail: `${record.summary}\n${t("main.controller.stepInChatCorrect")}`, referenceId: record.id }, record.requestId);
+        }
         // The squads follow the team, recorded as a step of their own (A10).
         if (record.move === "confirmTeam" && this.formSquads(project)) taken.push(STEP_LABELS.formSquads);
       }
