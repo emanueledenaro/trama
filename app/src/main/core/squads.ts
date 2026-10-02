@@ -46,7 +46,9 @@ export function plannedAreas(document: ProjectDocument, modules: RepositoryModul
     add(developer.moduleIds);
     for (const assignment of developer.assignments) if (!ENDED.includes(assignment.status)) add(assignment.moduleIds);
   }
-  return modules.filter((m) => planned.has(m.id)).map((m) => ({ name: m.name, moduleIds: [m.id] }));
+  // The whole project of a project with no code yet (repositoryScanner.ts) is the whole product's squad, not "Capo
+  // Tutto il progetto" (2 October 2026).
+  return modules.filter((m) => planned.has(m.id)).map((m) => ({ name: m.id === "root" && !m.files.length ? WHOLE_PRODUCT_SQUAD : m.name, moduleIds: [m.id] }));
 }
 
 const nameKey = (name: string) => name.trim().toLowerCase();
