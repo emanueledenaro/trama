@@ -198,4 +198,12 @@ describe("full delegation (issue #423)", () => {
     expect(keepsAwake([{ delegated: true, openWork: true, paused: true }])).toBe(false);
     expect(keepsAwake([{ delegated: false, openWork: true, paused: false }])).toBe(false);
   });
+
+  it("covers the parts the work creates when the mandate was granted over a project with no code yet (2 October 2026)", () => {
+    const document = emptyDocument("p");
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["root"], authorizedActions: ["plan", "executeInWorktree"], limits: ["l"] }, new Date(AT));
+    expect(mandateForNewModules(document, ["root"])).toBeNull();
+    expect(mandateForNewModules(document, ["src/pages", "src/components"])).toMatchObject({ scopeModuleIds: ["root", "src/pages", "src/components"], authorizedActions: ["plan", "executeInWorktree"] });
+  });
 });
+

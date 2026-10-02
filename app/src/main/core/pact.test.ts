@@ -196,3 +196,14 @@ describe("Pact texts in English (issue #301)", () => {
     expect(withdrawalMessage(withdrawn)).toBe('I withdrew the question "Which color?". Reason: Later.');
   });
 });
+
+describe("the person's answer to a decision (2 October 2026)", () => {
+  it("keeps a single full stop when the answer ends with its own", async () => {
+    const { decisionMessage } = await import("./pact");
+    const text = decisionMessage(
+      { question: "Quali informazioni vuoi includere?" } as Parameters<typeof decisionMessage>[0],
+      { value: "Pubblicare solo informazioni confermate, indicando la fonte.", id: "D-E28FC3F3", version: 1 } as Parameters<typeof decisionMessage>[1],
+    );
+    expect(text).toBe("Ho risposto alla domanda «Quali informazioni vuoi includere?»: Pubblicare solo informazioni confermate, indicando la fonte. È la decisione D-E28FC3F3, versione 1 del Patto.");
+  });
+});

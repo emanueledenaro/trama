@@ -275,4 +275,10 @@ export function mandateRejectionMessage(document: ProjectDocument, request: Mand
 }
 
 export const decisionMessage = (request: DecisionRequest, decision: PactDecision) =>
-  t("main.pact.decisionAnswered", { question: request.question, value: decision.value, id: decision.id, version: String(decision.version) });
+  t("main.pact.decisionAnswered", {
+    question: request.question,
+    // An answer that ends with its own full stop would read "fonte.. È la decisione" (2 October 2026).
+    value: decision.value.trim().replace(/[.\s]+$/, ""),
+    id: decision.id,
+    version: String(decision.version),
+  });
