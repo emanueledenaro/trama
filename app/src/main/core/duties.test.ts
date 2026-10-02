@@ -536,6 +536,8 @@ describe("sessions with the original skills (W11)", () => {
     expect(session(diagnosis!).prompt).toContain("1 failed");
     expect(session(diagnosis!).prompt).toContain("app, docs");
     expect(session(fix!).instructions).toContain("Git worktree");
+    // The sandbox opens no local server and no browser: those tests run in Trama's checks.
+    expect(session(fix!).instructions).toContain("tests that need one run in Trama's checks on your candidate");
     expect(session(review!).prompt).toContain(HEAD.slice(0, 7));
     expect(session(writing!).instructions).toContain("Git worktree");
     expect(session(writing!).prompt).toContain("**Bozza**:\nUn testo non ancora pubblicato.\n_Avoid_: Draft");
