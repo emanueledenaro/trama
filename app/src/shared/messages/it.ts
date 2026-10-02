@@ -1723,6 +1723,8 @@ export const it = {
   "requestedAction.ban.repositorySettings": "una modifica alle impostazioni del repository",
   "requestedAction.line.doingSummary": "{summary}, perché me l'hai chiesto: «{quote}»",
   "requestedAction.line.doing": "Faccio {action} perché me l'hai chiesto: «{quote}»",
+  "requestedAction.line.done": "Ho fatto {action}, come mi hai chiesto: «{quote}»",
+  "requestedAction.line.doneSummary": "{summary}: fatto come mi hai chiesto («{quote}»)",
   "requestedAction.line.waiting": "Prima di fare {action} aspetto la tua conferma. Me l'hai chiesto: «{quote}»",
   "requestedAction.line.declined": "Non faccio {action}: non l'hai confermato. Me l'avevi chiesto: «{quote}»",
   "requestedAction.status.waiting": "Aspetta la tua conferma",
