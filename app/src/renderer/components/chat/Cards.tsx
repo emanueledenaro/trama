@@ -106,7 +106,7 @@ export function CardFrame({
 }) {
   if (useContext(InFold)) {
     return (
-      <div data-anchor={anchor} className={cn(FOLD_BODY, className)}>
+      <div data-anchor={anchor} data-record-id={hint} className={cn(FOLD_BODY, className)}>
         {children}
       </div>
     );

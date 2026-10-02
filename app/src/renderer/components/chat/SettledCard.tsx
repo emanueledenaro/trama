@@ -19,7 +19,7 @@ import { REVEAL_EVENT } from "@/lib/nextStep";
 import { useUi } from "@/lib/store";
 import { ReferenceText } from "./ReferenceText";
 import { DisclosureChevron } from "./WorkSteps";
-import { foldLine, foldSheet, InFold } from "./Fold";
+import { foldLine, FOLD_SHEET, FoldCard, InFold } from "./Fold";
 import { cn } from "@/lib/cn";
 
 function lineIcon(row: TimelineRow) {
@@ -80,45 +80,47 @@ export function SettledOr({ row, children }: { row: TimelineRow; children: React
   }, [settled !== null]);
   if (!settled) return <>{children}</>;
   return (
-    <div ref={ref} className={foldSheet(open)} data-testid="settled-card" data-open={open || undefined}>
-      {/* The line is not a button: the subject's references are links of their own. */}
-      <div
-        onClick={() => setOpen(!open)}
-        className={cn("group/settled cursor-pointer", foldLine(open))}
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{lineIcon(row)}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">
-            <span className="text-foreground">
-              {/* The title names its record, the id on hover (issue #270); the line itself opens the card. */}
-              <ReferenceText text={settled.title} links={false} />
-            </span>
-            <Sep />
-            <span className="text-muted-foreground">
-              <ReferenceText text={settled.subject} />
-            </span>
-          </span>
-          {settled.answer ? (
-            <span className="block truncate text-ui-sm text-foreground/85" data-testid="settled-answer">
-              {withNodes(t("chat.settled.chose"), { answer: <ReferenceText text={settled.answer} /> })}
-            </span>
-          ) : null}
-        </span>
-        <Badge tone={settled.outcome.tone}>{settled.outcome.label}</Badge>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label={open ? t("chat.settled.close", { title: settled.title }) : t("chat.settled.open", { title: settled.title })}
-          onClick={(event) => {
-            event.stopPropagation();
-            setOpen(!open);
-          }}
-          className="sidebar-icon-button size-5 shrink-0"
+    <div ref={ref} className={FOLD_SHEET} data-testid="settled-card" data-open={open || undefined}>
+      <FoldCard open={open}>
+        {/* The line is not a button: the subject's references are links of their own. */}
+        <div
+          onClick={() => setOpen(!open)}
+          className={cn("group/settled cursor-pointer", foldLine(open))}
         >
-          <DisclosureChevron open={open} />
-        </button>
-      </div>
-      {open ? <InFold.Provider value={true}>{children}</InFold.Provider> : null}
+          <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{lineIcon(row)}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">
+              <span className="text-foreground">
+                {/* The title names its record, the id on hover (issue #270); the line itself opens the card. */}
+                <ReferenceText text={settled.title} links={false} />
+              </span>
+              <Sep />
+              <span className="text-muted-foreground">
+                <ReferenceText text={settled.subject} />
+              </span>
+            </span>
+            {settled.answer ? (
+              <span className="block truncate text-ui-sm text-foreground/85" data-testid="settled-answer">
+                {withNodes(t("chat.settled.chose"), { answer: <ReferenceText text={settled.answer} /> })}
+              </span>
+            ) : null}
+          </span>
+          <Badge tone={settled.outcome.tone}>{settled.outcome.label}</Badge>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? t("chat.settled.close", { title: settled.title }) : t("chat.settled.open", { title: settled.title })}
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpen(!open);
+            }}
+            className="sidebar-icon-button size-5 shrink-0"
+          >
+            <DisclosureChevron open={open} />
+          </button>
+        </div>
+        {open ? <InFold.Provider value={true}>{children}</InFold.Provider> : null}
+      </FoldCard>
     </div>
   );
 }

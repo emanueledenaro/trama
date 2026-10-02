@@ -3461,7 +3461,8 @@ await supersededNote.waitFor({ timeout: 20_000 });
 if ((await supersededNote.count()) !== 1) throw new Error("Expected exactly one superseded mandate card");
 const supersededCard = page.locator(".chat-card", { has: supersededNote });
 if (!(await supersededCard.getByText("Prima proposta di mandato").count())) throw new Error("The superseded card is not the first request");
-if (await supersededCard.getByRole("button").count()) throw new Error("The superseded mandate card still has buttons");
+// The line that closes the open card is its header (2 October 2026): only the card's own actions count.
+if (await supersededCard.locator("button:not([aria-expanded])").count()) throw new Error("The superseded mandate card still has buttons");
 // The pending request waits in Aspetta te, where it can be accepted; the superseded one is not listed there.
 const pendingCard = await openWaiting("mandate", "Seconda proposta di mandato");
 await pendingCard.getByRole("button", { name: "Concedi", exact: true }).waitFor();
