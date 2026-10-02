@@ -413,8 +413,11 @@ export function hostToolName(serverName: string | null | undefined, toolCall: { 
   }
   const escaped = serverName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(`(?:^|\\b)(?:mcp__${escaped}__|mcp_${escaped}_|${escaped}[:/.]\\s*|${escaped}__)([A-Za-z0-9_-]+)`);
+  // Devin names an MCP call "Calling pause_work from trama" (2 October 2026: Trama took it for a provider tool).
+  const fromServer = new RegExp(`^(?:Calling\\s+)?([A-Za-z0-9_-]+)\\s+from\\s+${escaped}$`, "i");
   for (const candidate of [input?._toolName, input?.toolName, input?.tool_name, input?.tool, toolCall.title]) {
-    const match = typeof candidate === "string" ? pattern.exec(candidate.trim()) : null;
+    const text = typeof candidate === "string" ? candidate.trim() : null;
+    const match = text ? (pattern.exec(text) ?? fromServer.exec(text)) : null;
     if (match?.[1]) return match[1];
   }
   return null;
@@ -1324,7 +1327,13 @@ export class AcpAgentRuntime implements AgentRuntime {
   }
 
   private answerPermission(params: JsonObject, policy: AcpTurnPolicy): Json {
-    const toolCall = asObject(params.toolCall) ?? {};
+    // Some agents (Devin) send the permission request with the call's id only: its title and input came with the
+    // tool_call update just before, so Trama reads them there.
+    const asked = asObject(params.toolCall) ?? {};
+    const known = this.activeTurn?.toolCalls.get(trimmed(asked.toolCallId) ?? "");
+    const toolCall: JsonObject = known
+      ? { ...asked, title: asked.title ?? known.title, kind: asked.kind ?? known.kind, rawInput: asked.rawInput ?? known.rawInput ?? null, locations: asked.locations ?? known.locations }
+      : asked;
     const title = trimmed(toolCall.title);
     const kind = trimmed(toolCall.kind) ?? inferToolKind(title);
     const paths = toolCallPaths(toolCall, policy.cwd);
