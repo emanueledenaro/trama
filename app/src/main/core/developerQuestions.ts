@@ -33,7 +33,7 @@ export const ASK_COORDINATOR_TOOL: ToolDefinition = {
   readOnly: false,
 };
 
-export const DEVELOPER_TOOL_SERVER_INSTRUCTIONS = "Trama's tool for a developer: ask the Coordinator a question about the assignment.";
+export const DEVELOPER_TOOL_SERVER_INSTRUCTIONS = "Trama's tools for a developer: ask the Coordinator a question about the assignment, and install the npm dependencies of the worktree.";
 
 /** A developer's work gets the tool: work the Coordinator assigned to a developer, never a fixed role's automatic work. */
 export const asksCoordinator = (specialist: Specialist, assignment: SpecialistAssignment) => specialist.role === "developer" && !assignment.duty;

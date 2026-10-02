@@ -290,6 +290,9 @@ export const mainIt = {
     "In attesa che il limite temporaneo di {provider} passi",
   "main.controller.waitingTemporaryLimitDetail":
     "Non è la quota dell'account. Trama riprende da sola l'incarico tra {seconds} secondi, se il mandato lo copre ancora.",
+  "main.controller.dependenciesInstalledTitle": "Pacchetti installati da Trama",
+  "main.controller.dependenciesInstalledDetail": "Trama ha installato i {count} pacchetti del progetto nella copia di lavoro, senza eseguire i loro script di installazione.",
+  "main.controller.dependenciesFailedTitle": "Installazione dei pacchetti non riuscita",
   "main.controller.developerQuestionTitle":
     "Domanda {question} al Coordinatore",
   "main.controller.answerReceivedTitle": "Risposta ricevuta",
