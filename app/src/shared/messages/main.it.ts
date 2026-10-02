@@ -185,6 +185,10 @@ export const mainIt = {
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
     'Comprensione della richiesta "{request}".',
+  "main.controller.stepInChatSeams": "Il Coordinatore ha confermato i punti di prova del piano {plan}",
+  "main.controller.stepInChatSlices": "Il Coordinatore ha approvato le {count} fette del piano {plan}",
+  "main.controller.stepInChatSlices.one": "Il Coordinatore ha approvato la fetta del piano {plan}",
+  "main.controller.stepInChatCorrect": "Il mandato gli permette di farlo senza chiederti. Se vuoi cambiare qualcosa, scrivilo qui o correggi il passo in Attività.",
   "main.controller.stepSeamsSummary": "Punti di prova del piano {plan}: {seams}.",
   "main.controller.stepSlicesSummary": "Fette del piano {plan}: {slices}.",
   "main.controller.stepStillWriting":

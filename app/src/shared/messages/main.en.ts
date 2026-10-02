@@ -183,6 +183,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
     'Understanding of the request "{request}".',
+  "main.controller.stepInChatSeams": "The Coordinator confirmed the test points of plan {plan}",
+  "main.controller.stepInChatSlices": "The Coordinator approved the {count} slices of plan {plan}",
+  "main.controller.stepInChatSlices.one": "The Coordinator approved the slice of plan {plan}",
+  "main.controller.stepInChatCorrect": "The mandate lets it do so without asking you. To change something, write it here or correct the step in Activity.",
   "main.controller.stepSeamsSummary": "Test points of plan {plan}: {seams}.",
   "main.controller.stepSlicesSummary": "Slices of plan {plan}: {slices}.",
   "main.controller.stepStillWriting":

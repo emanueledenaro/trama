@@ -1554,6 +1554,9 @@ describe("TramaController", () => {
     // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
     await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
     expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
+    // One line in the chat says it, without a question (person's choice, 2 October 2026).
+    const seamsLine = project.document.events.find((e) => e.content.type === "card" && e.content.kind === "contextNotice" && e.content.title.startsWith("Il Coordinatore ha confermato i punti di prova"));
+    expect(seamsLine?.content.type === "card" && seamsLine.content.detail).toContain("correggi il passo in Attività");
     expect(activityLog(t, project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Punti di prova confermati dal Coordinatore");
 
     // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
