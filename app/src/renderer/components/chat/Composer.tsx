@@ -245,7 +245,7 @@ export function Composer() {
           <div
             role="listbox"
             aria-label={mention.sigil === "@" ? t("chat.composer.mentions") : t("chat.composer.skill")}
-            className="translucent-popup absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-y-auto rounded-[0.875rem] p-1 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]"
+            className="translucent-popup absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-y-auto p-1 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]"
           >
             {candidates.map((candidate, index) => (
               <button
@@ -259,7 +259,7 @@ export function Composer() {
                 }}
                 onMouseEnter={() => setMention({ ...mention, index })}
                 className={cn(
-                  "flex min-h-[26px] w-full items-center gap-2 rounded-[0.625rem] px-2 py-1 text-left text-ui",
+                  "flex min-h-[26px] w-full items-center gap-2 px-2 py-1 text-left text-ui",
                   index === mention.index && "bg-[var(--color-background-button-secondary-hover)]",
                 )}
               >
@@ -453,7 +453,7 @@ export function Composer() {
                     aria-label={t("chat.composer.interrupt")}
                     onClick={() => void act("coordinator:interrupt", undefined)}
                   >
-                    <span className="block size-2 rounded-[1px] bg-current" />
+                    <span className="block size-2 bg-current" />
                   </Button>
                 </Tooltip>
               ) : (

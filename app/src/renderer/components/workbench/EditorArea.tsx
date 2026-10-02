@@ -312,6 +312,7 @@ export function EditorArea({ detailSize }: { detailSize: DetailPaneSize }) {
             onResize={detailSize.setWidth}
             onReset={detailSize.reset}
             onDragChange={detailSize.setResizing}
+            className="sash--gap-before"
           />
           <TabStrip tabs={detailTabs} conversation={false} selected={activeDetail ?? ""} label={t("workbench.editor.details")} />
           <DetailPane key={activeDetail} target={detail.target} />

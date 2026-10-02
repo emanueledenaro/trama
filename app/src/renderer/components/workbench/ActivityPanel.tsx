@@ -1,11 +1,14 @@
 import {
   IconAlertTriangle,
+  IconArrowBackUp,
   IconChevronDown,
   IconCircleDot,
   IconFilter,
   IconGitPullRequest,
   IconMessageCircle,
   IconMessages,
+  IconPencil,
+  IconPlayerStop,
   IconUsers,
   IconX,
 } from "@/components/icons";
@@ -187,9 +190,9 @@ function UndoSquadChange({ changeId }: { changeId: string }) {
     <Tooltip label={reason}>
       {/* A disabled button gets no hover: the wrapper carries the reason. */}
       <span className="inline-flex" data-testid="squad-undo-wrap">
-        <Button size="xs" variant="outline" aria-label={reason} disabled={Boolean(blocked)} data-testid="squad-undo" onClick={() => void act("squad:undo", { changeId })}>
-          {t("activity.undo")}
-        </Button>
+        <button type="button" aria-label={reason} disabled={Boolean(blocked)} data-testid="squad-undo" className={cn(ICON_BUTTON, "disabled:pointer-events-none disabled:opacity-40")} onClick={() => void act("squad:undo", { changeId })}>
+          <IconArrowBackUp className="size-3.5" stroke={1.8} />
+        </button>
       </span>
     </Tooltip>
   );
@@ -279,15 +282,15 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
             </RowIcon>
           ) : null}
           {entry.kind === "step" && entry.outcome === "done" && !correcting ? (
-            <Button size="xs" variant="outline" onClick={() => setCorrecting(true)}>
-              {t("activity.correct")}
-            </Button>
+            <RowIcon label={t("activity.correct")} onClick={() => setCorrecting(true)}>
+              <IconPencil className="size-3.5" stroke={1.8} />
+            </RowIcon>
           ) : null}
           {entry.squadChange && entry.outcome === "done" ? <UndoSquadChange changeId={entry.squadChange.id} /> : null}
           {entry.kind === "move" && entry.outcome === "running" ? (
-            <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
-              {t("activity.stop")}
-            </Button>
+            <RowIcon label={t("activity.stop")} onClick={() => void act("coordinator:interrupt", undefined)}>
+              <IconPlayerStop className="size-3.5" stroke={1.8} />
+            </RowIcon>
           ) : null}
         </div>
       </div>
@@ -603,6 +606,7 @@ export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; ov
         onResize={size.setHeight}
         onReset={size.reset}
         onDragChange={size.setResizing}
+        className="sash--gap-before"
       />
       <div className="flex h-[35px] shrink-0 items-center gap-2 pr-2 pl-4" data-testid="bottom-panel-header">
         <h2 className="shrink-0 text-ui-xs font-medium tracking-wide text-foreground uppercase">{t("activity.title")}</h2>

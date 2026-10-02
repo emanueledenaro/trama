@@ -50,19 +50,23 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-border: var(--sidebar-border);
+  --radius-xs: calc(var(--radius) * 0.4);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.8);
 }
 
 :root {
   color-scheme: light;
-  --radius: 0.625rem;
-  --radius-user-message: 1rem;
-  --composer-radius: 1.2rem;
+  /* Square corners (person's note, 2 October 2026): straight is structure, round is a person or a state. Only
+     avatars, dots, rings, toggles and the send button stay round (rounded-full). */
+  --radius: 0px;
+  --radius-user-message: 0px;
+  --composer-radius: 0px;
   /* Editorial typography (issue #328): Inter for the interface, Newsreader for content and titles, JetBrains Mono
      for code. The fonts ship with the app (main.tsx); components use these tokens, never a family of their own. */
   --font-ui-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -793,31 +797,26 @@ button {
   [data-testid="side-bar"] {
     overflow-wrap: anywhere;
   }
-  /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are rounded
-     cards with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. */
+  /* The work as a sheet laid on the frame (person's note, 1 October 2026): the editor and the bottom panel are cards
+     with a margin from the window's edge and a soft edge, so they stand apart from the bars without colour. Their
+     corners are square (person's note, 2 October 2026). */
   .workbench-card {
-    /* The sheet rests on the status bar: rounded at the top, off the frame on the sides, so the editor keeps its height
-       (the conversation's 380 px with the bottom panel at its highest). */
-    margin: 0 8px;
-    border-radius: 12px 12px 0 0;
+    /* The sheet rests on the status bar and keeps its height (the conversation's 380 px with the bottom panel at its
+       highest). A gap is a sash, so it stands only where there is something to drag: beside the side bar when it is
+       open, and nowhere else at the edges (person's note, 2 October 2026). */
+    margin: 0;
     overflow: hidden;
     box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
   }
-  /* The bottom panel is the lower part of the same sheet, under a hairline. */
-  .workbench-card.app-panel-surface {
-    border-radius: 0;
-    box-shadow: 0 0 0 1px var(--app-card-border), inset 0 1px 0 var(--app-card-border);
-  }
-  .workbench-card:has(+ .workbench-card.app-panel-surface) {
-    border-radius: 12px 12px 0 0;
-  }
   /* In a narrow window the chat needs the room (420 px with the widest side bar): the sheet lies flush on the frame,
-     kept apart only by its hairline. */
+     kept apart only by its hairline, and the bottom panel is the lower part of it, under a hairline. */
   @media (max-width: 1200px) {
     .workbench-card {
       margin: 0;
-      border-radius: 0;
       box-shadow: inset 1px 0 0 var(--app-card-border);
+    }
+    .workbench-card.app-panel-surface {
+      box-shadow: inset 1px 0 0 var(--app-card-border), inset 0 1px 0 var(--app-card-border);
     }
   }
   /* In a window lower than 716 px the bottom panel lies over the editor: it casts the card's shadow. */
@@ -826,8 +825,29 @@ button {
   }
   .workbench-card .workbench-card {
     margin: 0;
-    border-radius: 0;
     box-shadow: none;
+  }
+  /* Above 1200 px the panes are separate cards, as in VS Code: the bottom panel and the detail pane stand 12 px off the
+     conversation, and that gap is the sash between them (person's note, 2 October 2026). Their sash sits in the gap,
+     so they do not clip. */
+  @media (min-width: 1201px) {
+    [data-sidebar-state="expanded"] .workbench-card:not(.workbench-card .workbench-card) {
+      margin-left: var(--pane-gap);
+    }
+    .workbench-card.app-panel-surface {
+      margin-top: var(--pane-gap);
+      overflow: visible;
+    }
+    .workbench-card[data-split="true"] {
+      gap: var(--pane-gap);
+      overflow: visible;
+      box-shadow: none;
+      background: transparent;
+    }
+    .workbench-card[data-split="true"] > :is(main, section) {
+      border-left-width: 0;
+      box-shadow: 0 0 0 1px var(--app-card-border), var(--app-card-shadow);
+    }
   }
   /* The editor's surface; the bottom panel sets its own tint with app-panel-surface. */
   .chat-content-card {
@@ -912,8 +932,11 @@ button {
   -webkit-app-region: no-drag;
 }
 
+/* The room for macOS's window buttons and the bar's height in the screen's points: the buttons do not follow the page
+   zoom, so both are divided by it (--app-zoom, TitleBar). At 100% they are 90 and 46 px. */
 .desktop-top-bar-traffic-light-gutter {
-  padding-left: 90px !important;
+  height: calc(46px / var(--app-zoom, 1)) !important;
+  padding-left: calc(90px / var(--app-zoom, 1)) !important;
 }
 
 ::-webkit-scrollbar {
@@ -1192,7 +1215,7 @@ button {
 .chat-reference:focus-visible {
   outline: 2px solid var(--color-token-text-link-foreground);
   outline-offset: 1px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 .chat-markdown hr {
   margin: 1.5rem 0;
@@ -1210,7 +1233,7 @@ button {
 .chat-markdown:not(.chat-markdown--user):has(> :nth-child(3)) > p:first-child {
   margin-bottom: 0.9rem;
   border: 1px solid color-mix(in srgb, var(--foreground) 13%, transparent);
-  border-radius: 14px;
+  border-radius: 0;
   padding: 0.7rem 0.95rem;
   background: color-mix(in srgb, var(--provider-light, var(--info)) 9%, color-mix(in srgb, var(--foreground) 6%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
@@ -1223,7 +1246,7 @@ button {
   align-items: flex-start;
   margin: 0.8rem 0;
   border: 1px solid color-mix(in srgb, var(--callout) 24%, color-mix(in srgb, var(--foreground) 8%, transparent));
-  border-radius: 14px;
+  border-radius: 0;
   padding: 0.65rem 0.9rem 0.7rem 0.7rem;
   background: color-mix(in srgb, var(--callout) 11%, color-mix(in srgb, var(--foreground) 4%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
@@ -1286,7 +1309,7 @@ button {
 .chat-compare__card {
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--foreground) 11%, transparent);
-  border-radius: 14px;
+  border-radius: 0;
   padding: 0.7rem 0.85rem 0.75rem;
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
   backdrop-filter: blur(16px) saturate(1.3);
@@ -1343,14 +1366,14 @@ button {
 }
 /* A stretch in backticks inside a plain text (issue #270): code, without the backticks. */
 .plain-code {
-  border-radius: 0.35rem;
+  border-radius: 0;
   background: var(--app-user-message-background);
   padding: 0 0.3rem;
   font-size: 0.92em;
   font-family: var(--font-mono-family);
 }
 .chat-markdown code {
-  border-radius: 0.4rem;
+  border-radius: 0;
   background: var(--app-user-message-background);
   padding: 0.1rem 0.35rem;
   font-size: 0.82em;
@@ -1362,7 +1385,7 @@ button {
   background: color-mix(in srgb, var(--foreground) 9%, transparent);
 }
 .chat-markdown pre {
-  border-radius: 0.65rem;
+  border-radius: 0;
   background: var(--app-chat-code-surface);
   padding: 0.5rem 0.6rem;
   overflow-x: auto;
@@ -1378,7 +1401,7 @@ button {
   border-collapse: separate;
   border-spacing: 0;
   border: 1px solid color-mix(in srgb, var(--foreground) 11%, transparent);
-  border-radius: 10px;
+  border-radius: 0;
   overflow: hidden;
   /* A table is a dense area: it stays on the interface token and size. */
   font-family: var(--font-ui-family);
@@ -1480,7 +1503,7 @@ button {
 /* Chat cards (decisions, mandate, team, candidate): glass over the provider's light, like the rest of the chat. */
 .chat-card {
   border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-  border-radius: 16px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--foreground) 5%, color-mix(in srgb, var(--background) 34%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent), 0 10px 30px -18px color-mix(in srgb, black 60%, transparent);
   backdrop-filter: blur(20px) saturate(1.35);
@@ -1500,6 +1523,11 @@ button {
    It draws nothing at rest: the 1px line is the panel's own border. It is an absolute 4px grip centered on that
    border, above the content. The `hover` class, added after 300ms (Sash), the `active` class of a drag and the
    keyboard focus paint its 4px ::before in VS Code's focusBorder (--app-focus-border). */
+:root {
+  /* The gap between the panes of the sheet, which is also their sash (person's note, 2 October 2026): 12 px, as
+     lib/workbench.ts PANE_GAP counts it. */
+  --pane-gap: 12px;
+}
 .sash {
   --sash-size: 4px;
   --sash-hover-border: var(--app-focus-border);
@@ -1564,6 +1592,59 @@ button {
 .sash:focus-visible::before {
   background: var(--sash-hover-border);
 }
+/* At rest the edge shows where to take hold, as VS Code's three dots do, in Trama's own mark: a short stitch of two
+   threads, the back one faint and the front one full (docs/progettazione/linguaggio-trama.md). On hover the front
+   thread runs the whole edge, so the stitch gives way to the line. */
+.sash::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  border-radius: 0;
+  background: var(--muted-foreground);
+  opacity: 0.75;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sash::after {
+    transition: opacity 0.1s ease-out;
+  }
+}
+.sash--vertical::after {
+  top: calc(50% - 6px);
+  left: calc(50% + 1px);
+  width: 1.5px;
+  height: 12px;
+  box-shadow: -3.5px 0 0 color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+}
+.sash--horizontal::after {
+  left: calc(50% - 6px);
+  top: calc(50% + 1px);
+  width: 12px;
+  height: 1.5px;
+  box-shadow: 0 -3.5px 0 color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+}
+.sash.hover::after,
+.sash.active::after,
+.sash:focus-visible::after {
+  opacity: 0;
+}
+/* The side bar's sash is the whole gap between the frame and the sheet (person's note, 2 October 2026): the 8px
+   space is there to be taken hold of, so all of it grips, and the stitch and the line sit in its middle. In a narrow
+   window the sheet is flush with the frame (.workbench-card) and the sash is back on the edge. */
+@media (min-width: 1201px) {
+  .sash--gap {
+    left: 0;
+    width: var(--pane-gap);
+  }
+  /* The detail pane and the bottom panel are cards of their own: their sash is the gap before them. */
+  .sash--gap-before.sash--vertical {
+    left: calc(var(--pane-gap) * -1);
+    width: var(--pane-gap);
+  }
+  .sash--gap-before.sash--horizontal {
+    top: calc(var(--pane-gap) * -1);
+    height: var(--pane-gap);
+  }
+}
 body:has(.sash.active) {
   user-select: none;
 }
@@ -1597,18 +1678,18 @@ body:has(.sash--horizontal.active) {
   inset-block: 10px;
   left: 0;
   width: 2px;
-  border-radius: 0 1px 1px 0;
+  border-radius: 0;
   background: var(--app-focus-border, var(--color-text-accent));
 }
 
 /* A line of the chat Activity brought into view with "Mostra nella chat" (issue #337): a short tint, then nothing. */
 .chat-work-line {
-  border-radius: 6px;
+  border-radius: 0;
   transition: background-color 600ms ease-out;
 }
 /* The person's message an action in Activity points to (issue #422): the same short tint. */
 .chat-person-message {
-  border-radius: 6px;
+  border-radius: 0;
   transition: background-color 600ms ease-out;
 }
 .chat-person-message[data-highlight="true"],
@@ -1616,3 +1697,4 @@ body:has(.sash--horizontal.active) {
   background: color-mix(in srgb, var(--app-focus-border) 12%, transparent);
   transition: none;
 }
+

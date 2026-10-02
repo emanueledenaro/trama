@@ -9,7 +9,7 @@ import {
   IconPencilPlus,
   IconSearch,
 } from "@/components/icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TramaIcon } from "@/components/brand/TramaIcon";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
@@ -138,6 +138,18 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
   const setDialog = useUi((s) => s.setDialog);
   const splitEditor = useUi((s) => s.splitEditor);
   const toggleSplitEditor = useUi((s) => s.toggleSplitEditor);
+  // The window's buttons on macOS keep their size whatever the page zoom: the bar and the room left for them follow the
+  // zoom back (index.css, .desktop-top-bar-traffic-light-gutter), so the mark never runs into them and stays centred.
+  useEffect(() => {
+    if (!isMac) return;
+    const sync = () => {
+      const zoom = window.innerWidth > 0 ? window.outerWidth / window.innerWidth : 1;
+      document.documentElement.style.setProperty("--app-zoom", String(Math.min(5, Math.max(0.25, Math.round(zoom * 100) / 100))));
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, [isMac]);
   const splitAvailable = useViewportWidth() >= SPLIT_EDITOR_MIN_VIEWPORT;
   const name = project ? (project.isDemo ? t("workbench.title.demoProject") : project.name) : null;
   return (
@@ -167,7 +179,7 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
           <span className="hidden min-w-0 flex-1 truncate text-left @min-[760px]/title:inline">
             {name ? t("workbench.title.searchIn", { name }) : t("workbench.title.searchTrama")}
           </span>
-          <span className="hidden shrink-0 rounded border border-[color:var(--border)] px-1 text-[10px] leading-4 @min-[760px]/title:inline">⌘K</span>
+          <span className="hidden shrink-0 rounded-none border border-[color:var(--border)] px-1 text-[10px] leading-4 @min-[760px]/title:inline">⌘K</span>
         </button>
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-1">

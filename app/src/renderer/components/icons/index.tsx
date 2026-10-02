@@ -24,6 +24,7 @@ export const IconAlertCircle = woven("IconAlertCircle", "alert-circle");
 export const IconAlertTriangle = woven("IconAlertTriangle", "alert-triangle");
 export const IconArchive = woven("IconArchive", "archive");
 export const IconArchiveOff = woven("IconArchiveOff", "archive-off");
+export const IconArrowBackUp = woven("IconArrowBackUp", "arrow-back-up");
 export const IconArrowLeft = woven("IconArrowLeft", "arrow-left");
 export const IconArrowNarrowLeft = woven("IconArrowNarrowLeft", "arrow-narrow-left");
 export const IconArrowNarrowRight = woven("IconArrowNarrowRight", "arrow-narrow-right");

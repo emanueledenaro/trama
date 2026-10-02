@@ -123,11 +123,19 @@ export const sideBarDefaultWidth = (viewport: number) => (viewport >= 1500 ? 340
 export const SIDE_BAR_MAX_WIDTH = 720;
 
 /**
- * The sheet's margins: 8 px on each side above a 1200 px window, flush at 1200 and below (index.css, .workbench-card).
+ * The sheet's margin: the PANE_GAP beside the open side bar above a 1200 px window, flush at 1200 and below and at the
+ * window's other edges (index.css, .workbench-card).
  * Every maximum below counts them, so the conversation keeps CHAT_MIN_WIDTH: window - 48 - side bar - detail - margins.
  */
 export const SHEET_FLUSH_MAX_VIEWPORT = 1200;
-export const sheetMargins = (viewport: number) => (viewport > SHEET_FLUSH_MAX_VIEWPORT ? 16 : 0);
+export const sheetMargins = (viewport: number) => (viewport > SHEET_FLUSH_MAX_VIEWPORT ? PANE_GAP : 0);
+
+/**
+ * The gap between two panes of the sheet, which is also their sash (person's note, 2 October 2026): 8 px above a
+ * 1200 px window (12 px, index.css --pane-gap), where the panes lie flush (index.css, .sash--gap).
+ */
+export const PANE_GAP = 12;
+export const paneGap = (viewport: number) => (viewport > SHEET_FLUSH_MAX_VIEWPORT ? PANE_GAP : 0);
 
 /** The room beside the activity bar and the sheet's margins, less the conversation's minimum. */
 const roomBesideChat = (viewport: number) => viewport - ACTIVITY_BAR_WIDTH - sheetMargins(viewport) - CHAT_MIN_WIDTH;
@@ -137,7 +145,7 @@ const roomBesideChat = (viewport: number) => viewport - ACTIVITY_BAR_WIDTH - she
  * split editor shows one (`detail` is its real width, 0 without it). At 720 px it is 252 px.
  */
 export const sideBarMaxWidth = (viewport: number, detail = 0) =>
-  Math.max(SIDE_BAR_MIN_WIDTH, Math.min(SIDE_BAR_MAX_WIDTH, roomBesideChat(viewport) - detail));
+  Math.max(SIDE_BAR_MIN_WIDTH, Math.min(SIDE_BAR_MAX_WIDTH, roomBesideChat(viewport) - detail - (detail > 0 ? paneGap(viewport) : 0)));
 
 // Issue #336 (B07): the editor area has tabs, as in VS Code. The conversation is always the first and never closes; a
 // detail opens in a tab of its own next to it, and so do Progetti and Impostazioni. From about 1500 px the details
@@ -208,7 +216,7 @@ export const DETAIL_PANE_MAX_WIDTH = 900;
  * side bar at its real width (`sideBar`, 0 when it is closed).
  */
 export const detailPaneMaxWidth = (viewport: number, sideBar: number = sideBarDefaultWidth(viewport)) =>
-  Math.max(DETAIL_PANE_MIN_WIDTH, Math.min(DETAIL_PANE_MAX_WIDTH, roomBesideChat(viewport) - sideBar));
+  Math.max(DETAIL_PANE_MIN_WIDTH, Math.min(DETAIL_PANE_MAX_WIDTH, roomBesideChat(viewport) - sideBar - paneGap(viewport)));
 
 /**
  * The widths on screen of the side bar and of the detail pane, from the widths the person chose: the detail pane
@@ -248,5 +256,9 @@ export const PANEL_DOCKED_MIN_VIEWPORT = WINDOW_BARS_HEIGHT + EDITOR_MIN_HEIGHT 
 /** The bottom panel never lies over the editor: it would hide the composer. Kept for the callers that ask. */
 export const panelOverlays = (_viewportHeight: number) => false;
 
-/** The highest the bottom panel gets: the editor keeps EDITOR_MIN_HEIGHT above it, and in a low window the panel keeps its lowest. */
-export const panelMaxHeight = (viewportHeight: number) => Math.max(PANEL_MIN_HEIGHT, viewportHeight - WINDOW_BARS_HEIGHT - EDITOR_MIN_HEIGHT);
+/**
+ * The highest the bottom panel gets: the editor keeps EDITOR_MIN_HEIGHT above it and the gap between them, and in a low
+ * window the panel keeps its lowest.
+ */
+export const panelMaxHeight = (viewportHeight: number) =>
+  Math.max(PANEL_MIN_HEIGHT, viewportHeight - WINDOW_BARS_HEIGHT - EDITOR_MIN_HEIGHT - PANE_GAP);

@@ -235,6 +235,7 @@ export function App() {
                 onReset={sidebar.reset}
                 onClick={() => useUi.getState().toggleSidebar()}
                 onDragChange={sidebar.setResizing}
+                className="sash--gap"
               />
             ) : null}
             {/* The frame around the sheet: the gap around it keeps the frame's tint, not the glass behind. */}

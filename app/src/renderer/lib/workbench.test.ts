@@ -129,7 +129,7 @@ describe("window layout (issue #330)", () => {
       expect(viewport - 48 - sheetMargins(viewport) - sideBarMaxWidth(viewport)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
     }
     expect(sheetMargins(1200)).toBe(0);
-    expect(sheetMargins(1201)).toBe(16);
+    expect(sheetMargins(1201)).toBe(12);
   });
 
   it("keeps Activity out of the side bar: it opens in the bottom panel (issue #337)", () => {

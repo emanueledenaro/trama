@@ -18,6 +18,9 @@ Il motivo di partenza è il nome: una trama è un tessuto, fatto di fili che pas
 | Anello vuoto | A riposo: nessuno lavora ora | Persone libere, riga di stato senza lavoro |
 | Filo ritorto con la cucitura | Quanto lavoro è fatto (il filo) e quanto manca (la cucitura) | Barre di avanzamento (`ThreadBar`), slider dello sforzo |
 | Foglio sulla cornice | Dove si lavora (il foglio) e cosa fa da contorno (la cornice) | Editor e pannello in basso |
+| Fessura tra due schede, con il segno a due fili | Qui si prende per allargare o stringere: tutta la fessura (12 px) fa da maniglia, e al passaggio del mouse il filo davanti corre lungo il bordo | Splitter (`Sash`) tra barra laterale, conversazione, dettaglio e Attività |
+| Riga che si apre in posto | Riga e contenuto sono una scheda sola: la riga fa da intestazione, niente si ripete | Schede concluse in chat, azioni richieste, riordino del contesto (`chat/Fold.tsx`) |
+| Angolo dritto e forma tonda | Il dritto è la struttura: schede, pannelli, pulsanti, campi. Il tondo è una persona o uno stato: avatar, pallini, anelli, il pulsante di invio | Tutta l'app (`--radius: 0`; restano tondi solo i `rounded-full`) |
 | Accento del provider | Chi sta lavorando: il colore del provider del dialogo | Solo gli accenti, mai lo sfondo (`temi-provider.md`) |
 
 Il movimento è leggero e professionale: transizioni brevi (150 ms per lo stato), rotazioni lente e continue, niente rimbalzi, niente disegni che spariscono e ricompaiono. Con "riduci movimento" del sistema ogni animazione si ferma e il significato resta nei colori.

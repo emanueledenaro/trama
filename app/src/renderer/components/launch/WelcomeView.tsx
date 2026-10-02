@@ -21,7 +21,6 @@ import { formatAgo, type MessageKey } from "@shared/i18n";
 import { type ExerciseId, isAllSet, learnRows, type LearnRow, recentProjectStatus, type StepState, type WelcomeStepId, welcomeSteps } from "@shared/onboarding";
 import { PROVIDERS } from "@shared/providers";
 import { LaunchIntro } from "@/components/launch/LaunchIntro";
-import { useSeam } from "@/components/Seam";
 import { StepActions } from "@/components/onboarding/StepActions";
 import { StepIcon, stepStatusLabel } from "@/components/onboarding/StepRow";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -87,7 +86,7 @@ function StartLink({ icon, label, hint, onClick, disabled }: { icon: React.React
 /**
  * Inizia answers one question: how do I get to a project. The three other ways are rows; opening a folder is the action,
  * on the right and last. It is the Benvenuto's one filled button while no project is open; with one open the window's
- * filled button belongs to the work, so it is an outline.
+ * filled button belongs to the work, so it is written as a link like the rows (no outline, 2 October 2026).
  */
 function StartBlock({ onClone }: { onClone: () => void }) {
   const t = useT();
@@ -124,7 +123,12 @@ function StartBlock({ onClone }: { onClone: () => void }) {
       </ul>
       <div className="cta-row mt-4" data-testid="welcome-start-open">
         <p className="mr-auto min-w-0 text-ui-xs text-muted-foreground">{t("welcome.start.openHint")}</p>
-        <Button variant={app.project ? "outline" : "default"} disabled={loading} onClick={() => void act("project:openDialog", undefined)}>
+        <Button
+          variant={app.project ? "ghost" : "default"}
+          className={cn(app.project && "text-[var(--color-text-accent)] hover:text-[var(--color-text-accent)]")}
+          disabled={loading}
+          onClick={() => void act("project:openDialog", undefined)}
+        >
           <IconFolderOpen className="size-4" stroke={1.7} />
           {t("welcome.start.open")}
         </Button>
@@ -272,7 +276,7 @@ function RecentBlock() {
         <div className="space-y-3 px-2" data-testid="recent-empty">
           <p className="text-ui-sm text-muted-foreground">{t("welcome.recent.none")}</p>
           <div className="cta-row">
-            <Button variant="outline" onClick={() => void act("project:openDialog", undefined)}>
+            <Button variant="ghost" className="text-[var(--color-text-accent)] hover:text-[var(--color-text-accent)]" onClick={() => void act("project:openDialog", undefined)}>
               <IconFolderOpen className="size-4" stroke={1.7} />
               {t("welcome.start.open")}
             </Button>
@@ -509,9 +513,10 @@ function ExerciseLine({ row, index }: { row: LearnRow; index: number }) {
         <p className="text-ui text-foreground">{t(copy.title)}</p>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">{t(copy.lead)}</p>
       </div>
+      {/* An action written as a link, as the ways to start: no outlined button in a row (person's note, 2 October 2026). */}
       <Button
-        variant="outline"
-        className="min-w-[6rem]"
+        variant="ghost"
+        className="min-w-[6rem] text-[var(--color-text-accent)] hover:text-[var(--color-text-accent)]"
         disabled={starting}
         aria-label={`${label}: ${t(copy.title)}`}
         // The exercise runs on the example project, in a panel beside its chat (C13, issue #354).
@@ -574,13 +579,16 @@ function LearnBlock() {
   );
 }
 
-/** Trama's mark at the head of the Benvenuto, stitched like the bots (W17), outside the mark's clear space. */
+/** One of the Benvenuto's four cards: a pane of its own, square, with the window's hairline. */
+function WelcomeCard({ children }: { children: React.ReactNode }) {
+  return <div className="min-w-0 border border-[color:var(--app-panel-border)] bg-[var(--color-background-button-secondary)] p-4">{children}</div>;
+}
+
+/** Trama's mark at the head of the Benvenuto. No stitch around it: in Trama a stitch says "to do", and the mark is not. */
 function WelcomeMark({ play }: { play: boolean }) {
-  const seam = useSeam("logo", { radius: "18px" });
   return (
     <div className="relative flex size-[72px] shrink-0 items-center justify-center" data-testid="picker-mark">
       <LaunchIntro play={play} size={52} />
-      {seam.stitch}
     </div>
   );
 }
@@ -653,25 +661,37 @@ export function WelcomeView() {
               <span className="text-muted-foreground">{t("welcome.allSet.lead")}</span>
             </p>
           ) : null}
-          <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-8 @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-            {/* Who comes back looks for a recent project first; who arrives new looks for a way to start. */}
-            <div className="flex min-w-0 flex-col gap-8">
-              {app.recentProjects.length > 0 ? (
-                <>
+          {/* Four cards on the page, square and 12 px apart like the panes of the window (person's choice, 2 October
+              2026): what to go back to and how to start on the left, what to set and what to learn on the right. */}
+          <div className="mt-8 grid grid-cols-1 gap-[var(--pane-gap)] @min-[900px]/welcome:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
+            {app.recentProjects.length > 0 ? (
+              <>
+                <WelcomeCard>
                   <RecentBlock />
+                </WelcomeCard>
+                <WelcomeCard>
+                  <SetupBlock steps={steps} open={open} setOpen={setOpen} />
+                </WelcomeCard>
+                <WelcomeCard>
                   <StartBlock onClone={clone} />
-                </>
-              ) : (
-                <>
+                </WelcomeCard>
+              </>
+            ) : (
+              <>
+                <WelcomeCard>
                   <StartBlock onClone={clone} />
+                </WelcomeCard>
+                <WelcomeCard>
+                  <SetupBlock steps={steps} open={open} setOpen={setOpen} />
+                </WelcomeCard>
+                <WelcomeCard>
                   <RecentBlock />
-                </>
-              )}
-            </div>
-            <div className="flex min-w-0 flex-col gap-8">
-              <SetupBlock steps={steps} open={open} setOpen={setOpen} />
+                </WelcomeCard>
+              </>
+            )}
+            <WelcomeCard>
               <LearnBlock />
-            </div>
+            </WelcomeCard>
           </div>
         </div>
       </div>

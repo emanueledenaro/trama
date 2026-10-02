@@ -87,9 +87,10 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
         data-placement={placement}
         data-open={open ? "true" : "false"}
         className={cn(
-          // On the composer, inset past its rounded corners, so its straight edge closes the bar from below. In a tab,
-          // the column of the tab's content (DetailPane), so the bar lines up with what it follows.
-          onComposer ? "translucent-popup mx-5 -mb-px rounded-t-[0.875rem] rounded-b-none border-b-0 shadow-none" : "mx-auto w-full max-w-[52rem]",
+          // On the composer, as wide as it and square like it, so the bar and the composer are one piece and the
+          // composer's edge closes the bar from below. In a tab, the column of the tab's content (DetailPane), so the
+          // bar lines up with what it follows.
+          onComposer ? "translucent-popup -mb-px border-b-0 shadow-none" : "mx-auto w-full max-w-[52rem]",
         )}
       >
         {open && hasFocus ? (
@@ -97,7 +98,7 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
           <div className="max-h-[calc(var(--chat-pane-height,100vh)*0.4)] overflow-y-auto border-b border-[color:var(--app-surface-divider)]" data-testid="work-bar-focus-panel">
             {/* While something waits, Decidi is the window's one filled button: the panel's primaries are outlines. */}
             <FilledScope allowed={!waiting}>
-              <FocusPanel goTo={waiting} />
+              <FocusPanel goTo={waiting} titled={false} />
             </FilledScope>
           </div>
         ) : null}
@@ -106,7 +107,9 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
             <button
               type="button"
               className={cn(
-                "flex h-8 min-w-0 items-center gap-2 rounded-lg px-2 text-left text-ui-sm outline-none transition-colors hover:bg-[var(--color-background-button-secondary-hover)] focus-visible:ring-1 focus-visible:ring-ring aria-expanded:bg-[var(--color-background-button-secondary-hover)]",
+                // One piece with the bar (person's note, 1 October 2026): no box of its own on hover or open, only the text
+                // and the chevron light up.
+                "group/focus flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-ui-sm text-foreground/85 outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
                 waiting ? "max-w-[42%] shrink" : "flex-1",
               )}
               aria-label={t("workbench.status.focusOf", { title })}
@@ -122,7 +125,7 @@ export function WorkBar({ placement }: { placement: WorkBarPlacement }) {
               </span>
               {focus?.phaseLabel ? <span className="hidden shrink-0 text-ui-xs text-muted-foreground @min-[560px]/chat:inline">{focus.phaseLabel}</span> : null}
               {top ? <OverlapBadge level={top.level} /> : null}
-              <IconChevronUp className={cn("ml-auto size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} stroke={1.8} />
+              <IconChevronUp className={cn("ml-auto size-3 shrink-0 text-muted-foreground transition-[transform,color] group-hover/focus:text-foreground", open && "rotate-180")} stroke={1.8} />
             </button>
           ) : null}
           {hasFocus && waiting ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-[var(--app-surface-divider)]" data-testid="work-bar-divider" /> : null}

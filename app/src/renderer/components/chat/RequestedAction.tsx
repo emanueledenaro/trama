@@ -9,6 +9,7 @@ import { useLanguage, useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { CardFrame, Field } from "./Cards";
 import { DisclosureChevron } from "./WorkSteps";
+import { FOLD_BODY, foldLine, FOLD_SHEET, FoldCard } from "./Fold";
 
 /**
  * An action a fixed ban stops, done or asked for because the person wrote it in the composer (issue #422). In the chat it
@@ -40,39 +41,41 @@ export function RequestedActionLine({ actionId }: { actionId: string | null }) {
   const [open, setOpen] = useState(false);
   if (!action) return null;
   return (
-    <div className="my-2" data-testid="requested-action" data-status={action.status} data-open={open || undefined}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-ui transition-colors hover:bg-[var(--color-background-button-secondary-hover)]"
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">
-          <IconLockOpen stroke={1.8} />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-foreground" data-testid="requested-action-line">
-          {requestedActionLine(action, language)}
-        </span>
-        <Badge tone={TONES[action.status]}>{requestedActionStatus(action, language)}</Badge>
-        <DisclosureChevron open={open} />
-      </button>
-      {open ? (
-        <div className="mt-1 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5" data-testid="requested-action-detail">
-          <ActionFields action={action} />
-          {action.confirmation?.confirmedAt ? (
-            <p className="mt-2 text-ui-sm text-muted-foreground">
-              {action.confirmation.by === "message" && action.confirmation.message
-                ? t("requestedAction.card.confirmedBy.message", { quote: action.confirmation.message.quote })
-                : t("requestedAction.card.confirmedBy.button")}
-            </p>
-          ) : null}
-          {action.output ? (
-            <Field label={t("requestedAction.card.output")}>
-              <pre className="max-h-48 overflow-auto font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{action.output}</pre>
-            </Field>
-          ) : null}
-        </div>
-      ) : null}
+    <div className={FOLD_SHEET} data-testid="requested-action" data-status={action.status} data-open={open || undefined}>
+      <FoldCard open={open}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className={foldLine(open)}
+        >
+          <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">
+            <IconLockOpen stroke={1.8} />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-foreground" data-testid="requested-action-line">
+            {requestedActionLine(action, language)}
+          </span>
+          <Badge tone={TONES[action.status]}>{requestedActionStatus(action, language)}</Badge>
+          <DisclosureChevron open={open} />
+        </button>
+        {open ? (
+          <div className={FOLD_BODY} data-testid="requested-action-detail">
+            <ActionFields action={action} />
+            {action.confirmation?.confirmedAt ? (
+              <p className="mt-2 text-ui-sm text-muted-foreground">
+                {action.confirmation.by === "message" && action.confirmation.message
+                  ? t("requestedAction.card.confirmedBy.message", { quote: action.confirmation.message.quote })
+                  : t("requestedAction.card.confirmedBy.button")}
+              </p>
+            ) : null}
+            {action.output ? (
+              <Field label={t("requestedAction.card.output")}>
+                <pre className="max-h-48 overflow-auto font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{action.output}</pre>
+              </Field>
+            ) : null}
+          </div>
+        ) : null}
+      </FoldCard>
     </div>
   );
 }

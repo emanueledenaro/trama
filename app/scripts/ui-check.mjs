@@ -649,12 +649,12 @@ for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   if (entrance !== "none") throw new Error(`The Benvenuto animates its entrance with reduced motion: ${entrance}`);
 }
-// Recenti, empty (design rules, four states): a message and the way to a first project, an outline: the filled button of
+// Recenti, empty (design rules, four states): a message and the way to a first project, as a link: the filled button of
 // the Benvenuto is the one of Inizia. The message no longer repeats the ways to start.
 const recentEmpty = welcome.getByTestId("recent-empty");
 await recentEmpty.waitFor();
 if (!(await recentEmpty.getByText("Nessun progetto recente.").count())) throw new Error("Recenti, empty, has no message");
-if ((await recentEmpty.locator('button[data-variant="default"]').count()) !== 0 || (await recentEmpty.getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant")) !== "outline") {
+if ((await recentEmpty.locator('button[data-variant="default"]').count()) !== 0 || (await recentEmpty.getByRole("button", { name: "Apri un progetto" }).getAttribute("data-variant")) !== "ghost") {
   throw new Error("Recenti, empty, has a second main action");
 }
 if (/clonane|Clona|esempio/.test(await recentEmpty.innerText())) throw new Error("Recenti, empty, repeats the ways to start of Inizia");
@@ -851,8 +851,7 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
 await setLookTo(startLook.provider, startLook.dark);
-await seamShots("logo", "logo");
-await expectContrastFallback();
+await expectSeam(null);
 // Clona da GitHub goes through GitHub CLI (issue #354): without it the GitHub row of Configura unfolds, and says the
 // clone starts again by itself once gh is ready; a public repository can still be cloned from there.
 await picker.getByRole("button", { name: /^Clona da GitHub/ }).click();
@@ -900,7 +899,7 @@ if ((await page.getByTestId("welcome").count()) !== 1) throw new Error("More tha
 const learn = welcome.getByTestId("welcome-learn");
 if ((await learn.getByTestId("welcome-exercise").count()) !== 4) throw new Error("Impara does not list the four exercises");
 // Design rules: the state of an exercise is its number or check and its button, not a word beside a button that says the
-// same; the button starts work, so it has an icon and its text, 32 px high, an outline (the filled button is Inizia's).
+// same; the button starts work, so it has an icon and its text, 32 px high, written as a link (no outline in a row).
 const exerciseRows = await learn.getByTestId("welcome-exercise").evaluateAll((nodes) =>
   nodes.map((node) => {
     const button = node.querySelector("button");
@@ -909,7 +908,7 @@ const exerciseRows = await learn.getByTestId("welcome-exercise").evaluateAll((no
 );
 for (const row of exerciseRows) {
   if (/Da fare|In corso|Fatto/.test(row.text)) throw new Error(`An exercise repeats its state beside its button: ${row.text}`);
-  if (row.height < 32 || !row.icon || row.variant !== "outline") throw new Error(`An exercise button is not an icon and text outline of 32 px: ${JSON.stringify(row)}`);
+  if (row.height < 32 || !row.icon || row.variant !== "ghost") throw new Error(`An exercise button is not an icon and text link of 32 px: ${JSON.stringify(row)}`);
 }
 await learn.getByRole("button", { name: "Inizia: Conosci il progetto" }).click();
 await page.getByRole("complementary", { name: "Esercizio" }).waitFor({ timeout: 20_000 });
@@ -1125,6 +1124,7 @@ await page.locator('[data-testid="waiting-reference"][data-waiting-kind="goal"]'
 // A place to fill: the project has no goal yet. Files dragged over the composer take the seam while they are there.
 await page.getByTestId("first-goal").scrollIntoViewIfNeeded();
 await seamShots("firstGoal", "first-goal");
+await expectContrastFallback();
 await dragFiles("dragover");
 await page.getByText("Rilascia le immagini per allegarle al messaggio").waitFor();
 await seamShots("fileDrop", "file-drop");
@@ -1204,9 +1204,10 @@ if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur"))
     scroller.scrollTop = scroller.scrollHeight;
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
     const last = scroller.firstElementChild.lastElementChild.getBoundingClientRect();
-    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, lastBottom: last.bottom, barTop: bar.top };
+    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, insetEnd: composer.right - bar.right, lastBottom: last.bottom, barTop: bar.top };
   });
-  if (Math.abs(layout.gap) > 2 || layout.inset < 12) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
+  // Square like the composer and as wide as it (2 October 2026): one piece, with no step at either side.
+  if (Math.abs(layout.gap) > 2 || Math.abs(layout.inset) > 1 || Math.abs(layout.insetEnd) > 1) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
   if (layout.lastBottom > layout.barTop + 1) throw new Error(`The bar above the composer covers the last message: ${JSON.stringify(layout)}`);
 }
 for (const [label, theme] of themes) {
@@ -1368,11 +1369,14 @@ await shot("04-work-expanded");
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(400);
     const box = await edges();
-    if (box.height !== (width >= 1500 ? 260 : 200)) throw new Error(`The bottom panel is ${box.height}px high at ${size}`);
+    // The default height, within the highest the editor leaves: at 1280x800 the 12 px gap above the panel takes 8 px
+    // of its 200, so the conversation keeps its 380 px.
+    const expected = Math.min(width >= 1500 ? 260 : 200, height - 70 - 526 - 12);
+    if (box.height !== expected) throw new Error(`The bottom panel is ${box.height}px high at ${size}, not ${expected}`);
     if (box.bottom > box.status + 0.5) throw new Error(`The bottom panel covers the status bar at ${size}`);
-    // The editor and the panel are one sheet on the frame (1 October 2026): the panel sits right under the editor, as wide.
+    // The panel is a card of its own under the editor (2 October 2026): 12 px below it, the gap being its sash, as wide.
     const gap = box.top - box.main.bottom;
-    if (Math.abs(gap) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
+    if (Math.abs(gap - 12) > 0.5 || Math.abs(box.left - box.main.left) > 0.5 || Math.abs(box.right - box.main.right) > 0.5)
       throw new Error(`The bottom panel is not attached under the editor at ${size}: ${gap}px apart`);
     if (size === "1280x800") {
       const room = await conversationHeight();
@@ -1437,11 +1441,13 @@ await shot("04-work-expanded");
     await page.mouse.up();
     await page.mouse.move(640, 300);
   };
+  // The panel starts at its default within the highest the editor leaves (192 px at 1280x800, the 12 px gap included).
+  const panelStart = Number(await panelSash.getAttribute("aria-valuenow"));
   await dragSash(40, "37c-activity-panel-sash-drag");
-  if (Number(await panelSash.getAttribute("aria-valuenow")) !== 160) throw new Error("Dragging the sash down does not lower the bottom panel to 160 px");
+  if (Number(await panelSash.getAttribute("aria-valuenow")) !== panelStart - 40) throw new Error(`Dragging the sash down does not lower the bottom panel to ${panelStart - 40} px`);
   await panelSash.focus();
   await page.keyboard.press("ArrowUp");
-  if (Number(await panelSash.getAttribute("aria-valuenow")) !== 176) throw new Error("ArrowUp does not raise the bottom panel by 16px");
+  if (Number(await panelSash.getAttribute("aria-valuenow")) !== panelStart - 24) throw new Error("ArrowUp does not raise the bottom panel by 16px");
   await dragSash(-200);
   await page.waitForTimeout(300);
   const highest = Number(await panelSash.getAttribute("aria-valuenow"));
@@ -1449,7 +1455,7 @@ await shot("04-work-expanded");
   if ((await conversationHeight()) < 380) throw new Error("The bottom panel at its highest leaves the conversation under 380 px");
   await panelSash.focus();
   await page.keyboard.press("Home");
-  await page.waitForFunction(() => document.querySelector('[role="separator"][aria-label="Altezza del pannello Attività"]')?.getAttribute("aria-valuenow") === "200");
+  await page.waitForFunction((start) => document.querySelector('[role="separator"][aria-label="Altezza del pannello Attività"]')?.getAttribute("aria-valuenow") === String(start), panelStart);
   // The title bar's toggle closes and opens it; the X closes it; the status bar's icon opens it.
   await page.getByRole("button", { name: "Pannello Attività" }).click();
   await panel.waitFor({ state: "detached" });
@@ -2396,6 +2402,7 @@ await shot("05-map");
         strip: strip.backgroundColor,
         stripWidth: strip.width,
         after: getComputedStyle(element, "::after").content,
+        afterOpacity: getComputedStyle(element, "::after").opacity,
         accent: color("var(--app-focus-border)"),
         width: element.getBoundingClientRect().width,
         cursor: style.cursor,
@@ -2427,9 +2434,12 @@ await shot("05-map");
   };
   for (const sash of [sidebarSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
-      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
+    // At rest the sash draws only its stitch of two threads (::after), the place to take hold (2 October 2026): no
+    // strip, no fill, no content of its own. Above 1200 px the whole 12 px gap is the grip, else the 4 px on the edge.
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || rest.after !== '""' || Number(rest.afterOpacity) === 0)
+      throw new Error(`A sash at rest is not just its stitch: ${JSON.stringify(rest)}`);
+    const grip = (await page.evaluate(() => window.innerWidth)) > 1200 ? 12 : 4;
+    if (rest.width !== grip || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a ${grip}px resize grip at z-index 35: ${JSON.stringify(rest)}`);
   }
   // The line at rest is the panels' border: the side bar's right edge and the activity bar's right edge.
   const borders = await page.evaluate(() => {
@@ -2463,7 +2473,7 @@ await shot("05-map");
       sidebar: document.querySelector('[data-testid="side-bar"]').getBoundingClientRect().right,
     }));
     const y = 620;
-    const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 12, y)]);
+    const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 24, y)]);
     const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat });
     if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8) throw new Error(`A panel border does not show at rest: ${seen}`);
     if (apart(sidebarPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
@@ -3451,7 +3461,8 @@ await supersededNote.waitFor({ timeout: 20_000 });
 if ((await supersededNote.count()) !== 1) throw new Error("Expected exactly one superseded mandate card");
 const supersededCard = page.locator(".chat-card", { has: supersededNote });
 if (!(await supersededCard.getByText("Prima proposta di mandato").count())) throw new Error("The superseded card is not the first request");
-if (await supersededCard.getByRole("button").count()) throw new Error("The superseded mandate card still has buttons");
+// The line that closes the open card is its header (2 October 2026): only the card's own actions count.
+if (await supersededCard.locator("button:not([aria-expanded])").count()) throw new Error("The superseded mandate card still has buttons");
 // The pending request waits in Aspetta te, where it can be accepted; the superseded one is not listed there.
 const pendingCard = await openWaiting("mandate", "Seconda proposta di mandato");
 await pendingCard.getByRole("button", { name: "Concedi", exact: true }).waitFor();
@@ -3583,11 +3594,12 @@ await openFocusPanel();
 const focusBar = page.getByTestId("focus-bar");
 if (!(await page.getByTestId("work-bar").getByTestId("focus-bar").count())) throw new Error("The focus panel does not unfold inside the bar above the composer");
 if (await page.getByTestId("status-focus").count()) throw new Error("The status bar repeats the work in focus while the conversation shows");
-const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
+// The bar names the work in focus; the panel it unfolds shows what to do with it and never repeats the title (1 October 2026).
+const focusTitle = async () => (await page.getByTestId("work-bar-focus-title").textContent()).trim();
+if (await focusBar.getByTestId("focus-title").count()) throw new Error("The focus panel repeats the title of the work bar");
 const firstFocus = await focusTitle();
 // Issue #241: the bar is titled with the goal, never with the first message of a dialog.
 if (/^\[/.test(firstFocus)) throw new Error(`The focus bar is titled with a message: ${firstFocus}`);
-await focusBar.getByTestId("focus-phase").first().waitFor();
 const queueToggle = focusBar.getByRole("button", { name: /^In coda/ });
 await queueToggle.click();
 const queue = focusBar.getByTestId("focus-queue");
@@ -3628,7 +3640,7 @@ await actionsOnRight("1280x820");
 await shot("17-focus-bar-queue");
 await pause.click();
 const focusIs = (title, equal) =>
-  page.waitForFunction(([text, same]) => (document.querySelector('[data-testid="focus-title"]')?.textContent?.trim() === text) === same, [title, equal], {
+  page.waitForFunction(([text, same]) => (document.querySelector('[data-testid="work-bar-focus-title"]')?.textContent?.trim() === text) === same, [title, equal], {
     timeout: 10_000,
   });
 await focusIs(firstFocus, false);
@@ -3640,8 +3652,8 @@ await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
 await shot("17b-focus-back");
-// The work going on now: the task in focus takes the seam.
-await seamShots("focus", "focus");
+// The work in focus is a full thread, not the seam: the stitch says "to do" in Trama's visual language (1 October 2026).
+await expectSeam(null);
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
@@ -8150,7 +8162,7 @@ const englishTexts = [
   await englishLine.getByTestId("status-line-text").innerText(),
   // Issue #330: in the status bar the person's move is a text button and the Coordinator's actions are icons.
   ...(await englishLine.locator("button:not([aria-label])").allInnerTexts()),
-  ...(await page.getByTestId("focus-title").allInnerTexts()),
+  ...(await page.getByTestId("work-bar-focus-title").allInnerTexts()),
 ];
 const stillItalian = englishTexts.filter((text) => italianWords.test(text));
 if (stillItalian.length) throw new Error(`Main texts still in Italian after the switch: ${stillItalian.join(" | ")}`);

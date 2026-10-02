@@ -80,6 +80,7 @@ describe("the work bar outside the conversation (UI wave of 29 September)", () =
     const bar = tagOf(html, "work-bar");
     expect(bar).toContain('data-placement="composer"');
     expect(bar).toContain("translucent-popup");
-    expect(bar).toContain("rounded-b-none");
+    // One piece with the composer: no bottom edge of its own, the composer's closes it.
+    expect(bar).toContain("border-b-0");
   });
 });
