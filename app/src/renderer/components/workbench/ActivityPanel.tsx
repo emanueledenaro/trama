@@ -422,6 +422,9 @@ function Summary({ items, onShow }: { items: ActivityItem[]; onShow: (id: string
   const t = useT();
   const { running, lastProblem } = activitySummary(items);
   const first = running[0];
+  // The study, the plan and the slicing run with no row of their own: the status line says what runs (2 October 2026),
+  // so the summary never says "nothing going on" while the bar below says the Coordinator works.
+  const working = useUi((s) => (s.app?.project?.statusLine?.state === "working" ? s.app.project.statusLine.text : null));
   return (
     <section
       aria-label={t("activity.summary.label")}
@@ -435,6 +438,10 @@ function Summary({ items, onShow }: { items: ActivityItem[]; onShow: (id: string
             <ItemText item={first} />
             {running.length > 1 ? <span className="text-muted-foreground"> {t("activity.summary.more", { count: running.length - 1 })}</span> : null}
           </button>
+        ) : working ? (
+          <span className="min-w-0 truncate text-foreground" data-testid="activity-summary-working">
+            {working}
+          </span>
         ) : (
           <span className="text-muted-foreground">{t("activity.summary.idle")}</span>
         )}
