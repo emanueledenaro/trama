@@ -15,8 +15,12 @@ export const requestedActionName = (action: Pick<RequestedAction, "ban">, langua
  * The chat line of an action: "Faccio <azione> perché me l'hai chiesto: «…»" once it starts; while it waits, that it
  * waits for the confirmation; after a no, that Trama did not do it.
  */
-export function requestedActionLine(action: Pick<RequestedAction, "ban" | "status" | "request">, language: Language = DEFAULT_LANGUAGE): string {
+export function requestedActionLine(action: Pick<RequestedAction, "ban" | "status" | "request"> & { summary?: string }, language: Language = DEFAULT_LANGUAGE): string {
   const params = { action: requestedActionName(action, language), quote: oneLine(action.request.quote) };
+  // Closing or reopening an issue says which, on which issue and how (2 October 2026): "la chiusura o la riapertura di
+  // una issue" with a "Fatta" badge read as work done when the person had asked to close the issues as not planned.
+  if (action.ban === "issueState" && action.summary?.trim() && action.status !== "waiting" && action.status !== "declined")
+    return translate(language, "requestedAction.line.doingSummary", { ...params, summary: oneLine(action.summary).replace(/[.\s]+$/, "") });
   switch (action.status) {
     case "waiting":
       return translate(language, "requestedAction.line.waiting", params);
