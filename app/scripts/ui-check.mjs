@@ -1204,9 +1204,10 @@ if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur"))
     scroller.scrollTop = scroller.scrollHeight;
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
     const last = scroller.firstElementChild.lastElementChild.getBoundingClientRect();
-    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, lastBottom: last.bottom, barTop: bar.top };
+    return { gap: composer.top - bar.bottom, inset: bar.left - composer.left, insetEnd: composer.right - bar.right, lastBottom: last.bottom, barTop: bar.top };
   });
-  if (Math.abs(layout.gap) > 2 || layout.inset < 12) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
+  // Square like the composer and as wide as it (2 October 2026): one piece, with no step at either side.
+  if (Math.abs(layout.gap) > 2 || Math.abs(layout.inset) > 1 || Math.abs(layout.insetEnd) > 1) throw new Error(`The bar is not attached to the composer: ${JSON.stringify(layout)}`);
   if (layout.lastBottom > layout.barTop + 1) throw new Error(`The bar above the composer covers the last message: ${JSON.stringify(layout)}`);
 }
 for (const [label, theme] of themes) {
