@@ -2402,6 +2402,7 @@ await shot("05-map");
         strip: strip.backgroundColor,
         stripWidth: strip.width,
         after: getComputedStyle(element, "::after").content,
+        afterOpacity: getComputedStyle(element, "::after").opacity,
         accent: color("var(--app-focus-border)"),
         width: element.getBoundingClientRect().width,
         cursor: style.cursor,
@@ -2433,9 +2434,12 @@ await shot("05-map");
   };
   for (const sash of [sidebarSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
-      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
+    // At rest the sash draws only its stitch of two threads (::after), the place to take hold (2 October 2026): no
+    // strip, no fill, no content of its own. Above 1200 px the whole 12 px gap is the grip, else the 4 px on the edge.
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || rest.after !== '""' || Number(rest.afterOpacity) === 0)
+      throw new Error(`A sash at rest is not just its stitch: ${JSON.stringify(rest)}`);
+    const grip = (await page.evaluate(() => window.innerWidth)) > 1200 ? 12 : 4;
+    if (rest.width !== grip || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a ${grip}px resize grip at z-index 35: ${JSON.stringify(rest)}`);
   }
   // The line at rest is the panels' border: the side bar's right edge and the activity bar's right edge.
   const borders = await page.evaluate(() => {
@@ -2469,7 +2473,7 @@ await shot("05-map");
       sidebar: document.querySelector('[data-testid="side-bar"]').getBoundingClientRect().right,
     }));
     const y = 620;
-    const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 12, y)]);
+    const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 24, y)]);
     const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat });
     if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8) throw new Error(`A panel border does not show at rest: ${seen}`);
     if (apart(sidebarPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
