@@ -605,6 +605,7 @@ export const en: Record<keyof typeof it, string> = {
   "workbench.title.openProject": "Open project",
   "workbench.title.createProject": "Create a project",
   "workbench.title.refresh": "Refresh project",
+  "workbench.title.refreshed": "Project read again: map and modules updated.",
   "workbench.title.panel": "Activity panel",
   "workbench.title.noProject": "No project open",
   "workbench.editor.tabs": "Editor tabs",

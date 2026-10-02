@@ -503,12 +503,14 @@ export async function examineCandidate(candidateId: string): Promise<void> {
 }
 
 /** Rescans the open project; a rescan that changes nothing still says it ran (W12). */
-export async function refreshProject(): Promise<void> {
-  if (!useUi.getState().app?.project) return;
+/** Reads the project again. True when it ran: the title bar says so with its done mark, a failure with a toast. */
+export async function refreshProject(): Promise<boolean> {
+  if (!useUi.getState().app?.project) return false;
   try {
     await window.trama.invoke("project:refresh", undefined);
-    useUi.getState().setToast("Progetto riletto: mappa e moduli aggiornati.", "info");
+    return true;
   } catch (error) {
     useUi.getState().setToast(errorText(error));
+    return false;
   }
 }

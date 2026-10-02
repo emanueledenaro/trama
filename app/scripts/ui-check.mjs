@@ -3024,11 +3024,13 @@ await closePanels();
 
 // W12: the main action of every screen does what its label says, with an effect the person sees. Mandato, Memoria,
 // candidato, Obiettivi, Panoramica, guida and the chat cards are clicked above; Issue and Gruppo after the restart.
-// Header: a rescan that changes nothing still confirms it ran.
-await page.getByRole("button", { name: "Aggiorna progetto" }).click();
-const refreshed = page.getByRole("status").filter({ hasText: "Progetto riletto" });
-await refreshed.waitFor({ timeout: 10_000 });
-await refreshed.getByRole("button", { name: "Chiudi" }).click();
+// Header: a rescan that changes nothing still confirms it ran: the arrows turn, then the done mark shows and a screen
+// reader hears it (2 October 2026), with no toast.
+const refreshButton = page.getByRole("button", { name: "Aggiorna progetto" });
+await refreshButton.click();
+await page.locator('[data-refresh="done"] [data-trama-icon="stateDone"]').waitFor({ timeout: 10_000 });
+if (!(await page.getByRole("status").filter({ hasText: "Progetto riletto" }).count())) throw new Error("The refresh does not say it ran");
+await page.locator('[data-refresh="idle"]').waitFor({ timeout: 5_000 });
 // Goal card: "Modifica la proposta" opens the proposal with its editor ready.
 await (await openWaiting("goal")).getByTestId("goal-card").getByRole("button", { name: "Modifica la proposta" }).click();
 // Issue #336: the goal opens in its editor tab, with the editor ready.

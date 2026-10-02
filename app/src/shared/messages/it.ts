@@ -584,6 +584,7 @@ export const it = {
   "workbench.title.openProject": "Apri progetto",
   "workbench.title.createProject": "Crea un progetto",
   "workbench.title.refresh": "Aggiorna progetto",
+  "workbench.title.refreshed": "Progetto riletto: mappa e moduli aggiornati.",
   "workbench.title.panel": "Pannello Attività",
   "workbench.title.noProject": "Nessun progetto aperto",
   "workbench.editor.tabs": "Schede dell'editor",

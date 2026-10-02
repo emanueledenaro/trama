@@ -18,7 +18,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useWaiting } from "@/components/WaitingView";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
-import { act, refreshProject, useUi } from "@/lib/store";
+import { act, useUi } from "@/lib/store";
+import { REFRESH_EVENT } from "@/components/workbench/TitleBar";
 import {
   CONVERSATION_TAB,
   DETAIL_PANE_MIN_WIDTH,
@@ -135,7 +136,8 @@ export function App() {
       // The items below act on the open project; without one they say so instead of doing nothing (W12).
       else if (!ui.app?.project) ui.setToast(translator(ui.app?.language)("menu.needsProject"), "info");
       else if (command === "focusComposer") ui.focusComposer();
-      else if (command === "refreshProject") void refreshProject();
+      // The title bar runs it, so the menu's refresh turns and ends on the done mark like the button.
+      else if (command === "refreshProject") window.dispatchEvent(new Event(REFRESH_EVENT));
       // The conversation's tab comes forward with the composer, as its icon in the activity bar does (issue #336).
       else if (command === "view:conversation") {
         ui.focusTab(CONVERSATION_TAB);

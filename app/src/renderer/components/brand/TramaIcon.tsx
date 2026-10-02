@@ -13,6 +13,7 @@ export function TramaIcon({
   stroke = 1.6,
   style,
   className,
+  onAnimationIteration,
 }: {
   name: TramaIconName;
   busy?: boolean;
@@ -21,6 +22,8 @@ export function TramaIcon({
   stroke?: number | string;
   style?: React.CSSProperties;
   className?: string;
+  /** Each full turn of a busy icon: the refresh stops on one, never halfway. */
+  onAnimationIteration?: () => void;
 }) {
   return (
     <svg
@@ -33,6 +36,7 @@ export function TramaIcon({
       stroke="currentColor"
       strokeWidth={stroke}
       style={style}
+      onAnimationIteration={onAnimationIteration}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden

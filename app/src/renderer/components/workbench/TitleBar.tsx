@@ -9,7 +9,7 @@ import {
   IconPencilPlus,
   IconSearch,
 } from "@/components/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TramaIcon } from "@/components/brand/TramaIcon";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
@@ -122,6 +122,44 @@ function NavigationButtons() {
   );
 }
 
+/** The menu's refresh asks the title bar, which runs it with its motion. */
+export const REFRESH_EVENT = "trama:refresh";
+
+/**
+ * The refresh of the project with its motion (person's note, 2 October 2026): the arrows turn at least once, softly,
+ * and stop only on a whole turn when the project has been read; then the done mark shows for a moment. With reduced
+ * motion there is no turn to wait for.
+ */
+function useRefresh() {
+  const [phase, setPhase] = useState<"idle" | "turning" | "done">("idle");
+  const result = useRef<boolean | null>(null);
+  const finish = (ok: boolean) => {
+    result.current = null;
+    if (!ok) return setPhase("idle");
+    setPhase("done");
+    window.setTimeout(() => setPhase((current) => (current === "done" ? "idle" : current)), 1200);
+  };
+  const start = () => {
+    if (phase === "turning") return;
+    result.current = null;
+    setPhase("turning");
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    void refreshProject().then((ok) => {
+      if (still) finish(ok);
+      else result.current = ok;
+    });
+  };
+  // A whole turn ended: stop here if the project has been read.
+  const turned = () => {
+    if (result.current !== null) finish(result.current);
+  };
+  useEffect(() => {
+    window.addEventListener(REFRESH_EVENT, start);
+    return () => window.removeEventListener(REFRESH_EVENT, start);
+  });
+  return { phase, start, turned };
+}
+
 /**
  * The title bar (issue #330, ADR 0018), 46 px across the window: Trama's mark, the project with its menu, the search
  * in the middle, and the toggles of the side bar and of the Activity panel. Its buttons are 32 px. The branch lives
@@ -130,7 +168,7 @@ function NavigationButtons() {
 export function TitleBar({ isMac }: { isMac: boolean }) {
   const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
-  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useRefresh();
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const activityOpen = useUi((s) => s.panelOpen);
   const toggleSidebar = useUi((s) => s.toggleSidebar);
@@ -184,23 +222,30 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
       </div>
       <div className="flex min-w-0 flex-1 basis-0 items-center justify-end gap-1">
         {/* The goal filter is in the summary of Lavoro (issue #332); the exercises start from Impara in the Benvenuto (issue #354). */}
+        {/* Refresh is an action, the toggles after it show or hide panes: 12 px apart, the gap between panes. */}
         {project ? (
           <Tooltip label={t("workbench.title.refresh")}>
             <button
               type="button"
-              className={ICON_BUTTON}
+              className={cn(ICON_BUTTON, "mr-2")}
               aria-label={t("workbench.title.refresh")}
-              aria-busy={refreshing || undefined}
-              disabled={refreshing}
-              onClick={() => {
-                setRefreshing(true);
-                void refreshProject().finally(() => setRefreshing(false));
-              }}
+              aria-busy={refresh.phase === "turning" || undefined}
+              disabled={refresh.phase === "turning"}
+              data-refresh={refresh.phase}
+              onClick={refresh.start}
             >
-              <TramaIcon animated name="refresh" busy={refreshing} className="size-4" />
+              {refresh.phase === "done" ? (
+                <TramaIcon animated name="stateDone" className="size-4 text-success" />
+              ) : (
+                <TramaIcon animated name="refresh" busy={refresh.phase === "turning"} onAnimationIteration={refresh.turned} className="size-4" />
+              )}
             </button>
           </Tooltip>
         ) : null}
+        {/* Says to a screen reader what the done mark shows. */}
+        <span role="status" className="sr-only">
+          {refresh.phase === "done" ? t("workbench.title.refreshed") : ""}
+        </span>
         {/* Issue #338: an icon's tooltip is its name, the same words a screen reader reads. */}
         <Tooltip label={t("workbench.sideBar.toggle")}>
           <button type="button" className={cn(ICON_BUTTON, sidebarOpen && HEADER_CHIP_ACTIVE)} aria-label={t("workbench.sideBar.toggle")} aria-pressed={sidebarOpen} onClick={toggleSidebar}>
