@@ -20,13 +20,13 @@ const run = promisify(execFile);
 export const INSTALL_DEPENDENCIES_TOOL: ToolDefinition = {
   name: "install_dependencies",
   description:
-    "Install the npm dependencies declared in the worktree's package.json (and package-lock.json, when there is one). Your session has no network, so call this after you add or change dependencies instead of running npm install yourself. Trama installs them outside the sandbox, without install scripts, into the worktree's node_modules (which must be in .gitignore) and, when the project had no lockfile, writes the package-lock.json npm produced: commit it with your work. Then run the build and the tests as usual.",
+    "Install the npm dependencies declared in the worktree's package.json (and package-lock.json, when there is one). Your session has no network, so call this after you add or change dependencies instead of running npm install yourself. Trama installs them outside the sandbox, without install scripts, into the worktree's node_modules (which must be in .gitignore). When npm writes or updates package-lock.json, the result says so: commit it with your work. Then run the build and the tests as usual.",
   properties: {},
   required: [],
   readOnly: false,
 };
 
-export type InstallOutcome = { ok: true; packages: number; lockfileWritten: boolean } | { ok: false; reason: string };
+export type InstallOutcome = { ok: true; packages: number; lockfileChanged: boolean } | { ok: false; reason: string };
 
 /** The npm Trama runs: the first one on the search path, or null. */
 export function npmExecutable(paths: readonly string[] = searchPath()): string | null {
@@ -62,22 +62,29 @@ export async function installNodeDependencies(
   if (!ignored) {
     return { ok: false, reason: "node_modules is not in .gitignore: add it there, so the dependencies stay out of your work, then call install_dependencies again." };
   }
-  const hadLockfile = existsSync(join(projectDir, "package-lock.json"));
+  const lockfile = join(projectDir, "package-lock.json");
+  const lockBefore = await readFile(lockfile, "utf8").catch(() => null);
   // A node_modules of links lent from the checkout is replaced by a real install.
   const existing = await lstat(join(projectDir, "node_modules")).catch(() => null);
   if (existing) await rm(join(projectDir, "node_modules"), { recursive: true, force: true });
-  const args = [hadLockfile ? "ci" : "install", "--ignore-scripts", "--no-audit", "--no-fund"];
+  const flags = ["--ignore-scripts", "--no-audit", "--no-fund"];
   try {
-    await install(npm, args, projectDir);
+    if (lockBefore === null) await install(npm, ["install", ...flags], projectDir);
+    else {
+      // npm ci refuses a lockfile the developer's new dependencies left behind: npm install then brings it up to date.
+      await install(npm, ["ci", ...flags], projectDir).catch(() => install(npm, ["install", ...flags], projectDir));
+    }
   } catch (error) {
+    // npm says what went wrong first, then its usage: the first lines carry the reason.
     const output = String((error as { stderr?: string }).stderr || (error as Error).message)
       .trim()
       .split("\n")
-      .slice(-12)
+      .slice(0, 12)
       .join("\n");
-    return { ok: false, reason: `npm ${args[0]} failed:\n${output}` };
+    return { ok: false, reason: `npm install failed:\n${output}` };
   }
   const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8")) as { dependencies?: object; devDependencies?: object };
   const packages = Object.keys(manifest.dependencies ?? {}).length + Object.keys(manifest.devDependencies ?? {}).length;
-  return { ok: true, packages, lockfileWritten: !hadLockfile && existsSync(join(projectDir, "package-lock.json")) };
+  const lockAfter = await readFile(lockfile, "utf8").catch(() => null);
+  return { ok: true, packages, lockfileChanged: lockAfter !== null && lockAfter !== lockBefore };
 }
