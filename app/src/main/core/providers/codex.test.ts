@@ -109,6 +109,9 @@ describe("Codex runtime and the provider's own tools (issue #228)", () => {
     expect(environment.TMPDIR).toMatch(/trama-agents/);
     expect(environment.npm_config_cache).toBe(join(environment.TMPDIR!, "npm"));
     expect(environment.HOME).toBe(join(environment.TMPDIR!, "home"));
+    // The person's own Codex rules are not the agents' (person's choice, 2 October 2026).
+    const developerStart = writing.filter((entry) => entry.method === "thread/start").at(-1)!.params as { developerInstructions?: string };
+    expect(developerStart.developerInstructions).toContain("--- project-doc ---");
     expect((developer["permissions.trama_write"] as { filesystem: Record<string, string> }).filesystem[environment.TMPDIR!]).toBe("write");
   });
 });
