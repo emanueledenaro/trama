@@ -5217,9 +5217,12 @@ await page.keyboard.press("Enter");
 // Issue #292: the proposed route waits for the person in Aspetta te; the chat keeps its reference.
 const routeCard = (await openWaiting("route")).locator('[data-anchor="route"]');
 await routeCard.getByText("Proposto", { exact: true }).waitFor({ timeout: 20_000 });
-for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione del candidato ed esame approfondito", "Confine di fase: Continua"]) {
+for (const expected of ["Flusso principale", "Grilling prima del piano, con glossario e ADR", "prototype", "Piano scritto come spec", "Revisione del candidato ed esame approfondito", "Confine di fase: Continua"]) {
   if (!(await routeCard.innerText()).includes(expected)) throw new Error(`The Ask Trama route does not show "${expected}"`);
 }
+// A flow step leads with what it does; its skill's name stays on the hover.
+if ((await routeCard.innerText()).includes("grill-with-docs")) throw new Error("The Ask Trama route shows a flow step's skill name");
+if (!(await routeCard.locator('[data-skill="grill-with-docs"]').count())) throw new Error("The Ask Trama route lost the grill-with-docs step");
 if (await page.getByText("Chi vede gli ordini in revisione?").count()) throw new Error("Ask Trama started a flow before the person confirmed the route");
 const skipRoute = await routeCard.getByRole("button", { name: "Non avviare" }).boundingBox();
 const startRoute = await routeCard.getByRole("button", { name: "Avvia il percorso" }).boundingBox();
