@@ -181,7 +181,7 @@ export const mainIt = {
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
     'Comprensione della richiesta "{request}".',
-  "main.controller.stepSeamsSummary": "Seam del piano {plan}: {seams}.",
+  "main.controller.stepSeamsSummary": "Punti di prova del piano {plan}: {seams}.",
   "main.controller.stepSlicesSummary": "Fette del piano {plan}: {slices}.",
   "main.controller.stepStillWriting":
     "Il Coordinatore sta ancora scrivendo questo passo: correggilo quando ha finito.",
@@ -460,8 +460,8 @@ export const mainIt = {
   "main.controller.planNotWaitingSeams":
     "Il piano non aspetta una risposta sui seam.",
   "main.controller.seamsCorrectionEmpty": "Scrivi cosa cambiare nei seam.",
-  "main.controller.seamsConfirmedTitle": "Seam del piano {plan} confermati",
-  "main.controller.seamsCorrectedTitle": "Seam del piano {plan} corretti",
+  "main.controller.seamsConfirmedTitle": "Punti di prova del piano {plan} confermati",
+  "main.controller.seamsCorrectedTitle": "Punti di prova del piano {plan} corretti",
   "main.controller.planNoSpecToPublish":
     "Il piano non ha una spec pronta da pubblicare.",
   "main.controller.specStaysInTrama":
@@ -2124,6 +2124,7 @@ export const mainIt = {
     "File ignorato perché supera {size} KB: {path}.",
   "main.scanner.unreadableFile":
     "File non leggibile o non UTF-8 ignorato: {path}.",
+  "main.scanner.wholeProject": "Tutto il progetto",
   "main.scanner.moduleSummary":
     "{files} file rilevati in {path}. Per Swift sono riportati solo gli import diretti; per gli altri linguaggi restano disponibili i file e gli import relativi risolvibili.",
   "main.scanner.contextSkipped": "File di contesto ignorato: {name}. {detail}",

@@ -297,7 +297,15 @@ export async function scanRepository(root: string, isDemo = false): Promise<Repo
   // the mandate that covered the whole project (fullDelegation.ts, mandateForNewModules).
   if (!modules.length) {
     const root = moduleLocation(".");
-    modules.push({ ...root, summary: t("main.scanner.moduleSummary", { files: "0", path: root.relativePath }), files: [], dependencies: [], symbol: "folder" });
+    modules.push({
+      ...root,
+      // The person reads "Tutto il progetto" in the mandate, not the folder's technical name.
+      name: t("main.scanner.wholeProject"),
+      summary: t("main.scanner.moduleSummary", { files: "0", path: root.relativePath }),
+      files: [],
+      dependencies: [],
+      symbol: "folder",
+    });
   }
 
   const contextualInputHashes: Record<string, string> = {};

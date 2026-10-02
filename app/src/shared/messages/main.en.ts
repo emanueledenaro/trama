@@ -2053,6 +2053,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "File skipped because it exceeds {size} KB: {path}.",
   "main.scanner.unreadableFile":
     "Unreadable or non UTF-8 file skipped: {path}.",
+  "main.scanner.wholeProject": "The whole project",
   "main.scanner.moduleSummary":
     "{files} files found in {path}. For Swift only direct imports are listed; for the other languages the files and the resolvable relative imports stay available.",
   "main.scanner.contextSkipped": "Context file skipped: {name}. {detail}",

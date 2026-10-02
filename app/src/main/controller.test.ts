@@ -1542,7 +1542,7 @@ describe("TramaController", () => {
     // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
     await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
     expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
-    expect(activityLog(t, project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
+    expect(activityLog(t, project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Punti di prova confermati dal Coordinatore");
 
     // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
     const plan = project.document.plans[0]!;
@@ -1553,7 +1553,7 @@ describe("TramaController", () => {
     expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: false, note: "Testa anche il rimborso" });
     await until(() => plan.status === "ready");
     expect(plan.spec!.sections!.furtherNotes).toContain("Testa anche il rimborso");
-    const corrected = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Seam confermati dal Coordinatore: corretto");
+    const corrected = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Punti di prova confermati dal Coordinatore: corretto");
     expect(corrected?.origin).toBe("person");
   });
 
@@ -1589,7 +1589,7 @@ describe("TramaController", () => {
     expect(plan.spec!.issue).toBeNull();
     await expect(controller!.publishPlanSpec(plan.id)).rejects.toThrow(/GitHub non è collegato/);
     const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
-    expect(activities).toContain(`Seam del piano ${plan.id} confermati`);
+    expect(activities).toContain(`Punti di prova del piano ${plan.id} confermati`);
 
     // M05: the written spec goes to the slicer, which runs to-tickets; the breakdown waits for the person.
     await until(() => plan.slicing?.status === "proposed");
