@@ -539,6 +539,8 @@ describe("sessions with the original skills (W11)", () => {
     expect(session(review!).prompt).toContain(HEAD.slice(0, 7));
     expect(session(writing!).instructions).toContain("Git worktree");
     expect(session(writing!).prompt).toContain("**Bozza**:\nUn testo non ancora pubblicato.\n_Avoid_: Draft");
+    // The written files become a candidate: without checks it could never be declared.
+    expect(writing!.assignment.requiredChecks).toEqual(["git_status", "git_diff_check"]);
   });
 
   it("binds each skill to Trama without restating its method", async () => {
