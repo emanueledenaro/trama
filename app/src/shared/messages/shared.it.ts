@@ -97,7 +97,7 @@ export const sharedIt = {
   "shared.activity.outcome.corrected": "Corretto",
   "shared.activity.step.confirmUnderstanding": "Comprensione confermata dal Coordinatore",
   "shared.activity.step.confirmTeam": "Team confermato dal Coordinatore",
-  "shared.activity.step.confirmSeams": "Seam confermati dal Coordinatore",
+  "shared.activity.step.confirmSeams": "Punti di prova confermati dal Coordinatore",
   "shared.activity.step.confirmSlices": "Fette confermate dal Coordinatore",
   "shared.activity.trigger.turnEnded": "Dopo un turno del Coordinatore",
   "shared.activity.trigger.planEnded": "Dopo la fine di un piano",

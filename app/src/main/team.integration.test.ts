@@ -194,7 +194,7 @@ describe("team flow", () => {
     const told = activityLog(t, document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
     expect(told).toEqual([
       "Fette confermate dal Coordinatore",
-      "Seam confermati dal Coordinatore",
+      "Punti di prova confermati dal Coordinatore",
       "Comprensione confermata dal Coordinatore",
       "Squadre formate dal Coordinatore",
     ]);
