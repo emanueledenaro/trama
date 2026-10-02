@@ -28,7 +28,7 @@ describe("how an action the person asked for reads (issue #422)", () => {
       "Prima di fare un force push aspetto la tua conferma. Me l'hai chiesto: «sistema tu la situazione al meglio»",
     );
     expect(requestedActionLine(action({ status: "declined" }))).toMatch(/^Non faccio un force push: non l'hai confermato\./);
-    expect(requestedActionStatus(action({ status: "done" }))).toBe("Fatta");
+    expect(requestedActionStatus(action({ status: "done" }))).toBe("Eseguita");
     expect(requestedActionStatus(action({ status: "waiting" }), "en")).toBe("Waiting for your confirmation");
     for (const line of [requestedActionLine(action()), requestedActionLine(action(), "en")]) expect(line).not.toMatch(/[–—]/);
   });
