@@ -1441,11 +1441,13 @@ await shot("04-work-expanded");
     await page.mouse.up();
     await page.mouse.move(640, 300);
   };
+  // The panel starts at its default within the highest the editor leaves (192 px at 1280x800, the 12 px gap included).
+  const panelStart = Number(await panelSash.getAttribute("aria-valuenow"));
   await dragSash(40, "37c-activity-panel-sash-drag");
-  if (Number(await panelSash.getAttribute("aria-valuenow")) !== 160) throw new Error("Dragging the sash down does not lower the bottom panel to 160 px");
+  if (Number(await panelSash.getAttribute("aria-valuenow")) !== panelStart - 40) throw new Error(`Dragging the sash down does not lower the bottom panel to ${panelStart - 40} px`);
   await panelSash.focus();
   await page.keyboard.press("ArrowUp");
-  if (Number(await panelSash.getAttribute("aria-valuenow")) !== 176) throw new Error("ArrowUp does not raise the bottom panel by 16px");
+  if (Number(await panelSash.getAttribute("aria-valuenow")) !== panelStart - 24) throw new Error("ArrowUp does not raise the bottom panel by 16px");
   await dragSash(-200);
   await page.waitForTimeout(300);
   const highest = Number(await panelSash.getAttribute("aria-valuenow"));
@@ -1453,7 +1455,7 @@ await shot("04-work-expanded");
   if ((await conversationHeight()) < 380) throw new Error("The bottom panel at its highest leaves the conversation under 380 px");
   await panelSash.focus();
   await page.keyboard.press("Home");
-  await page.waitForFunction(() => document.querySelector('[role="separator"][aria-label="Altezza del pannello Attività"]')?.getAttribute("aria-valuenow") === "200");
+  await page.waitForFunction((start) => document.querySelector('[role="separator"][aria-label="Altezza del pannello Attività"]')?.getAttribute("aria-valuenow") === String(start), panelStart);
   // The title bar's toggle closes and opens it; the X closes it; the status bar's icon opens it.
   await page.getByRole("button", { name: "Pannello Attività" }).click();
   await panel.waitFor({ state: "detached" });

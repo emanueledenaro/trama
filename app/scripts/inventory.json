@@ -2365,7 +2365,7 @@
     "Dove does not name the modules of the mandate",
     "Dragging the sash does not widen the side bar",
     "Dragging the sash does not widen the side bar to 380 px",
-    "Dragging the sash down does not lower the bottom panel to 160 px",
+    "Dragging the sash down does not lower the bottom panel to ${panelStart - 40} px",
     "Dragging the sash up stops at ${highest} px, before the panel's highest",
     "Elimina is red before the confirmation step",
     "Elimina lost its text",
