@@ -248,6 +248,7 @@
     "src/main/core/candidates.test.ts :: candidates > the candidate after a developer's turn (issue #388) > never touches a published candidate's pull request",
     "src/main/core/candidates.test.ts :: candidates > the candidate after a developer's turn (issue #388) > says in English that the candidate lags the working copy (issue #301)",
     "src/main/core/candidates.test.ts :: candidates > the candidate after a developer's turn (issue #388) > says why it cannot declare, and a candidate that lags the worktree is never cleared or approved",
+    "src/main/core/checks.test.ts :: read-only checks > copies the checkout for Node checks with its packages linked and the tools' caches of the copy's own",
     "src/main/core/checks.test.ts :: read-only checks > finds the Node package in the root or a direct subfolder and offers its scripts as checks",
     "src/main/core/checks.test.ts :: read-only checks > lends the checkout's dependencies to a worktree only when the lockfiles match, keeping git status clean",
     "src/main/core/checks.test.ts :: read-only checks > lets a Node test use 127.0.0.1 but not internet or the checkout",
