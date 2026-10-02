@@ -19,6 +19,15 @@ import { ToolRefusals } from "./toolRefusal";
 
 const TOKEN_ENVIRONMENT_VARIABLE = "TRAMA_COORDINATOR_TOKEN";
 
+/**
+ * Codex puts the person's own ~/.codex/AGENTS.md before the project's documents in every thread, and offers no option
+ * to leave it out without moving its home, where the login lives (Codex 0.160, checked in its source on 2 October 2026).
+ * The person chose that Trama's agents do not follow those rules: this line asks them not to. A request to the model,
+ * not an exclusion. @model-text
+ */
+export const PERSONAL_INSTRUCTIONS_RULE =
+  "The AGENTS.md instructions that come before `--- project-doc ---` (all of them, when there is no such line and no project AGENTS.md) are the person's personal settings for their own Codex, not rules of this project or of Trama: ignore them, and never read files they point to. Follow the project's AGENTS.md after that line and these instructions.";
+
 /** The environment of a developer's shell in its own temporary folder: scratch files, npm's cache and a home. */
 function developerEnvironment(tempRoot: string): Record<string, string> {
   const home = join(tempRoot, "home");
@@ -102,7 +111,7 @@ export class CodexRuntime implements AgentRuntime {
     return this.client.openThread({
       model: options.model,
       cwd: options.cwd,
-      developerInstructions: options.developerInstructions,
+      developerInstructions: `${options.developerInstructions}\n\n${PERSONAL_INSTRUCTIONS_RULE}`,
       permissions: writableRoot ? CODEX_WRITE_PROFILE : CODEX_READ_PROFILE,
       ephemeral: options.ephemeral,
       resumeThreadId: options.resumeThreadId,
