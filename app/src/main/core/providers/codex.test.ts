@@ -108,6 +108,7 @@ describe("Codex runtime and the provider's own tools (issue #228)", () => {
     const environment = developer["shell_environment_policy.set"] as Record<string, string>;
     expect(environment.TMPDIR).toMatch(/trama-agents/);
     expect(environment.npm_config_cache).toBe(join(environment.TMPDIR!, "npm"));
+    expect(environment.HOME).toBe(join(environment.TMPDIR!, "home"));
     expect((developer["permissions.trama_write"] as { filesystem: Record<string, string> }).filesystem[environment.TMPDIR!]).toBe("write");
   });
 });

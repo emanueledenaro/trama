@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { CodexClient, resolveCodexExecutable, restrictedAppServerArguments, searchPath } from "../codexClient";
 import {
@@ -18,6 +18,21 @@ import { type AgentRuntime, type OpenThreadOptions, ProviderError, type RunTurnO
 import { ToolRefusals } from "./toolRefusal";
 
 const TOKEN_ENVIRONMENT_VARIABLE = "TRAMA_COORDINATOR_TOKEN";
+
+/** The environment of a developer's shell in its own temporary folder: scratch files, npm's cache and a home. */
+function developerEnvironment(tempRoot: string): Record<string, string> {
+  const home = join(tempRoot, "home");
+  mkdirSync(home, { recursive: true });
+  const browsers = browserCacheRoots()[0];
+  return {
+    TMPDIR: tempRoot,
+    TMP: tempRoot,
+    TEMP: tempRoot,
+    HOME: home,
+    npm_config_cache: join(tempRoot, "npm"),
+    ...(browsers ? { PLAYWRIGHT_BROWSERS_PATH: browsers } : {}),
+  };
+}
 /** A command that reaches GitHub or the network, which the read-only sandbox stops. */
 const NETWORK_COMMAND = /(?:^|[\s;&|('"])(?:gh|curl|wget)\s|\bgit\s+(?:fetch|pull|push|clone|ls-remote)\b/;
 
@@ -105,12 +120,13 @@ export class CodexRuntime implements AgentRuntime {
         },
         ...codexPermissionProfiles(shellRoots, writableRoot, tempRoot),
         // The profiles hide the home folder, ~/.gitconfig included: git in the shell reads no global file (issue #391).
-        // A developer's tools write their scratch files in its own temporary folder, npm its cache and logs too: the
-        // home folder they default to is hidden.
+        // A developer's tools write their scratch files in its own temporary folder, npm its cache and logs too, and
+        // their settings in a home of its own there (Astro's, 2 October 2026): the person's home stays hidden.
+        // Playwright finds its browsers by the real home, so it gets their folder by name.
         "shell_environment_policy.set": {
           ...sandboxGitEnvironment(),
           PATH: sandboxSearchPath(searchEntries, shellRoots),
-          ...(tempRoot ? { TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot, npm_config_cache: join(tempRoot, "npm") } : {}),
+          ...(tempRoot ? developerEnvironment(tempRoot) : {}),
         },
         ...(toolServer
           ? {
