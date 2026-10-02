@@ -79,7 +79,8 @@ export class CodexRuntime implements AgentRuntime {
     const toolServer = this.options.toolServer;
     const writableRoot = options.sandbox === "workspace-write" ? resolve(options.cwd) : null;
     const roots = readableRoots(options.cwd, options.readableRoots ?? []);
-    this.scope = { roots, writableRoot };
+    // Playwright's browsers are readable too: reading them is no attempt outside the project.
+    this.scope = { roots: [...roots, ...browserCacheRoots()], writableRoot };
     const searchEntries = [...executableFolders(this.options.executable), ...searchPath()];
     const shellRoots = [...roots, ...toolchainRoots(searchEntries), ...browserCacheRoots()];
     const tempRoot = writableRoot ? agentTempFolder(writableRoot) : null;
