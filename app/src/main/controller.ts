@@ -304,6 +304,7 @@ import {
   type TurnEnd,
   recordTurnContext,
 } from "./core/team";
+import { INSTALL_DEPENDENCIES_TOOL, installNodeDependencies } from "./core/dependencyInstall";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import {
   adoptRemoteBranch,
@@ -5585,8 +5586,9 @@ export class TramaController {
   /** The developer's tool server (W06): ask_coordinator records the question on its running work. */
   private developerToolServer(project: ActiveProjectState, assignmentId: string): CoordinatorToolServer {
     return new CoordinatorToolServer(
-      [ASK_COORDINATOR_TOOL],
+      [ASK_COORDINATOR_TOOL, INSTALL_DEPENDENCIES_TOOL],
       async (name, args) => {
+        if (name === INSTALL_DEPENDENCIES_TOOL.name) return this.installDependencies(project, assignmentId);
         if (name !== ASK_COORDINATOR_TOOL.name) return toolFailure("unknown_tool", `Unknown tool ${name}.`);
         try {
           const question = askCoordinator(project.document, assignmentId, {
@@ -5607,6 +5609,29 @@ export class TramaController {
       },
       DEVELOPER_TOOL_SERVER_INSTRUCTIONS,
     );
+  }
+
+  /**
+   * Installs the npm dependencies of the developer's worktree outside the sandbox (2 October 2026): a project created
+   * from nothing has none to lend, so its work could never build or run its tests. Told in Activity.
+   */
+  private async installDependencies(project: ActiveProjectState, assignmentId: string) {
+    const assignment = findAssignment(project.document, assignmentId);
+    const worktree = assignment?.workspace?.worktreeRoot;
+    if (!worktree) return toolFailure("invalid_arguments", "This assignment has no worktree yet.");
+    const turns = assignment.turns.length;
+    const outcome = await installNodeDependencies(worktree);
+    this.specialistActivity(
+      project,
+      assignmentId,
+      `${turns}`,
+      t(outcome.ok ? "main.controller.dependenciesInstalledTitle" : "main.controller.dependenciesFailedTitle"),
+      outcome.ok ? t("main.controller.dependenciesInstalledDetail", { count: String(outcome.packages) }) : outcome.reason,
+      outcome.ok ? "info" : "error",
+    );
+    return outcome.ok
+      ? toolSuccess({ status: "installed", packages: outcome.packages, lockfileWritten: outcome.lockfileWritten })
+      : toolFailure("install_failed", outcome.reason);
   }
 
   /**

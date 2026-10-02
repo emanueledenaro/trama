@@ -283,6 +283,9 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Waiting for the temporary limit of {provider} to pass",
   "main.controller.waitingTemporaryLimitDetail":
     "It is not the account quota. Trama resumes the assignment by itself in {seconds} seconds, if the mandate still covers it.",
+  "main.controller.dependenciesInstalledTitle": "Packages installed by Trama",
+  "main.controller.dependenciesInstalledDetail": "Trama installed the project's {count} packages in the worktree, without running their install scripts.",
+  "main.controller.dependenciesFailedTitle": "Package install failed",
   "main.controller.developerQuestionTitle":
     "Question {question} to the Coordinator",
   "main.controller.answerReceivedTitle": "Answer received",
