@@ -126,9 +126,10 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.domain.stopped": "Writing stopped",
   "chat.card.domain.fromDecisions": "From the Pact decisions",
   "chat.card.domain.terms": "Terms for {path}",
+  "chat.card.domain.avoid": "Words not to use: {words}",
   "chat.card.domain.waitingMandate": "The Coordinator does not write files: the proposal waits for the mandate.",
   "chat.card.domain.writtenNote": "Documentation and domain wrote the proposal in the working copy of assignment {id}. You review it as a candidate.",
-  "chat.card.domain.writingNote": "Documentation and domain is writing it in the working copy of assignment {id}, with the domain-modeling skill.",
+  "chat.card.domain.writingNote": "Documentation and domain is writing it in the working copy of assignment {id}.",
   "chat.card.domain.stoppedNote": "Assignment {id} stopped before finishing: you can find it in its card.",
 
   // Publishing standard (Q01)
