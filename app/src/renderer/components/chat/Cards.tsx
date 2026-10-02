@@ -2204,12 +2204,11 @@ export function RouteCard({ routeId }: { routeId: string }) {
             {route.steps.map((step, index) => (
               <li key={step.skill} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
-                <code className="rounded-none bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
-                {step.kind === "unavailable" ? (
-                  <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge>
-                ) : (
-                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? flowLabel(t, step.skill) : stepKindLabel(t, "skill")}</span>
-                )}
+                {/* What the step does leads, in the person's words; the skill's own name stays on the hover (2 October 2026). */}
+                <span className="text-ui-sm text-foreground" title={step.skill} data-skill={step.skill}>
+                  {(step.kind === "flow" && flowLabel(t, step.skill)) || step.skill}
+                </span>
+                {step.kind === "unavailable" ? <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge> : null}
               </li>
             ))}
           </ol>
