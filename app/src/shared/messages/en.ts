@@ -1721,6 +1721,8 @@ export const en: Record<keyof typeof it, string> = {
   "requestedAction.ban.repositorySettings": "a change to the repository settings",
   "requestedAction.line.doingSummary": "{summary}, because you asked me: “{quote}”",
   "requestedAction.line.doing": "I'm doing {action} because you asked me: “{quote}”",
+  "requestedAction.line.done": "I did {action}, as you asked me: “{quote}”",
+  "requestedAction.line.doneSummary": "{summary}: done as you asked (“{quote}”)",
   "requestedAction.line.waiting": "Before doing {action} I wait for your confirmation. You asked me: “{quote}”",
   "requestedAction.line.declined": "I'm not doing {action}: you did not confirm it. You had asked me: “{quote}”",
   "requestedAction.status.waiting": "Waiting for your confirmation",

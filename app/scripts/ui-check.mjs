@@ -6940,7 +6940,7 @@ const remoteBranches = () => execFileSync("git", ["-C", requestRemote, "branch",
 await page.getByLabel("Messaggio al Coordinatore").fill("[richiesta:git tag v0.1.0|metti il tag v0.1.0 sul commit attuale|Creo il tag v0.1.0 sul commit attuale] Sistema tu, metti il tag v0.1.0 sul commit attuale");
 await page.keyboard.press("Enter");
 const tagLine = page.locator('[data-testid="requested-action"][data-status="done"]').last();
-await tagLine.getByText("Faccio un tag o un rilascio perché me l'hai chiesto: «metti il tag v0.1.0 sul commit attuale»").waitFor({ timeout: 20_000 });
+await tagLine.getByText("Ho fatto un tag o un rilascio, come mi hai chiesto: «metti il tag v0.1.0 sul commit attuale»").waitFor({ timeout: 20_000 });
 if (execFileSync("git", ["-C", mandateProject, "tag", "-l"], { encoding: "utf8" }).trim() !== "v0.1.0") throw new Error("Trama did not create the tag the person asked for");
 if (/[–—]/.test(await tagLine.innerText())) throw new Error("The requested action line has a dash");
 await tagLine.getByRole("button").first().click();

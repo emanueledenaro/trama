@@ -12,16 +12,21 @@ export const requestedActionName = (action: Pick<RequestedAction, "ban">, langua
   translate(language, `requestedAction.ban.${action.ban}` as MessageKey);
 
 /**
- * The chat line of an action: "Faccio <azione> perché me l'hai chiesto: «…»" once it starts; while it waits, that it
- * waits for the confirmation; after a no, that Trama did not do it.
+ * The chat line of an action: "Faccio <azione> perché me l'hai chiesto: «…»" while it runs, "Ho fatto <azione>, come mi
+ * hai chiesto: «…»" once done (the line says it, no badge: 2 October 2026); while it waits, that it waits for the
+ * confirmation; after a no, that Trama did not do it.
  */
 export function requestedActionLine(action: Pick<RequestedAction, "ban" | "status" | "request"> & { summary?: string }, language: Language = DEFAULT_LANGUAGE): string {
   const params = { action: requestedActionName(action, language), quote: oneLine(action.request.quote) };
   // Closing or reopening an issue says which, on which issue and how (2 October 2026): "la chiusura o la riapertura di
   // una issue" with a "Fatta" badge read as work done when the person had asked to close the issues as not planned.
-  if (action.ban === "issueState" && action.summary?.trim() && action.status !== "waiting" && action.status !== "declined")
-    return translate(language, "requestedAction.line.doingSummary", { ...params, summary: oneLine(action.summary).replace(/[.\s]+$/, "") });
+  if (action.ban === "issueState" && action.summary?.trim() && action.status !== "waiting" && action.status !== "declined") {
+    const summary = oneLine(action.summary).replace(/[.\s]+$/, "");
+    return translate(language, action.status === "done" ? "requestedAction.line.doneSummary" : "requestedAction.line.doingSummary", { ...params, summary });
+  }
   switch (action.status) {
+    case "done":
+      return translate(language, "requestedAction.line.done", params);
     case "waiting":
       return translate(language, "requestedAction.line.waiting", params);
     case "declined":
@@ -42,6 +47,9 @@ const OUTCOME_KEYS: Record<RequestedAction["status"], MessageKey> = {
 /** The outcome of an action in a word or two, for the badge beside its line. */
 export const requestedActionStatus = (action: Pick<RequestedAction, "status">, language: Language = DEFAULT_LANGUAGE): string =>
   translate(language, OUTCOME_KEYS[action.status]);
+
+/** Whether the line shows its outcome as a badge: a done action says it in its own words. */
+export const showsStatusBadge = (action: Pick<RequestedAction, "status">): boolean => action.status !== "done";
 
 /** The actions the person asked for, as Activity rows: what was done, the command, and the message that asked for it. */
 export function requestedActionEntries(actions: RequestedAction[], language: Language = DEFAULT_LANGUAGE): ActivityEntry[] {

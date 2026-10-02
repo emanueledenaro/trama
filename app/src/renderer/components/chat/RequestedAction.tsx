@@ -2,7 +2,7 @@ import { IconLockOpen } from "@/components/icons";
 import { useState } from "react";
 import type { RequestedAction } from "@shared/domain";
 import type { MessageKey } from "@shared/i18n";
-import { requestedActionLine, requestedActionStatus } from "@shared/requestedActions";
+import { requestedActionLine, requestedActionStatus, showsStatusBadge } from "@shared/requestedActions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -55,7 +55,7 @@ export function RequestedActionLine({ actionId }: { actionId: string | null }) {
           <span className="min-w-0 flex-1 truncate text-foreground" data-testid="requested-action-line">
             {requestedActionLine(action, language)}
           </span>
-          <Badge tone={TONES[action.status]}>{requestedActionStatus(action, language)}</Badge>
+          {showsStatusBadge(action) ? <Badge tone={TONES[action.status]}>{requestedActionStatus(action, language)}</Badge> : null}
           <DisclosureChevron open={open} />
         </button>
         {open ? (
