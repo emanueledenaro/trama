@@ -11,6 +11,8 @@
  * merge that cannot start is undone by removing that commit, which puts every file back as it was. Files whose path is
  * sensitive stay out of the commit and out of the merge's way: git refuses a merge that would touch them.
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { WorktreeSession } from "@shared/domain";
 import type { BranchBase } from "./branchBase";
 import { git, GIT_SAFE_OPTIONS, gitEnvironment, runProcess } from "./process";
@@ -47,7 +49,14 @@ export type AlignOutcome =
       /** Why the base could not be fetched: the last known copy was used. */
       fetchError?: string;
     }
-  | { ok: false; code: "merge_in_progress" | "unreadable_base" | "merge_failed"; reason: string };
+  | {
+      ok: false;
+      code: "merge_in_progress" | "unreadable_base" | "merge_failed" | "ignored_files";
+      /** For the model. */
+      reason: string;
+      /** What the person's language cannot translate: the files, or what git said. Empty when there is none. */
+      detail: string;
+    };
 
 /** What the worktree merges: the base's copy on the remote, or the checkout's own branch when it has none. */
 export function alignmentTarget(base: BranchBase | null): { ref: string; label: string } | null {
@@ -70,21 +79,59 @@ async function changedPaths(root: string): Promise<string[]> {
   return [...new Set([...out.split("\0"), ...staged.split("\0")].filter(Boolean))];
 }
 
+/** Fetches the base branch the work started from when the checkout is on another one now. The error in the remote's words, or null. */
+async function fetchRecordedBase(root: string, branch: string): Promise<string | null> {
+  const fetched = await runProcess(
+    "git",
+    ["-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "fetch", "--no-tags", "--quiet", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
+    { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" }, timeoutMs: 60_000 },
+  ).catch((error: Error) => ({ exitCode: -1, stderr: error.message }));
+  return fetched.exitCode === 0 ? null : fetched.stderr.trim().split("\n").at(-1) || "git fetch failed";
+}
+
+/** The ignored files of the worktree that the base tracks: git would overwrite them without saving them first. */
+async function ignoredFilesInTheWay(root: string, target: string): Promise<string[]> {
+  const incoming = (await git(["diff", "--name-only", "-z", "--no-renames", "--diff-filter=AM", "HEAD", target, "--"], root)).split("\0").filter(Boolean);
+  const inTheWay: string[] = [];
+  for (const path of incoming) {
+    if (!existsSync(join(root, path))) continue;
+    const tracked = await runProcess("git", [...GIT_SAFE_OPTIONS, "ls-files", "--error-unmatch", "--", path], { cwd: root, env: gitEnvironment(true) });
+    if (tracked.exitCode === 0) continue;
+    const ignored = await runProcess("git", [...GIT_SAFE_OPTIONS, "check-ignore", "-q", "--", path], { cwd: root, env: gitEnvironment(true) });
+    if (ignored.exitCode === 0) inTheWay.push(path);
+  }
+  return inTheWay;
+}
+
 /** Starts the merge of the base into the worktree, saving uncommitted work first. Never commits the merge. */
 export async function alignWithBase(session: WorktreeSession, base: BranchBase | null): Promise<AlignOutcome> {
   const root = session.worktreeRoot;
-  const target = alignmentTarget(base);
-  if (!target) return { ok: false, code: "unreadable_base", reason: "Trama cannot read the base branch of the project: it has no commit yet." };
-  const fetchError = base?.fetchError ? { fetchError: base.fetchError } : {};
+  const recorded = session.baseBranch && session.baseBranch !== base?.branch ? session.baseBranch : null;
+  const fetched = recorded ? await fetchRecordedBase(root, recorded) : null;
+  const target = recorded ? { ref: `refs/remotes/origin/${recorded}`, label: `origin/${recorded}` } : alignmentTarget(base);
+  if (!target) return { ok: false, code: "unreadable_base", reason: "Trama cannot read the base branch of the project: it has no commit yet.", detail: "" };
+  const problem = recorded ? fetched : base?.fetchError;
+  const fetchError = problem ? { fetchError: problem } : {};
   const current = await mergeState(root);
   if (current.mergeHead) {
     const files = current.unmergedFiles.length ? ` Files still in conflict: ${current.unmergedFiles.join(", ")}.` : "";
-    return { ok: false, code: "merge_in_progress", reason: `A merge is already in progress in this worktree: resolve it, do not start another.${files}` };
+    return { ok: false, code: "merge_in_progress", reason: `A merge is already in progress in this worktree: resolve it, do not start another.${files}`, detail: current.unmergedFiles.join(", ") };
   }
   const known = await runProcess("git", [...GIT_SAFE_OPTIONS, "rev-parse", "--verify", "--quiet", `${target.ref}^{commit}`], { cwd: root, env: gitEnvironment(true) });
-  if (known.exitCode !== 0) return { ok: false, code: "unreadable_base", reason: `Trama cannot read ${target.label} in this worktree.` };
+  if (known.exitCode !== 0) return { ok: false, code: "unreadable_base", reason: `Trama cannot read ${target.label} in this worktree.`, detail: target.label };
   const inside = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-base", "--is-ancestor", target.ref, "HEAD"], { cwd: root, env: gitEnvironment(true) });
   if (inside.exitCode === 0) return { ok: true, state: "upToDate", target: target.label, conflicts: [], savedWork: false, ...fetchError };
+
+  // An ignored file is left out of the saving commit and git overwrites it when the base starts to track it.
+  const ignoredClash = await ignoredFilesInTheWay(root, target.ref);
+  if (ignoredClash.length) {
+    return {
+      ok: false,
+      code: "ignored_files",
+      reason: `The merge of ${target.label} would overwrite ignored files of your worktree that git does not save: ${ignoredClash.join(", ")}. Nothing was changed. Move each one out of the worktree, or rename it, then call align_with_base again, and put its content back by hand after the merge.`,
+      detail: ignoredClash.join(", "),
+    };
+  }
 
   // The work not committed yet goes into a commit of Trama's, paths that are sensitive excepted.
   const dirty = (await changedPaths(root)).filter((path) => !isSensitive(path));
@@ -92,11 +139,11 @@ export async function alignWithBase(session: WorktreeSession, base: BranchBase |
   let saved = false;
   if (dirty.length) {
     const added = await write(["add", "-A", "--", ...dirty], root);
-    if (added.exitCode !== 0) return { ok: false, code: "merge_failed", reason: `Trama could not save your uncommitted work before the merge: ${added.stderr.trim()}` };
+    if (added.exitCode !== 0) return { ok: false, code: "merge_failed", reason: `Trama could not save your uncommitted work before the merge: ${added.stderr.trim()}`, detail: added.stderr.trim() };
     const committed = await write([...SAVE_IDENTITY, "commit", "--no-verify", "--no-gpg-sign", "-m", `chore: save work in progress before merging ${target.label}`], root);
     if (committed.exitCode !== 0) {
       await write(["reset", "--quiet"], root);
-      return { ok: false, code: "merge_failed", reason: `Trama could not save your uncommitted work before the merge: ${committed.stderr.trim()}` };
+      return { ok: false, code: "merge_failed", reason: `Trama could not save your uncommitted work before the merge: ${committed.stderr.trim()}`, detail: committed.stderr.trim() };
     }
     saved = true;
   }
@@ -107,7 +154,7 @@ export async function alignWithBase(session: WorktreeSession, base: BranchBase |
     // The merge did not start (git refused it): the saved work comes back as uncommitted files, as it was.
     if (saved) await write(["reset", "--quiet", before], root);
     const reason = (merged.stderr.trim() || merged.stdout.trim()).split("\n").slice(0, 8).join("\n");
-    return { ok: false, code: "merge_failed", reason: `The merge of ${target.label} did not start and your work is as it was:\n${reason}` };
+    return { ok: false, code: "merge_failed", reason: `The merge of ${target.label} did not start and your work is as it was:\n${reason}`, detail: reason };
   }
   return { ok: true, state: state.unmergedFiles.length ? "conflicts" : "merged", target: target.label, conflicts: state.unmergedFiles, savedWork: saved, ...fetchError };
 }

@@ -741,6 +741,8 @@ export interface WorktreeSession {
   worktreeRoot: string;
   branch: string;
   baseSHA: string;
+  /** The branch the work started from, kept so realigning never follows a checkout the person switched (issue #547). Absent in work started before. */
+  baseBranch?: string;
 }
 
 export interface AssignmentTurn {
