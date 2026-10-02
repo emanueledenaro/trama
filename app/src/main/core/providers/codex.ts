@@ -2,6 +2,8 @@ import { realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { CodexClient, resolveCodexExecutable, restrictedAppServerArguments, searchPath } from "../codexClient";
 import {
+  agentTempFolder,
+  browserCacheRoots,
   CODEX_READ_PROFILE,
   CODEX_WRITE_PROFILE,
   codexPermissionProfiles,
@@ -77,7 +79,8 @@ export class CodexRuntime implements AgentRuntime {
     const writableRoot = options.sandbox === "workspace-write" ? resolve(options.cwd) : null;
     const roots = readableRoots(options.cwd, options.readableRoots ?? []);
     this.scope = { roots, writableRoot };
-    const shellRoots = [...roots, ...toolchainRoots([...executableFolders(this.options.executable), ...searchPath()])];
+    const shellRoots = [...roots, ...toolchainRoots([...executableFolders(this.options.executable), ...searchPath()]), ...browserCacheRoots()];
+    const tempRoot = writableRoot ? agentTempFolder(writableRoot) : null;
     return this.client.openThread({
       model: options.model,
       cwd: options.cwd,
@@ -97,9 +100,10 @@ export class CodexRuntime implements AgentRuntime {
           memories: false,
           ...(options.hostToolsOnly ? { shell_tool: false, unified_exec: false, apply_patch_freeform: false } : {}),
         },
-        ...codexPermissionProfiles(shellRoots, writableRoot),
+        ...codexPermissionProfiles(shellRoots, writableRoot, tempRoot),
         // The profiles hide the home folder, ~/.gitconfig included: git in the shell reads no global file (issue #391).
-        "shell_environment_policy.set": sandboxGitEnvironment(),
+        // A developer's tools write their scratch files in its own temporary folder.
+        "shell_environment_policy.set": { ...sandboxGitEnvironment(), ...(tempRoot ? { TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot } : {}) },
         ...(toolServer
           ? {
               [`mcp_servers.${toolServer.name}`]: {

@@ -1036,6 +1036,7 @@
     "src/main/core/readScope.test.ts :: git in a sandboxed shell (issue #391) > reads no global file, so a hidden ~/.gitconfig does not break it, and signs commits as the person",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > builds Codex profiles that read only the roots and write only the worktree, without network",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > expands the home folder only at the start of a path",
+    "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > gives a developer its own temporary folder outside the worktree and lets it read Playwright's browsers",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > hides every top-level folder that is not the platform's from a sandbox that works by denial",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > lets a shell reach the toolchains on PATH but never the home folder or Codex's home",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > names the private paths a shell command reaches outside the roots",

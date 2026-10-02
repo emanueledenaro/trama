@@ -4,8 +4,9 @@
  * projects and the rest of the home folder stay out, for every provider.
  */
 import { spawnSync } from "node:child_process";
-import { readdirSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { containedWriteTarget } from "./providers/providerSupport";
 import { isInside } from "./providers/types";
@@ -148,7 +149,36 @@ export const CODEX_WRITE_PROFILE = "trama_write";
  */
 export const SYSTEM_READ_ROOTS = process.platform === "darwin" ? ["/System/Library/OpenSSL", "/private/etc/ssl", "/etc/ssl"] : ["/etc/ssl", "/usr/lib/ssl"];
 
-export function codexPermissionProfiles(roots: readonly string[], writableRoot: string | null): Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> {
+/**
+ * Where Playwright keeps the browsers it downloaded, when the folder is there. A project's browser tests launch them
+ * from there; without reading it Playwright stops before the browser starts (2 October 2026). Binaries, no data.
+ */
+export function browserCacheRoots(home = homedir(), env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string[] {
+  const folder = env.PLAYWRIGHT_BROWSERS_PATH
+    ? env.PLAYWRIGHT_BROWSERS_PATH
+    : platform === "darwin"
+      ? join(home, "Library", "Caches", "ms-playwright")
+      : platform === "win32"
+        ? join(env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "ms-playwright")
+        : join(env.XDG_CACHE_HOME ?? join(home, ".cache"), "ms-playwright");
+  return existsSync(folder) ? [folder] : [];
+}
+
+/**
+ * The developer's own temporary folder for a worktree, outside it so nothing lands in the work's diff. Tools write
+ * their scratch files under TMPDIR, which the sandbox otherwise refuses (Playwright, 2 October 2026).
+ */
+export function agentTempFolder(writableRoot: string, base = tmpdir()): string {
+  const folder = join(realpathSync(base), "trama-agents", createHash("sha256").update(resolve(writableRoot)).digest("hex").slice(0, 16));
+  mkdirSync(folder, { recursive: true });
+  return folder;
+}
+
+export function codexPermissionProfiles(
+  roots: readonly string[],
+  writableRoot: string | null,
+  tempRoot: string | null = null,
+): Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> {
   const read: Record<string, string> = { ":minimal": "read" };
   for (const root of SYSTEM_READ_ROOTS) read[root] = "read";
   for (const root of roots) read[root] = "read";
@@ -158,6 +188,7 @@ export function codexPermissionProfiles(roots: readonly string[], writableRoot: 
   if (writableRoot) {
     const write = { ...read };
     for (const root of readableRoots(writableRoot)) write[root] = "write";
+    if (tempRoot) write[tempRoot] = "write";
     profiles[`permissions.${CODEX_WRITE_PROFILE}`] = { filesystem: write, network: { enabled: false } };
   }
   return profiles;

@@ -1,9 +1,10 @@
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { codexPermissionProfiles,
+import { agentTempFolder, browserCacheRoots, codexPermissionProfiles,
   SYSTEM_READ_ROOTS, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, sandboxGitEnvironment, toolchainRoots } from "./readScope";
 
 const home = "/home/rita";
@@ -107,6 +108,21 @@ describe("read scope of agent sessions (issue #206)", () => {
     });
     if (process.platform === "darwin") expect(SYSTEM_READ_ROOTS).toContain("/System/Library/OpenSSL");
     expect(Object.keys(codexPermissionProfiles(["/home/rita/negozio"], null))).toEqual(["permissions.trama_read"]);
+  });
+
+  it("gives a developer its own temporary folder outside the worktree and lets it read Playwright's browsers", async () => {
+    const base = await mkdtemp(join(tmpdir(), "trama-tmp-"));
+    const folder = agentTempFolder("/home/rita/worktrees/a1", base);
+    expect(folder.startsWith(realpathSync(base))).toBe(true);
+    expect(agentTempFolder("/home/rita/worktrees/a1", base)).toBe(folder);
+    expect(agentTempFolder("/home/rita/worktrees/a2", base)).not.toBe(folder);
+    const profiles = codexPermissionProfiles(["/home/rita/worktrees/a1"], "/home/rita/worktrees/a1", folder);
+    expect(profiles["permissions.trama_write"]!.filesystem[folder]).toBe("write");
+    expect(profiles["permissions.trama_read"]!.filesystem[folder]).toBeUndefined();
+    const home = await mkdtemp(join(tmpdir(), "trama-home-"));
+    expect(browserCacheRoots(home, {}, "darwin")).toEqual([]);
+    await mkdir(join(home, "Library", "Caches", "ms-playwright"), { recursive: true });
+    expect(browserCacheRoots(home, {}, "darwin")).toEqual([join(home, "Library", "Caches", "ms-playwright")]);
   });
 });
 
