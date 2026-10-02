@@ -958,7 +958,14 @@ export class TramaController {
     );
     project.backlogs = squadBacklogs(project.document, project.snapshot.modules);
     project.focus = focusView(project.document);
-    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project), new Date(), this.state.settings.continuousWork !== false);
+    project.statusLine = statusLine(
+      project.document,
+      project.runningRequestId,
+      this.coordinatorWait(project),
+      new Date(),
+      this.state.settings.continuousWork !== false,
+      project.phase.kind === "studying",
+    );
     project.waiting = waitingForYou(this.t, project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);

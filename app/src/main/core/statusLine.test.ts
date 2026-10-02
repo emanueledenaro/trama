@@ -131,6 +131,12 @@ function work(document: ProjectDocument, specialist: string, requestId: string, 
 }
 
 describe("statusLine: what the Coordinator does now and next (issue #241)", () => {
+  it("says the study runs, which has no request of its own (2 October 2026)", () => {
+    const document = emptyDocument("p");
+    expect(statusLine(document, null, null, new Date(), true, true)).toMatchObject({ state: "working", text: expect.stringContaining("Sto studiando il progetto") });
+    expect(statusLine(document, null).text).not.toContain("Sto studiando");
+  });
+
   it("says nothing is going on, without invented text, in a project with no work", () => {
     const document = emptyDocument("p");
     expect(statusLine(document, null)).toEqual({ state: "idle", text: NOTHING_GOING_ON, reason: null, action: null, runningMove: null, paused: false, providerWait: null });
