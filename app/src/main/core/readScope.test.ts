@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { agentTempFolder, browserCacheRoots, codexPermissionProfiles,
+import { agentTempFolder, browserCacheRoots, codexPermissionProfiles, sandboxSearchPath,
   SYSTEM_READ_ROOTS, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, sandboxGitEnvironment, toolchainRoots } from "./readScope";
 
 const home = "/home/rita";
@@ -108,6 +108,14 @@ describe("read scope of agent sessions (issue #206)", () => {
     });
     if (process.platform === "darwin") expect(SYSTEM_READ_ROOTS).toContain("/System/Library/OpenSSL");
     expect(Object.keys(codexPermissionProfiles(["/home/rita/negozio"], null))).toEqual(["permissions.trama_read"]);
+  });
+
+  it("keeps on a sandboxed shell's search path only the folders it may read, so a lookup by name reaches /bin", () => {
+    const path = sandboxSearchPath(["/home/rita/.codeium/windsurf/bin", "/home/rita/.nvm/versions/node/v22/bin", "/opt/homebrew/bin", "relative/bin", "/usr/bin"], [
+      "/home/rita/.nvm/versions/node/v22",
+      "/opt/homebrew",
+    ]);
+    expect(path).toBe("/home/rita/.nvm/versions/node/v22/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin");
   });
 
   it("gives a developer its own temporary folder outside the worktree and lets it read Playwright's browsers", async () => {

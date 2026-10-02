@@ -1039,6 +1039,7 @@
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > expands the home folder only at the start of a path",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > gives a developer its own temporary folder outside the worktree and lets it read Playwright's browsers",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > hides every top-level folder that is not the platform's from a sandbox that works by denial",
+    "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > keeps on a sandboxed shell's search path only the folders it may read, so a lookup by name reaches /bin",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > lets a shell reach the toolchains on PATH but never the home folder or Codex's home",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > names the private paths a shell command reaches outside the roots",
     "src/main/core/readScope.test.ts :: read scope of agent sessions (issue #206) > reads inside the roots and refuses the rest, symlinks and .. included",
