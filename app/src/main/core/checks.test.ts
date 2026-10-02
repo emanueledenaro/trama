@@ -3,7 +3,7 @@ import { lstat, mkdir, mkdtemp, readlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { availableChecks, detectLocalSandbox, lendNodeDependencies, localSandboxedCommand, nodePackage, runReadOnlyCheck, sandboxedCommand } from "./checks";
+import { availableChecks, detectLocalSandbox, lendNodeDependencies, nodeCheckCopy, localSandboxedCommand, nodePackage, runReadOnlyCheck, sandboxedCommand } from "./checks";
 import { git } from "./process";
 
 const fake = join(import.meta.dirname, "../../../test-fixtures/fake-codex.mjs");
@@ -35,6 +35,23 @@ describe("read-only checks", () => {
     await writeFile(join(repo, "app", "package.json"), JSON.stringify({ scripts: { test: "vitest run", typecheck: "tsc --noEmit" } }));
     expect(nodePackage(repo)).toEqual({ dir: "app", scripts: { test: "vitest run", typecheck: "tsc --noEmit" } });
     expect(availableChecks(repo)).toEqual(["git_status", "git_diff_check", "node_test", "node_typecheck"]);
+  });
+
+  it("copies the checkout for Node checks with its packages linked and the tools' caches of the copy's own", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trama-copy-"));
+    await git(["init", "-b", "main"], root, false);
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+    await mkdir(join(root, "node_modules", "astro"), { recursive: true });
+    // A developer's own run left a real Vite cache in the checkout.
+    await mkdir(join(root, "node_modules", ".vite", "deps"), { recursive: true });
+    const scratch = await mkdtemp(join(tmpdir(), "trama-copy-scratch-"));
+    const copy = await nodeCheckCopy(root, scratch);
+    expect(copy).toBe(join(scratch, "checkout"));
+    expect(existsSync(join(copy, "package.json"))).toBe(true);
+    expect(existsSync(join(copy, ".git"))).toBe(false);
+    expect(await readlink(join(copy, "node_modules", "astro"))).toBe(join(root, "node_modules", "astro"));
+    expect((await lstat(join(copy, "node_modules", ".vite"))).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(copy, "node_modules", ".vite", "deps"))).toBe(false);
   });
 
   it("lends the checkout's dependencies to a worktree only when the lockfiles match, keeping git status clean", async () => {

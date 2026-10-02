@@ -240,14 +240,22 @@ const TOOL_CACHES = [".vite", ".vite-temp", ".astro"];
 /**
  * Node checks build the project, and build tools write generated files beside the sources (Astro's .astro, dist/).
  * The checkout stays read-only, so they run on a fresh copy of its files in the check's scratch folder, with the
- * checkout's node_modules linked (2 October 2026). Returns the copy's root.
+ * checkout's packages linked one by one. The tools' caches (Vite, Astro) are folders of the copy's own, even when the
+ * checkout holds real ones from the developer's runs (2 October 2026). Returns the copy's root.
  */
 export async function nodeCheckCopy(root: string, scratch: string): Promise<string> {
   const copy = join(scratch, "checkout");
   await rm(copy, { recursive: true, force: true });
   await cp(root, copy, { recursive: true, verbatimSymlinks: true, filter: (source) => !["node_modules", ".git"].includes(basename(source)) });
   const dir = nodePackage(root)?.dir ?? "";
-  if (existsSync(join(root, dir, "node_modules"))) await symlink(join(root, dir, "node_modules"), join(copy, dir, "node_modules"));
+  const modules = join(root, dir, "node_modules");
+  if (!existsSync(modules)) return copy;
+  const target = join(copy, dir, "node_modules");
+  await mkdir(target);
+  for (const entry of await readdir(modules)) {
+    if (TOOL_CACHES.includes(entry)) await mkdir(join(target, entry));
+    else await symlink(join(modules, entry), join(target, entry));
+  }
   return copy;
 }
 
