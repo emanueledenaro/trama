@@ -172,6 +172,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.messageSentSkills": "skills: {skills}",
   "main.controller.noReplyTitle": "The Coordinator did not write a reply",
   "main.controller.commandActivityFallback": "Command",
+  "main.controller.searchFoundNothing": "No results",
   "main.controller.commandExitCode": "Exit {code}",
   "main.controller.fileChangeTitle": "Changed {files} files",
   "main.controller.fileChangeTitle.one": "Changed {files} file",
