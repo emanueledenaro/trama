@@ -304,6 +304,7 @@ import {
   type TurnEnd,
   recordTurnContext,
 } from "./core/team";
+import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignWithBase } from "./core/baseAlignment";
 import { INSTALL_DEPENDENCIES_TOOL, installNodeDependencies } from "./core/dependencyInstall";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import {
@@ -5648,9 +5649,10 @@ export class TramaController {
   /** The developer's tool server (W06): ask_coordinator records the question on its running work. */
   private developerToolServer(project: ActiveProjectState, assignmentId: string): CoordinatorToolServer {
     return new CoordinatorToolServer(
-      [ASK_COORDINATOR_TOOL, INSTALL_DEPENDENCIES_TOOL],
+      [ASK_COORDINATOR_TOOL, INSTALL_DEPENDENCIES_TOOL, ALIGN_WITH_BASE_TOOL],
       async (name, args) => {
         if (name === INSTALL_DEPENDENCIES_TOOL.name) return this.installDependencies(project, assignmentId);
+        if (name === ALIGN_WITH_BASE_TOOL.name) return this.alignWorktreeWithBase(project, assignmentId);
         if (name !== ASK_COORDINATOR_TOOL.name) return toolFailure("unknown_tool", `Unknown tool ${name}.`);
         try {
           const question = askCoordinator(project.document, assignmentId, {
@@ -5694,6 +5696,38 @@ export class TramaController {
     return outcome.ok
       ? toolSuccess({ status: "installed", packages: outcome.packages, lockfileChanged: outcome.lockfileChanged })
       : toolFailure("install_failed", outcome.reason);
+  }
+
+  /**
+   * Brings the base branch into the developer's worktree outside the sandbox (issue #547): fetch, then a merge left
+   * without a commit, with conflicts in the files. Uncommitted work is saved first. Told in Activity.
+   */
+  private async alignWorktreeWithBase(project: ActiveProjectState, assignmentId: string) {
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) return toolFailure("invalid_arguments", "This assignment has no worktree yet.");
+    const turns = assignment.turns.length;
+    await validateWorktree(assignment.workspace, this.worktreesRoot);
+    const base = await this.readBranchBase(project, true);
+    const outcome = await alignWithBase(assignment.workspace, base);
+    const detail = !outcome.ok
+      ? outcome.reason
+      : [
+          t(`main.controller.baseAligned.${outcome.state}`, { files: outcome.conflicts.join(", ") }),
+          ...(outcome.savedWork ? [t("main.controller.baseAligned.savedWork")] : []),
+          ...(outcome.fetchError ? [t("main.controller.baseAligned.fetchError", { error: outcome.fetchError })] : []),
+        ].join(" ");
+    this.specialistActivity(
+      project,
+      assignmentId,
+      `${turns}`,
+      outcome.ok ? t("main.controller.baseAlignedTitle", { target: outcome.target }) : t("main.controller.baseAlignFailedTitle"),
+      detail,
+      outcome.ok ? "info" : "error",
+    );
+    this.changedIn(project);
+    return outcome.ok
+      ? toolSuccess({ status: outcome.state, target: outcome.target, conflicts: outcome.conflicts, savedWork: outcome.savedWork, note: alignmentNote(outcome) })
+      : toolFailure(outcome.code, outcome.reason);
   }
 
   /**

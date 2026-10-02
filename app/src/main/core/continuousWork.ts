@@ -371,7 +371,7 @@ const BLOCK_GUIDANCE: Record<TechnicalBlock, string> = {
   checkFailed:
     "Leggi con read_team il resoconto dell'incarico e le verifiche rosse del candidato, poi fai correggere il lavoro nella stessa copia di lavoro con resume_assignment: allo stesso sviluppatore, o con specialist a un altro libero, con le verifiche che devono passare. Non aprire un incarico nuovo per lo stesso lavoro: ripartirebbe da una copia vuota.",
   worktreeConflict:
-    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi fai riallineare il lavoro più recente sul più vecchio, o sul branch principale, nella sua stessa copia di lavoro con resume_assignment. Un merge già risolto e non registrato lo chiudi tu con commit_merge.",
+    "Leggi con read_team e read_presence quali incarichi toccano gli stessi file, poi fai riallineare il lavoro più recente sul più vecchio, o sul branch principale, nella sua stessa copia di lavoro: riprendi lo sviluppatore con resume_assignment e digli di chiamare align_with_base, che porta la base aggiornata nella copia senza fare il commit e lascia i conflitti nei file. Lo sviluppatore li risolve. Il codice passa solo da git, mai da domande o risposte: se manca uno strumento, dillo alla persona e fermati su quel lavoro. Un merge già risolto e non registrato lo chiudi tu con commit_merge.",
   stalledAssignment:
     "Leggi con read_team perché l'incarico si è fermato, poi riprendilo nella stessa copia di lavoro con resume_assignment, allo stesso sviluppatore o con specialist a un altro libero, con le istruzioni per superare il motivo. Solo un incarico senza copia di lavoro si assegna di nuovo con assign_task.",
   reviewLoop:
