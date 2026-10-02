@@ -1141,6 +1141,7 @@
     "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > computes the frontier: a verified slice unblocks the slices that depend on it",
     "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > follows the project's parallel limit when the person changes it (W08)",
     "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > keeps a paused slice out of the frontier until the pause is cleared (W06)",
+    "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > keeps the dependents blocked between the green light and the pull request of a slice published as an issue (2 October 2026)",
     "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > keeps the dependents blocked while the verified slice's pull request is not merged (logic review of 1 October 2026)",
     "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > refuses a blocked slice, a slice at work and a done one",
     "src/main/core/slices.test.ts :: assigning only unblocked slices (M05) > runs at most ${MAX_PARALLEL_DEVELOPERS} developers in parallel",

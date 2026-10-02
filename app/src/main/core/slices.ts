@@ -181,14 +181,17 @@ const sliceAssignments = (document: ProjectDocument, planId: string, sliceId: st
  * Whether the work of an assignment is done for its slice: read-only work that completed, or work in a worktree whose
  * code is on the main branch. A published candidate counts once its pull request merged: a dependent slice starts from
  * the main branch, and before the merge it would start without this code (logic review of 1 October 2026). A project
- * without GitHub, whose merges Trama does not see, counts the candidate Trama verified (spec #137).
+ * without GitHub, whose merges Trama does not see, counts the candidate Trama verified (spec #137). A slice published
+ * as an issue is on GitHub: until its pull request exists and merged it is not done, so a dependent slice does not
+ * start, in the minute between the green light and the publication, from a main branch without its code (2 October 2026).
  */
-export function delivered(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
+export function delivered(document: ProjectDocument, assignment: SpecialistAssignment, onGitHub = false): boolean {
   if (assignment.status !== "completed") return false;
   if (!needsWorktree(assignment)) return true;
   const candidate = latestCandidate(document, assignment.id);
   if (!candidate) return false;
   if (candidate.pullRequest) return Boolean(candidate.pullRequest.mergedAt);
+  if (onGitHub) return false;
   return !inspectCandidate(document, candidate, null).length && candidate.technicalReview?.verdict === "approved";
 }
 
@@ -207,7 +210,7 @@ export function sliceViews(document: ProjectDocument, plan: WorkPlan): SliceView
     const latest = assignments.at(-1) ?? null;
     const waitingFor = ticket.blockedBy.filter((id) => !done.has(id));
     let state: SliceView["state"];
-    if (assignments.some((a) => delivered(document, a))) state = "done";
+    if (assignments.some((a) => delivered(document, a, Boolean(ticket.issue)))) state = "done";
     else if (latest && isActive(latest)) state = "working";
     // A developer's question pauses the slice until its answer (W06); the slices that wait for it stay blocked.
     else if (latest?.status === "paused") state = "paused";

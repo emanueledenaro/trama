@@ -294,6 +294,16 @@ describe("assigning only unblocked slices (M05)", () => {
     expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["done", "ready", "ready"]);
   });
 
+  it("keeps the dependents blocked between the green light and the pull request of a slice published as an issue (2 October 2026)", () => {
+    const { document, plan } = project();
+    plan.slicing!.tickets[0]!.issue = { number: 2, url: "https://github.com/o/r/issues/2" } as never;
+    const first = work(document, "Ada", "S1", 3);
+    endTurn(document, first.id, null, { kind: "completed", text: "Fatto" });
+    verified(document, first.id);
+    // Verified, and its pull request not opened yet: the project is on GitHub, so the slice is not done.
+    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["verifying", "blocked", "blocked"]);
+  });
+
   it("refuses a blocked slice, a slice at work and a done one", () => {
     const { document, plan } = project();
     expect(sliceAssignmentProblem(document, plan, "S2")).toBe("Slice S2 is blocked by S1: assign it when they are done.");
