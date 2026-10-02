@@ -1528,6 +1528,7 @@
     "src/shared/duties.test.ts :: automatic work in the person's words (W11) > says what started the work",
     "src/shared/duties.test.ts :: automatic work in the person's words (W11) > sums up the outcome, without dashes",
     "src/shared/findings.test.ts :: latestCandidateAudit > finds the candidate's latest examination and skips modules, the project and other candidates (F03)",
+    "src/shared/fixedBans.test.ts :: a search that found nothing (2 October 2026) > is no failure for a single grep, rg or git grep that ends with 1, also inside a shell",
     "src/shared/fixedBans.test.ts :: actions the person asks for (issue #422) > asks a confirmation only for what deletes something or cannot be undone",
     "src/shared/fixedBans.test.ts :: actions the person asks for (issue #422) > runs one plain git or gh command and nothing that could run another program",
     "src/shared/fixedBans.test.ts :: fixed bans on commands (issue #244) > counts the project's own default branch as main",

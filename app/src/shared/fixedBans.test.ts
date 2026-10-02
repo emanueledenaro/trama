@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandBan, fixedBans, isSecretPath, needsConfirmation, pathBan, pushBan, runnableCommand } from "./fixedBans";
+import { commandBan, fixedBans, isSecretPath, needsConfirmation, pathBan, pushBan, runnableCommand, searchFoundNothing } from "./fixedBans";
 import { LANGUAGES, translator } from "./i18n";
 
 describe("fixed bans on commands (issue #244)", () => {
@@ -177,5 +177,17 @@ describe("actions the person asks for (issue #422)", () => {
     for (const line of ["git fetch; git push -f", "sudo git push -f", "GIT_SSH_COMMAND=x git push -f", "git -c core.sshCommand=x push", "/usr/bin/git push -f", "git", "echo $(git push -f)", "sh -c 'git push -f'"]) {
       expect(runnableCommand(line), line).toBeNull();
     }
+  });
+});
+
+describe("a search that found nothing (2 October 2026)", () => {
+  it("is no failure for a single grep, rg or git grep that ends with 1, also inside a shell", () => {
+    expect(searchFoundNothing("rg -n 'Notizia confermata' src", 1)).toBe(true);
+    expect(searchFoundNothing(`/bin/zsh -lc "rg --files -g 'AGENTS.md'"`, 1)).toBe(true);
+    expect(searchFoundNothing("git grep -n TODO", 1)).toBe(true);
+    // Another code, another program or a chain keep their error: a failed cat before rg is not hidden.
+    expect(searchFoundNothing("rg -n x", 2)).toBe(false);
+    expect(searchFoundNothing("cat AGENTS.md", 1)).toBe(false);
+    expect(searchFoundNothing("cat AGENTS.md && rg x", 1)).toBe(false);
   });
 });

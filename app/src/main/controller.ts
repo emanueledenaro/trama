@@ -441,7 +441,7 @@ import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git, runProcess } from "./core/process";
 import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
 import { redactSensitiveData, repositoryLocator } from "./core/redaction";
-import { runnableCommand } from "@shared/fixedBans";
+import { runnableCommand, searchFoundNothing } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
@@ -3945,17 +3945,19 @@ export class TramaController {
       case "compacted":
         this.coordinatorCompacted(project);
         return;
-      case "commandCompleted":
+      case "commandCompleted": {
+        const nothing = !event.succeeded && searchFoundNothing(event.command, event.exitCode ?? null);
         activity(
           event.command || t("main.controller.commandActivityFallback"),
-          event.succeeded ? null : t("main.controller.commandExitCode", { code: String(event.exitCode ?? "?") }),
-          event.succeeded ? "tool" : "error",
+          event.succeeded ? null : nothing ? t("main.controller.searchFoundNothing") : t("main.controller.commandExitCode", { code: String(event.exitCode ?? "?") }),
+          event.succeeded || nothing ? "tool" : "error",
         );
         if (isGitPushCommand(event.command)) {
           const push = agentPushActivity(event.command, event.succeeded);
           activity(push.title, push.detail, push.tone);
         }
         return;
+      }
       case "fileChangeCompleted":
         activity(
           t("main.controller.fileChangeTitle", { count: event.paths.length, files: String(event.paths.length) }),
@@ -5457,20 +5459,27 @@ export class TramaController {
             case "reasoning":
               this.specialistActivity(project, assignmentId, key, t("main.controller.specialistReasoningTitle"), event.text, "info");
               return;
-            case "commandCompleted":
+            case "commandCompleted": {
+              // A search that found nothing is no error in Activity: its row says so instead.
+              const nothing = !event.succeeded && searchFoundNothing(event.command, event.exitCode ?? null);
               this.specialistActivity(
-        project,
+                project,
                 assignmentId,
                 key,
                 event.command || t("main.controller.specialistCommandTitle"),
-                event.succeeded ? null : `${t("main.controller.specialistCommandExit", { code: `${event.exitCode ?? "?"}` })}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
-                event.succeeded ? "tool" : "error",
+                event.succeeded
+                  ? null
+                  : nothing
+                    ? t("main.controller.searchFoundNothing")
+                    : `${t("main.controller.specialistCommandExit", { code: `${event.exitCode ?? "?"}` })}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
+                event.succeeded || nothing ? "tool" : "error",
               );
               if (isGitPushCommand(event.command)) {
                 const push = agentPushActivity(event.command, event.succeeded);
                 this.specialistActivity(project, assignmentId, key, push.title, push.detail, push.tone);
               }
               return;
+            }
             case "fileChangeCompleted":
               this.specialistActivity(
         project,

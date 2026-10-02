@@ -174,6 +174,7 @@ export const mainIt = {
   "main.controller.messageSentSkills": "skill: {skills}",
   "main.controller.noReplyTitle": "Il Coordinatore non ha scritto una risposta",
   "main.controller.commandActivityFallback": "Comando",
+  "main.controller.searchFoundNothing": "Nessun risultato",
   "main.controller.commandExitCode": "Uscita {code}",
   "main.controller.fileChangeTitle": "Modifica di {files} file",
   "main.controller.fileChangeTitle.one": "Modifica di {files} file",
