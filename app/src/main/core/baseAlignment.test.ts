@@ -132,6 +132,35 @@ describe("bringing the base into a worktree (issue #547)", () => {
     expect((await git(["status", "--porcelain"], root)).split("\n")).toContain("?? mio.txt");
   });
 
+  it("refuses before touching anything when the base tracks a file the worktree has and ignores", async () => {
+    const { workspace, pushMain, base } = await scene();
+    const root = workspace.worktreeRoot;
+    await writeFile(join(root, ".gitignore"), ".env\n");
+    await git(["add", ".gitignore"], root, false);
+    await commit(root, "chore: ignore env");
+    await writeFile(join(root, ".env"), "TOKEN=locale\n");
+    await writeFile(join(root, "mio.txt"), "mio\n");
+    await pushMain({ ".env": "TOKEN=main\n" }, "feat: other slice");
+    const head = (await git(["rev-parse", "HEAD"], root)).trim();
+    const outcome = await alignWithBase(workspace, await base());
+    expect(outcome).toMatchObject({ ok: false, code: "ignored_files", detail: ".env" });
+    expect(await readFile(join(root, ".env"), "utf8")).toBe("TOKEN=locale\n");
+    expect((await git(["rev-parse", "HEAD"], root)).trim()).toBe(head);
+    expect((await git(["status", "--porcelain"], root)).split("\n")).toContain("?? mio.txt");
+    expect((await mergeState(root)).mergeHead).toBeNull();
+  });
+
+  it("merges the base the work started from, not the branch the person switched the checkout to", async () => {
+    const { repo, workspace, pushMain, base } = await scene();
+    await git(["checkout", "-q", "-b", "altro"], repo, false);
+    await pushMain({ "c.txt": "da main\n" }, "feat: other slice");
+    const reading = await base();
+    expect(reading?.branch).toBe("altro");
+    const outcome = await alignWithBase({ ...workspace, baseBranch: "main" }, reading);
+    expect(outcome).toMatchObject({ ok: true, state: "merged", target: "origin/main" });
+    expect(await readFile(join(workspace.worktreeRoot, "c.txt"), "utf8")).toBe("da main\n");
+  });
+
   it("uses the last known copy and says so when the fetch fails, and picks the target from the base reading", async () => {
     const { workspace, base } = await scene();
     const reading = await base();

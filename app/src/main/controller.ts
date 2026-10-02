@@ -5366,7 +5366,7 @@ export class TramaController {
             conventions,
             baseSHA: base?.baseSHA ?? null,
           });
-          recordWorkspace(document, assignmentId, workspace);
+          recordWorkspace(document, assignmentId, base?.branch ? { ...workspace, baseBranch: base.branch } : workspace);
           this.specialistActivity(project, assignmentId, preKey, t("main.controller.worktreeReadyTitle"), workspace.branch, "info");
           // The specialist can run the project's tests only with its dependencies; lent from the checkout.
           const missing = await lendNodeDependencies(workspace.worktreeRoot, project.rootPath).catch((error: Error) => error.message);
@@ -5710,7 +5710,7 @@ export class TramaController {
     const base = await this.readBranchBase(project, true);
     const outcome = await alignWithBase(assignment.workspace, base);
     const detail = !outcome.ok
-      ? outcome.reason
+      ? t(`main.controller.baseAlignFailed.${outcome.code}`, { detail: outcome.detail })
       : [
           t(`main.controller.baseAligned.${outcome.state}`, { files: outcome.conflicts.join(", ") }),
           ...(outcome.savedWork ? [t("main.controller.baseAligned.savedWork")] : []),
