@@ -249,6 +249,13 @@ export async function readLocalActivity(root: string): Promise<LocalActivity> {
   return { current, branches, files: changes.files, lastChange: changes.lastChange };
 }
 
+/**
+ * Whether the colleagues' records can be shown. On GitHub, until the person's login is known their own published record
+ * cannot be told from a colleague's: right after a restart it came back as "Ada, agente di <their login>", with the
+ * person's own files (2 October 2026).
+ */
+export const colleaguesKnown = (sourceKind: string | null, login: string | null): boolean => sourceKind !== "github" || Boolean(login);
+
 /** One agent at work in its own worktree, as the controller sees it. */
 export interface AgentWork {
   id: string;
@@ -487,7 +494,7 @@ export class PresenceService {
       canShare: this.canShare,
       message: this.message ?? (source ? null : t("main.presence.noRemote")),
       self: { record, self: true, ...presenceFreshness(record, now) },
-      others: presenceEntries(this.others, identity.user, now),
+      others: colleaguesKnown(source?.kind ?? null, login) ? presenceEntries(this.others, identity.user, now) : [],
       refreshedAt: now.toISOString(),
       publishedAt: this.publishedAt,
       hasCollaborators: this.collaborators,

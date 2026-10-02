@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyConsent, type PresenceConsent, type PresenceView } from "@shared/presence";
 import { git } from "./process";
-import { hasOtherAuthors, type PresenceContext, PresenceService, readLocalActivity, statusPaths } from "./presence";
+import { hasOtherAuthors, type PresenceContext, PresenceService, readLocalActivity, statusPaths, colleaguesKnown } from "./presence";
 
 const identity = (name: string) => ["-c", `user.name=${name}`, "-c", `user.email=${name.toLowerCase()}@example.com`];
 
@@ -179,5 +179,14 @@ describe("local activity", () => {
     expect(activity.branches.map((b) => b.name).sort()).toEqual(["feature/x", "main"]);
     expect(activity.files).toEqual(["x.ts", "y.ts"]);
     expect(await hasOtherAuthors(bea)).toBe(true);
+  });
+});
+
+describe("the person's own record on GitHub (2 October 2026)", () => {
+  it("shows no colleague until the person's login is known", () => {
+    expect(colleaguesKnown("github", null)).toBe(false);
+    expect(colleaguesKnown("github", "emanueledenaro")).toBe(true);
+    expect(colleaguesKnown("local", null)).toBe(true);
+    expect(colleaguesKnown(null, null)).toBe(true);
   });
 });

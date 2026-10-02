@@ -807,6 +807,7 @@
     "src/main/core/presence.test.ts :: presence via git on a local bare remote > publishes paths only with consent, and a read-only person sees without sharing",
     "src/main/core/presence.test.ts :: presence via git on a local bare remote > stays local without a remote, with the person's agents",
     "src/main/core/presence.test.ts :: presence via git on a local bare remote > updates at once when the branch changes",
+    "src/main/core/presence.test.ts :: the person's own record on GitHub (2 October 2026) > shows no colleague until the person's login is known",
     "src/main/core/problems.test.ts :: found problems (A08) > assigns the issue to the fix of the reproduced bug, also when it was in the backlog",
     "src/main/core/problems.test.ts :: found problems (A08) > does not take what Trama recorded before it started looking for problems",
     "src/main/core/problems.test.ts :: found problems (A08) > finds the open issue about the same problem by its marker or its title, never a closed one",
