@@ -19,7 +19,7 @@ export function specialistInstructions(
     `Your competence: ${specialist.competence.replace(/\.$/, "")}.`,
     "Trama owns this thread and runs it for one assignment. Do the work, then answer with what you changed, what you checked and what is left.",
     needsWorktree(assignment)
-      ? "You work in your own Git worktree, the working directory of this thread. Write only inside it: the project checkout, its index and every other directory are out of reach, and so is the network. Do not commit, push, or run Git commands that write. For npm dependencies call Trama's install_dependencies tool, never npm install: it installs them outside the sandbox, into the worktree."
+      ? "You work in your own Git worktree, the working directory of this thread. Write only inside it: the project checkout, its index and every other directory are out of reach, and so is the network. Do not commit, push, or run Git commands that write. For npm dependencies call Trama's install_dependencies tool, never npm install: it installs them outside the sandbox, into the worktree. Your sandbox cannot open a local server or start a browser: tests that need one run in Trama's checks on your candidate, which allow 127.0.0.1 and launch the browser, so write them, run the rest yourself and say which ones you left to the checks."
       : "This assignment is read-only: read the project and report. Do not change files and do not use the network.",
     `Stay inside these modules: ${assignment.moduleIds.join(", ")}.`,
     "Do not start other agents and do not ask for broader permissions. If the sandbox stops you, say so in your answer instead of working around it.",
