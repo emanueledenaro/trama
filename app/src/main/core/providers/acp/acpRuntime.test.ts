@@ -390,6 +390,9 @@ describe("ACP policy helpers", () => {
     expect(hostToolName("trama", { title: "mcp__trama__read_plan" })).toBe("read_plan");
     expect(hostToolName("trama", { rawInput: { server: "trama", tool: "update_plan" } })).toBe("update_plan");
     expect(hostToolName("trama", { title: "Read file" })).toBeNull();
+    // Devin's title for an MCP call (2 October 2026: pause_work was refused as a provider tool).
+    expect(hostToolName("trama", { title: "Calling pause_work from trama" })).toBe("pause_work");
+    expect(hostToolName("trama", { title: "Calling search from github" })).toBeNull();
     expect(hostToolName(null, { title: "mcp__trama__read_plan" })).toBeNull();
   });
 
