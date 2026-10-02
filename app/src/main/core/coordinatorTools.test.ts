@@ -391,6 +391,8 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     expect(requests).toEqual([{ kind: "architectureReview" }, { kind: "triage", issueNumber: 187 }]);
     expect((await runCoordinatorTool("start_automatic_work", { work: "triage", reason: "r" }, context)).isError).toBe(true);
     expect(developerInstructions("Demo")).toMatch(/start_automatic_work/);
+    // A block nobody in Trama can lift is told, never hidden behind "nothing to do" (2 October 2026).
+    expect(developerInstructions("Demo")).toMatch(/never tell the person they have nothing to do while the work stays stopped/);
     expect(developerInstructions("Demo")).toMatch(/never simulate it with assign_task/);
   });
 });
