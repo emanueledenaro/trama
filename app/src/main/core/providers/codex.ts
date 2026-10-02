@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { CodexClient, resolveCodexExecutable, restrictedAppServerArguments, searchPath } from "../codexClient";
 import {
   agentTempFolder,
@@ -102,8 +102,12 @@ export class CodexRuntime implements AgentRuntime {
         },
         ...codexPermissionProfiles(shellRoots, writableRoot, tempRoot),
         // The profiles hide the home folder, ~/.gitconfig included: git in the shell reads no global file (issue #391).
-        // A developer's tools write their scratch files in its own temporary folder.
-        "shell_environment_policy.set": { ...sandboxGitEnvironment(), ...(tempRoot ? { TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot } : {}) },
+        // A developer's tools write their scratch files in its own temporary folder, npm its cache and logs too: the
+        // home folder they default to is hidden.
+        "shell_environment_policy.set": {
+          ...sandboxGitEnvironment(),
+          ...(tempRoot ? { TMPDIR: tempRoot, TMP: tempRoot, TEMP: tempRoot, npm_config_cache: join(tempRoot, "npm") } : {}),
+        },
         ...(toolServer
           ? {
               [`mcp_servers.${toolServer.name}`]: {
