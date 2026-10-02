@@ -1,6 +1,7 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, screen, shell } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
@@ -32,7 +33,34 @@ const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ??
 /** The power save blocker the full delegation holds (issue #423), or null. */
 let keepAwakeId: number | null = null;
 
-const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
+const dataRoot = process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop");
+
+/**
+ * Where the window was and how big (2 October 2026): it reopened at 1100 x 780 after every restart. Kept only while it
+ * still falls on a screen, so a window left on a monitor that is gone opens on the main one.
+ */
+const WINDOW_FILE = join(dataRoot, "window.json");
+type WindowPlace = { x: number; y: number; width: number; height: number; maximized: boolean };
+function savedWindowPlace(): WindowPlace | null {
+  try {
+    const place = JSON.parse(readFileSync(WINDOW_FILE, "utf8")) as WindowPlace;
+    if (![place.x, place.y, place.width, place.height].every(Number.isFinite)) return null;
+    const area = screen.getDisplayMatching(place).workArea;
+    const visible = place.x < area.x + area.width && place.x + place.width > area.x && place.y < area.y + area.height && place.y + place.height > area.y;
+    return visible ? place : null;
+  } catch {
+    return null;
+  }
+}
+function saveWindowPlace(target: BrowserWindow): void {
+  try {
+    writeFileSync(WINDOW_FILE, JSON.stringify({ ...target.getNormalBounds(), maximized: target.isMaximized() }));
+  } catch {
+    // Not remembered: the next window opens at its default size.
+  }
+}
+
+const controller = new TramaController(dataRoot, {
   publish: (state) => {
     window?.webContents.send("trama:state", state);
     // The menu speaks the language Trama speaks, and is built again when the person changes it (issue #345).
@@ -78,9 +106,11 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
 }, legacyRoot);
 
 function createWindow(): void {
+  const place = savedWindowPlace();
   window = new BrowserWindow({
-    width: 1100,
-    height: 780,
+    width: place?.width ?? 1100,
+    height: place?.height ?? 780,
+    ...(place ? { x: place.x, y: place.y } : {}),
     minWidth: 720,
     minHeight: 640,
     show: false,
@@ -108,8 +138,16 @@ function createWindow(): void {
   // ready-to-show waits for the renderer's first paint, which a renderer without a GPU (xvfb in CI, issue #460) can
   // report late or never: the window would stay hidden. The page's finished load shows it too, whichever comes first.
   const reveal = () => {
-    if (window && !window.isVisible()) window.show();
+    if (!window || window.isVisible()) return;
+    if (place?.maximized) window.maximize();
+    window.show();
   };
+  // Saved as it changes too: a window closed by a crash or a forced quit gets no close event.
+  for (const change of ["close", "resized", "moved", "maximize", "unmaximize"] as const) {
+    window.on(change as "close", () => {
+      if (window) saveWindowPlace(window);
+    });
+  }
   window.once("ready-to-show", reveal);
   window.webContents.once("did-finish-load", reveal);
   window.on("closed", () => {
