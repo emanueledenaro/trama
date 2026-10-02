@@ -445,7 +445,7 @@ import { runnableCommand } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
-import { cloneRepository, createGitHubRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { cloneRepository, createGitHubRepository, hasAiHero, pushToGitHub, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
@@ -729,6 +729,23 @@ export async function initializeRepository(root: string): Promise<void> {
     await git(["commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   } catch {
     await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
+  }
+}
+
+/** The commit that adds the agents' method to a project Trama created, in Conventional Commits. */
+export const METHOD_COMMIT_MESSAGE = "chore: prepare the agents' method";
+
+/**
+ * Commits everything the method setup wrote in a project Trama created. Worktrees start from a commit, so files left
+ * uncommitted never reached the agents: no AGENTS.md and no docs/agents in their copies (2 October 2026).
+ */
+export async function commitProjectMethod(root: string): Promise<void> {
+  requireValidCommitMessage(METHOD_COMMIT_MESSAGE);
+  await git(["add", "-A"], root, false);
+  try {
+    await git(["commit", "-m", METHOD_COMMIT_MESSAGE], root, false);
+  } catch {
+    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", METHOD_COMMIT_MESSAGE], root, false);
   }
 }
 
@@ -1553,13 +1570,22 @@ export class TramaController {
     // The private repository on GitHub (2 October 2026): the slices become its issues and the work its pull requests.
     // A repository that cannot be created leaves the project open, local, and says why.
     let repositoryProblem: string | null = null;
+    let repository: string | null = null;
+    let pushProblem: string | null = null;
     if (github) {
       if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
       if (this.state.gitHubCli.status !== "ready") repositoryProblem = t("main.controller.repositoryNeedsGh");
-      else await createGitHubRepository(root, trimmed).catch((error: Error) => (repositoryProblem = error.message));
+      else repository = await createGitHubRepository(root, trimmed).catch((error: Error) => ((repositoryProblem = error.message), null));
+    }
+    // The method is part of the project from its second commit, on GitHub too, so every worktree has it.
+    if (shouldAutoPrepareMethod(this.state.settings, this.state.onboarding)) {
+      await prepareSkills(root, this.host.aiHeroResourceDirectory, repository);
+      await commitProjectMethod(root);
+      pushProblem = repository ? await pushToGitHub(root) : null;
     }
     await this.openProject(root, false, idea.trim() || null);
     if (repositoryProblem) throw new DomainError(t("main.controller.repositoryNotCreated", { reason: repositoryProblem }));
+    if (pushProblem) throw new DomainError(t("main.controller.methodNotPushed", { reason: pushProblem }));
   }
 
   /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */

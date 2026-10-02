@@ -108,6 +108,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Choose a project folder, not the disk root or the Home folder.",
   "main.controller.folderNameInvalid": "Choose a valid folder name.",
   "main.controller.repositoryNeedsGh": "GitHub CLI is not connected: connect it from the Welcome page and create the repository from there.",
+  "main.controller.methodNotPushed": "The project is on GitHub, but the agents' method did not reach it: {reason}",
   "main.controller.repositoryNotCreated": "The project is created, but the GitHub repository is not: {reason}",
   "main.controller.folderExists":
     "A folder named {name} already exists in this location.",

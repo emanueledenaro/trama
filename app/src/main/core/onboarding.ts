@@ -71,6 +71,16 @@ export async function createGitHubRepository(root: string, folder: string): Prom
   return url ?? name;
 }
 
+/** Pushes `main` of a project Trama created to its new GitHub repository, with gh's credentials; the reason when it fails. */
+export async function pushToGitHub(root: string): Promise<string | null> {
+  const result = await runProcess("git", ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "push", "origin", "HEAD"], {
+    cwd: root,
+    env: { ...ghEnvironment(), GIT_TERMINAL_PROMPT: "0" },
+    timeoutMs: 2 * 60_000,
+  });
+  return result.timedOut || result.exitCode !== 0 ? result.stderr.trim().split("\n").at(-1)?.trim() || "git push failed" : null;
+}
+
 /** The marker file the AI Hero setup writes in a project. */
 export const hasAiHero = (projectRoot: string): boolean => existsSync(join(projectRoot, ".agents", "skills", "AIHERO-VERSION.md"));
 

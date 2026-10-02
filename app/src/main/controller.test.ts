@@ -13,6 +13,7 @@ import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
 import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
+import { git } from "./core/process";
 import { recordChoice } from "./core/fullDelegation";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
@@ -183,6 +184,17 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     expect(project.document.createdFromIdea).toBe("Un'app per salvare ricette di famiglia");
     expect(project.snapshot.headSHA).toMatch(/^[0-9a-f]{40}$/);
+    // Without the method chosen, the project starts with the README alone.
+    expect((await git(["log", "--format=%s"], project.rootPath)).trim()).toBe("chore: start the project");
+
+    // With it, the agents' method is committed after the start, so every worktree has AGENTS.md and the skills.
+    await controller!.updateSettings({ autoPrepareMethod: true });
+    await controller!.createProject(parent, "Orto", "Un diario dell'orto");
+    await until(() => controller!.snapshot.project?.name === "Orto" && controller!.snapshot.project.phase.kind === "ready");
+    const orto = controller!.snapshot.project!.rootPath;
+    expect((await git(["log", "--format=%s"], orto)).trim().split("\n")).toEqual(["chore: prepare the agents' method", "chore: start the project"]);
+    expect((await git(["ls-files", "AGENTS.md", ".agents/skills/AIHERO-VERSION.md"], orto)).trim().split("\n")).toHaveLength(2);
+    expect((await git(["status", "--porcelain"], orto)).trim()).toBe("");
   });
 
   it("opens the Coordinator of a project opened while the previous one's was still starting (F01)", async () => {
