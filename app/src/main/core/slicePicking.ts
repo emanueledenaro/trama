@@ -153,7 +153,8 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
     }
     const previous = earlier.at(-1);
     const blockers = ticket.blockedBy.flatMap((id) => {
-      const done = earlier.filter((a) => a.slice?.sliceId === id && delivered(document, a)).at(-1);
+      const onGitHub = Boolean(plan.slicing?.tickets.find((t) => t.id === id)?.issue);
+      const done = earlier.filter((a) => a.slice?.sliceId === id && delivered(document, a, onGitHub)).at(-1);
       return done ? [done.id] : [];
     });
     // The Pact decisions the spec requires, then those the plan's earlier slices relied on (assignments, candidates).
