@@ -99,5 +99,15 @@ describe("Codex runtime and the provider's own tools (issue #228)", () => {
     expect(config["mcp_servers.trama"]).toMatchObject({ url: server.url });
     // The profile hides the home folder: git in the shell reads no global file there (issue #391).
     expect(config["shell_environment_policy.set"]).toMatchObject({ GIT_CONFIG_GLOBAL: "/dev/null" });
+    expect(config["shell_environment_policy.set"]).not.toHaveProperty("TMPDIR");
+
+    // A developer's thread writes its scratch files, npm's cache included, in its own folder outside the worktree.
+    await runtime.openThread({ model: "gpt-5.5", cwd: project, developerInstructions: "test", sandbox: "workspace-write" });
+    const writing = (await readFile(log, "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { method: string; params: { config?: Record<string, unknown> } });
+    const developer = writing.filter((entry) => entry.method === "thread/start").at(-1)!.params.config!;
+    const environment = developer["shell_environment_policy.set"] as Record<string, string>;
+    expect(environment.TMPDIR).toMatch(/trama-agents/);
+    expect(environment.npm_config_cache).toBe(join(environment.TMPDIR!, "npm"));
+    expect((developer["permissions.trama_write"] as { filesystem: Record<string, string> }).filesystem[environment.TMPDIR!]).toBe("write");
   });
 });
