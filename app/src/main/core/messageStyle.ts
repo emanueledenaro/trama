@@ -52,5 +52,5 @@ function plainLanguage(language: Language): string[] {
   ];
 }
 
-/** The words of Trama the person meets in the chat, explained the first time they appear. */
+/** The words of Trama the person meets in the chat, explained the first time they appear. @model-text */
 const TRAMA_WORDS = ["Patto", "Mandato", "Candidato", "Fetta", "Incarico", "Revisori", "Verifiche", "Copia di lavoro", "Piano"];
