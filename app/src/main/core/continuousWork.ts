@@ -96,6 +96,13 @@ export const KEPT_ROUNDS = 50;
 export const ROUND_ATTEMPTS = 3;
 
 /**
+ * How long a developer's open question waits after the round used up its attempts before the round tries once more (issue
+ * #549). The question keeps its developer's work paused: unlike a failed plan it cannot be left to a new event, so the round
+ * does not stop for good, and does not repeat the same turn every five minutes either.
+ */
+export const QUESTION_RETRY_MS = 60 * 60_000;
+
+/**
  * How many of the dialog's latest requests, from the newest, are Trama's automatic turns of `move`. A turn set aside
  * for the person's message is no attempt (ADR 0023): it neither counts nor breaks the row.
  */
@@ -108,6 +115,20 @@ function attemptsInRow(dialog: ProjectDocument["requests"], move: CoordinatorMov
     count++;
   }
   return count;
+}
+
+/** A move the round did not start because its attempts are used up (issue #549); `retryAt` is when the round tries again, null when only a new event does. */
+export interface HeldMove {
+  requestId: string;
+  move: CoordinatorMove;
+  attempts: number;
+  retryAt: number | null;
+}
+
+/** When the round may try a developer's question again: QUESTION_RETRY_MS after the dialog's latest automatic turn. */
+function questionRetryAt(dialog: ProjectDocument["requests"]): number {
+  const last = Date.parse(dialog.at(-1)!.completedAt ?? dialog.at(-1)!.createdAt);
+  return (Number.isNaN(last) ? 0 : last) + QUESTION_RETRY_MS;
 }
 
 /** The state of Trama around the work, read by the controller when an event arrives. */
@@ -149,7 +170,14 @@ const mandateGranted = (document: ProjectDocument): boolean => document.mandate?
  * while the work waits for the person, none in pause and none without a granted mandate. The round tries the same move
  * ROUND_ATTEMPTS times in a row at most.
  */
-export function automaticMove(document: ProjectDocument, requestId: string, event: WorkEvent, guards: ContinuationGuards): AutomaticMove | null {
+export function automaticMove(
+  document: ProjectDocument,
+  requestId: string,
+  event: WorkEvent,
+  guards: ContinuationGuards,
+  now: Date = new Date(),
+  onHeld?: (held: HeldMove) => void,
+): AutomaticMove | null {
   if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
   if (!mandateGranted(document)) return null;
   const subject = document.requests.find((r) => r.id === requestId);
@@ -190,7 +218,16 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   const move = option.move as CoordinatorMove;
   // The round tries again a move the latest automatic turns of the dialog made or tried, a few times at most: a move
   // that keeps failing does not loop every five minutes, and one that failed once is not left alone. A new event does.
-  if (event === "round" && attemptsInRow(dialog, move) >= ROUND_ATTEMPTS) return null;
+  if (event === "round") {
+    const attempts = attemptsInRow(dialog, move);
+    if (attempts >= ROUND_ATTEMPTS) {
+      const retryAt = move === "answerQuestion" ? questionRetryAt(dialog) : null;
+      if (retryAt === null || retryAt > now.getTime()) {
+        onHeld?.({ requestId: latest.id, move, attempts, retryAt });
+        return null;
+      }
+    }
+  }
   const block = state.phase === "blocked" && state.block && state.blocker ? { kind: state.block, blocker: state.blocker, why: state.why ?? state.blocker } : null;
   return {
     move,
@@ -235,10 +272,16 @@ export function hasOpenWork(document: ProjectDocument): boolean {
  * worktrees, a new issue, a commented pull request) or in the round, or null. Pure: the dialogs are weighed in
  * the order of the focus, and the first move wins. A round with no move starts no provider turn.
  */
-export function projectMove(document: ProjectDocument, event: WorkEvent, guards: ContinuationGuards): { requestId: string; move: AutomaticMove } | null {
+export function projectMove(
+  document: ProjectDocument,
+  event: WorkEvent,
+  guards: ContinuationGuards,
+  now: Date = new Date(),
+  onHeld?: (held: HeldMove) => void,
+): { requestId: string; move: AutomaticMove } | null {
   if (!guards.enabled || guards.paused || guards.busy || guards.unavailable) return null;
   for (const requestId of openDialogs(document)) {
-    const move = automaticMove(document, requestId, event, guards);
+    const move = automaticMove(document, requestId, event, guards, now, onHeld);
     if (move) return { requestId, move };
   }
   return null;
@@ -484,8 +527,9 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
       return t("main.continuousWork.stall.unverified", { ids: targets.unverified.join(", ") });
     }
     case "answerQuestion":
-      // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
-      return null;
+      // The move is still among the work's moves, so the turn left the question without its answer (issue #549): the
+      // person sees it as the stalled move, and the round tries again.
+      return t("main.continuousWork.stall.unanswered");
     case "settleReview":
       // The Coordinator settled a gate during the turn (ADR 0023): the move was made.
       return (document.gates ?? []).some((g) => g.settled && g.settled.at >= since) ? null : t("main.continuousWork.stall.unsettled");

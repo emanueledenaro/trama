@@ -1534,6 +1534,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.continuousWork.block.reviewLoop": "disagreement between developer and reviewers",
   "main.continuousWork.moveFailed":
     "The automatic move did not succeed: {reason}",
+  "main.continuousWork.stall.unanswered":
+    "the Coordinator did not answer the developer's question.",
+  "main.continuousWork.questionHeld":
+    "Trama stopped retrying the developer's answer after {attempts} turns without one.",
+  "main.continuousWork.questionHeldDetail":
+    "The question stays open and its assignment paused. Trama tries again in an hour, or you can write to the Coordinator.",
   "main.continuousWork.stall.noPlan": "the Coordinator did not start the plan.",
   "main.continuousWork.stall.noAssignment":
     "the Coordinator did not assign the work.",
