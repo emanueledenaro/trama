@@ -91,3 +91,22 @@ export async function readBranchBase(root: string, options: { fetch: boolean }):
   const lag = (await git(["rev-list", `--max-count=${LAG_LISTED}`, remoteSHA, `^${headSHA}`, "--"], root)).split("\n").filter(Boolean);
   return { ...local, ...counts, state: "behind", baseSHA: remoteSHA, currentHeads: [headSHA, ...lag] };
 }
+
+/**
+ * After Trama merged a pull request on GitHub, brings the project's checkout up to the branch it was merged into with a
+ * fast-forward, so the checkout does not stay on the old commit. It moves only when the checkout is on that branch,
+ * has no change (tracked, staged or untracked) and only lags the copy on the remote; anything else is the person's and
+ * stays as it is. Returns the new head, or null when nothing moved.
+ */
+export async function advanceAfterMerge(root: string, mergedBranch: string): Promise<string | null> {
+  const base = await readBranchBase(root, { fetch: true }).catch(() => null);
+  if (!base || base.branch !== mergedBranch || base.state !== "behind" || !base.remoteSHA) return null;
+  const status = await git(["status", "--porcelain", "--untracked-files=all"], root).catch(() => "dirty");
+  if (status.trim()) return null;
+  const moved = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "merge", "--ff-only", "--quiet", base.remoteSHA], {
+    cwd: root,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  return moved.exitCode === 0 ? base.remoteSHA : null;
+}
