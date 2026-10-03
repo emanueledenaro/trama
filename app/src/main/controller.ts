@@ -7621,7 +7621,7 @@ export class TramaController {
         this.changedIn(project);
       },
     });
-    candidate.pullRequest = { ...published, at: new Date().toISOString() };
+    candidate.pullRequest = { ...published, baseBranch, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: t("main.controller.pullRequestPublishedTitle", { number: `${published.number}` }), detail: published.url, tone: "tool" });
     this.changedIn(project);
     return candidate.pullRequest;
@@ -7631,12 +7631,14 @@ export class TramaController {
    * After a merge on GitHub the checkout's branch moves up to the merged one with a fast-forward, when the checkout is on
    * that branch and has no change; otherwise it stays as the person left it. Never fails the merge that was recorded.
    */
-  private async advanceCheckoutAfterMerge(project: ActiveProjectState): Promise<void> {
-    const branch = project.snapshot.branch;
+  private async advanceCheckoutAfterMerge(project: ActiveProjectState, candidate: Candidate): Promise<void> {
+    const pull = candidate.pullRequest;
+    // The branch the pull request merged into, not the one the checkout is on now.
+    const branch = pull?.baseBranch ?? (project.github.snapshot?.pullRequests ?? []).find((p) => p.number === pull?.number)?.baseRef ?? null;
     if (!branch || project.isDemo) return;
     const moved = await advanceAfterMerge(project.rootPath, branch).catch(() => null);
     await this.readBranchBase(project, false);
-    if (moved) void this.refreshProject(false);
+    if (moved) this.refreshProject(false).catch(() => undefined);
   }
 
   /**
@@ -7777,7 +7779,7 @@ export class TramaController {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
         candidate.merge!.mergeSHA = checks.mergeSHA ?? null;
-        void this.advanceCheckoutAfterMerge(project);
+        void this.advanceCheckoutAfterMerge(project, candidate);
         this.changedIn(project);
         return;
       }
@@ -7807,7 +7809,7 @@ export class TramaController {
       pull.mergedBy = by;
       recordMerge(document, candidate, by, "merged");
       candidate.merge!.mergeSHA = merged.sha;
-      void this.advanceCheckoutAfterMerge(project);
+      void this.advanceCheckoutAfterMerge(project, candidate);
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
     } catch (error) {
       const reason = (error as Error).message;
@@ -7819,7 +7821,7 @@ export class TramaController {
         pull.mergedBy = by;
         recordMerge(document, candidate, by, "merged");
         candidate.merge!.mergeSHA = after.mergeSHA ?? null;
-        void this.advanceCheckoutAfterMerge(project);
+        void this.advanceCheckoutAfterMerge(project, candidate);
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
         this.changedIn(project);
         return;

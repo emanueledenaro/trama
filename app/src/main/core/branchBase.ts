@@ -103,6 +103,10 @@ export async function advanceAfterMerge(root: string, mergedBranch: string): Pro
   if (!base || base.branch !== mergedBranch || base.state !== "behind" || !base.remoteSHA) return null;
   const status = await git(["status", "--porcelain", "--untracked-files=all"], root).catch(() => "dirty");
   if (status.trim()) return null;
+  // The fetch took time: the person may have switched branch or committed meanwhile.
+  const now = await readBranchBase(root, { fetch: false }).catch(() => null);
+  if (!now || now.branch !== mergedBranch || now.headSHA !== base.headSHA) return null;
+  if ((await git(["status", "--porcelain", "--untracked-files=all"], root).catch(() => "dirty")).trim()) return null;
   const moved = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "merge", "--ff-only", "--quiet", base.remoteSHA], {
     cwd: root,
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },

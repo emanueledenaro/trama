@@ -1405,6 +1405,8 @@ export interface Candidate {
     url: string;
     number: number;
     branch: string;
+    /** The branch the pull request merges into, as published. */
+    baseBranch?: string;
     at: string;
     mergedAt?: string | null;
     headSHA?: string | null;
