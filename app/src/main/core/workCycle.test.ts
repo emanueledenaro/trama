@@ -348,7 +348,11 @@ describe("the Coordinator resumes stopped work in its working copy (resume_assig
       expect(text).toContain("stessa copia di lavoro");
       expect(text).not.toMatch(/riassegnalo con assign_task|la correzione con assign_task|con assign_task il riallineamento/);
     }
-    expect(automaticMoveSection("assignWork", { kind: "worktreeConflict", blocker: "Conflitto con main", why: "Conflitto" })).toContain("commit_merge");
+    const conflict = automaticMoveSection("assignWork", { kind: "worktreeConflict", blocker: "Conflitto con main", why: "Conflitto" });
+    expect(conflict).toContain("commit_merge");
+    // Issue #547: the developer brings main in with its own tool, the Coordinator does not ask for files in questions (#548).
+    expect(conflict).toContain("align_with_base");
+    expect(conflict).toContain("Il codice passa solo da git");
     // A finding against the Pact is overruled citing the decision, so it does not come back at the next round.
     const loop = automaticMoveSection("settleReview", { kind: "reviewLoop", blocker: "Bloccato due volte", why: "Disaccordo" });
     expect(loop).toContain("overrule_finding");

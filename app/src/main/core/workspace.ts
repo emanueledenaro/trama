@@ -176,6 +176,14 @@ export async function concludeMerge(
   const root = session.worktreeRoot;
   const merge = await mergeState(root);
   if (!merge.mergeHead) throw new MergeError("no_merge", `There is no merge in progress in the working copy on ${session.branch}: nothing to conclude.`);
+  // The developer's protection forbids `git add`: a file it resolved in place is staged here, one still carrying a marker is not.
+  const unresolved: string[] = [];
+  for (const file of merge.unmergedFiles) {
+    const text = await readFile(join(root, file), "utf8").catch(() => null);
+    if (text !== null && /^(?:<{7}(?: |$)|={7}$|>{7}(?: |$))/m.test(text)) unresolved.push(file);
+    else await git(["add", "-A", "--", file], root, false);
+  }
+  merge.unmergedFiles = unresolved;
   if (merge.unmergedFiles.length) {
     throw new MergeError("unmerged_files", `The merge has files still in conflict: ${merge.unmergedFiles.join(", ")}. The developer resolves them first.`);
   }

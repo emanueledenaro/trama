@@ -6,6 +6,7 @@ import {
   answeredWork,
   answerFromFacts,
   ASK_COORDINATOR_TOOL,
+  DEVELOPER_TOOL_SERVER_INSTRUCTIONS,
   askCoordinator,
   asksCoordinator,
   personAnswered,
@@ -168,6 +169,13 @@ describe("a developer asks the Coordinator with a tool (W06)", () => {
     expect(asksCoordinator(ada, assignment)).toBe(true);
     expect(asksCoordinator(ada, { ...assignment, duty: { skill: "triage", trigger: { kind: "newIssue", issueNumber: 1, title: "t" } } } as never)).toBe(false);
     expect(specialistInstructions("ordini", ada, assignment)).toContain("ask_coordinator");
+    // Issues #547 and #548: the developer realigns with align_with_base and never moves code through questions.
+    const instructions = specialistInstructions("ordini", ada, assignment);
+    expect(instructions).toContain("align_with_base");
+    expect(instructions).toContain("never git fetch or git merge");
+    expect(instructions).toContain("Code reaches the Coordinator and the other developers only through git");
+    expect(DEVELOPER_TOOL_SERVER_INSTRUCTIONS).toContain("align_with_base");
+    expect(ASK_COORDINATOR_TOOL.description).toContain("never put code or files in a question");
     expect(ASK_COORDINATOR_TOOL.description).toContain(REPORT_HEADINGS.doubts);
   });
 
