@@ -446,7 +446,7 @@ import { runnableCommand, searchFoundNothing } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
-import { cloneRepository, createGitHubRepository, hasAiHero, pushToGitHub, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { cloneRepository, createGitHubRepository, hasAiHero, readGitHubCliStatus, readGitHubLogin, repositoryName, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
@@ -1572,21 +1572,33 @@ export class TramaController {
     // A repository that cannot be created leaves the project open, local, and says why.
     let repositoryProblem: string | null = null;
     let repository: string | null = null;
-    let pushProblem: string | null = null;
+    const method = shouldAutoPrepareMethod(this.state.settings, this.state.onboarding);
+    let planned: string | null = null;
     if (github) {
       if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
       if (this.state.gitHubCli.status !== "ready") repositoryProblem = t("main.controller.repositoryNeedsGh");
-      else repository = await createGitHubRepository(root, trimmed).catch((error: Error) => ((repositoryProblem = error.message), null));
+      else {
+        const login = (await readGitHubLogin()) ?? this.state.gitHubCli.account;
+        planned = login ? `${login}/${repositoryName(trimmed)}` : null;
+      }
     }
-    // The method is part of the project from its second commit, on GitHub too, so every worktree has it.
-    if (shouldAutoPrepareMethod(this.state.settings, this.state.onboarding)) {
-      await prepareSkills(root, this.host.aiHeroResourceDirectory, repository);
+    // The method is part of the project from its second commit, on GitHub too, so every worktree has it. It is
+    // committed before the repository is created, so the one push of `gh repo create` carries both commits.
+    if (method) {
+      await prepareSkills(root, this.host.aiHeroResourceDirectory, planned);
       await commitProjectMethod(root);
-      pushProblem = repository ? await pushToGitHub(root) : null;
+    }
+    if (github && !repositoryProblem) {
+      repository = await createGitHubRepository(root, trimmed).catch((error: Error) => ((repositoryProblem = error.message), null));
+      if (!repository && planned && method) {
+        // The documents name a repository that does not exist: the project stays local and coherent.
+        await git(["reset", "--hard", "--quiet", "HEAD~1"], root, false);
+        await prepareSkills(root, this.host.aiHeroResourceDirectory, null);
+        await commitProjectMethod(root);
+      }
     }
     await this.openProject(root, false, idea.trim() || null);
     if (repositoryProblem) throw new DomainError(t("main.controller.repositoryNotCreated", { reason: repositoryProblem }));
-    if (pushProblem) throw new DomainError(t("main.controller.methodNotPushed", { reason: pushProblem }));
   }
 
   /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */
