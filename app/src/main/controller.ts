@@ -305,7 +305,7 @@ import {
   type TurnEnd,
   recordTurnContext,
 } from "./core/team";
-import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignWithBase, COORDINATOR_TOOL_RULES, DEVELOPER_TOOL_RULES, developerRulesDue } from "./core/baseAlignment";
+import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignWithBase, COORDINATOR_TOOL_RULES, DEVELOPER_TOOL_RULES, developerRulesDue, recordDeveloperRules } from "./core/baseAlignment";
 import { INSTALL_DEPENDENCIES_TOOL, installNodeDependencies } from "./core/dependencyInstall";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import {
@@ -5457,6 +5457,8 @@ export class TramaController {
       recordThread(document, assignmentId, opening.threadId);
       // A thread opened before the rules changed holds the old ones: it receives the current ones once, in this turn.
       const lateRules = needsWorktree(assignment) && developerRulesDue(assignment, freshThread) ? DEVELOPER_RULES_SECTION : null;
+      // A new thread holds the rules already; a resumed one holds them once its turn started with the section.
+      if (needsWorktree(assignment) && !lateRules) recordDeveloperRules(assignment);
       if (reorder) {
         this.specialistActivity(
           project,
@@ -5487,6 +5489,7 @@ export class TramaController {
         onEvent: (event) => {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
+            if (lateRules) recordDeveloperRules(assignment);
             beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
             if (earlyPercent !== null) recordTurnContext(document, assignmentId, event.turnId, earlyPercent);
             this.changedIn(project);

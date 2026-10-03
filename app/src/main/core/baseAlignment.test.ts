@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WorktreeSession } from "@shared/domain";
-import { alignmentNote, alignmentTarget, alignWithBase, ALIGN_WITH_BASE_TOOL, COORDINATOR_CODE_RULE, COORDINATOR_TOOL_RULES, DEVELOPER_CODE_RULE, DEVELOPER_TOOL_RULES, developerRulesDue, rulesKey } from "./baseAlignment";
+import { alignmentNote, alignmentTarget, alignWithBase, ALIGN_WITH_BASE_TOOL, COORDINATOR_CODE_RULE, COORDINATOR_TOOL_RULES, DEVELOPER_CODE_RULE, DEVELOPER_TOOL_RULES, developerRulesDue, recordDeveloperRules, rulesKey } from "./baseAlignment";
 import { readBranchBase } from "./branchBase";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { git } from "./process";
@@ -192,23 +192,23 @@ describe("the tool and the rule that code travels through git (issues #547, #548
 });
 
 describe("rules that reach threads opened before they changed (issue #555)", () => {
-  it("owes a resumed thread the developer rules once, and not again while they stay the same", () => {
+  it("owes a resumed thread the developer rules until they are recorded, then not again", () => {
     // A thread opened before the field existed holds the earlier rules.
     const assignment: { rulesSent?: string | null } = {};
     expect(developerRulesDue(assignment, false)).toBe(true);
+    // A turn that did not start leaves them owed.
+    expect(developerRulesDue(assignment, false)).toBe(true);
+    recordDeveloperRules(assignment);
     expect(assignment.rulesSent).toBe(rulesKey(DEVELOPER_TOOL_RULES));
     expect(developerRulesDue(assignment, false)).toBe(false);
     // The rules changed since the thread last received them.
     assignment.rulesSent = "sha256:older";
     expect(developerRulesDue(assignment, false)).toBe(true);
-    expect(developerRulesDue(assignment, false)).toBe(false);
   });
 
-  it("owes a new thread nothing, since its instructions carry the rules, and records them", () => {
+  it("owes a new thread nothing, since its instructions carry the rules", () => {
     const assignment: { rulesSent?: string | null } = { rulesSent: "sha256:older" };
     expect(developerRulesDue(assignment, true)).toBe(false);
-    expect(assignment.rulesSent).toBe(rulesKey(DEVELOPER_TOOL_RULES));
-    expect(developerRulesDue(assignment, false)).toBe(false);
   });
 
   it("covers the code rule and the realignment tools for each role", () => {

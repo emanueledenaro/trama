@@ -57,13 +57,15 @@ export const rulesKey = (text: string): string => `sha256:${createHash("sha256")
 
 /**
  * The developer rules a thread is owed (issue #555): a new thread holds them in its instructions, a resumed one opened
- * before they changed receives them once in its next turn. Records what the thread now holds.
+ * before they changed receives them in its next turn. Reads only: `recordDeveloperRules` marks them once the turn started.
  */
 export function developerRulesDue(assignment: { rulesSent?: string | null }, freshThread: boolean): boolean {
-  const key = rulesKey(DEVELOPER_TOOL_RULES);
-  const due = !freshThread && assignment.rulesSent !== key;
-  assignment.rulesSent = key;
-  return due;
+  return !freshThread && assignment.rulesSent !== rulesKey(DEVELOPER_TOOL_RULES);
+}
+
+/** Records the developer rules the thread now holds. */
+export function recordDeveloperRules(assignment: { rulesSent?: string | null }): void {
+  assignment.rulesSent = rulesKey(DEVELOPER_TOOL_RULES);
 }
 
 export type AlignOutcome =
