@@ -835,7 +835,7 @@ export class TramaController {
     step: RequestStep | null;
   }[] = [];
 
-  /** The powers of computer access ask this gate before they act; the switch in the status bar decides it (issue #413). */
+  /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
   readonly computerAccess = new ComputerAccessGate(() => accessIsOn(this.state.settings));
 
   constructor(
@@ -3897,7 +3897,7 @@ export class TramaController {
    * is saved with the project and holds after a restart.
    */
   /**
-   * The person flips the access switch in the status bar (issue #413). Off, it stops the actions that use the network,
+   * The person flips the access switch in the composer (issue #413). Off, it stops the actions that use the network,
    * the browser, commands outside the project or the screen, and the next ones are refused; the work on the project's
    * code goes on. The person's choice also clears what a Pause remembered.
    */
@@ -9341,7 +9341,7 @@ export class TramaController {
       const { projectPriority: _ignored, ...rest } = update;
       update = rest;
     }
-    // Computer access changes only with the switch of the status bar or the Pause, which stop what runs and tell Activity.
+    // Computer access changes only with the access switch or the Pause, which stop what runs and tell Activity.
     if ("computerAccess" in update || "computerAccessPausedBy" in update) {
       const { computerAccess: _access, computerAccessPausedBy: _holders, ...rest } = update;
       update = rest;

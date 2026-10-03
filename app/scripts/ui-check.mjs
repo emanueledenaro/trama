@@ -371,17 +371,20 @@ const themeShots = async (name) => {
   }
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
-// The right end of the status bar, cropped and enlarged four times with hard pixels, in light and dark, so the icon's
-// drawing can be read (issue #413).
+// The composer's lower row, cropped and enlarged three times with hard pixels, in light and dark, so the icon's drawing
+// can be read beside the model picker (issue #413).
 const shotCorner = async (name) => {
   const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
   for (const dark of [false, true]) {
     await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await page.mouse.move(2, 2);
     await page.waitForTimeout(400);
-    const box = await page.getByTestId("status-bar").boundingBox();
-    if (!box) throw new Error("The status bar has no box to crop");
-    const width = Math.min(220, box.width);
-    const crop = await page.screenshot({ clip: { x: box.x + box.width - width, y: box.y, width, height: box.height } });
+    const box = await page.getByTestId("composer-access").evaluate((button) => {
+      const rect = button.parentElement.getBoundingClientRect();
+      return { x: rect.x, y: rect.y - 4, width: rect.width, height: rect.height + 8 };
+    });
+    if (!box.width) throw new Error("The composer row has no box to crop");
+    const crop = await page.screenshot({ clip: box });
     const big = await page.evaluate(
       async ([base64, scale]) => {
         const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -394,7 +397,7 @@ const shotCorner = async (name) => {
         context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
         return canvas.toDataURL("image/png").split(",")[1];
       },
-      [crop.toString("base64"), 4],
+      [crop.toString("base64"), 3],
     );
     await writeFile(join(out, `${name}-${dark ? "dark" : "light"}.png`), Buffer.from(big, "base64"));
   }
@@ -549,7 +552,6 @@ const statusBarRules = async (where) => {
       '[data-testid="status-conflict"]',
       '[data-testid="status-setup"]',
       '[data-testid="status-focus"]',
-      '[data-testid="status-access"]',
       '[data-testid="status-divider"]',
       'button[aria-label="Attività"]',
     ]
@@ -558,12 +560,8 @@ const statusBarRules = async (where) => {
     const tinted = [...root.querySelectorAll("button")]
       .filter((button) => !["rgba(0, 0, 0, 0)", "transparent"].includes(getComputedStyle(button).backgroundColor))
       .map((button) => button.getAttribute("data-testid") ?? button.getAttribute("aria-label"));
-    const access = root.querySelector('[data-testid="status-access"]');
-    // The access switch is an icon alone: no word, and its icon says the state (issue #413).
-    const accessWords = access ? access.textContent.trim() : "";
-    return { order, tinted, accessWords, height: root.getBoundingClientRect().height };
+    return { order, tinted, height: root.getBoundingClientRect().height };
   });
-  if (bar.accessWords) throw new Error(`The access switch shows a word ${where}: ${bar.accessWords}`);
   const xs = bar.order.map(([, x]) => x);
   if (xs.some((x, i) => i > 0 && x < xs[i - 1])) throw new Error(`The status bar is not read by importance ${where}: ${JSON.stringify(bar.order)}`);
   if (bar.tinted.length) throw new Error(`A status bar button has a background at rest ${where}: ${bar.tinted.join(", ")}`);
@@ -3355,27 +3353,27 @@ if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new 
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
 await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
-// Issue #413: the switch of computer access is always in the status bar, as an icon alone (person's note, 3 October
-// 2026): a globe on, a crossed globe off, with the same button (no tint) and no word. The name and the hint say the
+// Issue #413: the switch of computer access sits in the composer's row beside the model picker, as an icon alone
+// (person's decision, 4 October 2026): a globe on, a crossed globe off, with the same look as the other buttons of the row (no tint) and no word. The name and the hint say the
 // state in words in both languages. The Pause turns it off and Riprendi gives it back as it was; a person's off before
 // the Pause stays off. Each change is a row of Activity.
 {
   const ON_IT = "Internet e comandi degli agenti: acceso. Clicca per spegnere.";
   const OFF_IT = "Internet e comandi degli agenti: spento. Clicca per riaccendere.";
-  const accessSwitch = page.getByTestId("status-bar").getByRole("switch", { name: /^Internet e comandi degli agenti/ });
+  const accessSwitch = page.getByTestId("composer-access");
   const accessIs = async (state) => {
-    await page.locator(`[data-testid="status-access"][data-access="${state}"]`).waitFor({ timeout: 20_000 });
+    await page.locator(`[data-testid="composer-access"][data-access="${state}"]`).waitFor({ timeout: 20_000 });
     if ((await accessSwitch.getAttribute("aria-checked")) !== String(state === "on")) throw new Error(`The access switch does not say ${state} to assistive technology`);
   };
   // Only the icon in the bar: no word, one drawing, and its drawing changes with the state.
   const accessLook = () =>
-    page.getByTestId("status-access").evaluate((button) => ({
+    page.getByTestId("composer-access").evaluate((button) => ({
       text: button.textContent.trim(),
       icons: button.querySelectorAll("svg").length,
       drawing: button.querySelector("svg")?.innerHTML ?? "",
     }));
   const accessHover = async (hint, where) => {
-    await page.getByTestId("status-access").hover();
+    await page.getByTestId("composer-access").hover();
     await page.getByText(hint, { exact: true }).first().waitFor({ timeout: 10_000 }).catch(() => {
       throw new Error(`The access switch ${where} does not show its hint on hover`);
     });
@@ -3408,8 +3406,8 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   // The switch holds after a reload of the window state, and the English texts are in the catalog.
   await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
   const OFF_EN = "Agents' internet and commands: off. Click to turn back on.";
-  await page.getByTestId("status-bar").getByRole("switch", { name: OFF_EN }).waitFor({ timeout: 20_000 });
-  if ((await page.getByTestId("status-access").innerText()).trim()) throw new Error("The access switch off shows a word in English");
+  await page.getByRole("switch", { name: OFF_EN }).waitFor({ timeout: 20_000 });
+  if ((await page.getByTestId("composer-access").innerText()).trim()) throw new Error("The access switch off shows a word in English");
   await accessHover(OFF_EN, "off in English");
   await themeShots("15c5-access-off-en");
   await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
