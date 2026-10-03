@@ -5745,6 +5745,8 @@ export class TramaController {
     await validateWorktree(assignment.workspace, this.worktreesRoot);
     const base = await this.readBranchBase(project, true);
     const outcome = await alignWithBase(assignment.workspace, base);
+    // Already aligned, as after a merge concluded before the base followed its merges: the base catches up now.
+    if (outcome.ok && outcome.state === "upToDate") await realignBase(assignment.workspace, alignmentTargetFor(assignment.workspace, base)?.ref ?? null);
     const detail = !outcome.ok
       ? t(`main.controller.baseAlignFailed.${outcome.code}`, { detail: outcome.detail })
       : [
