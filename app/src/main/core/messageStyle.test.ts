@@ -24,4 +24,25 @@ describe("messageStyle (issue #301)", () => {
     expect(reviewerInstructions(undefined, "en")).toContain("Answer in English.");
     expect(reviewerInstructions(undefined)).toContain("Answer in Italian.");
   });
+
+  it("keeps the person's chat plain: the need first, no codes, settings or tool words, Trama's words explained (2 October 2026)", () => {
+    const style = messageStyle("the person");
+    expect(style).toContain("Open with what the person needs");
+    expect(style).toContain("When they have nothing to do, say so in the first sentence");
+    expect(style).toContain("write its id bare, never inside `code`");
+    expect(style).toContain("commerce.checkout_enabled=false");
+    expect(style).toContain("il Patto, cioè le decisioni che hai preso sul prodotto");
+    expect(style).toContain("Patto: Le decisioni che hai preso sul comportamento del prodotto");
+    expect(style).toContain("Speak as yourself, in the first person");
+    expect(style).toContain("Do not repeat what the person already knows");
+    expect(style).not.toContain("Put paths and commands in `code`");
+    expect(messageStyle("the person", "en")).toContain("Speak plain English");
+  });
+
+  it("keeps the Coordinator's own briefings of the specialists technical", () => {
+    const style = messageStyle("the Coordinator");
+    expect(style).toContain("Put paths, commands and identifiers in `code`");
+    expect(style).not.toContain("Speak as yourself");
+  });
 });
+
