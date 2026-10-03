@@ -8007,7 +8007,7 @@ export class TramaController {
     // Checks that are not green yet are read again in the next round, without a report on the issue each time.
     const status = await readPullRequestStatus(project.github.repository, pull.number).catch(() => null);
     // A repository without CI never gets green checks: Trama's checks of the merged candidate are the proof then.
-    const withoutCi = status?.checks === "none" && verifiedByTrama(candidate);
+    const withoutCi = status?.checks === "none" && verifiedByTrama(document, candidate, status?.headSHA);
     if (status?.state !== "MERGED" || (status.checks !== "success" && !withoutCi)) {
       // The merged work leaves the round (no open work): Trama looks again by itself, a few times at most.
       const waits = this.sliceIssueCloseWaits.get(candidate.id) ?? 0;
@@ -8112,7 +8112,9 @@ export class TramaController {
           }
         }
         const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
-        const verified = new Set(document.candidates.filter((c) => c.pullRequest && verifiedByTrama(c)).map((c) => c.pullRequest!.number));
+        const verified = new Set(
+          statuses.filter((st) => document.candidates.some((c) => c.pullRequest?.number === st.number && verifiedByTrama(document, c, st.headSHA))).map((st) => st.number),
+        );
         blockers = closeBlockers(parseChecklist(body), statuses, verified);
         if (!blockers.length) {
           await closeIssue(repository, input.issueNumber);

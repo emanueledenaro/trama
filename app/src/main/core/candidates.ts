@@ -399,10 +399,15 @@ export function contentFingerprint(document: ProjectDocument, candidate: Candida
 
 /**
  * Whether Trama's own checks prove a candidate: the required checks passed on its snapshot, a distinct reviewer approved
- * it, nothing was left open and the Coordinator gave the green light. It stands in for CI on a repository without any.
+ * it, nothing was left open and the Coordinator's green light still covers the candidate's content. `mergedHead` is the
+ * head GitHub merged: it must be the one Trama published, otherwise the proof is about other work. It stands in for CI
+ * on a repository without any.
  */
-export function verifiedByTrama(candidate: Candidate): boolean {
+export function verifiedByTrama(document: ProjectDocument, candidate: Candidate, mergedHead: string | null | undefined): boolean {
+  const published = candidate.pullRequest?.headSHA;
+  if (!published || !mergedHead || published.toLowerCase() !== mergedHead.toLowerCase()) return false;
   if (candidate.unresolvedChoices.length || !candidate.clearance || candidate.technicalReview?.verdict !== "approved") return false;
+  if (candidate.clearance.fingerprint !== contentFingerprint(document, candidate)) return false;
   return candidate.requiredChecks.every((check) => {
     const evidence = candidate.evidence[check];
     return evidence !== undefined && evidence.snapshotId === candidate.snapshotId && evidence.result !== "fail";
