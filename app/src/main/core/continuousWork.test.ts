@@ -445,6 +445,12 @@ describe("a developer's open question (issue #549)", () => {
     expect(automaticMoveSection("answerQuestion", null, document, "a4")).toContain("Tentativo di nuovo");
   });
 
+  it("shows the stall also when the turn declared the same next step without answering", () => {
+    const document = pausedForQuestion(1);
+    document.requests.find((r) => r.id === "a1")!.nextStep = { move: "answerQuestion", reason: "Rispondo.", declaredAt: at(6).toISOString() };
+    expect(stalledMove(document, "a1")).toMatchObject({ move: "answerQuestion" });
+  });
+
   it("does not start a move for an answered question", () => {
     const document = pausedForQuestion(1);
     const question = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.questions?.length)!.questions![0]!;

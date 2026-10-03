@@ -486,9 +486,12 @@ export interface StalledMove {
  */
 export function stalledMove(document: ProjectDocument, requestId: string): StalledMove | null {
   const request = document.requests.find((r) => r.id === requestId);
-  if (!request || request.state !== "completed" || request.step?.by !== "trama" || request.nextStep) return null;
+  if (!request || request.state !== "completed" || request.step?.by !== "trama") return null;
   const move = request.step.move as CoordinatorMove;
   if (!(move in COORDINATOR_MOVES)) return null;
+  // A next step the turn declared itself is not a stall, except that of a question the turn left unanswered: the step
+  // it declares is the same move, and the person still needs to see why it did not happen (issue #549).
+  if (request.nextStep && move !== "answerQuestion") return null;
   const state = workState(document, request.id);
   // The moves of the full delegation are Trama's own reading, never among the work's moves: their reason says it.
   const delegation = move === "decideWithDelegation" || move === "takeTicket";
