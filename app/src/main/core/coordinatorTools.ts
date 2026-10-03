@@ -16,6 +16,7 @@ import type {
   TechnicalReview,
   WorkKind,
 } from "@shared/domain";
+import { COORDINATOR_CODE_RULE } from "./baseAlignment";
 import { CommitMessageError, DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
 import { mergeRoute } from "./merge";
@@ -669,7 +670,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "commit_merge",
     description:
-      "Within the mandate (executeInWorktree), record the merge a developer resolved and left without a commit in its working copy, as a realignment of a branch with main: Trama writes the merge commit with both parents and a valid Conventional Commits message, and pushes nothing. assignment is the assignment (A-…) or its candidate (C-…); message is optional, Trama writes one otherwise. Trama refuses work still at work, a merge with files still in conflict or conflict markers, and a resolution that adds a secret or a sensitive file. The candidate stays valid: committing changes no file. Use it instead of opening new work when the merge is done and only the commit is missing.",
+      "Within the mandate (executeInWorktree), record the merge a developer resolved and left without a commit in its working copy, as a realignment of a branch with main: Trama writes the merge commit with both parents and a valid Conventional Commits message, and pushes nothing. assignment is the assignment (A-…) or its candidate (C-…); message is optional, Trama writes one otherwise. Trama refuses work still at work, a merge with files still in conflict or conflict markers, and a resolution that adds a secret or a sensitive file. The candidate stays valid: committing changes no file. The developer starts the merge with its align_with_base tool, after you resume it with resume_assignment and tell it to call that tool. Use commit_merge instead of opening new work when the merge is done and only the commit is missing.",
     properties: { assignment: text, message: text },
     required: ["assignment"],
     readOnly: false,
@@ -2123,7 +2124,7 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
         if (review.unmergedFiles?.length) {
           return toolFailure(
             "merge_unresolved",
-            `The merge in the working copy of ${assignment.id} still has files in conflict: ${review.unmergedFiles.join(", ")}. It is not the work yet: have the developer resolve them in the same copy with resume_assignment, then conclude the merge with commit_merge or declare the candidate.`,
+            `The merge in the working copy of ${assignment.id} still has files in conflict: ${review.unmergedFiles.join(", ")}. It is not the work yet: have the developer resolve them in the same copy (resume_assignment), then conclude the merge with commit_merge or declare the candidate.`,
           );
         }
         const input = {
@@ -2604,6 +2605,8 @@ export function developerInstructions(
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. The person talks with you in one chat per project; goals are filters of that chat, not separate dialogs, and you stay one Coordinator with one mandate and one Pact for all of them. When the person writes with the chat filtered on a goal Trama says so and gives you the goal; answer about that goal, and the work you assign in that turn is linked to it. A goal has one active plan: a new plan for it replaces the earlier one. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. When an older candidate of the same work is still open next to a newer one, supersede it yourself with supersede_candidate, also when the person asks you to close or archive it: never answer that you have no tool for it. Trama publishes and merges it with your green light; a candidate that changes the interface, or one outside the mandate, waits for the person's ok. Say that work is merged or published only when \"Stato attuale di Trama\" shows it.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
+    COORDINATOR_CODE_RULE,
+    "When a developer's working copy conflicts with main or lags it, resume it with resume_assignment and tell it to call align_with_base: Trama fetches the base and starts the merge without committing it, the developer resolves the conflicts left in the files, and you conclude with commit_merge. Never ask the person to realign a working copy.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,
     "When you rely on a repository file, name its path relative to the project root.",

@@ -394,6 +394,11 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     // A block nobody in Trama can lift is told, never hidden behind "nothing to do" (2 October 2026).
     expect(developerInstructions("Demo")).toMatch(/never tell the person they have nothing to do while the work stays stopped/);
     expect(developerInstructions("Demo")).toMatch(/never simulate it with assign_task/);
+    // Code moves through git only; a missing tool is said and the work stops (issues #547, #548).
+    expect(developerInstructions("Demo")).toMatch(/only through git/);
+    expect(developerInstructions("Demo")).toMatch(/not even cut in parts or encoded \(base64/);
+    expect(developerInstructions("Demo")).toMatch(/say it plainly to the person in your first sentence.*stop that work/);
+    expect(developerInstructions("Demo")).toMatch(/resume it with resume_assignment and tell it to call align_with_base/);
   });
 });
 
