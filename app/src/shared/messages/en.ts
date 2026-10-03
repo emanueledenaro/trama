@@ -1758,11 +1758,8 @@ export const en: Record<keyof typeof it, string> = {
   "activity.access.by.person": "You changed it from the status bar.",
   "activity.access.by.pause": "The Coordinator's Pause changed it.",
   "activity.access.stopped": "Stopped an action of {agent}: {action}.",
-  "workbench.status.access": "Computer access",
-  "workbench.status.accessOnText": "Access",
-  "workbench.status.accessOffText": "Access off",
-  "workbench.status.accessOnHint": "On: network, browser, commands outside the project and screen. One click turns them off; work on the code goes on.",
-  "workbench.status.accessOffHint": "Off: no agent uses the network, the browser, commands outside the project or the screen. One click turns them on again.",
+  "workbench.status.accessOnHint": "Agents' internet and commands: on. Click to turn off.",
+  "workbench.status.accessOffHint": "Agents' internet and commands: off. Click to turn back on.",
   "activity.openMessage": "Go to your message",
 
   // Full delegation: "fai tutto tu" (issue #423)
