@@ -393,6 +393,7 @@ export const mainIt = {
   "main.controller.tramaQuitting": "Trama si sta chiudendo.",
   "main.controller.noReadOnlyModelForReviewers":
     "Nessun modello in sola lettura disponibile per i revisori del candidato.",
+  "main.controller.sliceNoteTitle": "Note per la fetta: {reviewer} ha un rilievo sul candidato {candidate} che riguarda i file di questo incarico",
   "main.controller.blockingFindingsTitle":
     "{reviewer} a {developer}: {count} rilievi bloccanti sul candidato {candidate}",
   "main.controller.blockingFindingsTitle.one":
