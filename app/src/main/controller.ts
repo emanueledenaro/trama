@@ -69,6 +69,7 @@ import type {
   Specialist,
   SpecialistAssignment,
   ContextRollover,
+  AccessStep,
 } from "@shared/domain";
 import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
 import { contextSummary, personSummary } from "./core/contextSummary";
@@ -264,7 +265,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, formatDateTime, ITALIAN, isLanguage, type Language, languageFromSystem, type MessageKey, translate, type Translate, translator } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, formatDateTime, ITALIAN, LANGUAGE_NAMES_IN_ENGLISH, isLanguage, type Language, languageFromSystem, type MessageKey, translate, type Translate, translator } from "@shared/i18n";
 import { personLanguage, setPersonLanguage, t } from "./core/personLanguage";
 import { curatorRunLine, curatorRunView } from "@shared/curatorReport";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
@@ -449,6 +450,20 @@ import { confirmByButton, declineAction, finishAction, runnableArgs } from "./co
 import { redactSensitiveData, repositoryLocator } from "./core/redaction";
 import { runnableCommand, searchFoundNothing } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
+import { accessIsOn, followPause, personSwitch } from "@shared/computerAccess";
+import { ComputerAccessGate } from "./core/computerAccess";
+import {
+  httpWebFetcher,
+  RESEARCH_ROLE,
+  RESEARCH_TOOL_SERVER_INSTRUCTIONS,
+  RESEARCH_TOOLS,
+  ResearchCalls,
+  researchEnvelope,
+  researchInstructions,
+  researchPrompt,
+  runResearchTool,
+  type WebFetcher,
+} from "./core/webResearch";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
 import { cloneRepository, createGitHubRepository, hasAiHero, readGitHubCliStatus, readGitHubLogin, repositoryName, simulateColleagueChanges } from "./core/onboarding";
@@ -787,6 +802,8 @@ export interface ControllerHost {
    * delegation has open work. Absent where the host cannot.
    */
   setKeepAwake?(awake: boolean): void;
+  /** What Trama does on the network for Research (issue #408). The real one reads the web; tests give a fake. */
+  webFetcher?: WebFetcher;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
   codexExecutable: string | null;
@@ -832,6 +849,9 @@ export class TramaController {
     /** The next step the message takes, when the person pressed its button (W04). */
     step: RequestStep | null;
   }[] = [];
+
+  /** The powers of computer access ask this gate before they act; the switch in the status bar decides it (issue #413). */
+  readonly computerAccess = new ComputerAccessGate(() => accessIsOn(this.state.settings));
 
   constructor(
     storageRoot: string,
@@ -1013,6 +1033,10 @@ export class TramaController {
       sounds: settings.sounds === true,
       autoPrepareMethod: settings.autoPrepareMethod !== false,
       continuousWork: settings.continuousWork !== false,
+      computerAccess: settings.computerAccess !== false,
+      computerAccessPausedBy: Array.isArray(settings.computerAccessPausedBy)
+        ? settings.computerAccessPausedBy.filter((id): id is string => typeof id === "string")
+        : [],
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
       ...(clampSharedDevelopers(settings.sharedDevelopers) !== null ? { sharedDevelopers: clampSharedDevelopers(settings.sharedDevelopers)! } : {}),
@@ -2447,6 +2471,7 @@ export class TramaController {
           proposePractice: (input) => this.proposePractice(current, input),
           readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheckInTurn(current, check, current.runningRequestId),
+          askResearch: (question) => this.askResearch(current, question),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
             const assignment = findAssignment(current.document, assignmentId);
@@ -3887,6 +3912,42 @@ export class TramaController {
    * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
    * is saved with the project and holds after a restart.
    */
+  /**
+   * The person flips the access switch in the status bar (issue #413). Off, it stops the actions that use the network,
+   * the browser, commands outside the project or the screen, and the next ones are refused; the work on the project's
+   * code goes on. The person's choice also clears what a Pause remembered.
+   */
+  async setComputerAccess(on: boolean): Promise<void> {
+    if (accessIsOn(this.state.settings) === on && (this.state.settings.computerAccessPausedBy ?? []).length === 0) return;
+    await this.applyAccess(personSwitch(on), on, "person");
+  }
+
+  /** The Pause switches the access off and the resume gives it back as it was (issue #413). */
+  private async accessFollowsPause(projectId: string, paused: boolean): Promise<void> {
+    const next = followPause(this.state.settings, projectId, paused);
+    if (!next) return;
+    const changed = accessIsOn(this.state.settings) !== next.on;
+    await this.applyAccess(next.settings, next.on, "pause", changed);
+  }
+
+  private async applyAccess(patch: Pick<AppSettings, "computerAccess" | "computerAccessPausedBy">, on: boolean, by: "person" | "pause", record = true): Promise<void> {
+    this.state.settings = { ...this.state.settings, ...patch };
+    const stopped = on ? [] : await this.computerAccess.stopAll();
+    const project = this.state.project;
+    if (record && project?.stateWritable) {
+      const at = new Date().toISOString();
+      (project.document.accessChanges ??= []).push({
+        id: randomUUID(),
+        at,
+        on,
+        by,
+        stopped: stopped.map((action) => ({ agent: action.agent, label: action.label })),
+      });
+      this.changedIn(project);
+    } else this.publish();
+    await this.saveSettings();
+  }
+
   async pauseContinuousWork(paused: boolean, options: { fromTurn?: boolean } = {}): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
@@ -3912,6 +3973,7 @@ export class TramaController {
       null,
     );
     this.changedIn(project);
+    await this.accessFollowsPause(project.id, paused);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
     // From the Coordinator's own turn the round follows that turn, never inside it.
@@ -5712,6 +5774,77 @@ export class TramaController {
       },
       DEVELOPER_TOOL_SERVER_INSTRUCTIONS,
     );
+  }
+
+  /**
+   * The Coordinator asks Research to read the web (issue #408). Research runs in its own read-only session with no
+   * provider tools: its only way out is the two tools below, which Trama runs outside the sandbox through the access
+   * gate. The report goes back marked as data. The switch off, or a Pause, ends the session and its requests at once.
+   */
+  private async askResearch(project: ActiveProjectState, question: string) {
+    const document = project.document;
+    const specialist = document.team.specialists.find((s) => s.role === RESEARCH_ROLE);
+    const runner = this.dutyRunner(document);
+    if (!specialist || !runner) return toolFailure("research_unavailable", "Research cannot run now: no provider is ready for it.");
+    const agent = specialist.name;
+    const record = (step: Omit<AccessStep, "id" | "at">) => {
+      (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), ...step });
+      if (document.accessSteps.length > 400) document.accessSteps.splice(0, document.accessSteps.length - 400);
+      this.changedIn(project);
+    };
+    const abort = new AbortController();
+    let client: AgentRuntime | null = null;
+    // The whole session is one action of the switch: turning it off interrupts the turn and every request in progress.
+    const session = this.computerAccess.begin({
+      id: randomUUID(),
+      power: "network",
+      role: RESEARCH_ROLE,
+      agent,
+      label: question.slice(0, 80),
+      // Ends the provider's process at once: waiting for a polite interrupt could hold the switch.
+      stop: () => {
+        abort.abort();
+        client?.stop();
+      },
+    });
+    if (!session) {
+      record({ agent, kind: "search", target: question.slice(0, 120), outcome: "refused", detail: null });
+      return toolFailure("access_off", "Computer access is off: the person turned it off. Tell them and go on without the web.");
+    }
+    const calls = new ResearchCalls();
+    const fetcher = this.host.webFetcher ?? httpWebFetcher();
+    const toolServer = new CoordinatorToolServer(
+      RESEARCH_TOOLS,
+      (name, args) => runResearchTool(name, args, { gate: this.computerAccess, fetcher, agent, record, signal: abort.signal, newId: randomUUID }, calls),
+      RESEARCH_TOOL_SERVER_INSTRUCTIONS,
+    );
+    const choice = runner.chosen?.(specialist) ?? { provider: runner.provider, model: runner.model };
+    try {
+      await toolServer.start();
+      client = createRuntime(choice.provider, {
+        executable: choice.provider === "codex" ? this.host.codexExecutable : null,
+        toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
+        requestTimeoutMs: 15_000,
+        language: () => this.state.language,
+      });
+      const opening = await client.openThread({
+        model: choice.model,
+        cwd: project.rootPath,
+        developerInstructions: researchInstructions(project.name, agent, specialist.competence, LANGUAGE_NAMES_IN_ENGLISH[this.state.language]),
+        sandbox: "read-only",
+        ephemeral: true,
+        hostToolsOnly: true,
+      });
+      const report = await client.runTurn({ threadId: opening.threadId, prompt: researchPrompt(question), cwd: project.rootPath, model: choice.model, onEvent: () => undefined });
+      return toolSuccess(researchEnvelope(agent, report.trim(), calls.pages));
+    } catch (error) {
+      if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: Research stopped. Tell the person and go on without the web.");
+      return toolFailure("research_failed", `Research could not finish: ${(error as Error).message}`);
+    } finally {
+      session.done();
+      client?.stop();
+      toolServer.stop();
+    }
   }
 
   /**
@@ -9293,6 +9426,11 @@ export class TramaController {
     // The order of the projects changes only with the arrows of the Panoramica.
     if (update.projectPriority !== undefined) {
       const { projectPriority: _ignored, ...rest } = update;
+      update = rest;
+    }
+    // Computer access changes only with the switch of the status bar or the Pause, which stop what runs and tell Activity.
+    if ("computerAccess" in update || "computerAccessPausedBy" in update) {
+      const { computerAccess: _access, computerAccessPausedBy: _holders, ...rest } = update;
       update = rest;
     }
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;

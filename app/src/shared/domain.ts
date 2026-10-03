@@ -1316,6 +1316,32 @@ export type SquadChangeKind = "rename" | "merge" | "split";
  * changed, so Activity tells it and the person can undo it: the squads as they were, the squads it created, the
  * specialists whose status it changed as they were, and the specialists it added.
  */
+/** A turn of the access switch, shown in Activity: who turned it, and the actions it stopped (issue #413). */
+export interface AccessChange {
+  id: string;
+  at: string;
+  on: boolean;
+  /** `person` with the switch, `pause` when the Coordinator's Pause turned it off or on again. */
+  by: "person" | "pause";
+  /** The actions in progress the switch stopped, with the agent that ran them. */
+  stopped: { agent: string; label: string }[];
+}
+
+/** A step of an agent that used computer access, shown in Activity: a search or a page Research read (issue #408). */
+export interface AccessStep {
+  id: string;
+  at: string;
+  /** The agent that took the step, as the person sees it in Activity. */
+  agent: string;
+  kind: "search" | "page";
+  /** What was searched, or the page address without its query string and fragment. */
+  target: string;
+  /** `refused` when the switch was off, the address was not allowed or it carried a secret. */
+  outcome: "done" | "failed" | "refused";
+  /** Why it failed or was refused, or the host of a page that moved elsewhere; null when it went well. */
+  detail: string | null;
+}
+
 export interface SquadChange {
   id: string;
   kind: SquadChangeKind;
@@ -1841,6 +1867,10 @@ export interface ProjectDocument {
   overruledFindings?: OverruledFinding[];
   /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
   continuousWork?: ContinuousWorkRecord;
+  /** When computer access went off or on while this project was open, oldest first (issue #413); absent until the first. */
+  accessChanges?: AccessChange[];
+  /** The searches and pages Research read through computer access, oldest first (issue #408); absent until the first. */
+  accessSteps?: AccessStep[];
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */
@@ -2450,6 +2480,13 @@ export interface AppSettings {
   sounds?: boolean;
   /** Continuous work (W04): Trama starts the Coordinator's own moves within the mandate. On unless the person turns it off. */
   continuousWork?: boolean;
+  /**
+   * Computer access (ADR 0020, issue #413): network, browser, commands outside the project and screen. On unless the
+   * person turns it off, or a Pause does; the work on the project's code does not depend on it.
+   */
+  computerAccess?: boolean;
+  /** The projects whose Pause turned the access off: it comes back on when the last of them resumes. */
+  computerAccessPausedBy?: string[];
   /** What the learning loop may do (ADR 0014); missing keys take the defaults. */
   learning?: Partial<LearningSettings>;
   /**

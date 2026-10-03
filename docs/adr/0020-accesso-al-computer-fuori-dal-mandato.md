@@ -43,3 +43,4 @@ Conseguenze:
 - Gli sviluppatori e gli altri ruoli restano senza rete nella loro sandbox. Il push resta di Trama, come dice l'ADR 0017.
 - L'Operatore usa lo schermo solo dopo che la persona ha concesso a Trama i permessi di macOS "Accessibilità" e "Registrazione schermo".
 - Le fette della specifica restano in attesa finché la persona non le avvia.
+- La rete di Ricerca passa da Trama (issue #408). Ricerca non ha la rete della protezione del provider: ha due strumenti, uno che cerca e uno che legge una pagina, e Trama fa la richiesta fuori dalla protezione. Il 2 ottobre 2026 la prova ha mostrato che aprire la rete in Codex (`network.enabled=true`) apre internet intero, invii compresi, quindi non si poteva dare solo la lettura. Le richieste sono solo di lettura, senza corpo né credenziali; un indirizzo con un segreto, o su questo computer o su una rete privata, non parte. Ogni passo passa dall'interruttore e dal ruolo prima di partire.
