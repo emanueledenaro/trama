@@ -1818,8 +1818,14 @@ describe("TramaController", () => {
       await internal.closeSliceIssue(project, candidate);
       expect(await ticket()).toMatchObject({ state: "open", comments: [] });
 
-      // Green checks on the merged pull request close it, without asking the person: both criteria ticked, one report.
+      // A candidate whose module the mandate no longer covers leaves the issue alone too.
       candidate.unresolvedChoices.length = 0;
+      (candidate as { touchedModules: string[] }).touchedModules = ["Sources/Other"];
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      (candidate as { touchedModules: string[] }).touchedModules = ["Sources/Orders"];
+
+      // Green checks on the merged pull request close it, without asking the person: both criteria ticked, one report.
       await internal.closeSliceIssue(project, candidate);
       expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 1, body: "## Criteri\n\n- [x] Il riepilogo mostra l'annullo\n- [x] Le verifiche passano" });
       expect((await ticket()).comments).toHaveLength(1);

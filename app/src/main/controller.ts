@@ -791,6 +791,9 @@ interface CoordinatorRuntime {
   projectId: string;
 }
 
+/** How many times Trama looks again, a minute apart, at the checks of a merged slice's pull request before it leaves them to the next round. */
+const SLICE_ISSUE_CHECK_WAITS = 60;
+
 export class TramaController {
   private state: AppState;
   private readonly storage: AppStorage;
@@ -3723,9 +3726,10 @@ export class TramaController {
       // The events of the work that waited for Riprendi come before the round's own retry: they are news (no work is lost).
       const waited = busy ? [] : this.deferredWork.filter((d) => d.projectId === project.id);
       if (waited.length) this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+      // A question whose attempts are used up is told even when another dialog's move starts now.
+      if (!busy) this.tellHeldQuestions(project);
       const move = busy ? null : (this.startAutomaticMove(project, [...waited, { requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
-      else if (!busy) this.tellHeldQuestions(project);
       if (!details.length) return;
       recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
       this.changedIn(project);
@@ -7981,6 +7985,7 @@ export class TramaController {
   // MARK: Tickets
 
   private readonly sliceIssueCloseFailures = new Map<string, number>();
+  private readonly sliceIssueCloseWaits = new Map<string, number>();
 
   /**
    * Closes the issue a slice was published as once its pull request is merged (issue #550), without asking the person. It
@@ -7994,14 +7999,24 @@ export class TramaController {
     const pull = candidate.pullRequest;
     const document = project.document;
     if (!pull?.mergedAt || !project.github.repository || !project.stateWritable || project.isDemo) return;
-    if (authorize(document.mandate, "integrateCandidate") !== "authorized" || candidate.unresolvedChoices.length) return;
+    if (authorize(document.mandate, "integrateCandidate", candidate.touchedModules) !== "authorized" || candidate.unresolvedChoices.length) return;
     const assignment = findAssignment(document, candidate.assignmentId);
     const number = assignment ? (assignmentSlice(document, assignment)?.ticket.issue?.number ?? null) : null;
     const open = number === null ? undefined : project.github.issues.find((i) => i.number === number);
     if (number === null || !open || open.state !== "open") return;
     // Checks that are not green yet are read again in the next round, without a report on the issue each time.
     const status = await readPullRequestStatus(project.github.repository, pull.number).catch(() => null);
-    if (status?.state !== "MERGED" || status.checks !== "success") return;
+    if (status?.state !== "MERGED" || status.checks !== "success") {
+      // The merged work leaves the round (no open work): Trama looks again by itself, a few times at most.
+      const waits = this.sliceIssueCloseWaits.get(candidate.id) ?? 0;
+      if (waits < SLICE_ISSUE_CHECK_WAITS) {
+        this.sliceIssueCloseWaits.set(candidate.id, waits + 1);
+        this.integrateLater(project, CHECKS_RETRY_MS);
+      }
+      return;
+    }
+    // The person may have opened another project while GitHub answered: updateTicket works on the selected one.
+    if (this.state.project !== project) return;
     const failures = this.sliceIssueCloseFailures.get(candidate.id) ?? 0;
     if (failures >= 3) return;
     const t = translator(this.state.language);
