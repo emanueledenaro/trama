@@ -134,7 +134,7 @@ function listRoot(): string[] {
 /**
  * Paths a shell command names that are private to the person: inside the home folder or Codex's home, but
  * outside every readable root. Used to record reads a sandbox blocked; system folders are not reported.
- * Script content (heredocs, -c/-e arguments to interpreters) is not parsed; only actual file paths matter.
+ * Inside the script of a code interpreter (-c/-e argument or heredoc) only relative paths are ignored; shell -c text is analyzed as a command.
  */
 export function privatePathsInCommand(command: string, cwd: string, roots: readonly string[], home = homedir(), codexHome = codexHomeDirectory(home)): string[] {
   const cleaned = stripScriptContent(command);
@@ -151,25 +151,28 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
   return found;
 }
 
-/** Code interpreters where -c/-e arguments and heredocs should be stripped. */
-const CODE_INTERPRETERS = /^(?:python3?|node|ruby|perl|deno|bun)$/;
+/** Relative path starts (`./`, `../`) not preceded by a path character. */
+const RELATIVE_PATH_START = /(?<![\w.~/$])\.{1,2}(?=\/)/g;
 
-/** Remove script content from a command: -c/-e arguments to code interpreters and heredocs that feed them. */
+/** A relative path inside script text only reaches the script's own working folder, so it is not a private read. */
+function withoutRelativePaths(script: string): string {
+  return script.replace(RELATIVE_PATH_START, "rel");
+}
+
+/**
+ * Neutralize relative paths in script text: the -c/-e argument of a code interpreter and the heredoc that feeds one.
+ * Home and Codex paths stay, so a real attempt is still reported. Shells are not touched, their -c text is a command.
+ */
 function stripScriptContent(command: string): string {
-  // Remove -c and -e arguments for code interpreters (not shells).
-  // Match: <interpreter> -c "..." or -e '...' but not for sh/bash/zsh
-  let result = command.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b[^;|&]*?(?:\s+-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+))/g, (match) => {
-    // Keep the interpreter but remove the -c/-e argument
-    return match.replace(/\s+-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/, "");
-  });
+  const quoted = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+`;
+  const interpreter = String.raw`\b(?:python3?|node|ruby|perl|deno|bun)\b`;
+  let result = command.replace(new RegExp(`(${interpreter}[^;|&]*?\\s+-[ce]\\s+)(${quoted})`, "g"), (_m, head: string, script: string) => head + withoutRelativePaths(script));
 
-  // Remove heredoc content only when it feeds a code interpreter (python -, ruby -, etc.)
-  result = result.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b[^;|&]*?-\s*<<'?([A-Za-z_][A-Za-z0-9_]*)'?[\s\S]*?(?:^|\n)\1(?:\n|$)/gm, (match) => {
-    // Keep the interpreter but remove the heredoc
-    const interpreterPart = match.match(/^[^<]*/)?.[0] || "";
-    return interpreterPart.replace(/\s*-\s*$/, " ");
-  });
-
+  // The closing delimiter ends the line, the text, or a literal \n, and may be followed by the shell's own quote.
+  result = result.replace(
+    new RegExp(`(${interpreter}[^;|&]*?<<-?['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?)([\\s\\S]*?(?:^|\\n|\\\\n)\\2(?=$|[\\s"']|\\\\n))`, "gm"),
+    (_m, head: string, _delimiter: string, body: string) => head + withoutRelativePaths(body),
+  );
   return result;
 }
 

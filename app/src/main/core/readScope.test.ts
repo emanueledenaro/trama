@@ -103,7 +103,15 @@ describe("read scope of agent sessions (issue #206)", () => {
     const cwd = roots[0]!;
     // Paths inside -c/-e for code interpreters should not be flagged
     expect(privatePathsInCommand('python -c "import os; os.chdir(\'../content/records.json\')"', cwd, roots, home, codexHome)).toEqual([]);
-    expect(privatePathsInCommand('python3 -c "open(\'~/.codex/memories/MEMORY.md\')"', cwd, roots, home, codexHome)).toEqual([]);
+    // Home and Codex paths inside a script are real attempts and stay reported
+    expect(privatePathsInCommand('python3 -c "open(\'~/.codex/memories/MEMORY.md\')"', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.codex/memories/MEMORY.md",
+    ]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nopen('/home/rita/.ssh/id_rsa')\nPY", cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
+    // The exact simulated case: heredoc inside zsh -lc, closing delimiter followed by the shell's quote
+    expect(privatePathsInCommand('/bin/zsh -lc "python3 - <<\'PY\'\nopen(\'../content/records.json\')\nPY"', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('/bin/zsh -lc "python3 - <<\'PY\'\\nopen(\'../content/records.json\')\\nPY"', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('/bin/zsh -lc \'cat ~/.ssh/id_rsa\'', cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
     expect(privatePathsInCommand('node -e \'fs.readFileSync("../images/file.txt")\'', cwd, roots, home, codexHome)).toEqual([]);
     expect(privatePathsInCommand('ruby -e "File.read(\'../data/file.txt\')"', cwd, roots, home, codexHome)).toEqual([]);
     // Shell -c arguments are parsed for real reads, not stripped
