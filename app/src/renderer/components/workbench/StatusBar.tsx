@@ -7,10 +7,10 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconPlayerTrackNext,
-  IconPlugConnected,
-  IconPlugConnectedX,
   IconRepeatOff,
   IconTarget,
+  IconWorld,
+  IconWorldOff,
 } from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
 import type { StatusLineAction, StatusLineView } from "@shared/domain";
@@ -84,27 +84,27 @@ function StatusPopup({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The switch of computer access (ADR 0020, issue #413): always in the bar, off or on. The state is the icon and the
- * weight of the text; the button takes no state tint. Off, the agents lose the network, the browser, commands outside
+ * The switch of computer access (ADR 0020, issue #413): always in the bar, off or on. Only the icon shows the state, a
+ * globe on and a crossed globe off, with no word and no state tint; the name and the hint say it in words. Off, the agents lose the network, the browser, commands outside
  * the project and the screen at once; the work on the code goes on.
  */
 function AccessSwitch() {
   const t = useT();
   const on = useUi((s) => s.app?.settings.computerAccess !== false);
+  const label = t(on ? "workbench.status.accessOnHint" : "workbench.status.accessOffHint");
   return (
-    <Tooltip label={t(on ? "workbench.status.accessOnHint" : "workbench.status.accessOffHint")}>
+    <Tooltip label={label}>
       <button
         type="button"
         role="switch"
         aria-checked={on}
-        aria-label={t("workbench.status.access")}
-        className={cn(ITEM, !on && PROBLEM)}
+        aria-label={label}
+        className={ITEM}
         data-testid="status-access"
         data-access={on ? "on" : "off"}
         onClick={() => void act("access:set", { on: !on })}
       >
-        {on ? <IconPlugConnected className="size-3 shrink-0" stroke={1.8} /> : <IconPlugConnectedX className="size-3 shrink-0" stroke={1.8} />}
-        <span className="min-w-0 truncate">{t(on ? "workbench.status.accessOnText" : "workbench.status.accessOffText")}</span>
+        {on ? <IconWorld className="size-3 shrink-0" stroke={1.8} /> : <IconWorldOff className="size-3 shrink-0" stroke={1.8} />}
       </button>
     </Tooltip>
   );
