@@ -306,7 +306,7 @@ import {
   type TurnEnd,
   recordTurnContext,
 } from "./core/team";
-import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignWithBase, COORDINATOR_TOOL_RULES, DEVELOPER_TOOL_RULES, developerRulesDue } from "./core/baseAlignment";
+import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignmentTargetFor, alignWithBase, COORDINATOR_TOOL_RULES, DEVELOPER_TOOL_RULES, developerRulesDue } from "./core/baseAlignment";
 import { INSTALL_DEPENDENCIES_TOOL, installNodeDependencies } from "./core/dependencyInstall";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import {
@@ -316,6 +316,7 @@ import {
   concludeMerge,
   mergeCommitMessage,
   prepareWorktree,
+  realignBase,
   removeWorktree,
   reviewWorktree,
   validateWorktree,
@@ -6240,6 +6241,9 @@ export class TramaController {
     const redacted = await redactSensitiveData(written, repositoryLocator(assignment.workspace.worktreeRoot));
     requireValidCommitMessage(redacted, conventions);
     const done = await concludeMerge(assignment.workspace, redacted, secretFindings);
+    // The copy now holds what main brought: later comparisons start from the merge-base with it, not from the old base.
+    const base = await this.readBranchBase(project, false);
+    await realignBase(assignment.workspace, alignmentTargetFor(assignment.workspace, base)?.ref ?? null);
     appendEvent(
       project.document,
       "trama",

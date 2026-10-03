@@ -6,7 +6,8 @@ import { advanceAfterMerge, readBranchBase } from "./branchBase";
 import { assessWithRemoteBase } from "./conflicts";
 import { git } from "./process";
 import { alignWithBase } from "./baseAlignment";
-import { prepareWorktree, reviewWorktree } from "./workspace";
+import { secretFindings } from "./quality";
+import { concludeMerge, prepareWorktree, realignBase, reviewWorktree } from "./workspace";
 
 const commit = (cwd: string, message: string) => git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qam", message], cwd, false);
 
@@ -107,5 +108,54 @@ describe("the checkout after a merge on the remote (issue #559)", () => {
     const local = (await git(["rev-parse", "HEAD"], repo)).trim();
     expect(await advanceAfterMerge(repo, "main")).toBeNull();
     expect((await git(["rev-parse", "HEAD"], repo)).trim()).toBe(local);
+  });
+});
+
+describe("the base of a candidate after the base was merged into its copy (issue #559)", () => {
+  /** A copy made on an old commit; main gets new files on the remote; the copy merges main and the merge is concluded. */
+  async function realigned() {
+    const { repo, mergeOnRemote } = await scene();
+    const session = await prepareWorktree(repo, "Ada", await mkdtemp(join(tmpdir(), "trama-rb-wt-")));
+    const root = session.worktreeRoot;
+    await git(["config", "user.name", "T"], root, false);
+    await git(["config", "user.email", "t@t"], root, false);
+    const oldBase = session.baseSHA;
+    await writeFile(join(root, "mine.txt"), "work of the developer\n");
+    await mergeOnRemote("slice1.txt", "from main\n");
+    const base = (await readBranchBase(repo, { fetch: true }))!;
+    expect(await alignWithBase(session, base)).toMatchObject({ ok: true, state: "merged" });
+    await concludeMerge(session, `chore: merge origin/main into ${session.branch}`, secretFindings);
+    // The developer then adjusts a file that came from main.
+    await writeFile(join(root, "slice1.txt"), "from main\nadjusted\n");
+    await git(["add", "."], root, false);
+    await commit(root, "fix: adjust slice 1");
+    return { repo, session, root, oldBase, mergeOnRemote };
+  }
+
+  it("keeps the old base until the merge is recorded: the diff carries the files that came from main and the comparison conflicts", async () => {
+    const { repo, session, mergeOnRemote } = await realigned();
+    await mergeOnRemote("other.txt", "later\n");
+    expect((await reviewWorktree(session)).changedFiles).toContain("slice1.txt");
+    expect(await compare(repo, session)).toMatchObject({ classification: "conflict" });
+  });
+
+  it("moves the base to the merge-base with the updated main: only the developer's work in the diff and no conflict against origin/main", async () => {
+    const { repo, session, root, oldBase, mergeOnRemote } = await realigned();
+    const base = (await readBranchBase(repo, { fetch: true }))!;
+    const remoteSHA = base.remoteSHA!;
+    expect(await realignBase(session, base.remoteRef)).toBe(remoteSHA);
+    expect(session.baseSHA).toBe(remoteSHA);
+    expect(session.baseSHA).not.toBe(oldBase);
+    expect((await reviewWorktree(session)).changedFiles).toEqual(["mine.txt", "slice1.txt"]);
+    // Main moves again after the merge: the comparison is made and finds nothing wrong.
+    await mergeOnRemote("other.txt", "later\n");
+    const assessment = await compare(repo, session);
+    expect(assessment).not.toBeNull();
+    expect(assessment!.conflictingFiles).toEqual([]);
+    expect(assessment!.classification).toBe("clean");
+    // A second call changes nothing, and the base never moves back to an older commit.
+    expect(await realignBase(session, base.remoteRef)).toBeNull();
+    expect(await realignBase(session, null)).toBeNull();
+    expect(root).toBe(session.worktreeRoot);
   });
 });
