@@ -1755,11 +1755,11 @@ export const en: Record<keyof typeof it, string> = {
   "activity.type.access": "Computer access",
   "activity.access.on": "Computer access turned on",
   "activity.access.off": "Computer access turned off",
-  "activity.access.by.person": "You changed it from the status bar.",
+  "activity.access.by.person": "You changed it with the switch.",
   "activity.access.by.pause": "The Coordinator's Pause changed it.",
   "activity.access.stopped": "Stopped an action of {agent}: {action}.",
-  "workbench.status.accessOnHint": "Agents' internet and commands: on. Click to turn off.",
-  "workbench.status.accessOffHint": "Agents' internet and commands: off. Click to turn back on.",
+  "chat.composer.accessOnHint": "Agents' internet and commands: on. Click to turn off.",
+  "chat.composer.accessOffHint": "Agents' internet and commands: off. Click to turn back on.",
   "activity.openMessage": "Go to your message",
 
   // Full delegation: "fai tutto tu" (issue #423)

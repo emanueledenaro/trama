@@ -43,7 +43,7 @@ describe("computer access switch", () => {
     const changes = [{ id: "a", at: "2026-10-03T10:00:00.000Z", on: false, by: "person" as const, stopped: [{ agent: "Operatore", label: "npm install" }] }];
     const [it_] = accessChangeEntries(translator("it"), changes);
     expect(it_).toMatchObject({ kind: "access", label: "Accesso al computer spento", outcome: "done" });
-    expect(it_!.detail).toBe("Lo hai cambiato tu dalla barra di stato. Fermata un'azione di Operatore: npm install.");
+    expect(it_!.detail).toBe("Lo hai cambiato tu con l'interruttore. Fermata un'azione di Operatore: npm install.");
     const [en] = accessChangeEntries(translator("en"), [{ ...changes[0]!, on: true, by: "pause", stopped: [] }]);
     expect(en).toMatchObject({ label: "Computer access turned on", detail: "The Coordinator's Pause changed it." });
   });

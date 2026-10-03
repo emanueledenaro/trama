@@ -47,7 +47,7 @@ export interface ActionMap {
   "coordinator:interrupt": [void, void];
   /** Pauses or resumes the project's continuous work (A05): the Pause stops automatic moves, rounds and automatic work. */
   "coordinator:pause": [{ paused: boolean }, void];
-  /** Turns computer access (network, browser, commands outside the project, screen) on or off from the status bar (issue #413). */
+  /** Turns computer access (network, browser, commands outside the project, screen) on or off with the access switch (issue #413). */
   "access:set": [{ on: boolean }, void];
   /** The person asks the Coordinator for a recap (A03): Trama writes it in the chat from the records. */
   "coordinator:recap": [{ goalId?: string | null }, void];
