@@ -1719,6 +1719,121 @@ describe("TramaController", () => {
     }
   });
 
+  it("closes the issue of a slice once its pull request is merged, with the evidence of the merged candidate and green checks (issue #550)", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
+    const ticketFile = join(bin, "ticket.json");
+    const { symlink, readFile } = await import("node:fs/promises");
+    const { execFileSync } = await import("node:child_process");
+    const ticket = async () => JSON.parse(await readFile(ticketFile, "utf8")) as { state: string; body: string; comments: string[]; closeCalls?: number };
+    const change = async (update: Record<string, unknown>) => writeFile(ticketFile, JSON.stringify({ ...(await ticket()), ...update }));
+    const now = new Date().toISOString();
+    await writeFile(
+      ticketFile,
+      JSON.stringify({
+        number: 42,
+        title: "Ticket di prova",
+        state: "open",
+        body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano",
+        comments: [],
+        pulls: { 12: { state: "MERGED", mergedAt: now, checks: "PENDING" } },
+      }),
+    );
+    await symlink(join(root, "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    process.env.FAKE_GH_TICKET = ticketFile;
+    try {
+      const { project: projectPath } = await setup();
+      const run = (...args: string[]) => execFileSync("git", args, { cwd: projectPath, encoding: "utf8" }).trim();
+      run("init", "-q", "-b", "main");
+      run("-c", "user.name=t", "-c", "user.email=t@t", "add", ".");
+      run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init");
+      run("remote", "add", "origin", "https://github.com/trama-fixture/ordini-finti.git");
+      const sha = run("rev-parse", "HEAD");
+      await controller!.refreshGitHub();
+      const internal = controller as unknown as { state: { project: { document: ProjectDocument; github: { issues: { state: string }[] } } }; closeSliceIssue(project: unknown, candidate: unknown): Promise<void> };
+      const project = internal.state.project;
+      const document = project.document;
+      await controller!.grantMandate({
+        requestId: null,
+        objectives: ["Ordini"],
+        priorities: [],
+        scopeModuleIds: ["Sources/Orders"],
+        authorizedActions: ["openPullRequest", "integrateCandidate"],
+        limits: [],
+      });
+      document.plans.push({
+        id: "P-550",
+        summary: "Annullo degli ordini",
+        slicing: { status: "approved", tickets: [{ id: "S1", title: "Annullo", whatToBuild: "x", acceptanceCriteria: [], blockedBy: [], issue: { number: 42, url: "u", at: now } }] },
+      } as never);
+      const proposal = proposeTeam(document, {
+        requestId: null,
+        summary: null,
+        members: [{ name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIds: ["Sources/Orders"] }],
+      });
+      confirmTeam(document, proposal.id, null, null);
+      const assignment = assign(
+        document,
+        { specialist: "Ada", kind: "agreedTicket", objective: "Annullo", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: [], instructions: "Scrivi" },
+        document.mandate!.version,
+        null,
+      );
+      assignment.slice = { planId: "P-550", sliceId: "S1" };
+      const candidate = {
+        id: "C-0000000A",
+        assignmentId: assignment.id,
+        specialistId: assignment.specialistId,
+        snapshotId: "s",
+        baseSHA: sha,
+        diff: "",
+        changedFiles: [],
+        touchedModules: [],
+        requiredDecisionIds: [],
+        decisionVersions: {},
+        requiredChecks: [],
+        unresolvedChoices: [],
+        externalEffects: [],
+        declaredAt: now,
+        updatedAt: now,
+        evidence: {},
+        technicalReview: null,
+        clearance: null,
+        humanApproval: null,
+        pullRequest: { url: "https://github.com/trama-fixture/ordini-finti/pull/12", number: 12, branch: "trama/annullo", at: now, mergedAt: now },
+      };
+      document.candidates.push(candidate as never);
+      const lastActivity = () => {
+        const content = document.events.findLast((e) => e.content.type === "activity" && e.content.title.startsWith("Issue #42"))?.content;
+        return content?.type === "activity" ? content : null;
+      };
+
+      // Checks not green yet: nothing is posted, the round reads them again.
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+
+      // A candidate with a choice still open leaves the issue alone, even with green checks.
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "SUCCESS" } } });
+      (candidate.unresolvedChoices as string[]).push("Quale arrotondamento?");
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+
+      // Green checks on the merged pull request close it, without asking the person: both criteria ticked, one report.
+      candidate.unresolvedChoices.length = 0;
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 1, body: "## Criteri\n\n- [x] Il riepilogo mostra l'annullo\n- [x] Le verifiche passano" });
+      expect((await ticket()).comments).toHaveLength(1);
+      expect((await ticket()).comments[0]).toContain("La pull request #12 è unita");
+      expect(lastActivity()!.title).toBe("Issue #42 «Ticket di prova»: chiusa con le prove");
+    } finally {
+      await controller?.stop();
+      controller = null;
+      await new Promise((r) => setTimeout(r, 1_000));
+      process.env.PATH = path;
+      delete process.env.FAKE_GH_TICKET;
+    }
+  });
+
   it("updates a ticket only with evidence, without duplicates, and never reports a failed write as done (C10)", async () => {
     const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
     const ticketFile = join(bin, "ticket.json");

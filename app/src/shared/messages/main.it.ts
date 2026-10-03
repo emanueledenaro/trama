@@ -1585,6 +1585,12 @@ export const mainIt = {
   "main.continuousWork.block.reviewLoop": "disaccordo fra sviluppatore e revisori",
   "main.continuousWork.moveFailed":
     "La mossa automatica non è riuscita: {reason}",
+  "main.continuousWork.stall.unanswered":
+    "il Coordinatore non ha risposto alla domanda dello sviluppatore.",
+  "main.continuousWork.questionHeld":
+    "Trama ha smesso di riprovare a rispondere allo sviluppatore dopo {attempts} turni senza risposta.",
+  "main.continuousWork.questionHeldDetail":
+    "La domanda resta aperta e il suo incarico in pausa. Trama riprova fra un'ora, oppure scrivi tu al Coordinatore.",
   "main.continuousWork.stall.noPlan":
     "il Coordinatore non ha avviato il piano.",
   "main.continuousWork.stall.noAssignment":
