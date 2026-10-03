@@ -710,6 +710,7 @@ export const en: Record<keyof typeof it, string> = {
   "ticket.registered": "{issue}: progress recorded",
   "ticket.duplicate": "{issue}: progress already recorded",
   "ticket.mergedSummary": "Pull request #{number} is merged and its checks are green. Candidate {candidate} passed Trama's checks: the slice is delivered.",
+  "ticket.mergedSummaryNoCi": "Pull request #{number} is merged. The repository has no CI: Trama's checks of the candidate count. Candidate {candidate} passed them: the slice is delivered.",
   "ticket.closed": "{issue}: closed with the evidence",
   "ticket.failed": "{issue}: update failed",
   "ticket.stillOpen": "Still open: {blockers}.",

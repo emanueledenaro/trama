@@ -31,7 +31,7 @@ const saveTicket = () => writeFileSync(ticketFile, JSON.stringify(ticket, null, 
 if (ticket && args[0] === "pr" && args[1] === "view") {
   const pull = ticket.pulls?.[args[2]];
   if (!pull) fail(`fake gh: pull request ${args[2]} not found`);
-  reply({ number: Number(args[2]), state: pull.state, mergedAt: pull.mergedAt ?? null, statusCheckRollup: pull.checks ? [{ conclusion: pull.checks, status: pull.checks === "PENDING" ? "IN_PROGRESS" : "COMPLETED" }] : [] });
+  reply({ number: Number(args[2]), state: pull.state, mergedAt: pull.mergedAt ?? null, headRefOid: pull.headSHA ?? null, statusCheckRollup: pull.checks ? [{ conclusion: pull.checks, status: pull.checks === "PENDING" ? "IN_PROGRESS" : "COMPLETED" }] : [] });
 }
 if (args[0] === "auth" && args[1] === "status") reply("github.com\n  ✓ Logged in to github.com account trama-ui (keyring)\n");
 // With FAKE_GH_PULLS Trama may publish and merge (issue #247): the account can push, a new pull request takes number 21,
