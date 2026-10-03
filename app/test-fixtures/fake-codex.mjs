@@ -549,7 +549,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const role = text.match(/Cancello del candidato C-[0-9A-F]+, revisore: ([^(]+?) \(/)?.[1] ?? "?";
         const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
         const blocking = role === "Prestazioni" && /^\+.*\[rilievo-bloccante\]/m.test(text);
-        const answer = blocking
+        // In a later round (issue #567) Performance raises a new blocking finding on a line the developer did not change.
+        const newOnOldCode = role === "Prestazioni" && !blocking && text.includes("Giro successivo sullo stesso lavoro") && text.includes("Ciclo senza limite in NOTE.md");
+        const answer = newOnOldCode
+          ? {
+              report: "### Prestazioni\n\n- Una lettura del catalogo senza indice.",
+              findings: [{ severity: "blocking", title: "Lettura del catalogo senza indice", detail: "Il catalogo si rilegge per intero.", file: "NOTE.md:60" }],
+            }
+          : blocking
           ? {
               report: `### Prestazioni\n\n- \`NOTE.md\` chiede un ciclo senza limite.\n\nSkill ricevute: ${skills.join(", ") || "nessuna"}.`,
               findings: [{ severity: "blocking", title: "Ciclo senza limite in NOTE.md", detail: "La nota chiede di rileggere tutti gli ordini a ogni richiesta.", file: "NOTE.md:2" }],

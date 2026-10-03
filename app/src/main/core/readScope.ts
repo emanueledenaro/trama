@@ -134,10 +134,12 @@ function listRoot(): string[] {
 /**
  * Paths a shell command names that are private to the person: inside the home folder or Codex's home, but
  * outside every readable root. Used to record reads a sandbox blocked; system folders are not reported.
+ * Inside the script of a code interpreter (-c/-e argument or heredoc) only relative paths are ignored; shell -c text is analyzed as a command.
  */
 export function privatePathsInCommand(command: string, cwd: string, roots: readonly string[], home = homedir(), codexHome = codexHomeDirectory(home)): string[] {
+  const cleaned = stripScriptContent(command);
   const found: string[] = [];
-  for (const raw of command.split(/[\s;|&()<>`]+/)) {
+  for (const raw of cleaned.split(/[\s;|&()<>`]+/)) {
     const token = raw.replace(/^[^=]*=(?=[~/$])/, "").replace(/^["']+|["']+$/g, "");
     if (!/^(?:~|\$HOME|\$\{HOME\}|\/|\.\.)/.test(token)) continue;
     const expanded = expandHome(token, home);
@@ -147,6 +149,31 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
     found.push(absolute);
   }
   return found;
+}
+
+/** Relative path starts (`./`, `../`) not preceded by a path character. */
+const RELATIVE_PATH_START = /(?<![\w.~/$])\.{1,2}(?=\/)/g;
+
+/** A relative path inside script text only reaches the script's own working folder, so it is not a private read. */
+function withoutRelativePaths(script: string): string {
+  return script.replace(RELATIVE_PATH_START, "rel");
+}
+
+/**
+ * Neutralize relative paths in script text: the -c/-e argument of a code interpreter and the heredoc that feeds one.
+ * Home and Codex paths stay, so a real attempt is still reported. Shells are not touched, their -c text is a command.
+ */
+function stripScriptContent(command: string): string {
+  const quoted = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+`;
+  const interpreter = String.raw`\b(?:python3?|node|ruby|perl|deno|bun)\b`;
+  let result = command.replace(new RegExp(`(${interpreter}[^;|&]*?\\s+-[ce]\\s+)(${quoted})`, "g"), (_m, head: string, script: string) => head + withoutRelativePaths(script));
+
+  // The closing delimiter ends the line, the text, or a literal \n, and may be followed by the shell's own quote.
+  result = result.replace(
+    new RegExp(`(${interpreter}[^;|&]*?<<-?['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?)([\\s\\S]*?(?:^|\\n|\\\\n)\\2(?=$|[\\s"']|\\\\n))`, "gm"),
+    (_m, head: string, _delimiter: string, body: string) => head + withoutRelativePaths(body),
+  );
+  return result;
 }
 
 /** The permission profiles Trama gives each Codex thread: one for read-only turns, one for the worktree. */
