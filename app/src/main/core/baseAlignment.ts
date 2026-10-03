@@ -95,6 +95,12 @@ export function alignmentTarget(base: BranchBase | null): { ref: string; label: 
   return { ref: base.headSHA, label: base.headSHA.slice(0, 7) };
 }
 
+/** The ref a worktree's base is merged from: the branch recorded at its creation when the checkout is on another one, else the project's base. */
+export function alignmentTargetFor(session: WorktreeSession, base: BranchBase | null): { ref: string; label: string } | null {
+  const recorded = session.baseBranch && session.baseBranch !== base?.branch ? session.baseBranch : null;
+  return recorded ? { ref: `refs/remotes/origin/${recorded}`, label: `origin/${recorded}` } : alignmentTarget(base);
+}
+
 const SAVE_IDENTITY = ["-c", "user.name=Trama", "-c", "user.email=work@trama.local"];
 
 async function write(args: string[], root: string) {
@@ -137,7 +143,7 @@ export async function alignWithBase(session: WorktreeSession, base: BranchBase |
   const root = session.worktreeRoot;
   const recorded = session.baseBranch && session.baseBranch !== base?.branch ? session.baseBranch : null;
   const fetched = recorded ? await fetchRecordedBase(root, recorded) : null;
-  const target = recorded ? { ref: `refs/remotes/origin/${recorded}`, label: `origin/${recorded}` } : alignmentTarget(base);
+  const target = alignmentTargetFor(session, base);
   if (!target) return { ok: false, code: "unreadable_base", reason: "Trama cannot read the base branch of the project: it has no commit yet.", detail: "" };
   const problem = recorded ? fetched : base?.fetchError;
   const fetchError = problem ? { fetchError: problem } : {};
