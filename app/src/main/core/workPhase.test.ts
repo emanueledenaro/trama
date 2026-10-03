@@ -537,3 +537,47 @@ describe("nextStepViews: the button under the latest reply (W01)", () => {
     expect(nextStepViews(document)).toEqual({});
   });
 });
+
+describe("work that stopped hides no other slice's move (issue #557)", () => {
+  /** Ada's work on S1 stopped without a candidate; Bruno's work on S2 ended with a new candidate. */
+  function stoppedBesideCandidate() {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.slice = { planId: "P-1", sliceId: "S1" };
+    stopped.status = "stopped";
+    const other = work(document, "r3", 3, "Bruno");
+    other.slice = { planId: "P-1", sliceId: "S2" };
+    candidate(document, other.id, null, null);
+    return { document, stopped, other };
+  }
+
+  it("proposes the verification of the other slice's candidate while the stopped work waits", () => {
+    const { document } = stoppedBesideCandidate();
+    const state = workState(document, "r3");
+    expect(state.moves.map((m) => m.move)).toEqual(["verifyCandidate", "assignWork"]);
+    expect(state.phase).toBe("verification");
+  });
+
+  it("tells the stop as the blocked phase when it is all there is", () => {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.status = "stopped";
+    const state = workState(document, "r3");
+    expect(state.phase).toBe("blocked");
+    expect(state.blocker).toContain(stopped.id);
+    expect(state.moves.map((m) => m.move)).toEqual(["assignWork"]);
+  });
+
+  it("does not propose assigning a stopped slice that other slices still block", () => {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.slice = { planId: "P-1", sliceId: "S2" };
+    stopped.status = "stopped";
+    const plan = document.plans[0]!;
+    plan.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [] },
+        { id: "S2", title: "Seconda", blockedBy: ["S1"] },
+      ],
+    } as never;
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+});

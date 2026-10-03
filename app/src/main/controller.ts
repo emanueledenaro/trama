@@ -186,6 +186,7 @@ import {
   PROJECT_EVENTS,
   projectMove,
   ticketMove,
+  recordHeldMoves,
   recordRound,
   type HeldMove,
   ROUND_INTERVAL_MS,
@@ -3658,19 +3659,13 @@ export class TramaController {
   }
 
   /**
-   * A developer's question the round stopped answering after its attempts (issue #549): Activity says it once, so neither
-   * the Coordinator nor the person finds the work silent. The round tries again after QUESTION_RETRY_MS.
+   * A move the round stopped starting after its attempts (issues #549, #557): Activity and the status line say it once per
+   * series, so neither the Coordinator nor the person finds the work silent. A question is tried again after QUESTION_RETRY_MS.
    */
-  private tellHeldQuestions(project: ActiveProjectState): void {
+  private tellHeldMoves(project: ActiveProjectState): void {
     const held: HeldMove[] = [];
     projectMove(project.document, "round", this.continuationGuards(project), new Date(), (h) => held.push(h));
-    for (const { requestId, move, attempts } of held) {
-      if (move !== "answerQuestion") continue;
-      const title = t("main.continuousWork.questionHeld", { attempts: String(attempts) });
-      if (project.document.events.some((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === title)) continue;
-      appendEvent(project.document, "trama", { type: "activity", title, detail: t("main.continuousWork.questionHeldDetail"), tone: "error" }, requestId);
-      this.changedIn(project);
-    }
+    if (recordHeldMoves(project.document, held).length) this.changedIn(project);
   }
 
   /** Starts the periodic round (A05): it runs while Trama is open, on the project with open work. */
@@ -3726,8 +3721,8 @@ export class TramaController {
       // The events of the work that waited for Riprendi come before the round's own retry: they are news (no work is lost).
       const waited = busy ? [] : this.deferredWork.filter((d) => d.projectId === project.id);
       if (waited.length) this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
-      // A question whose attempts are used up is told even when another dialog's move starts now.
-      if (!busy) this.tellHeldQuestions(project);
+      // A move whose attempts are used up is told even when another dialog's move starts now.
+      if (!busy) this.tellHeldMoves(project);
       const move = busy ? null : (this.startAutomaticMove(project, [...waited, { requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;

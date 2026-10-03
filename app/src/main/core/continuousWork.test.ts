@@ -15,6 +15,7 @@ import {
   KEPT_ROUNDS,
   QUESTION_RETRY_MS,
   projectMove,
+  recordHeldMoves,
   recordRound,
   setPaused,
   stalledMove,
@@ -27,6 +28,7 @@ import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 import { askCoordinator } from "./developerQuestions";
+import { statusLine } from "./statusLine";
 
 const free: ContinuationGuards = { enabled: true, paused: false, busy: false, unavailable: null };
 
@@ -457,6 +459,43 @@ describe("a developer's open question (issue #549)", () => {
     question.answer = { kind: "facts", text: "Sì", sources: ["spec"], answeredAt: at(10).toISOString() };
     expect(projectMove(document, "round", free, at(20))?.move.move).not.toBe("answerQuestion");
     expect(stalledMove(document, "a1")).toBeNull();
+  });
+});
+
+describe("a move the round stopped starting, whichever it is (issue #557)", () => {
+  /** A ready plan with a confirmed team, and `attempts` automatic turns of assignWork that assigned nothing. */
+  function assignmentNotMade(attempts: number) {
+    const document = confirmed();
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    for (let attempt = 1; attempt <= attempts; attempt++) request(document, `a${attempt}`, { step: { move: "assignWork", by: "trama", trigger: "round" } });
+    return document;
+  }
+
+  it("writes one line in Activity and one in the status line, once per series, when the guard closes on assignWork", () => {
+    const document = assignmentNotMade(3);
+    const held: Parameters<typeof recordHeldMoves>[1] = [];
+    expect(projectMove(document, "round", free, new Date(), (h) => held.push(h))).toBeNull();
+    expect(held).toEqual([expect.objectContaining({ requestId: "a3", move: "assignWork", attempts: 3 })]);
+    expect(recordHeldMoves(document, held)).toEqual(["a3"]);
+    const lines = document.events.filter((e) => e.requestId === "a3" && e.content.type === "activity");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.content).toMatchObject({ tone: "error", title: expect.stringContaining("3 turni") });
+    expect(document.requests.find((r) => r.id === "a3")!.step!.stalled).toBe((lines[0]!.content as { title: string }).title);
+    expect(statusLine(document, null).reason).toContain("3 turni");
+    // The next round finds the guard still closed and says nothing more.
+    expect(recordHeldMoves(document, held)).toEqual([]);
+    expect(document.events.filter((e) => e.requestId === "a3" && e.content.type === "activity")).toHaveLength(1);
+  });
+
+  it("keeps the question's own words for answerQuestion and stays silent below the attempts", () => {
+    const document = assignmentNotMade(2);
+    const held: Parameters<typeof recordHeldMoves>[1] = [];
+    expect(projectMove(document, "round", free, new Date(), (h) => held.push(h))?.move.move).toBe("assignWork");
+    expect(held).toEqual([]);
+    expect(recordHeldMoves(document, [{ requestId: "a2", move: "answerQuestion", attempts: 3, retryAt: null }])).toEqual(["a2"]);
+    expect(document.events.at(-1)!.content).toMatchObject({ title: expect.stringContaining("rispondere allo sviluppatore") });
   });
 });
 

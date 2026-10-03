@@ -1551,6 +1551,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Trama stopped retrying the developer's answer after {attempts} turns without one.",
   "main.continuousWork.questionHeldDetail":
     "The question stays open and its assignment paused. Trama tries again in an hour, or you can write to the Coordinator.",
+  "main.continuousWork.moveHeld":
+    "Trama stopped retrying the step \"{move}\" after {attempts} turns without a result.",
+  "main.continuousWork.moveHeldDetail":
+    "The work stays as it is. Write to the Coordinator to take it up again.",
   "main.continuousWork.stall.noPlan": "the Coordinator did not start the plan.",
   "main.continuousWork.stall.noAssignment":
     "the Coordinator did not assign the work.",
