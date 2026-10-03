@@ -151,17 +151,24 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
   return found;
 }
 
-/** Remove script content from a command: heredocs and -c/-e arguments to interpreters. */
+/** Code interpreters where -c/-e arguments and heredocs should be stripped. */
+const CODE_INTERPRETERS = /^(?:python3?|node|ruby|perl|deno|bun)$/;
+
+/** Remove script content from a command: -c/-e arguments to code interpreters and heredocs that feed them. */
 function stripScriptContent(command: string): string {
-  let result = command;
+  // Remove -c and -e arguments for code interpreters (not shells).
+  // Match: <interpreter> -c "..." or -e '...' but not for sh/bash/zsh
+  let result = command.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b[^;|&]*?(?:\s+-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+))/g, (match) => {
+    // Keep the interpreter but remove the -c/-e argument
+    return match.replace(/\s+-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/, "");
+  });
 
-  // Remove heredoc content (between <<DELIMITER and DELIMITER on its own line)
-  // Match <<[']?WORD[']? followed by content until WORD on its own line
-  result = result.replace(/<<'?[A-Za-z_][A-Za-z0-9_]*'?[\s\S]*?(?:^|\n)[A-Za-z_][A-Za-z0-9_]*(?:\n|$)/gm, " ");
-
-  // Remove -c and -e arguments (for python, node, ruby, perl, sh, etc.)
-  // Pattern: -c "..." or -e '...' or -e argument-without-quotes (but stops at next flag or |/&&)
-  result = result.replace(/-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/g, " ");
+  // Remove heredoc content only when it feeds a code interpreter (python -, ruby -, etc.)
+  result = result.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b[^;|&]*?-\s*<<'?([A-Za-z_][A-Za-z0-9_]*)'?[\s\S]*?(?:^|\n)\1(?:\n|$)/gm, (match) => {
+    // Keep the interpreter but remove the heredoc
+    const interpreterPart = match.match(/^[^<]*/)?.[0] || "";
+    return interpreterPart.replace(/\s*-\s*$/, " ");
+  });
 
   return result;
 }
