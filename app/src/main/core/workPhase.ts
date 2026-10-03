@@ -412,7 +412,8 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   };
 
   if (assignments.length) {
-    const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable });
+    const sliceBlocked = (a: SpecialistAssignment) => Boolean(a.slice) && views.some((v) => v.id === a.slice!.sliceId && v.state === "blocked");
+    const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable, sliceBlocked });
     if (state) {
       if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification, state.why, state.block);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
@@ -532,8 +533,8 @@ function fixUnderway(document: ProjectDocument, assignment: SpecialistAssignment
 function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
-  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
-): { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets; block?: TechnicalBlock } | null {
+  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean; sliceBlocked(assignment: SpecialistAssignment): boolean },
+): AssignedState | null {
   // A developer's question pauses its work (W06): the Coordinator answers it before its other moves.
   const paused = assignments.filter((a) => a.status === "paused");
   for (const assignment of paused) {
@@ -542,11 +543,48 @@ function assignedWork(
   // A candidate replaced by later work (U02) is neither verified nor blocks the phase: the newer work does.
   // A candidate whose findings went back to its developer, who has finished since (W10), describes a worktree that no
   // longer exists: the work needs a new candidate, not a correction of the old one (issue #389).
-  const items = assignments
+  const all = assignments
     .filter((a) => a.status !== "paused")
     .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
     .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate))
     .map(({ assignment, candidate }) => ({ assignment, candidate: candidate && correctedSince(assignment, candidate) ? null : candidate }));
+  // Work that stopped or failed without a candidate hides no other slice's move (issue #557): the others go first, and
+  // the stopped work is told after them, as the phase only when nothing else is going on.
+  const ended = ({ assignment, candidate }: (typeof all)[number]) => !candidate && (assignment.status === "failed" || assignment.status === "stopped");
+  const items = all.filter((i) => !ended(i));
+  const stoppedItem = all.find(ended);
+  const state = workOfOthers(document, paused, items, moves);
+  if (!stoppedItem) return state;
+  const { assignment } = stoppedItem;
+  // Work the person stopped waits for their word, and a slice other slices still block is not assigned yet.
+  if (!heldByPersonStop(document, assignment) && !moves.sliceBlocked(assignment)) moves.assignWork();
+  // Other work at hand keeps its own phase; the stop is the phase when it is all there is.
+  if (state && state.phase !== "merged") return state;
+  const failed = assignment.status === "failed";
+  const blocker = !failed
+    ? t("main.workPhase.blockerStopped", { id: assignment.id })
+    : assignment.failure
+      ? t("main.workPhase.blockerFailedWith", { id: assignment.id, failure: assignment.failure })
+      : t("main.workPhase.blockerFailed", { id: assignment.id });
+  const work = workOf(document, assignment);
+  // Only work that failed is a technical block the Coordinator resolves by itself (A06): a stop is someone's choice.
+  return {
+    phase: "blocked",
+    blocker,
+    why: sentence(failed ? t("main.workPhase.whyFailed", { work }) : t("main.workPhase.whyStopped", { work })),
+    ...(failed ? { block: "stalledAssignment" as const } : {}),
+  };
+}
+
+type AssignedState = { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets; block?: TechnicalBlock };
+
+/** The phase of the assigned work that has not stopped or failed without a candidate, and the moves it allows. */
+function workOfOthers(
+  document: ProjectDocument,
+  paused: SpecialistAssignment[],
+  items: { assignment: SpecialistAssignment; candidate: Candidate | null }[],
+  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
+): AssignedState | null {
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       const provider = providerName(assignment.waitingForProvider.provider);
@@ -554,24 +592,6 @@ function assignedWork(
         phase: "blocked",
         blocker: t("main.workPhase.blockerProvider", { id: assignment.id, provider }),
         why: sentence(t("main.workPhase.whyProvider", { work: workOf(document, assignment), provider })),
-      };
-    }
-    if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
-      // Work the person stopped waits for their word: no automatic move takes it up again before they write.
-      if (!heldByPersonStop(document, assignment)) moves.assignWork();
-      const failed = assignment.status === "failed";
-      const blocker = !failed
-        ? t("main.workPhase.blockerStopped", { id: assignment.id })
-        : assignment.failure
-          ? t("main.workPhase.blockerFailedWith", { id: assignment.id, failure: assignment.failure })
-          : t("main.workPhase.blockerFailed", { id: assignment.id });
-      const work = workOf(document, assignment);
-      // Only work that failed is a technical block the Coordinator resolves by itself (A06): a stop is someone's choice.
-      return {
-        phase: "blocked",
-        blocker,
-        why: sentence(failed ? t("main.workPhase.whyFailed", { work }) : t("main.workPhase.whyStopped", { work })),
-        ...(assignment.status === "failed" ? { block: "stalledAssignment" as const } : {}),
       };
     }
     if (!candidate) continue;
