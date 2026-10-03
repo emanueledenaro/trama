@@ -520,6 +520,7 @@ const statusBarRules = async (where) => {
       '[data-testid="status-conflict"]',
       '[data-testid="status-setup"]',
       '[data-testid="status-focus"]',
+      '[data-testid="status-access"]',
       '[data-testid="status-divider"]',
       'button[aria-label="Attività"]',
     ]
@@ -3321,6 +3322,74 @@ if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new 
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
 await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
+// Issue #413: the switch of computer access is always in the status bar. On, the plug is joined and the text says
+// "Accesso"; off, the plug is crossed and the text says "Accesso spento", with the same button (no tint). The Pause turns
+// it off and Riprendi gives it back as it was; a person's off before the Pause stays off. Each change is a row of Activity.
+{
+  const accessSwitch = page.getByTestId("status-bar").getByRole("switch", { name: "Accesso al computer" });
+  const accessIs = async (state) => {
+    await page.locator(`[data-testid="status-access"][data-access="${state}"]`).waitFor({ timeout: 20_000 });
+    if ((await accessSwitch.getAttribute("aria-checked")) !== String(state === "on")) throw new Error(`The access switch does not say ${state} to assistive technology`);
+  };
+  await accessIs("on");
+  // The pointer rests away from the bar, so no hover tint reads as a background at rest.
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(300);
+  if ((await accessSwitch.innerText()).trim() !== "Accesso") throw new Error("The access switch on does not read Accesso");
+  await statusBarRules("with the access on");
+  await themeShots("15c3-access-on");
+  await accessSwitch.click();
+  await accessIs("off");
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(300);
+  if ((await accessSwitch.innerText()).trim() !== "Accesso spento") throw new Error("The access switch off does not read Accesso spento");
+  await statusBarRules("with the access off");
+  await themeShots("15c4-access-off");
+  // The switch holds after a reload of the window state, and the English texts are in the catalog.
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await page.getByTestId("status-bar").getByRole("switch", { name: "Computer access" }).waitFor({ timeout: 20_000 });
+  if ((await page.getByTestId("status-access").innerText()).trim() !== "Access off") throw new Error("The access switch off does not read Access off in English");
+  await themeShots("15c5-access-off-en");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await accessSwitch.waitFor({ timeout: 20_000 });
+  // The settings call cannot turn the access back on: only the switch and the Pause move it.
+  await page.evaluate(() => window.trama.invoke("settings:update", { computerAccess: true }));
+  await page.waitForTimeout(300);
+  await accessIs("off");
+  await accessSwitch.click();
+  await accessIs("on");
+  // The Pause turns the access off, Riprendi gives it back.
+  await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
+  await accessIs("off");
+  await statusLine.getByRole("button", { name: "Riprendi il Coordinatore" }).click();
+  await accessIs("on");
+  // Off before the Pause: the resume leaves it off.
+  await accessSwitch.click();
+  await accessIs("off");
+  await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
+  await statusLine.getByRole("button", { name: "Riprendi il Coordinatore" }).click();
+  await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
+  await accessIs("off");
+  // Activity lists each change, newest first, and the filter picks them.
+  await statusLine.getByRole("button", { name: "Attività" }).click();
+  const accessRows = page.getByTestId("activity-log").getByTestId("activity-access");
+  await accessRows.first().waitFor({ timeout: 20_000 });
+  const accessTexts = await accessRows.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-testid="activity-row-toggle"]').textContent.trim()));
+  // Newest first; the Pauses of the steps before this one left their own rows below.
+  const expectedRows = [
+    "Accesso al computer spento Lo hai cambiato tu",
+    "Accesso al computer acceso Lo ha cambiato la Pausa",
+    "Accesso al computer spento Lo ha cambiato la Pausa",
+    "Accesso al computer acceso Lo hai cambiato tu",
+    "Accesso al computer spento Lo hai cambiato tu",
+  ];
+  if (expectedRows.some((text, index) => !accessTexts[index]?.startsWith(text))) throw new Error(`Activity does not list the access changes: ${JSON.stringify(accessTexts)}`);
+  await themeShots("15c6-activity-access");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
+  await accessSwitch.click();
+  await accessIs("on");
+}
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
