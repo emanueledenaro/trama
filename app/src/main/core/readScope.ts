@@ -151,23 +151,31 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
   return found;
 }
 
-/** Code interpreters where -c/-e arguments and heredocs should be stripped. */
-const CODE_INTERPRETERS = /^(?:python3?|node|ruby|perl|deno|bun)$/;
-
 /** Remove script content from a command: -c/-e arguments to code interpreters and heredocs that feed them. */
 function stripScriptContent(command: string): string {
-  // Remove -c and -e arguments for code interpreters (not shells).
-  // Match: <interpreter> -c "..." or -e '...' but not for sh/bash/zsh
-  let result = command.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b[^;|&]*?(?:\s+-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+))/g, (match) => {
-    // Keep the interpreter but remove the -c/-e argument
-    return match.replace(/\s+-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/, "");
+  // For code interpreters (python, node, ruby, perl, deno, bun): remove relative paths from -c/-e and heredoc content.
+  // For shells (sh, bash, zsh): parse the -c argument as a command to find real reads.
+
+  // Strategy: Replace relative paths in code interpreter scripts, while keeping absolute/home paths.
+  // This is done by:
+  // 1. Finding -c/-e arguments to code interpreters and heredocs that feed them
+  // 2. Removing only relative paths (../, ./) from that content
+  // 3. Leaving absolute and home paths untouched
+
+  let result = command;
+
+  // Remove relative paths from -c/-e arguments to code interpreters (not shells).
+  result = result.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b([^;|&]*?\s+-[ce]\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/g, (match, before, scriptPart) => {
+    // Remove relative paths from the script part
+    const cleaned = scriptPart.replace(/(?<=['"])\.\.\/[^\s'"]*|(?<=['"])\.\/[^\s'"]*|(?<![\/\w])\.\.\/[^\s;|&]*|(?<![\/\w])\.\/[^\s;|&]*/g, " ");
+    return before + cleaned;
   });
 
-  // Remove heredoc content only when it feeds a code interpreter (python -, ruby -, etc.)
-  result = result.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b[^;|&]*?-\s*<<'?([A-Za-z_][A-Za-z0-9_]*)'?[\s\S]*?(?:^|\n)\1(?:\n|$)/gm, (match) => {
-    // Keep the interpreter but remove the heredoc
-    const interpreterPart = match.match(/^[^<]*/)?.[0] || "";
-    return interpreterPart.replace(/\s*-\s*$/, " ");
+  // Remove heredoc content (with relative paths only) when it feeds a code interpreter
+  result = result.replace(/\b(?:python3?|node|ruby|perl|deno|bun)\b([^;|&]*?\s*-\s*)<<'?([A-Za-z_][A-Za-z0-9_]*)'?([\s\S]*?)(?:^|\n)\2(?=\n|"|'|$)/gm, (match, before, delimiter, heredocContent) => {
+    // Remove relative paths from heredoc content
+    const cleaned = heredocContent.replace(/\.\.\/[^\s'"]*|\.\/[^\s'"]*|^\.\.\/.*|^\.\/.*$/gm, " ");
+    return before + "<<" + delimiter + cleaned + delimiter;
   });
 
   return result;
