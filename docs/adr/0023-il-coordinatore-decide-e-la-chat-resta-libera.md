@@ -38,3 +38,13 @@ Conseguenze:
 - `verify_candidate` e `run_readonly_check` possono rispondere con lo stato `running`; nuovo evento del lavoro `checkEnded`.
 - La voce "Lavoro fermato più volte" non compare più in Aspetta te.
 - Nuovo campo `setAside` sulla mossa automatica messa da parte e nuovo esito "Messa da parte" in Attività; il riepilogo non la racconta.
+
+## Aggiunta: dal secondo giro i revisori guardano solo le modifiche (issue #567)
+
+Nella simulazione del sito GTA6 una fetta ha fatto circa otto giri: a ogni candidato nuovo i revisori rileggevano tutto e trovavano rilievi bloccanti nuovi su parti già lette. Il Coordinatore arbitrava bene, ma ogni giro costava ore. La regola dei due blocchi di fila resta, e questa aggiunta riduce i blocchi che arrivano al Coordinatore.
+
+- **Il diff del secondo giro.** Dal secondo giro i revisori di un candidato ricevono solo le modifiche rispetto al candidato già rivisto della stessa opera (l'ultimo candidato precedente della stessa linea di lavoro con un cancello chiuso, bloccato o passato; un cancello fallito non ha rivisto niente). Un hunk uguale nello stesso file non è una modifica. Ricevono anche i rilievi bloccanti rimasti aperti dal giro prima e l'elenco dei file non cambiati. Lo stesso vale per la revisione tecnica di Clean Code.
+- **Trama applica la regola alle risposte.** Prima della chiusura del cancello, dopo il Patto e i rilievi già superati, un rilievo bloccante nuovo su codice che nessuno ha cambiato diventa un suggerimento (`scope: unchanged`). Un rilievo aperto dal giro prima, anche riformulato (stesso file, riga vicina o stesso titolo), resta bloccante. Un rilievo senza file, o su un file di questo candidato che Trama non sa collocare, resta bloccante.
+- **Sicurezza blocca sempre**, come le prove di Trama (verifica rossa, regressione, segreto nel diff).
+- **Un rilievo su un'altra fetta non blocca questa.** Se il file è cambiato solo dall'ultimo candidato di un altro lavoro, il rilievo diventa un suggerimento (`scope: otherSlice`) e una riga in Attività del lavoro di quella fetta lo racconta come nota. Vale anche al primo giro.
+- **Come si integra con i cicli di revisione.** Un rilievo declassato è un suggerimento: non conta per `blockedReviews`, non porta il lavoro al limite di due blocchi e non arriva a `settle_review` o `overrule_finding`. Il cancello passa se resta solo questo. Se un blocco arriva comunque, il Coordinatore decide come prima.
