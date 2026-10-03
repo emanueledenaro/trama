@@ -1831,6 +1831,23 @@ describe("TramaController", () => {
       expect((await ticket()).comments).toHaveLength(1);
       expect((await ticket()).comments[0]).toContain("La pull request #12 è unita");
       expect(lastActivity()!.title).toBe("Issue #42 «Ticket di prova»: chiusa con le prove");
+
+      // A repository without CI (no checks on GitHub): Trama's checks of the merged candidate are the proof (issue #550).
+      await change({ state: "open", closeCalls: 0, comments: [], body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano", pulls: { 12: { state: "MERGED", mergedAt: now, checks: "" } } });
+      project.github.issues.forEach((i) => (i.state = "open"));
+      candidate.clearance = null as never;
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      candidate.clearance = { actor: "Coordinator", fingerprint: "f", at: now } as never;
+      candidate.technicalReview = { id: "R-1", reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "Ok", at: now } as never;
+      // Checks that are red still keep it open, even with Trama's proof.
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "FAILURE" } } });
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "" } } });
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 1, body: "## Criteri\n\n- [x] Il riepilogo mostra l'annullo\n- [x] Le verifiche passano" });
+      expect((await ticket()).comments[0]).toContain("Il repository non ha CI: contano le verifiche di Trama sul candidato");
     } finally {
       await controller?.stop();
       controller = null;

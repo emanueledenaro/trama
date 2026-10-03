@@ -146,14 +146,19 @@ export type CloseBlocker =
   | { kind: "notMerged" }
   | { kind: "checksNotGreen"; number: number; checks: PullRequestStatus["checks"] };
 
-/** What still prevents closing the ticket: every criterion ticked, a merged pull request with green checks. */
-export function closeBlockers(items: ChecklistItem[], pulls: PullRequestStatus[]): CloseBlocker[] {
+/**
+ * What still prevents closing the ticket: every criterion ticked, a merged pull request with green checks. A pull request
+ * with no checks on GitHub at all (a repository without CI) counts as proven when Trama's own checks of the merged
+ * candidate passed: `verifiedByTrama` lists those pull request numbers. Red or pending checks still block.
+ */
+export function closeBlockers(items: ChecklistItem[], pulls: PullRequestStatus[], verifiedByTrama: ReadonlySet<number> = new Set()): CloseBlocker[] {
   const blockers: CloseBlocker[] = [];
   if (!items.length) blockers.push({ kind: "noChecklist" });
   for (const item of items.filter((i) => !i.checked)) blockers.push({ kind: "criterionOpen", text: item.text });
   const merged = pulls.filter((p) => p.state === "MERGED");
   if (!merged.length) blockers.push({ kind: "notMerged" });
   for (const pull of merged) {
+    if (pull.checks === "none" && verifiedByTrama.has(pull.number)) continue;
     if (pull.checks !== "success") blockers.push({ kind: "checksNotGreen", number: pull.number, checks: pull.checks });
   }
   return blockers;

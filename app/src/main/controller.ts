@@ -387,7 +387,7 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateAfterTurn, candidateReport, verifiedByTrama, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessProjectDivergence } from "./core/branchDivergence";
 import { type BranchBase, readBranchBase } from "./core/branchBase";
 import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
@@ -8006,7 +8006,9 @@ export class TramaController {
     if (number === null || !open || open.state !== "open") return;
     // Checks that are not green yet are read again in the next round, without a report on the issue each time.
     const status = await readPullRequestStatus(project.github.repository, pull.number).catch(() => null);
-    if (status?.state !== "MERGED" || status.checks !== "success") {
+    // A repository without CI never gets green checks: Trama's checks of the merged candidate are the proof then.
+    const withoutCi = status?.checks === "none" && verifiedByTrama(candidate);
+    if (status?.state !== "MERGED" || (status.checks !== "success" && !withoutCi)) {
       // The merged work leaves the round (no open work): Trama looks again by itself, a few times at most.
       const waits = this.sliceIssueCloseWaits.get(candidate.id) ?? 0;
       if (waits < SLICE_ISSUE_CHECK_WAITS) {
@@ -8023,7 +8025,7 @@ export class TramaController {
     try {
       await this.updateTicket({
         issueNumber: number,
-        summary: t("ticket.mergedSummary", { number: String(pull.number), candidate: candidate.id }),
+        summary: t(withoutCi ? "ticket.mergedSummaryNoCi" : "ticket.mergedSummary", { number: String(pull.number), candidate: candidate.id }),
         criteria: parseChecklist(open.body).map((_, index) => ({ index, outcome: "met" as const, evidence: [candidate.id, `#${pull.number}`], limits: null })),
         openParts: [],
         close: true,
@@ -8110,7 +8112,8 @@ export class TramaController {
           }
         }
         const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
-        blockers = closeBlockers(parseChecklist(body), statuses);
+        const verified = new Set(document.candidates.filter((c) => c.pullRequest && verifiedByTrama(c)).map((c) => c.pullRequest!.number));
+        blockers = closeBlockers(parseChecklist(body), statuses, verified);
         if (!blockers.length) {
           await closeIssue(repository, input.issueNumber);
           closed = true;
