@@ -98,6 +98,23 @@ describe("read scope of agent sessions (issue #206)", () => {
     expect(privatePathsInCommand("cat /var/codex/memories/MEMORY.md", cwd, roots, home, "/var/codex")).toEqual(["/var/codex/memories/MEMORY.md"]);
   });
 
+  it("ignores paths inside script content (issue #563): heredocs and -c/-e arguments", () => {
+    const roots = ["/home/rita/progetti/negozio"];
+    const cwd = roots[0]!;
+    // Paths inside -c arguments should not be flagged
+    expect(privatePathsInCommand('python -c "import os; os.chdir(\'../content/records.json\')"', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('node -e \'fs.readFileSync("../images/file.txt")\'', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('python -c \'open("~/.codex/memories/MEMORY.md")\'', cwd, roots, home, codexHome)).toEqual([]);
+    // Paths inside heredocs should not be flagged
+    expect(privatePathsInCommand('cat > file.py <<EOF\nwith open(\'../content/records.json\') as f:\n    pass\nEOF', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('cat > script.sh <<\'EOF\'\ncat ~/.codex/memories/MEMORY.md\nEOF', cwd, roots, home, codexHome)).toEqual([]);
+    // Real file reads should still be flagged
+    expect(privatePathsInCommand('python -c "x=1" && cat ~/.codex/memories/MEMORY.md', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.codex/memories/MEMORY.md",
+    ]);
+    expect(privatePathsInCommand('cat > file.py <<EOF\ndata\nEOF\ncat ../altro/.env', cwd, roots, home, codexHome)).toEqual(["/home/rita/progetti/altro/.env"]);
+  });
+
   it("builds Codex profiles that read only the roots and write only the worktree, without network", () => {
     const worktree = "/data/Worktrees/a1";
     // The system folders a runtime reads as it starts, such as OpenSSL's configuration for node (2 October 2026).

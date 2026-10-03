@@ -134,10 +134,12 @@ function listRoot(): string[] {
 /**
  * Paths a shell command names that are private to the person: inside the home folder or Codex's home, but
  * outside every readable root. Used to record reads a sandbox blocked; system folders are not reported.
+ * Script content (heredocs, -c/-e arguments to interpreters) is not parsed; only actual file paths matter.
  */
 export function privatePathsInCommand(command: string, cwd: string, roots: readonly string[], home = homedir(), codexHome = codexHomeDirectory(home)): string[] {
+  const cleaned = stripScriptContent(command);
   const found: string[] = [];
-  for (const raw of command.split(/[\s;|&()<>`]+/)) {
+  for (const raw of cleaned.split(/[\s;|&()<>`]+/)) {
     const token = raw.replace(/^[^=]*=(?=[~/$])/, "").replace(/^["']+|["']+$/g, "");
     if (!/^(?:~|\$HOME|\$\{HOME\}|\/|\.\.)/.test(token)) continue;
     const expanded = expandHome(token, home);
@@ -147,6 +149,21 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
     found.push(absolute);
   }
   return found;
+}
+
+/** Remove script content from a command: heredocs and -c/-e arguments to interpreters. */
+function stripScriptContent(command: string): string {
+  let result = command;
+
+  // Remove heredoc content (between <<DELIMITER and DELIMITER on its own line)
+  // Match <<[']?WORD[']? followed by content until WORD on its own line
+  result = result.replace(/<<'?[A-Za-z_][A-Za-z0-9_]*'?[\s\S]*?(?:^|\n)[A-Za-z_][A-Za-z0-9_]*(?:\n|$)/gm, " ");
+
+  // Remove -c and -e arguments (for python, node, ruby, perl, sh, etc.)
+  // Pattern: -c "..." or -e '...' or -e argument-without-quotes (but stops at next flag or |/&&)
+  result = result.replace(/-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/g, " ");
+
+  return result;
 }
 
 /** The permission profiles Trama gives each Codex thread: one for read-only turns, one for the worktree. */
