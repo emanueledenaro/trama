@@ -581,3 +581,60 @@ describe("work that stopped hides no other slice's move (issue #557)", () => {
     expect(moves(document, "r3")).not.toContain("assignWork");
   });
 });
+
+describe("no assignment while every slice waits for another (issue #565)", () => {
+  /** S1 is on GitHub (so only a merged pull request delivers it) and has an approved candidate; S2 depends on S1 and cannot start before S1 is delivered. */
+  function candidateBeforeBlockedSlice() {
+    const { document, assignment } = withAssignment();
+    assignment.slice = { planId: "P-1", sliceId: "S1" };
+    document.plans[0]!.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [], issue: { number: 7, url: "https://github.com/o/r/issues/7" } },
+        { id: "S2", title: "Seconda", blockedBy: ["S1"] },
+      ],
+    } as never;
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    return { document, ready };
+  }
+  const openPullRequest = (ready: { pullRequest?: unknown }) => {
+    ready.pullRequest = { number: 25, url: "https://github.com/o/r/pull/25", headSHA: "abc", draft: false, openedAt: at(9).toISOString(), mergedAt: null };
+  };
+
+  it("offers only the review while the candidate waits for the person", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    expect(moves(document, "r3")).toEqual(["reviewCandidate"]);
+    expect(workState(document, "r3").moves[0]).toMatchObject({ targetId: ready.id });
+  });
+
+  it("offers only the merge while the pull request waits for it", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    openPullRequest(ready);
+    expect(moves(document, "r3")).toEqual(["mergePullRequest"]);
+  });
+
+  it("offers no assignment while Trama runs the merge itself", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    openPullRequest(ready);
+    recordMerge(document, ready, "coordinator", "failed", "in attesa delle verifiche");
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
+  it("still offers the assignment when red checks send the work back", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    openPullRequest(ready);
+    recordMerge(document, ready, "coordinator", "failed", "verifiche rosse");
+    ready.merge!.checksRed = true;
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+
+  it("offers the assignment again when another slice is ready", () => {
+    const { document } = candidateBeforeBlockedSlice();
+    (document.plans[0]!.slicing as { tickets: unknown[] }).tickets.push({ id: "S3", title: "Terza", blockedBy: [] });
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+});

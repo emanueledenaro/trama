@@ -385,6 +385,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.tramaQuitting": "Trama is closing.",
   "main.controller.noReadOnlyModelForReviewers":
     "No read-only model available for the reviewers of the candidate.",
+  "main.controller.sliceNoteTitle": "Note for this slice: {reviewer} has a finding on candidate {candidate} about this assignment's files",
   "main.controller.blockingFindingsTitle":
     "{reviewer} to {developer}: {count} blocking findings on candidate {candidate}",
   "main.controller.blockingFindingsTitle.one":

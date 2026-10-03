@@ -2195,6 +2195,11 @@ export interface GateFinding {
   overruled?: { findingId: string; reason: string; decisionIds: string[] } | null;
   /** The Pact decision the figure says the finding asks the work to go against; such a finding is advisory. */
   against?: string;
+  /**
+   * Why a new blocking finding stopped blocking after the first round (issue #567): it is about code nobody changed since
+   * the candidate the reviewers already read, or about a file that another slice's work changes (a note for that slice).
+   */
+  scope?: { kind: "unchanged" } | { kind: "otherSlice"; assignmentId: string };
 }
 
 /**
@@ -2255,6 +2260,8 @@ export interface CandidateGate {
   /** Required checks that did not pass: the reviewers do not start and the debugger takes the failure (W11). */
   checksFailed: string[];
   suite: SuiteComparison[];
+  /** The candidate of the same work the reviewers had read before this gate: they read only what changed since (issue #567). */
+  reviewedAgainst?: string | null;
   reviews: GateReview[];
   /**
    * The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. `held`

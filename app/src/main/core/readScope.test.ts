@@ -98,6 +98,47 @@ describe("read scope of agent sessions (issue #206)", () => {
     expect(privatePathsInCommand("cat /var/codex/memories/MEMORY.md", cwd, roots, home, "/var/codex")).toEqual(["/var/codex/memories/MEMORY.md"]);
   });
 
+  it("ignores paths inside script content (issue #563): -c/-e for code interpreters and heredocs for them", () => {
+    const roots = ["/home/rita/progetti/negozio"];
+    const cwd = roots[0]!;
+    // Paths inside -c/-e for code interpreters should not be flagged
+    expect(privatePathsInCommand('python -c "import os; os.chdir(\'../content/records.json\')"', cwd, roots, home, codexHome)).toEqual([]);
+    // Home and Codex paths inside a script are real attempts and stay reported
+    expect(privatePathsInCommand('python3 -c "open(\'~/.codex/memories/MEMORY.md\')"', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.codex/memories/MEMORY.md",
+    ]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nopen('/home/rita/.ssh/id_rsa')\nPY", cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
+    expect(privatePathsInCommand('python -c "import os; os.chdir(\'/home/rita/.ssh/config\')"', cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/config"]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nopen('~/.codex/memories/MEMORY.md')\nPY", cwd, roots, home, codexHome)).toEqual(["/home/rita/.codex/memories/MEMORY.md"]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nopen('../content/a.json')\nEOF\nopen('../content/b.json')\nPY", cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nx = 1\nPY\ncat ../altro/.env", cwd, roots, home, codexHome)).toEqual(["/home/rita/progetti/altro/.env"]);
+    expect(privatePathsInCommand('python -c "x=1"; cat ../altro/.env', cwd, roots, home, codexHome)).toEqual(["/home/rita/progetti/altro/.env"]);
+    // The exact simulated case: heredoc inside zsh -lc, closing delimiter followed by the shell's quote
+    expect(privatePathsInCommand('/bin/zsh -lc "python3 - <<\'PY\'\nopen(\'../content/records.json\')\nPY"', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('/bin/zsh -lc "python3 - <<\'PY\'\\nopen(\'../content/records.json\')\\nPY"', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('/bin/zsh -lc \'cat ~/.ssh/id_rsa\'', cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
+    expect(privatePathsInCommand('node -e \'fs.readFileSync("../images/file.txt")\'', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('ruby -e "File.read(\'../data/file.txt\')"', cwd, roots, home, codexHome)).toEqual([]);
+    // Shell -c arguments are parsed for real reads, not stripped
+    expect(privatePathsInCommand('/bin/zsh -lc \'cat ~/.codex/memories/MEMORY.md\'', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.codex/memories/MEMORY.md",
+    ]);
+    expect(privatePathsInCommand('/bin/bash -c "cat ../outro/.env"', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/progetti/outro/.env",
+    ]);
+    // Heredocs for code interpreters should not be flagged
+    expect(privatePathsInCommand('python3 - <<\'PY\'\nwith open(\'../content/records.json\') as f:\n    pass\nPY', cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('ruby - <<\'RB\'\nFile.read(\'../content/data.rb\')\nRB', cwd, roots, home, codexHome)).toEqual([]);
+    // Heredocs for cat should still be analyzed
+    expect(privatePathsInCommand('cat <<EOF\ndata\nEOF\ncat ../altro/.env', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/progetti/altro/.env",
+    ]);
+    // Mixed: real read outside code interpreter block
+    expect(privatePathsInCommand('python -c "x=1" && cat ~/.codex/memories/MEMORY.md', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.codex/memories/MEMORY.md",
+    ]);
+  });
+
   it("builds Codex profiles that read only the roots and write only the worktree, without network", () => {
     const worktree = "/data/Worktrees/a1";
     // The system folders a runtime reads as it starts, such as OpenSSL's configuration for node (2 October 2026).

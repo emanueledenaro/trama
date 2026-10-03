@@ -201,6 +201,20 @@ describe("the candidate gate (W10)", () => {
     expect(corrected.technicalReview).toMatchObject({ verdict: "approved", gateId: second.id });
     expect(corrected.clearance).not.toBeNull();
 
+    // The second round reads only what changed since the reviewed candidate (issue #567): the reviewers get the delta and the
+    // open finding, and a new blocking finding on a line nobody changed is a suggestion instead of a third block.
+    expect(second.reviewedAgainst).toBe(candidate.id);
+    const roundTurn = (await readLog(log))
+      .filter((r) => r.method === "turn/start" && turnText(r).includes("Giro successivo sullo stesso lavoro"))
+      .map(turnText);
+    expect(roundTurn.length).toBeGreaterThanOrEqual(6);
+    for (const text of roundTurn) {
+      expect(text).toContain(`il candidato ${candidate.id} è già stato rivisto`);
+      expect(text).not.toContain("[rilievo-bloccante]");
+    }
+    const late = second.reviews.find((r) => r.role === "performance")!;
+    expect(late.findings).toEqual([expect.objectContaining({ severity: "advisory", title: "Lettura del catalogo senza indice", scope: { kind: "unchanged" } })]);
+
     // Without a spec the spec reviewer does not run and says so in code-review's words.
     work.issueNumber = null;
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);

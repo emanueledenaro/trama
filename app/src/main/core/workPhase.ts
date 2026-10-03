@@ -374,7 +374,13 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const limit = projectCapacity(document);
   const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork, limit } : undefined;
   // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a squad has room (M05, A10).
-  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || v.state === "verifying"));
+  // A verifying slice whose candidate waits for the person or for its merge is not work to assign again: the slices that
+  // wait for it stay blocked until then, and the automatic move would only stall (issue #565).
+  const awaitsOthers = (view: SliceView) => {
+    const candidate = view.assignmentId ? latestCandidate(document, view.assignmentId) : null;
+    return candidate !== null && candidateAwaitsOthers(document, candidate);
+  };
+  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || (v.state === "verifying" && !awaitsOthers(v))));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
@@ -458,6 +464,22 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     return finish("clarification");
   }
   return finish(open.length || mandateAsked ? "clarification" : null);
+}
+
+/**
+ * Whether the candidate waits for the person (a blocker only they settle, a review, the merge) or for a merge Trama runs
+ * itself, so that assigning work again would settle nothing. A red check, a conflict or the reviewers' changes are not
+ * waiting: the work goes back to its developer.
+ */
+function candidateAwaitsOthers(document: ProjectDocument, candidate: Candidate): boolean {
+  if (candidateSuperseded(document, candidate) || worktreeChanged(document, candidate)) return false;
+  const blockers = hardBlockers(inspectCandidate(document, candidate, null));
+  if (blockers.length) return blockers.every((b) => PERSON_BLOCKERS.includes(b.code));
+  if (candidate.technicalReview?.verdict !== "approved") return false;
+  const request = candidate.pullRequest;
+  if (!request) return true;
+  if (request.mergedAt || pullRequestConflicted(candidate)) return false;
+  return !(candidate.merge?.checksRed && candidate.merge.fingerprint === contentFingerprint(document, candidate));
 }
 
 /** The phase of a ready plan: its spec is split into slices with to-tickets (M05), then the unblocked slices are assigned. */
