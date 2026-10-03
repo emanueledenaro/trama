@@ -354,6 +354,8 @@ import {
   returnWaiting,
   type ReviewerTurn,
   reviewerTurn,
+  roundLines,
+  ROUND_RULE,
   reviewThread,
   SESSION_ROLES,
   stopAtChecks,
@@ -457,6 +459,7 @@ import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
 import { candidateSuperseded, divergenceHolds, divergenceSummary } from "@shared/conflictScope";
 import { blockedReviews, REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
+import { applyRoundScope, reviewRound, type SliceNote } from "./core/gateRound";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -6813,6 +6816,9 @@ export class TramaController {
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
     const gate = openGate(document, candidate);
+    // From the second round the reviewers read what changed since the candidate already reviewed (issue #567).
+    const round = reviewRound(document, candidate);
+    gate.reviewedAgainst = round?.previous.id ?? null;
     this.changedIn(project);
     const run = { projectId: project.id, clients: new Set<AgentRuntime>() };
     this.gateRuns.set(gate.id, run);
@@ -6854,6 +6860,7 @@ export class TramaController {
           spec,
           decisions: document.decisions,
           decided: overruledFor(document, assignment.id),
+          round,
           language: this.state.language,
         };
         const skill = await this.nativeSkill("code-review");
@@ -6875,6 +6882,8 @@ export class TramaController {
         // stop it (ADR 0023).
         applyPactRule(document, gate);
         applyOverruled(document, gate);
+        // A new finding on code nobody changed, or on another slice's files, does not stop this slice (issue #567).
+        this.noteForOtherSlices(project, gate, applyRoundScope(document, gate, candidate, round));
         closeGate(gate);
       }
     } catch (error) {
@@ -6936,6 +6945,7 @@ export class TramaController {
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     clients.add(client);
     try {
+      const round = reviewRound(document, candidate);
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
       const standard = await checkStandard(candidate, assignment.workspace!.worktreeRoot, document.cleanCode);
       const opening = await client.openThread({
@@ -6953,7 +6963,8 @@ export class TramaController {
         pactLines(document.decisions),
         reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
         decidedLines(overruledFor(document, assignment.id).filter((d) => d.role === "cleanCode")),
-        `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
+        round ? roundLines(round) : `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
+        round ? ROUND_RULE : "",
         "Rispondi con verdict approved oppure changesRequested, un riassunto breve e i findings (un elenco vuoto se non ne hai).",
       ]
         .filter(Boolean)
@@ -7037,6 +7048,29 @@ export class TramaController {
       run?.clients.delete(client);
       client.stop();
       this.changedIn(project);
+    }
+  }
+
+  /** A finding about another slice's files does not block this one: it lands in that slice's work as a note (issue #567). */
+  private noteForOtherSlices(project: ActiveProjectState, gate: CandidateGate, notes: SliceNote[]): void {
+    const document = project.document;
+    for (const note of notes) {
+      const assignment = findAssignment(document, note.assignmentId);
+      if (!assignment) continue;
+      const reviewer = document.team.specialists.find((s) => s.role === note.role && s.status !== "removed")?.name ?? roleProfile(this.t, note.role).name;
+      appendEvent(
+        document,
+        "specialist",
+        {
+          type: "activity",
+          title: t("main.controller.sliceNoteTitle", { reviewer, candidate: gate.candidateId }),
+          detail: `- ${note.finding.title}${note.finding.file ? ` (${note.finding.file})` : ""}${note.finding.detail !== note.finding.title ? `: ${note.finding.detail}` : ""}`,
+          tone: "tool",
+        },
+        null,
+        new Date(),
+        { assignmentId: assignment.id, workKey: `${assignment.id}:${assignment.turns.length + 1}` },
+      );
     }
   }
 

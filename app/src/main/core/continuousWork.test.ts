@@ -960,3 +960,34 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     expect(ticketMove(document, null, free, null)).toBeNull();
   });
 });
+
+describe("stalledMove: no failure while every slice waits for another (issue #565)", () => {
+  it("tells no failed move when the work waits for the person and the other slices wait for it", () => {
+    const document = confirmed();
+    request(document, "r3");
+    const value = plan(document, "r3");
+    value.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [], issue: { number: 7, url: "https://github.com/o/r/issues/7" } },
+        { id: "S2", title: "Seconda", blockedBy: ["S1"] },
+      ],
+    } as never;
+    team(document);
+    request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+    const assignment = work(document, "r4");
+    assignment.slice = { planId: value.id, sliceId: "S1" };
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    const decision = document.decisions[0] ?? answerDecisionRequest(document, grill(document, "r4").id, { alternativeIndex: 1, freeText: null }).decision;
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    );
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Letto" });
+    // The automatic move that came after: nothing was assigned, and nothing could be.
+    request(document, "r5", { step: { move: "assignWork", by: "trama" } });
+    expect(stalledMove(document, "r5")).toBeNull();
+  });
+});
