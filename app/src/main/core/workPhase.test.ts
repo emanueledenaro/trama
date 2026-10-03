@@ -580,4 +580,42 @@ describe("work that stopped hides no other slice's move (issue #557)", () => {
     } as never;
     expect(moves(document, "r3")).not.toContain("assignWork");
   });
+
+  it("offers the move for any ended work that can be taken up, not only the first one", () => {
+    const { document, assignment: first } = withAssignment();
+    first.slice = { planId: "P-1", sliceId: "S2" };
+    first.status = "stopped";
+    const second = work(document, "r3", 3, "Bruno");
+    second.slice = { planId: "P-1", sliceId: "S1" };
+    second.status = "stopped";
+    document.plans[0]!.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: ["S0"] },
+        { id: "S2", title: "Seconda", blockedBy: [] },
+      ],
+    } as never;
+    expect(moves(document, "r3")).toContain("assignWork");
+    // The first ended work now sits on the blocked slice S1: the second one, on the free S2, still offers the move.
+    [first.slice, second.slice] = [second.slice, first.slice];
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+
+  it("does not offer a slice the person stopped again while another slice works", () => {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.slice = { planId: "P-1", sliceId: "S1" };
+    stopped.status = "stopped";
+    stopped.stops.push({ requestedBy: "Persona", by: "person", reason: "Fermo", requestedAt: at(5).toISOString(), thenRemove: false, confirmedAt: at(5).toISOString() });
+    const other = work(document, "r3", 6, "Bruno");
+    other.slice = { planId: "P-1", sliceId: "S2" };
+    document.plans[0]!.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [] },
+        { id: "S2", title: "Seconda", blockedBy: [] },
+      ],
+    } as never;
+    expect(workState(document, "r3").phase).toBe("execution");
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
 });

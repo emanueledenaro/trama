@@ -374,7 +374,9 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const limit = projectCapacity(document);
   const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork, limit } : undefined;
   // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a squad has room (M05, A10).
-  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || v.state === "verifying"));
+  // A slice whose work the person stopped is not offered again until they write (issue #557).
+  const heldSlices = new Set(assignments.filter((a) => a.slice && heldByPersonStop(document, a)).map((a) => a.slice!.sliceId));
+  const assignable = !slices || (roomForWork(document) && views.some((v) => (v.state === "ready" || v.state === "verifying") && !heldSlices.has(v.id)));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
@@ -552,12 +554,14 @@ function assignedWork(
   // the stopped work is told after them, as the phase only when nothing else is going on.
   const ended = ({ assignment, candidate }: (typeof all)[number]) => !candidate && (assignment.status === "failed" || assignment.status === "stopped");
   const items = all.filter((i) => !ended(i));
-  const stoppedItem = all.find(ended);
+  const stopped = all.filter(ended);
   const state = workOfOthers(document, paused, items, moves);
-  if (!stoppedItem) return state;
-  const { assignment } = stoppedItem;
-  // Work the person stopped waits for their word, and a slice other slices still block is not assigned yet.
-  if (!heldByPersonStop(document, assignment) && !moves.sliceBlocked(assignment)) moves.assignWork();
+  if (!stopped.length) return state;
+  // Work the person stopped waits for their word, and a slice other slices still block is not assigned yet: any one of the
+  // ended works that can be taken up again is enough to offer the move.
+  const takeable = ({ assignment }: (typeof all)[number]) => !heldByPersonStop(document, assignment) && !moves.sliceBlocked(assignment);
+  if (stopped.some(takeable)) moves.assignWork();
+  const { assignment } = stopped.find(takeable) ?? stopped[0]!;
   // Other work at hand keeps its own phase; the stop is the phase when it is all there is.
   if (state && state.phase !== "merged") return state;
   const failed = assignment.status === "failed";

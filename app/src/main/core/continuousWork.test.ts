@@ -489,6 +489,13 @@ describe("a move the round stopped starting, whichever it is (issue #557)", () =
     expect(document.events.filter((e) => e.requestId === "a3" && e.content.type === "activity")).toHaveLength(1);
   });
 
+  it("replaces the stall reason the turn's own end already set", () => {
+    const document = assignmentNotMade(3);
+    document.requests.find((r) => r.id === "a3")!.step!.stalled = "La mossa automatica non è riuscita: il Coordinatore non ha assegnato il lavoro.";
+    recordHeldMoves(document, [{ requestId: "a3", move: "assignWork", attempts: 3, retryAt: null }]);
+    expect(statusLine(document, null).reason).toContain("3 turni");
+  });
+
   it("keeps the question's own words for answerQuestion and stays silent below the attempts", () => {
     const document = assignmentNotMade(2);
     const held: Parameters<typeof recordHeldMoves>[1] = [];
@@ -844,6 +851,10 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     request(document, "r3", { step: { move: "decideWithDelegation", by: "trama" } });
     request(document, "r4", { step: { move: "decideWithDelegation", by: "trama" } });
     expect(moveOf(document, "r4", "round")).toBeNull();
+    // The guard of the delegation says so too, like every other move (issue #557).
+    const held: Parameters<typeof recordHeldMoves>[1] = [];
+    expect(automaticMove(document, "r4", "round", free, new Date(), (h) => held.push(h))).toBeNull();
+    expect(held).toEqual([expect.objectContaining({ requestId: "r4", move: "decideWithDelegation", attempts: 3 })]);
   });
 
   it("decides with the delegation only a candidate that waits for the person's ok, and gives the others the green light", () => {

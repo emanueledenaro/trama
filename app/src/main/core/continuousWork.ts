@@ -149,7 +149,8 @@ export function recordHeldMoves(document: ProjectDocument, held: HeldMove[]): st
     appendEvent(document, "trama", { type: "activity", title, detail, tone: "error" }, requestId);
     // The status line reads the reason of Trama's own turn while nothing runs in the dialog.
     const step = document.requests.find((r) => r.id === requestId)?.step;
-    if (step?.by === "trama" && !step.stalled) step.stalled = title;
+    // The turn's own failure reason, set when it ended, gives way to the news that the attempts are over.
+    if (step?.by === "trama") step.stalled = title;
     changed.push(requestId);
   }
   return changed;
@@ -229,7 +230,13 @@ export function automaticMove(
   // With the full delegation (issue #423) the Coordinator decides what waits for the person, first: it unblocks the rest.
   if (activeDelegation(document) && delegatedHolds(document, state)) {
     // The round tries a decision again a few times at most: then a new event of the work does.
-    if (event === "round" && attemptsInRow(dialog, "decideWithDelegation") >= ROUND_ATTEMPTS) return null;
+    if (event === "round") {
+      const attempts = attemptsInRow(dialog, "decideWithDelegation");
+      if (attempts >= ROUND_ATTEMPTS) {
+        onHeld?.({ requestId: latest.id, move: "decideWithDelegation", attempts, retryAt: null });
+        return null;
+      }
+    }
     return { move: "decideWithDelegation", ...COORDINATOR_MOVES.decideWithDelegation, goalId, model: latest.model, effort: latest.effort };
   }
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
