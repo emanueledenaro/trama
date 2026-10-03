@@ -1,8 +1,8 @@
-import type { AccessChange, AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
+import type { AccessChange, AccessStep, AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
 import type { MessageKey, Translate } from "./i18n";
 import { problemActivity } from "./problems";
 import { requestedActionEntries } from "./requestedActions";
-import { accessChangeEntries } from "./computerAccess";
+import { accessChangeEntries, accessStepEntries } from "./computerAccess";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -200,6 +200,7 @@ export function activityLog(
   squadChanges: SquadChange[] = [],
   requestedActions: RequestedAction[] = [],
   accessChanges: AccessChange[] = [],
+  accessSteps: AccessStep[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -262,7 +263,7 @@ export function activityLog(
   const merged = [...mergeActivityEntries(t, candidates), ...supersessionActivityEntries(t, candidates)];
   const changed = squadChangeEntries(t, squadChanges);
   const requested = requestedActionEntries(requestedActions, t.language);
-  const access = accessChangeEntries(t, accessChanges);
+  const access = [...accessChangeEntries(t, accessChanges), ...accessStepEntries(t, accessSteps)];
   if (!done.length && !found.length && !taken.length && !merged.length && !changed.length && !requested.length && !access.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
   return [...moves, ...done, ...found, ...taken, ...merged, ...changed, ...requested, ...access].sort((a, b) => b.startedAt.localeCompare(a.startedAt));

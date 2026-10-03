@@ -6,6 +6,7 @@ import type { AppSettings } from "@shared/domain";
 import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
+import { fixtureWebFetcher } from "./core/webResearch";
 import { t } from "./core/personLanguage";
 import { type MenuCommand, menuTemplate } from "./menu";
 
@@ -103,6 +104,8 @@ const controller = new TramaController(dataRoot, {
     ? join(process.resourcesPath, "DemoProject")
     : join(app.getAppPath(), "resources", "DemoProject"),
   codexExecutable: process.env.TRAMA_CODEX_PATH ?? null,
+  // A check that runs the app reads its pages from a file, never from the network.
+  ...(process.env.TRAMA_WEB_FIXTURE ? { webFetcher: fixtureWebFetcher(JSON.parse(readFileSync(process.env.TRAMA_WEB_FIXTURE, "utf8"))) } : {}),
 }, legacyRoot);
 
 function createWindow(): void {

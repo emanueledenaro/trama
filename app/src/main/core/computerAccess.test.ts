@@ -25,3 +25,20 @@ describe("computer access gate", () => {
     expect(gate.actions()).toEqual([]);
   });
 });
+
+describe("computer access by role (issue #408)", () => {
+  it("gives the network to Research alone, and the Coordinator and the developers none", () => {
+    const gate = new ComputerAccessGate(() => true);
+    expect(gate.decide("network", "research")).toEqual({ allowed: true });
+    for (const role of ["developer", "squadLead", "documentation", "qa", "devops"] as const) {
+      expect(gate.decide("network", role)).toEqual({ allowed: false, reason: "roleNotAllowed" });
+    }
+    expect(gate.decide("command", "research")).toEqual({ allowed: false, reason: "roleNotAllowed" });
+    expect(gate.begin({ id: "x", power: "network", role: "developer", agent: "Ada", label: "page", stop: () => undefined })).toBeNull();
+  });
+
+  it("lets the switch decide first", () => {
+    const gate = new ComputerAccessGate(() => false);
+    expect(gate.decide("network", "research")).toEqual({ allowed: false, reason: "switchedOff" });
+  });
+});
