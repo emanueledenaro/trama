@@ -1602,6 +1602,10 @@ export const mainIt = {
     "Trama ha smesso di riprovare a rispondere allo sviluppatore dopo {attempts} turni senza risposta.",
   "main.continuousWork.questionHeldDetail":
     "La domanda resta aperta e il suo incarico in pausa. Trama riprova fra un'ora, oppure scrivi tu al Coordinatore.",
+  "main.continuousWork.moveHeld":
+    "Trama ha smesso di riprovare «{move}» dopo {attempts} turni senza esito.",
+  "main.continuousWork.moveHeldDetail":
+    "L'incarico resta com'è. Scrivi tu al Coordinatore per riprendere il lavoro.",
   "main.continuousWork.stall.noPlan":
     "il Coordinatore non ha avviato il piano.",
   "main.continuousWork.stall.noAssignment":

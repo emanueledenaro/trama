@@ -5,6 +5,7 @@ import { touchesInterface } from "@shared/interfaceChange";
 import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { contentFingerprint, inspectCandidate } from "./candidates";
 import { ticketWorked } from "./fullDelegation";
+import { appendEvent } from "./document";
 import { focusView } from "./focus";
 import { isActive } from "./team";
 import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type MoveOption, type WorkState, workRequests, workState } from "./workPhase";
@@ -129,6 +130,29 @@ export interface HeldMove {
 function questionRetryAt(dialog: ProjectDocument["requests"]): number {
   const last = Date.parse(dialog.at(-1)!.completedAt ?? dialog.at(-1)!.createdAt);
   return (Number.isNaN(last) ? 0 : last) + QUESTION_RETRY_MS;
+}
+
+/**
+ * Tells in Activity, and in the status line, a move the round stopped starting after its attempts (issues #549, #557):
+ * whatever the move, the work is not left silent. One line per series: a new series starts with a new turn, so the line is
+ * keyed by the dialog's latest request. Returns the requests that changed.
+ */
+export function recordHeldMoves(document: ProjectDocument, held: HeldMove[]): string[] {
+  const changed: string[] = [];
+  for (const { requestId, move, attempts } of held) {
+    const question = move === "answerQuestion";
+    const title = question
+      ? t("main.continuousWork.questionHeld", { attempts: String(attempts) })
+      : t("main.continuousWork.moveHeld", { move: COORDINATOR_MOVES[move].label.toLowerCase(), attempts: String(attempts) });
+    if (document.events.some((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === title)) continue;
+    const detail = t(question ? "main.continuousWork.questionHeldDetail" : "main.continuousWork.moveHeldDetail");
+    appendEvent(document, "trama", { type: "activity", title, detail, tone: "error" }, requestId);
+    // The status line reads the reason of Trama's own turn while nothing runs in the dialog.
+    const step = document.requests.find((r) => r.id === requestId)?.step;
+    if (step?.by === "trama" && !step.stalled) step.stalled = title;
+    changed.push(requestId);
+  }
+  return changed;
 }
 
 /** The state of Trama around the work, read by the controller when an event arrives. */
