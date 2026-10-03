@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveCandidate, candidateAfterTurn, candidateReport, clearCandidate, declareCandidate, latestCandidate, rebindTramaCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { rebaseCandidates, approveCandidate, candidateAfterTurn, candidateReport, clearCandidate, declareCandidate, latestCandidate, rebindTramaCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { decide, grantMandate, revokeMandate } from "./pact";
 import { setPersonLanguage } from "./personLanguage";
@@ -421,6 +421,25 @@ describe("candidates", () => {
       // Once checked, the same declaration is a new candidate as before.
       recordEvidence(document, fresh.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap-2" });
       expect(rebindTramaCandidate(document, input, worktree("snap-2"))).toBeNull();
+    });
+  });
+
+  describe("after the base of the working copy moved (issue #559)", () => {
+    const after = { snapshotId: "snap-new", baseSHA: "merged-base", diff: "only mine", changedFiles: ["mine"], excludedSensitiveFiles: [], whitespaceErrors: [] };
+    const before = { ...after, snapshotId: "snap", baseSHA: "base", diff: "d", changedFiles: ["a"] };
+
+    it("gives the candidates that captured the copy the new base, diff and snapshot, keeping their evidence", () => {
+      const { document, candidate } = setup();
+      const moved = rebaseCandidates(document, [candidate.assignmentId], before, after, new Date("2026-10-03T08:00:00Z"));
+      expect(moved).toEqual([candidate]);
+      expect(candidate).toMatchObject({ snapshotId: "snap-new", baseSHA: "merged-base", diff: "only mine", changedFiles: ["mine"], updatedAt: "2026-10-03T08:00:00.000Z" });
+    });
+
+    it("leaves a candidate that captured another snapshot, or another work, as it is", () => {
+      const { document, candidate } = setup();
+      expect(rebaseCandidates(document, [candidate.assignmentId], { ...before, snapshotId: "other" }, after)).toEqual([]);
+      expect(rebaseCandidates(document, ["A-other"], before, after)).toEqual([]);
+      expect(candidate.snapshotId).toBe("snap");
     });
   });
 });

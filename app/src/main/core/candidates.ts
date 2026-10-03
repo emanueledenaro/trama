@@ -262,6 +262,23 @@ export function rebindTramaCandidate(
 }
 
 /**
+ * After the base of a working copy moved (a merge of the base was concluded, issue #559), the candidates of the work that
+ * captured the copy as it was keep describing the same files: they take the new base, diff and snapshot, so they stay
+ * valid. A candidate that captured anything else is left as it is.
+ */
+export function rebaseCandidates(document: ProjectDocument, assignmentIds: string[], before: WorkspaceReview, after: WorkspaceReview, now = new Date()): Candidate[] {
+  const moved = document.candidates.filter((c) => assignmentIds.includes(c.assignmentId) && c.snapshotId === before.snapshotId);
+  for (const candidate of moved) {
+    candidate.snapshotId = after.snapshotId;
+    candidate.baseSHA = after.baseSHA;
+    candidate.diff = after.diff;
+    candidate.changedFiles = after.changedFiles;
+    candidate.updatedAt = now.toISOString();
+  }
+  return moved;
+}
+
+/**
  * One work, one candidate while its working copy does not change: the latest candidate of the assignment, still open,
  * that captured this same snapshot and binds the same Pact decisions at their current versions. Declaring the copy
  * again returns it instead of a copy of it; null when the work needs a new candidate.

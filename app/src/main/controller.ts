@@ -389,7 +389,7 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { approveCandidate, candidateAfterTurn, candidateReport, verifiedByTrama, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateAfterTurn, candidateReport, verifiedByTrama, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview, rebaseCandidates } from "./core/candidates";
 import { assessProjectDivergence } from "./core/branchDivergence";
 import { advanceAfterMerge, type BranchBase, readBranchBase } from "./core/branchBase";
 import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
@@ -5746,7 +5746,7 @@ export class TramaController {
     const base = await this.readBranchBase(project, true);
     const outcome = await alignWithBase(assignment.workspace, base);
     // Already aligned, as after a merge concluded before the base followed its merges: the base catches up now.
-    if (outcome.ok && outcome.state === "upToDate") await realignBase(assignment.workspace, alignmentTargetFor(assignment.workspace, base)?.ref ?? null);
+    if (outcome.ok && outcome.state === "upToDate") await this.catchUpBase(project, assignment, base);
     const detail = !outcome.ok
       ? t(`main.controller.baseAlignFailed.${outcome.code}`, { detail: outcome.detail })
       : [
@@ -6244,8 +6244,7 @@ export class TramaController {
     requireValidCommitMessage(redacted, conventions);
     const done = await concludeMerge(assignment.workspace, redacted, secretFindings);
     // The copy now holds what main brought: later comparisons start from the merge-base with it, not from the old base.
-    const base = await this.readBranchBase(project, false);
-    await realignBase(assignment.workspace, alignmentTargetFor(assignment.workspace, base)?.ref ?? null);
+    await this.catchUpBase(project, assignment, await this.readBranchBase(project, false));
     appendEvent(
       project.document,
       "trama",
@@ -6256,6 +6255,18 @@ export class TramaController {
     );
     this.changedIn(project);
     return { ...done, message: redacted };
+  }
+
+  /**
+   * Moves the base of a working copy to the merge-base with the project's base after a merge of it (issue #559). The
+   * candidates that captured the copy describe the same files: they take the new base, diff and snapshot so they stay valid.
+   */
+  private async catchUpBase(project: ActiveProjectState, assignment: SpecialistAssignment, base: BranchBase | null): Promise<void> {
+    const workspace = assignment.workspace!;
+    const before = await reviewWorktree(workspace).catch(() => null);
+    if (!(await realignBase(workspace, alignmentTargetFor(workspace, base)?.ref ?? null))) return;
+    const after = before ? await reviewWorktree(workspace).catch(() => null) : null;
+    if (before && after) rebaseCandidates(project.document, worktreeSharers(project.document, assignment).map((a) => a.id), before, after);
   }
 
   /** The person removes the worktree of finished work; refused when it would lose work (T08). */
