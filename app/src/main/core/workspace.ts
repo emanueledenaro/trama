@@ -200,6 +200,24 @@ export async function concludeMerge(
   return { commit: (await git(["rev-parse", "HEAD"], root)).trim(), mergedHead: merge.mergeHead };
 }
 
+/**
+ * After a merge of the base into the worktree is concluded, moves the worktree's base to the merge-base between HEAD and
+ * the base ref (issue #559): the diff, the conflict check and the publication then count only the developer's own work,
+ * not the commits that came from the base. The base only moves forward: it stays when the old one is not an ancestor of
+ * the new one, when the ref is unreadable or when HEAD has no common ancestor with it. Returns the new base, or null.
+ */
+export async function realignBase(session: WorktreeSession, baseRef: string | null): Promise<string | null> {
+  if (!baseRef) return null;
+  const root = session.worktreeRoot;
+  const probe = async (args: string[]) => runProcess("git", [...GIT_SAFE_OPTIONS, ...args], { cwd: root, env: gitEnvironment(true) });
+  const found = await probe(["merge-base", baseRef, "HEAD"]);
+  const next = found.exitCode === 0 ? found.stdout.trim() : "";
+  if (!/^[0-9a-f]{40,64}$/.test(next) || next === session.baseSHA) return null;
+  if ((await probe(["merge-base", "--is-ancestor", session.baseSHA, next])).exitCode !== 0) return null;
+  session.baseSHA = next;
+  return next;
+}
+
 /** The files of a diff whose added lines carry a conflict marker. */
 function conflictMarkerFiles(diff: string): string[] {
   const files: string[] = [];
