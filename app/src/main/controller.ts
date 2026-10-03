@@ -390,7 +390,7 @@ import {
 } from "./core/findingWork";
 import { approveCandidate, candidateAfterTurn, candidateReport, verifiedByTrama, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessProjectDivergence } from "./core/branchDivergence";
-import { type BranchBase, readBranchBase } from "./core/branchBase";
+import { advanceAfterMerge, type BranchBase, readBranchBase } from "./core/branchBase";
 import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
@@ -7628,6 +7628,18 @@ export class TramaController {
   }
 
   /**
+   * After a merge on GitHub the checkout's branch moves up to the merged one with a fast-forward, when the checkout is on
+   * that branch and has no change; otherwise it stays as the person left it. Never fails the merge that was recorded.
+   */
+  private async advanceCheckoutAfterMerge(project: ActiveProjectState): Promise<void> {
+    const branch = project.snapshot.branch;
+    if (!branch || project.isDemo) return;
+    const moved = await advanceAfterMerge(project.rootPath, branch).catch(() => null);
+    await this.readBranchBase(project, false);
+    if (moved) void this.refreshProject(false);
+  }
+
+  /**
    * Compares a candidate with its base branch as it is on the remote, after a fetch of the branch. A conflict is recorded
    * as with the other remote heads, with its card, and the Coordinator resolves it within the mandate.
    */
@@ -7765,6 +7777,7 @@ export class TramaController {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
         candidate.merge!.mergeSHA = checks.mergeSHA ?? null;
+        void this.advanceCheckoutAfterMerge(project);
         this.changedIn(project);
         return;
       }
@@ -7794,6 +7807,7 @@ export class TramaController {
       pull.mergedBy = by;
       recordMerge(document, candidate, by, "merged");
       candidate.merge!.mergeSHA = merged.sha;
+      void this.advanceCheckoutAfterMerge(project);
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
     } catch (error) {
       const reason = (error as Error).message;
@@ -7805,6 +7819,7 @@ export class TramaController {
         pull.mergedBy = by;
         recordMerge(document, candidate, by, "merged");
         candidate.merge!.mergeSHA = after.mergeSHA ?? null;
+        void this.advanceCheckoutAfterMerge(project);
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
         this.changedIn(project);
         return;
