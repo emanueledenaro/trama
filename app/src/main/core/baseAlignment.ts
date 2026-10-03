@@ -17,6 +17,7 @@ import type { WorktreeSession } from "@shared/domain";
 import type { BranchBase } from "./branchBase";
 import { git, GIT_SAFE_OPTIONS, gitEnvironment, runProcess } from "./process";
 import type { ToolDefinition } from "./toolServer";
+import { createHash } from "node:crypto";
 import { isSensitive, mergeState } from "./workspace";
 
 /** The developer's tool, beside ask_coordinator and install_dependencies. @model-text */
@@ -36,6 +37,34 @@ export const COORDINATOR_CODE_RULE =
 /** Issue #548: the same rule for a developer. @model-text */
 export const DEVELOPER_CODE_RULE =
   "Code reaches the Coordinator and the other developers only through git, in your worktree: never put code or files in a question, in an answer, in a discussion or in your report, not even cut in parts or encoded. When you lack a tool or a permission you need, say so in your report and stop that work instead of working around it.";
+
+/** How the Coordinator tells a developer to realign: through align_with_base, never by asking the person. @model-text */
+export const COORDINATOR_ALIGN_RULE =
+  "When a developer's working copy conflicts with main or lags it, resume it with resume_assignment and tell it to call align_with_base: Trama fetches the base and starts the merge without committing it, the developer resolves the conflicts left in the files, and you conclude with commit_merge. Never ask the person to realign a working copy.";
+
+/** The developer's tools for the worktree: align_with_base and install_dependencies, and what the sandbox cannot do. @model-text */
+export const DEVELOPER_WORKTREE_RULE =
+  "You work in your own Git worktree, the working directory of this thread. Write only inside it: the project checkout, its index and every other directory are out of reach, and so is the network. Do not commit, push, or run Git commands that write. To bring the updated base branch (main) into your worktree call Trama's align_with_base tool, never git fetch or git merge: it merges outside the sandbox without committing, your uncommitted work is saved first, and conflicts stay in the files for you to resolve. For npm dependencies call Trama's install_dependencies tool, never npm install: it installs them outside the sandbox, into the worktree. Your sandbox cannot open a local server or start a browser: tests that need one run in Trama's checks on your candidate, which allow 127.0.0.1 and launch the browser, so write them, run the rest yourself and say which ones you left to the checks.";
+
+/** The Coordinator's rules about code and realignment, for the instructions and for a thread opened before they changed. */
+export const COORDINATOR_TOOL_RULES = [COORDINATOR_CODE_RULE, COORDINATOR_ALIGN_RULE].join("\n");
+
+/** The developer's rules about its worktree and code, for the instructions and for a thread opened before they changed. */
+export const DEVELOPER_TOOL_RULES = [DEVELOPER_WORKTREE_RULE, DEVELOPER_CODE_RULE].join("\n");
+
+/** A short stable fingerprint of a rules text, to record what a thread received. */
+export const rulesKey = (text: string): string => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+
+/**
+ * The developer rules a thread is owed (issue #555): a new thread holds them in its instructions, a resumed one opened
+ * before they changed receives them once in its next turn. Records what the thread now holds.
+ */
+export function developerRulesDue(assignment: { rulesSent?: string | null }, freshThread: boolean): boolean {
+  const key = rulesKey(DEVELOPER_TOOL_RULES);
+  const due = !freshThread && assignment.rulesSent !== key;
+  assignment.rulesSent = key;
+  return due;
+}
 
 export type AlignOutcome =
   | {
