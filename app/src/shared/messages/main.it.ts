@@ -109,7 +109,6 @@ export const mainIt = {
     "Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.",
   "main.controller.folderNameInvalid": "Scegli un nome di cartella valido.",
   "main.controller.repositoryNeedsGh": "GitHub CLI non è collegato: collegalo dal Benvenuto e crea il repository da lì.",
-  "main.controller.methodNotPushed": "Il progetto è su GitHub, ma il metodo degli agenti non ci è arrivato: {reason}",
   "main.controller.repositoryNotCreated": "Il progetto è creato, ma il repository su GitHub no: {reason}",
   "main.controller.folderExists":
     "Esiste già una cartella {name} in questa posizione.",
