@@ -805,6 +805,8 @@ export interface SpecialistAssignment {
   /** When the person removed the worktree after the work ended (T08); the session stays for history. */
   workspaceRemovedAt?: string | null;
   threadId: string | null;
+  /** Fingerprint of the developer rules the thread holds: a thread opened before they changed receives them once (issue #555). */
+  rulesSent?: string | null;
   turns: AssignmentTurn[];
   stops: AssignmentStop[];
   result: string | null;
