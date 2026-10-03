@@ -104,6 +104,7 @@ export const IconPlayerSkipForward = woven("IconPlayerSkipForward", "player-skip
 export const IconPlayerStop = woven("IconPlayerStop", "player-stop");
 export const IconPlayerTrackNext = woven("IconPlayerTrackNext", "player-track-next");
 export const IconPlugConnected = woven("IconPlugConnected", "plug-connected");
+export const IconPlugConnectedX = woven("IconPlugConnectedX", "plug-connected-x");
 export const IconPlus = woven("IconPlus", "plus");
 export const IconRefresh = own("refresh");
 export const IconRepeatOff = woven("IconRepeatOff", "repeat-off");

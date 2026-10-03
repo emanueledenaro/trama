@@ -1,7 +1,8 @@
-import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
+import type { AccessChange, AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RequestedAction, RoundRecord, SquadChange, WorkEvent } from "./domain";
 import type { MessageKey, Translate } from "./i18n";
 import { problemActivity } from "./problems";
 import { requestedActionEntries } from "./requestedActions";
+import { accessChangeEntries } from "./computerAccess";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -25,7 +26,7 @@ export interface ActivityEntry {
    * person to the squads (A11), a candidate the Coordinator declared superseded by a newer one of the same work
    * (issue #421), or an action a fixed ban stops that Trama did because the person asked for it (issue #422).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede" | "requested";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede" | "requested" | "access";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round and for the squads the Coordinator formed (A10). */
@@ -198,6 +199,7 @@ export function activityLog(
   candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest" | "supersession">[] = [],
   squadChanges: SquadChange[] = [],
   requestedActions: RequestedAction[] = [],
+  accessChanges: AccessChange[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -260,7 +262,8 @@ export function activityLog(
   const merged = [...mergeActivityEntries(t, candidates), ...supersessionActivityEntries(t, candidates)];
   const changed = squadChangeEntries(t, squadChanges);
   const requested = requestedActionEntries(requestedActions, t.language);
-  if (!done.length && !found.length && !taken.length && !merged.length && !changed.length && !requested.length) return moves;
+  const access = accessChangeEntries(t, accessChanges);
+  if (!done.length && !found.length && !taken.length && !merged.length && !changed.length && !requested.length && !access.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done, ...found, ...taken, ...merged, ...changed, ...requested].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found, ...taken, ...merged, ...changed, ...requested, ...access].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

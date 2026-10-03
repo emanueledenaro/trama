@@ -920,6 +920,62 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("turns computer access off from the switch, stops what runs, keeps it off after a restart and tells Activity (issue #413)", async () => {
+    const { data } = await setup();
+    const stop = vi.fn();
+    controller!.computerAccess.begin({ id: "run", power: "command", agent: "Operatore", label: "npm install", stop });
+    expect(controller!.snapshot.settings.computerAccess).not.toBe(false);
+    await controller!.setComputerAccess(false);
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(controller!.computerAccess.decide("network")).toEqual({ allowed: false, reason: "switchedOff" });
+    // The work on the project's code is not a power of the switch: the Coordinator still answers.
+    expect(controller!.snapshot.project!.document.accessChanges).toMatchObject([{ on: false, by: "person", stopped: [{ agent: "Operatore", label: "npm install" }] }]);
+    // The settings in a window or a file cannot turn it back on: only the switch and the Pause change it.
+    await controller!.updateSettings({ computerAccess: true });
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    await controller!.stop();
+
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    expect(controller.snapshot.settings.computerAccess).toBe(false);
+    await controller.setComputerAccess(true);
+    expect(controller.snapshot.settings.computerAccess).toBe(true);
+    expect(controller.computerAccess.decide("browser")).toEqual({ allowed: true });
+  }, 60_000);
+
+  it("turns computer access off with the Pause and gives it back as it was at the resume (issue #413)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const stop = vi.fn();
+    controller!.computerAccess.begin({ id: "run", power: "screen", agent: "Operatore", label: "screenshot", stop });
+    await controller!.pauseContinuousWork(true);
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    expect(stop).toHaveBeenCalledTimes(1);
+    await controller!.pauseContinuousWork(false);
+    expect(controller!.snapshot.settings.computerAccess).toBe(true);
+    expect(controller!.snapshot.settings.computerAccessPausedBy).toEqual([]);
+    expect(document.accessChanges!.map((c) => [c.on, c.by])).toEqual([[false, "pause"], [true, "pause"]]);
+    const rows = activityLog(t, document.requests, document.events, [], [], [], [], [], [], document.accessChanges);
+    expect(rows.filter((r) => r.kind === "access").map((r) => r.label).sort()).toEqual(["Accesso al computer acceso", "Accesso al computer spento"]);
+
+    // Off by the person's choice before the Pause: the resume leaves it off.
+    await controller!.setComputerAccess(false);
+    await controller!.pauseContinuousWork(true);
+    await controller!.pauseContinuousWork(false);
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    expect(document.accessChanges).toHaveLength(3);
+  }, 60_000);
+
   it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;

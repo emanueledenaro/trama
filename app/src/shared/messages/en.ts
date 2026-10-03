@@ -1752,6 +1752,17 @@ export const en: Record<keyof typeof it, string> = {
   "requestedAction.message.confirmed": "I confirm: {summary}",
   "requestedAction.message.declined": "Don't do it: {summary}",
   "activity.type.requested": "At your request",
+  "activity.type.access": "Computer access",
+  "activity.access.on": "Computer access turned on",
+  "activity.access.off": "Computer access turned off",
+  "activity.access.by.person": "You changed it from the status bar.",
+  "activity.access.by.pause": "The Coordinator's Pause changed it.",
+  "activity.access.stopped": "Stopped an action of {agent}: {action}.",
+  "workbench.status.access": "Computer access",
+  "workbench.status.accessOnText": "Access",
+  "workbench.status.accessOffText": "Access off",
+  "workbench.status.accessOnHint": "On: network, browser, commands outside the project and screen. One click turns them off; work on the code goes on.",
+  "workbench.status.accessOffHint": "Off: no agent uses the network, the browser, commands outside the project or the screen. One click turns them on again.",
   "activity.openMessage": "Go to your message",
 
   // Full delegation: "fai tutto tu" (issue #423)

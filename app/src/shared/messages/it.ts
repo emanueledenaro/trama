@@ -1754,6 +1754,17 @@ export const it = {
   "requestedAction.message.confirmed": "Confermo: {summary}",
   "requestedAction.message.declined": "Non farlo: {summary}",
   "activity.type.requested": "Su tua richiesta",
+  "activity.type.access": "Accesso al computer",
+  "activity.access.on": "Accesso al computer acceso",
+  "activity.access.off": "Accesso al computer spento",
+  "activity.access.by.person": "Lo hai cambiato tu dalla barra di stato.",
+  "activity.access.by.pause": "Lo ha cambiato la Pausa del Coordinatore.",
+  "activity.access.stopped": "Fermata un'azione di {agent}: {action}.",
+  "workbench.status.access": "Accesso al computer",
+  "workbench.status.accessOnText": "Accesso",
+  "workbench.status.accessOffText": "Accesso spento",
+  "workbench.status.accessOnHint": "Acceso: rete, browser, comandi fuori dal progetto e schermo. Un clic li spegne; il lavoro sul codice continua.",
+  "workbench.status.accessOffHint": "Spento: nessun agente usa rete, browser, comandi fuori dal progetto e schermo. Un clic li riaccende.",
   "activity.openMessage": "Vai al tuo messaggio",
 
   // Full delegation: "fai tutto tu" (issue #423)
