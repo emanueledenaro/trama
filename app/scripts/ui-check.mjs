@@ -6966,7 +6966,7 @@ if (!remoteBranches().includes("feature/vecchio")) throw new Error("A deletion r
 await lookShots("26f-deletion-confirmation");
 await confirmationCard.getByRole("button", { name: "Conferma", exact: true }).click();
 await confirmation.waitFor({ state: "detached", timeout: 20_000 });
-await page.locator('[data-testid="requested-action"][data-status="done"]').getByText(/^Faccio la cancellazione di un branch o di un tag remoto/).waitFor({ timeout: 20_000 });
+await page.locator('[data-testid="requested-action"][data-status="done"]').getByText(/^Ho fatto la cancellazione di un branch o di un tag remoto/).waitFor({ timeout: 20_000 });
 if (remoteBranches().includes("feature/vecchio")) throw new Error("The confirmed deletion did not run");
 
 await page.getByLabel("Messaggio al Coordinatore").fill("[richiesta:git push origin --delete feature/prova|cancella anche il branch feature/prova|Cancello il branch feature/prova su GitHub] Cancella anche il branch feature/prova");
