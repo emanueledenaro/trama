@@ -187,6 +187,7 @@ import {
   projectMove,
   ticketMove,
   recordRound,
+  type HeldMove,
   ROUND_INTERVAL_MS,
   setPaused,
   stalledMove,
@@ -789,6 +790,9 @@ interface CoordinatorRuntime {
   toolServer: CoordinatorToolServer;
   projectId: string;
 }
+
+/** How many times Trama looks again, a minute apart, at the checks of a merged slice's pull request before it leaves them to the next round. */
+const SLICE_ISSUE_CHECK_WAITS = 60;
 
 export class TramaController {
   private state: AppState;
@@ -3653,6 +3657,22 @@ export class TramaController {
     return move.label;
   }
 
+  /**
+   * A developer's question the round stopped answering after its attempts (issue #549): Activity says it once, so neither
+   * the Coordinator nor the person finds the work silent. The round tries again after QUESTION_RETRY_MS.
+   */
+  private tellHeldQuestions(project: ActiveProjectState): void {
+    const held: HeldMove[] = [];
+    projectMove(project.document, "round", this.continuationGuards(project), new Date(), (h) => held.push(h));
+    for (const { requestId, move, attempts } of held) {
+      if (move !== "answerQuestion") continue;
+      const title = t("main.continuousWork.questionHeld", { attempts: String(attempts) });
+      if (project.document.events.some((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === title)) continue;
+      appendEvent(project.document, "trama", { type: "activity", title, detail: t("main.continuousWork.questionHeldDetail"), tone: "error" }, requestId);
+      this.changedIn(project);
+    }
+  }
+
   /** Starts the periodic round (A05): it runs while Trama is open, on the project with open work. */
   private scheduleRounds(): void {
     if (this.roundTimer) clearInterval(this.roundTimer);
@@ -3706,6 +3726,8 @@ export class TramaController {
       // The events of the work that waited for Riprendi come before the round's own retry: they are news (no work is lost).
       const waited = busy ? [] : this.deferredWork.filter((d) => d.projectId === project.id);
       if (waited.length) this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+      // A question whose attempts are used up is told even when another dialog's move starts now.
+      if (!busy) this.tellHeldQuestions(project);
       const move = busy ? null : (this.startAutomaticMove(project, [...waited, { requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;
@@ -7669,7 +7691,11 @@ export class TramaController {
     const document = project.document;
     const head = await this.integrationHeads(project);
     for (const candidate of document.candidates) {
-      if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
+      if (candidate.pullRequest?.mergedAt) {
+        await this.closeSliceIssue(project, candidate);
+        continue;
+      }
+      if (this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
       // A goal the person put away merges nothing more.
       if (goalPutAway(document, candidate.goalId)) continue;
@@ -7703,6 +7729,7 @@ export class TramaController {
       } finally {
         this.integrating.delete(candidate.id);
       }
+      await this.closeSliceIssue(project, candidate);
     }
     // Merged work leaves its working copy: it would only pile up.
     await this.freeMergedWorktrees(project);
@@ -7956,6 +7983,56 @@ export class TramaController {
   }
 
   // MARK: Tickets
+
+  private readonly sliceIssueCloseFailures = new Map<string, number>();
+  private readonly sliceIssueCloseWaits = new Map<string, number>();
+
+  /**
+   * Closes the issue a slice was published as once its pull request is merged (issue #550), without asking the person. It
+   * goes through the same rules as the Coordinator's update_ticket with close (C10): every criterion is ticked with the
+   * merged candidate and its pull request as evidence, and the issue closes only when the pull request's checks are green.
+   * The mandate must allow the merge. Trama gives the evidence itself because it is the one that merged the candidate; a
+   * candidate with open choices or a pull request merged by someone else with red checks leaves the issue open.
+   * A retry posts nothing new (the report is idempotent) and a GitHub failure is retried a few times at most.
+   */
+  private async closeSliceIssue(project: ActiveProjectState, candidate: Candidate): Promise<void> {
+    const pull = candidate.pullRequest;
+    const document = project.document;
+    if (!pull?.mergedAt || !project.github.repository || !project.stateWritable || project.isDemo) return;
+    if (authorize(document.mandate, "integrateCandidate", candidate.touchedModules) !== "authorized" || candidate.unresolvedChoices.length) return;
+    const assignment = findAssignment(document, candidate.assignmentId);
+    const number = assignment ? (assignmentSlice(document, assignment)?.ticket.issue?.number ?? null) : null;
+    const open = number === null ? undefined : project.github.issues.find((i) => i.number === number);
+    if (number === null || !open || open.state !== "open") return;
+    // Checks that are not green yet are read again in the next round, without a report on the issue each time.
+    const status = await readPullRequestStatus(project.github.repository, pull.number).catch(() => null);
+    if (status?.state !== "MERGED" || status.checks !== "success") {
+      // The merged work leaves the round (no open work): Trama looks again by itself, a few times at most.
+      const waits = this.sliceIssueCloseWaits.get(candidate.id) ?? 0;
+      if (waits < SLICE_ISSUE_CHECK_WAITS) {
+        this.sliceIssueCloseWaits.set(candidate.id, waits + 1);
+        this.integrateLater(project, CHECKS_RETRY_MS);
+      }
+      return;
+    }
+    // The person may have opened another project while GitHub answered: updateTicket works on the selected one.
+    if (this.state.project !== project) return;
+    const failures = this.sliceIssueCloseFailures.get(candidate.id) ?? 0;
+    if (failures >= 3) return;
+    const t = translator(this.state.language);
+    try {
+      await this.updateTicket({
+        issueNumber: number,
+        summary: t("ticket.mergedSummary", { number: String(pull.number), candidate: candidate.id }),
+        criteria: parseChecklist(open.body).map((_, index) => ({ index, outcome: "met" as const, evidence: [candidate.id, `#${pull.number}`], limits: null })),
+        openParts: [],
+        close: true,
+      });
+    } catch {
+      // updateTicket already told the failure in Activity; the next round tries again, a few times at most.
+      this.sliceIssueCloseFailures.set(candidate.id, failures + 1);
+    }
+  }
 
   /**
    * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
