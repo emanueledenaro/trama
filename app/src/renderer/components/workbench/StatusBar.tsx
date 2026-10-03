@@ -9,6 +9,8 @@ import {
   IconPlayerTrackNext,
   IconRepeatOff,
   IconTarget,
+  IconWorld,
+  IconWorldOff,
 } from "@/components/icons";
 import { useEffect, useRef, useState } from "react";
 import type { StatusLineAction, StatusLineView } from "@shared/domain";
@@ -78,6 +80,33 @@ function StatusPopup({ children }: { children: React.ReactNode }) {
     >
       <FilledScope allowed={!waiting}>{children}</FilledScope>
     </div>
+  );
+}
+
+/**
+ * The switch of computer access (ADR 0020, issue #413): always in the bar, off or on. Only the icon shows the state, a
+ * globe on and a crossed globe off, with no word and no state tint; the name and the hint say it in words. Off, the agents lose the network, the browser, commands outside
+ * the project and the screen at once; the work on the code goes on.
+ */
+function AccessSwitch() {
+  const t = useT();
+  const on = useUi((s) => s.app?.settings.computerAccess !== false);
+  const label = t(on ? "workbench.status.accessOnHint" : "workbench.status.accessOffHint");
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        className={ITEM}
+        data-testid="status-access"
+        data-access={on ? "on" : "off"}
+        onClick={() => void act("access:set", { on: !on })}
+      >
+        {on ? <IconWorld className="size-3 shrink-0" stroke={1.8} /> : <IconWorldOff className="size-3 shrink-0" stroke={1.8} />}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -347,6 +376,7 @@ export function StatusBar() {
                 ) : null}
                 {setup ? <SetupItem back={setup} /> : null}
                 {conversation ? null : <FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />}
+                <AccessSwitch />
                 <Divider />
               </>
             }

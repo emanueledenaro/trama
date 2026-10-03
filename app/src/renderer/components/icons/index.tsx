@@ -129,4 +129,6 @@ export const IconUser = woven("IconUser", "user");
 export const IconUserSearch = woven("IconUserSearch", "user-search");
 export const IconUsers = woven("IconUsers", "users");
 export const IconUsersGroup = own("teams");
+export const IconWorld = woven("IconWorld", "world");
+export const IconWorldOff = woven("IconWorldOff", "world-off");
 export const IconX = woven("IconX", "x");

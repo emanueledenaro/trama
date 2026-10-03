@@ -449,6 +449,8 @@ import { confirmByButton, declineAction, finishAction, runnableArgs } from "./co
 import { redactSensitiveData, repositoryLocator } from "./core/redaction";
 import { runnableCommand, searchFoundNothing } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
+import { accessIsOn, followPause, personSwitch } from "@shared/computerAccess";
+import { ComputerAccessGate } from "./core/computerAccess";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
 import { cloneRepository, createGitHubRepository, hasAiHero, readGitHubCliStatus, readGitHubLogin, repositoryName, simulateColleagueChanges } from "./core/onboarding";
@@ -833,6 +835,9 @@ export class TramaController {
     step: RequestStep | null;
   }[] = [];
 
+  /** The powers of computer access ask this gate before they act; the switch in the status bar decides it (issue #413). */
+  readonly computerAccess = new ComputerAccessGate(() => accessIsOn(this.state.settings));
+
   constructor(
     storageRoot: string,
     private readonly host: ControllerHost,
@@ -1013,6 +1018,10 @@ export class TramaController {
       sounds: settings.sounds === true,
       autoPrepareMethod: settings.autoPrepareMethod !== false,
       continuousWork: settings.continuousWork !== false,
+      computerAccess: settings.computerAccess !== false,
+      computerAccessPausedBy: Array.isArray(settings.computerAccessPausedBy)
+        ? settings.computerAccessPausedBy.filter((id): id is string => typeof id === "string")
+        : [],
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
       ...(clampSharedDevelopers(settings.sharedDevelopers) !== null ? { sharedDevelopers: clampSharedDevelopers(settings.sharedDevelopers)! } : {}),
@@ -3887,6 +3896,42 @@ export class TramaController {
    * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
    * is saved with the project and holds after a restart.
    */
+  /**
+   * The person flips the access switch in the status bar (issue #413). Off, it stops the actions that use the network,
+   * the browser, commands outside the project or the screen, and the next ones are refused; the work on the project's
+   * code goes on. The person's choice also clears what a Pause remembered.
+   */
+  async setComputerAccess(on: boolean): Promise<void> {
+    if (accessIsOn(this.state.settings) === on && (this.state.settings.computerAccessPausedBy ?? []).length === 0) return;
+    await this.applyAccess(personSwitch(on), on, "person");
+  }
+
+  /** The Pause switches the access off and the resume gives it back as it was (issue #413). */
+  private async accessFollowsPause(projectId: string, paused: boolean): Promise<void> {
+    const next = followPause(this.state.settings, projectId, paused);
+    if (!next) return;
+    const changed = accessIsOn(this.state.settings) !== next.on;
+    await this.applyAccess(next.settings, next.on, "pause", changed);
+  }
+
+  private async applyAccess(patch: Pick<AppSettings, "computerAccess" | "computerAccessPausedBy">, on: boolean, by: "person" | "pause", record = true): Promise<void> {
+    this.state.settings = { ...this.state.settings, ...patch };
+    const stopped = on ? [] : await this.computerAccess.stopAll();
+    const project = this.state.project;
+    if (record && project?.stateWritable) {
+      const at = new Date().toISOString();
+      (project.document.accessChanges ??= []).push({
+        id: randomUUID(),
+        at,
+        on,
+        by,
+        stopped: stopped.map((action) => ({ agent: action.agent, label: action.label })),
+      });
+      this.changedIn(project);
+    } else this.publish();
+    await this.saveSettings();
+  }
+
   async pauseContinuousWork(paused: boolean, options: { fromTurn?: boolean } = {}): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
@@ -3912,6 +3957,7 @@ export class TramaController {
       null,
     );
     this.changedIn(project);
+    await this.accessFollowsPause(project.id, paused);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
     // From the Coordinator's own turn the round follows that turn, never inside it.
@@ -9293,6 +9339,11 @@ export class TramaController {
     // The order of the projects changes only with the arrows of the Panoramica.
     if (update.projectPriority !== undefined) {
       const { projectPriority: _ignored, ...rest } = update;
+      update = rest;
+    }
+    // Computer access changes only with the switch of the status bar or the Pause, which stop what runs and tell Activity.
+    if ("computerAccess" in update || "computerAccessPausedBy" in update) {
+      const { computerAccess: _access, computerAccessPausedBy: _holders, ...rest } = update;
       update = rest;
     }
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
