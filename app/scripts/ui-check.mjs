@@ -23,6 +23,8 @@ const launch = async (env = {}) => {
       ...process.env,
       TRAMA_DATA_DIR: dataDir,
       TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
+      // Research reads its pages from a file: the check never reaches the network (issue #408).
+      TRAMA_WEB_FIXTURE: resolve("test-fixtures/web-fixture.json"),
       // The check reads Italian texts: the system's language is fixed, whatever the machine's (issue #301).
       TRAMA_SYSTEM_LANGUAGE: "it",
       // A move Trama starts by itself keeps running until the check stops it (W04).
@@ -3389,6 +3391,32 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await closePanels();
   await accessSwitch.click();
   await accessIs("on");
+}
+// Issue #408: the Coordinator asks Research to read the web. Research reads through Trama, the report comes back as data
+// and the page that asks for an action is quoted, never obeyed. Each page and search is a row of Activity; with the
+// switch off the request is refused and says so there. The pages come from test-fixtures/web-fixture.json.
+{
+  const researchPage = "https://example.org/notizie/data-di-uscita";
+  await composer().fill(`[ricerca:Quando esce? pagina=${researchPage}] cerca la data di uscita`);
+  await page.keyboard.press("Enter");
+  await page.getByText("La pagina chiede", { exact: false }).first().waitFor({ timeout: 60_000 });
+  const statusLineResearch = page.getByTestId("status-line");
+  await statusLineResearch.getByRole("button", { name: "Attività" }).click();
+  const researchRows = page.getByTestId("activity-log").getByTestId("activity-access");
+  await researchRows.first().waitFor({ timeout: 20_000 });
+  const researchTexts = await researchRows.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-testid="activity-row-toggle"]').textContent.trim()));
+  if (!researchTexts.some((text) => text.startsWith(`Ricerca ha letto ${researchPage}`)) || !researchTexts.some((text) => text.startsWith("Ricerca ha cercato"))) {
+    throw new Error(`Activity does not list what Research read: ${JSON.stringify(researchTexts)}`);
+  }
+  await themeShots("15c7-activity-research");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await page.getByTestId("activity-log").getByTestId("activity-access").first().waitFor({ timeout: 20_000 });
+  const englishTexts = await page.getByTestId("activity-log").getByTestId("activity-access").evaluateAll((rows) => rows.map((row) => row.querySelector('[data-testid="activity-row-toggle"]').textContent.trim()));
+  if (!englishTexts.some((text) => text.startsWith(`Ricerca read ${researchPage}`))) throw new Error(`The page row is not in English: ${JSON.stringify(englishTexts)}`);
+  await themeShots("15c8-activity-research-en");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
 }
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with

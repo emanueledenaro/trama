@@ -577,6 +577,7 @@ export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; ov
       document.squadChanges ?? [],
       document.requestedActions ?? [],
       document.accessChanges ?? [],
+      document.accessSteps ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);
