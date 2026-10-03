@@ -709,6 +709,7 @@ export const en: Record<keyof typeof it, string> = {
   "ticket.issueUntitled": "Issue #{number}",
   "ticket.registered": "{issue}: progress recorded",
   "ticket.duplicate": "{issue}: progress already recorded",
+  "ticket.mergedSummary": "Pull request #{number} is merged and its checks are green. Candidate {candidate} passed Trama's checks: the slice is delivered.",
   "ticket.closed": "{issue}: closed with the evidence",
   "ticket.failed": "{issue}: update failed",
   "ticket.stillOpen": "Still open: {blockers}.",

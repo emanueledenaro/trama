@@ -712,6 +712,7 @@ export const it = {
   "ticket.issueUntitled": "Issue #{number}",
   "ticket.registered": "{issue}: avanzamento registrato",
   "ticket.duplicate": "{issue}: avanzamento già registrato",
+  "ticket.mergedSummary": "La pull request #{number} è unita e le sue verifiche sono verdi. Il candidato {candidate} ha superato le verifiche di Trama: la fetta è consegnata.",
   "ticket.closed": "{issue}: chiusa con le prove",
   "ticket.failed": "{issue}: aggiornamento non riuscito",
   "ticket.stillOpen": "Resta aperta: {blockers}.",
