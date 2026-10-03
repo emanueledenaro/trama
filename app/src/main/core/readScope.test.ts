@@ -98,21 +98,34 @@ describe("read scope of agent sessions (issue #206)", () => {
     expect(privatePathsInCommand("cat /var/codex/memories/MEMORY.md", cwd, roots, home, "/var/codex")).toEqual(["/var/codex/memories/MEMORY.md"]);
   });
 
-  it("ignores paths inside script content (issue #563): heredocs and -c/-e arguments", () => {
+  it("ignores paths inside script content (issue #563): interpreter scripts, shell -c is analysed", () => {
     const roots = ["/home/rita/progetti/negozio"];
     const cwd = roots[0]!;
     // Paths inside -c arguments should not be flagged
     expect(privatePathsInCommand('python -c "import os; os.chdir(\'../content/records.json\')"', cwd, roots, home, codexHome)).toEqual([]);
     expect(privatePathsInCommand('node -e \'fs.readFileSync("../images/file.txt")\'', cwd, roots, home, codexHome)).toEqual([]);
     expect(privatePathsInCommand('python -c \'open("~/.codex/memories/MEMORY.md")\'', cwd, roots, home, codexHome)).toEqual([]);
-    // Paths inside heredocs should not be flagged
-    expect(privatePathsInCommand('cat > file.py <<EOF\nwith open(\'../content/records.json\') as f:\n    pass\nEOF', cwd, roots, home, codexHome)).toEqual([]);
-    expect(privatePathsInCommand('cat > script.sh <<\'EOF\'\ncat ~/.codex/memories/MEMORY.md\nEOF', cwd, roots, home, codexHome)).toEqual([]);
+    // A heredoc that feeds a code interpreter is script text, up to the line that repeats its delimiter
+    expect(privatePathsInCommand("python3 - <<'PY'\nopen('../content/records.json')\nPY", cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nopen('../content/a.json')\nEOF\nopen('../content/b.json')\nPY", cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand("python3 - <<'PY'\nx = 1\nPY\ncat ../altro/.env", cwd, roots, home, codexHome)).toEqual(["/home/rita/progetti/altro/.env"]);
+    // Any other heredoc stays under analysis
+    expect(privatePathsInCommand("cat <<EOF\n~/.ssh/id_rsa\nEOF", cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
+    expect(privatePathsInCommand("cat > script.sh <<'EOF'\ncat ~/.codex/memories/MEMORY.md\nEOF", cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.codex/memories/MEMORY.md",
+    ]);
+    // A shell's -c argument is a command: it is analysed again, and the interpreter scripts inside it are stripped
+    expect(privatePathsInCommand("/bin/zsh -lc 'cat ~/.ssh/id_rsa'", cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
+    expect(privatePathsInCommand('/bin/zsh -lc "cat ~/.ssh/id_rsa"', cwd, roots, home, codexHome)).toEqual(["/home/rita/.ssh/id_rsa"]);
+    expect(privatePathsInCommand("/bin/zsh -lc \"python3 - <<'PY'\nopen('../content/records.json')\nPY\"", cwd, roots, home, codexHome)).toEqual([]);
+    expect(privatePathsInCommand('bash -c "python3 -c \\"open(\'../content/a.json\')\\" && cat ~/.ssh/config"', cwd, roots, home, codexHome)).toEqual([
+      "/home/rita/.ssh/config",
+    ]);
     // Real file reads should still be flagged
     expect(privatePathsInCommand('python -c "x=1" && cat ~/.codex/memories/MEMORY.md', cwd, roots, home, codexHome)).toEqual([
       "/home/rita/.codex/memories/MEMORY.md",
     ]);
-    expect(privatePathsInCommand('cat > file.py <<EOF\ndata\nEOF\ncat ../altro/.env', cwd, roots, home, codexHome)).toEqual(["/home/rita/progetti/altro/.env"]);
+    expect(privatePathsInCommand('python -c "x=1"; cat ../altro/.env', cwd, roots, home, codexHome)).toEqual(["/home/rita/progetti/altro/.env"]);
   });
 
   it("builds Codex profiles that read only the roots and write only the worktree, without network", () => {

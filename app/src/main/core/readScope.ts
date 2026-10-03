@@ -134,7 +134,7 @@ function listRoot(): string[] {
 /**
  * Paths a shell command names that are private to the person: inside the home folder or Codex's home, but
  * outside every readable root. Used to record reads a sandbox blocked; system folders are not reported.
- * Script content (heredocs, -c/-e arguments to interpreters) is not parsed; only actual file paths matter.
+ * The script text of code interpreters (-c/-e arguments, their heredocs) is not parsed; shell -c arguments are.
  */
 export function privatePathsInCommand(command: string, cwd: string, roots: readonly string[], home = homedir(), codexHome = codexHomeDirectory(home)): string[] {
   const cleaned = stripScriptContent(command);
@@ -151,19 +151,67 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
   return found;
 }
 
-/** Remove script content from a command: heredocs and -c/-e arguments to interpreters. */
-function stripScriptContent(command: string): string {
-  let result = command;
+const CODE_INTERPRETERS = "python[\\d.]*|nodejs|node|ruby|perl|deno|bun";
+const SHELLS = "sh|bash|zsh|dash|ksh";
+const COMMAND_START = "(?<![\\w./-])(?:[\\w.~/-]*/)?";
+const QUOTED_OR_WORD = `"(?:[^"\\\\]|\\\\.)*"|'[^']*'|[^\\s;|&]+`;
+const SHELL_SCRIPT = new RegExp(`${COMMAND_START}(?:${SHELLS})(?:\\s+-[A-Za-z]+)*?\\s+-[A-Za-z]*c[A-Za-z]*\\s+(${QUOTED_OR_WORD})`);
+const CODE_SCRIPT = new RegExp(`${COMMAND_START}(?:${CODE_INTERPRETERS})(?:\\s+-[\\w-]+)*?\\s+-[A-Za-z]*[ce]\\s+(?:${QUOTED_OR_WORD})`);
+const HEREDOC_OPERATOR = /<<(-?)\s*(['"]?)([A-Za-z_]\w*)\2/g;
+const CODE_INTERPRETER_WORD = new RegExp(`${COMMAND_START}(?:${CODE_INTERPRETERS})\\b`);
 
-  // Remove heredoc content (between <<DELIMITER and DELIMITER on its own line)
-  // Match <<[']?WORD[']? followed by content until WORD on its own line
-  result = result.replace(/<<'?[A-Za-z_][A-Za-z0-9_]*'?[\s\S]*?(?:^|\n)[A-Za-z_][A-Za-z0-9_]*(?:\n|$)/gm, " ");
+function unquote(argument: string): string {
+  if (argument.startsWith('"')) return argument.slice(1, -1).replace(/\\(["\\$`])/g, "$1");
+  if (argument.startsWith("'")) return argument.slice(1, -1);
+  return argument;
+}
 
-  // Remove -c and -e arguments (for python, node, ruby, perl, sh, etc.)
-  // Pattern: -c "..." or -e '...' or -e argument-without-quotes (but stops at next flag or |/&&)
-  result = result.replace(/-[ce]\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+)/g, " ");
+/** The next heredoc that feeds a code interpreter: where its operator starts and ends, and where its body ends. */
+function nextCodeHeredoc(text: string): { start: number; operatorEnd: number; bodyEnd: number } | null {
+  for (const match of text.matchAll(HEREDOC_OPERATOR)) {
+    const start = match.index!;
+    const lineStart = Math.max(text.lastIndexOf("\n", start), -1) + 1;
+    const segment = text.slice(lineStart, start).split(/[;|&(]/).pop() ?? "";
+    if (!CODE_INTERPRETER_WORD.test(segment)) continue;
+    const operatorEnd = start + match[0].length;
+    const newline = text.indexOf("\n", operatorEnd);
+    if (newline < 0) continue;
+    const closing = new RegExp(`\\n${match[1] ? "\\t*" : ""}${match[3]}(?=\\n|$)`).exec(text.slice(newline));
+    // An heredoc with no closing delimiter is left to the analysis rather than swallowing the rest of the command.
+    if (!closing) continue;
+    return { start, operatorEnd, bodyEnd: newline + closing.index + closing[0].length };
+  }
+  return null;
+}
 
-  return result;
+/**
+ * Remove the script text of code interpreters from a command: the -c/-e argument of python, node, ruby, perl, deno
+ * and bun, and the body of a heredoc that feeds one, up to the line that repeats its delimiter. A shell's -c argument
+ * is a command, so it is analysed again the same way. Any other heredoc (`cat <<EOF`) stays in the text.
+ */
+function stripScriptContent(command: string, depth = 0): string {
+  if (depth > 5) return command;
+  let rest = command;
+  let result = "";
+  for (;;) {
+    const shell = SHELL_SCRIPT.exec(rest);
+    const code = CODE_SCRIPT.exec(rest);
+    const heredoc = nextCodeHeredoc(rest);
+    const starts = [shell?.index ?? Infinity, code?.index ?? Infinity, heredoc?.start ?? Infinity];
+    const first = Math.min(...starts);
+    if (first === Infinity) return result + rest;
+    if (first === starts[0]) {
+      result += `${rest.slice(0, first)} ; ${stripScriptContent(unquote(shell![1]!), depth + 1)} ; `;
+      rest = rest.slice(first + shell![0].length);
+    } else if (first === starts[1]) {
+      result += `${rest.slice(0, first)} `;
+      rest = rest.slice(first + code![0].length);
+    } else {
+      const newline = rest.indexOf("\n", heredoc!.operatorEnd);
+      result += `${rest.slice(0, heredoc!.start)} ${rest.slice(heredoc!.operatorEnd, newline)}\n`;
+      rest = rest.slice(heredoc!.bodyEnd);
+    }
+  }
 }
 
 /** The permission profiles Trama gives each Codex thread: one for read-only turns, one for the worktree. */
