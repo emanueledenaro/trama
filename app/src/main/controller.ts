@@ -306,7 +306,7 @@ import {
   type TurnEnd,
   recordTurnContext,
 } from "./core/team";
-import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignWithBase } from "./core/baseAlignment";
+import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignWithBase, COORDINATOR_TOOL_RULES, DEVELOPER_TOOL_RULES, developerRulesDue } from "./core/baseAlignment";
 import { INSTALL_DEPENDENCIES_TOOL, installNodeDependencies } from "./core/dependencyInstall";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import {
@@ -610,14 +610,17 @@ type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: Stand
 
 function lateRules(skills: NativeSkill[], provider: ProviderId, language: Language): LateRules {
   const style = [messageStyle("the person", language), toolErrorsRule(language)].join("\n");
-  const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
+  const full = [style, NEXT_STEP_RULES, COORDINATOR_TOOL_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
     key: `sha256:${createHash("sha256").update(full).digest("hex")}`,
-    text: [style, NEXT_STEP_RULES, delivery.text].join("\n\n"),
+    text: [style, NEXT_STEP_RULES, COORDINATOR_TOOL_RULES, delivery.text].join("\n\n"),
     skills: delivery.skills,
   };
 }
+
+/** The developer's current rules for a thread opened before they changed, as a section of its turn (issue #555). @model-text */
+const DEVELOPER_RULES_SECTION = `## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${DEVELOPER_TOOL_RULES}`;
 
 /** The Coordinator forgets its thread: the next opening starts a new session that receives the study again. */
 function forgetCoordinatorThread(document: ProjectDocument): void {
@@ -5445,7 +5448,10 @@ export class TramaController {
         resumeThreadId: reorder ? null : assignment.threadId,
         readableRoots: this.readableRoots(project),
       });
+      const freshThread = opening.threadId !== assignment.threadId || opening.replaced;
       recordThread(document, assignmentId, opening.threadId);
+      // A thread opened before the rules changed holds the old ones: it receives the current ones once, in this turn.
+      const lateRules = needsWorktree(assignment) && developerRulesDue(assignment, freshThread) ? DEVELOPER_RULES_SECTION : null;
       if (reorder) {
         this.specialistActivity(
           project,
@@ -5463,7 +5469,7 @@ export class TramaController {
       const continues =
         assignment.replaces?.find((id) => findAssignment(document, id)?.workspace?.worktreeRoot === assignment.workspace?.worktreeRoot) ?? null;
       const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions, continues));
-      const prompt = [brief, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
+      const prompt = [brief, lateRules, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
