@@ -276,7 +276,7 @@ Consenso: il sì della persona per un sito o per un'app, valido nel progetto in 
 
 Sito vietato: un sito che la persona chiude agli agenti. Vale per tutti i progetti e nessun agente ci entra mai, neanche con un consenso. Da evitare: sito bloccato, lista nera.
 
-Interruttore dell'accesso: il comando nella barra di stato che spegne subito l'accesso al computer: rete, browser, comandi fuori dal progetto e schermo. Il lavoro sul codice del progetto continua. È distinto dalla Pausa, che ferma il lavoro continuo e spegne anche l'accesso. Da evitare: pausa, blocco.
+Interruttore dell'accesso: il comando nel composer, nella riga sotto il messaggio accanto al selettore del modello, con l'icona di internet (globo acceso, globo barrato spento), che spegne subito l'accesso al computer: rete, browser, comandi fuori dal progetto e schermo. Il lavoro sul codice del progetto continua. È distinto dalla Pausa, che ferma il lavoro continuo e spegne anche l'accesso. Da evitare: pausa, blocco.
 
 Lettura del web: il potere di rete di Ricerca (issue #408). Ricerca cerca e legge pagine, solo con richieste di lettura che fa Trama stessa fuori dalla protezione del provider; la rete della protezione resta chiusa, perché aprirla aprirebbe anche gli invii. Non invia dati e non lancia comandi: un indirizzo con un segreto non parte, e le pagine sul computer o su una rete privata non si leggono. Il Coordinatore la chiede a Ricerca e riceve il rapporto segnato come dati. Se una pagina chiede un'azione, il rapporto la cita come fatto e nessuna azione parte. Ogni ricerca e ogni pagina letta è una riga di Attività con l'agente e l'indirizzo; con l'interruttore spento la richiesta è rifiutata e il lavoro in corso si ferma. Non dipende dal mandato.
 
