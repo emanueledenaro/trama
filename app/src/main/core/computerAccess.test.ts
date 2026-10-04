@@ -42,3 +42,22 @@ describe("computer access by role (issue #408)", () => {
     expect(gate.decide("network", "research")).toEqual({ allowed: false, reason: "switchedOff" });
   });
 });
+
+describe("blocked sites (issue #414)", () => {
+  it("refuses a blocked site for every power, after the switch and the role, and covers its subdomains", () => {
+    const gate = new ComputerAccessGate(() => true, () => ["bank.example"]);
+    expect(gate.decide("network", "research", "https://bank.example/login")).toEqual({ allowed: false, reason: "blockedSite" });
+    expect(gate.decide("browser", undefined, new URL("https://www.bank.example/"))).toEqual({ allowed: false, reason: "blockedSite" });
+    expect(gate.decide("network", "research", "https://docs.example.org/")).toEqual({ allowed: true });
+    expect(gate.decide("network", "developer", "https://bank.example/")).toEqual({ allowed: false, reason: "roleNotAllowed" });
+    expect(new ComputerAccessGate(() => false, () => ["bank.example"]).decide("network", "research", "https://bank.example/")).toEqual({ allowed: false, reason: "switchedOff" });
+  });
+
+  it("reads the list at every call, so a site the person adds is blocked at once", () => {
+    let list: string[] = [];
+    const gate = new ComputerAccessGate(() => true, () => list);
+    expect(gate.isBlocked("https://shop.example/admin")).toBe(false);
+    list = ["shop.example"];
+    expect(gate.isBlocked("https://shop.example/admin")).toBe(true);
+  });
+});
