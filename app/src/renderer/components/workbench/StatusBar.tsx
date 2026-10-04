@@ -7,8 +7,6 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconPlayerTrackNext,
-  IconPlugConnected,
-  IconPlugConnectedX,
   IconRepeatOff,
   IconTarget,
 } from "@/components/icons";
@@ -80,33 +78,6 @@ function StatusPopup({ children }: { children: React.ReactNode }) {
     >
       <FilledScope allowed={!waiting}>{children}</FilledScope>
     </div>
-  );
-}
-
-/**
- * The switch of computer access (ADR 0020, issue #413): always in the bar, off or on. The state is the icon and the
- * weight of the text; the button takes no state tint. Off, the agents lose the network, the browser, commands outside
- * the project and the screen at once; the work on the code goes on.
- */
-function AccessSwitch() {
-  const t = useT();
-  const on = useUi((s) => s.app?.settings.computerAccess !== false);
-  return (
-    <Tooltip label={t(on ? "workbench.status.accessOnHint" : "workbench.status.accessOffHint")}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        aria-label={t("workbench.status.access")}
-        className={cn(ITEM, !on && PROBLEM)}
-        data-testid="status-access"
-        data-access={on ? "on" : "off"}
-        onClick={() => void act("access:set", { on: !on })}
-      >
-        {on ? <IconPlugConnected className="size-3 shrink-0" stroke={1.8} /> : <IconPlugConnectedX className="size-3 shrink-0" stroke={1.8} />}
-        <span className="min-w-0 truncate">{t(on ? "workbench.status.accessOnText" : "workbench.status.accessOffText")}</span>
-      </button>
-    </Tooltip>
   );
 }
 
@@ -376,7 +347,6 @@ export function StatusBar() {
                 ) : null}
                 {setup ? <SetupItem back={setup} /> : null}
                 {conversation ? null : <FocusItem open={popup === "focus"} onToggle={() => toggle("focus")} />}
-                <AccessSwitch />
                 <Divider />
               </>
             }
