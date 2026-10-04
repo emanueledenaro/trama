@@ -305,6 +305,7 @@ function BlockedSitesGroup() {
               <IconButton
                 label={t("settings.blocked.remove", { site })}
                 icon={<IconTrash stroke={1.7} />}
+                size="icon"
                 onClick={() => void act("settings:update", { blockedSites: removeBlockedSite(sites, site) })}
               />
             </div>
