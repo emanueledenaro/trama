@@ -23,7 +23,21 @@ const SEND_ARGS: Record<string, RegExp> = {
   netlify: /^deploy$/,
 };
 const PAYMENT_PROGRAMS = /^(stripe|paypal|payoneer|braintree|adyen)$/;
-const PAYMENT_HOSTS = /(api\.stripe\.com|paypal\.com\/v\d|api-m\.paypal\.com|checkout\.(stripe|paypal)\.com|api\.adyen\.com|api\.braintreegateway\.com)/i;
+/** Hosts of payment services: the host of an address must be one of them or a subdomain of one. */
+const PAYMENT_HOSTS = ["api.stripe.com", "checkout.stripe.com", "api-m.paypal.com", "checkout.paypal.com", "api.paypal.com", "api.adyen.com", "api.braintreegateway.com"];
+
+function touchesPaymentHost(words: string[]): boolean {
+  return words.some((word) => {
+    const address = word.match(/[a-z][a-z0-9+.-]*:\/\/[^\s'"]+/i)?.[0];
+    if (!address) return false;
+    try {
+      const host = new URL(address).hostname.toLowerCase();
+      return PAYMENT_HOSTS.some((payment) => host === payment || host.endsWith(`.${payment}`));
+    } catch {
+      return false;
+    }
+  });
+}
 const BODY_OPTIONS = /^(-d|--data|--data-raw|--data-binary|--data-urlencode|-F|--form|-T|--upload-file|--post-data|--post-file|--body-data|--json)(=|$)/;
 
 const program = (word: string) => word.split("/").at(-1) ?? word;
@@ -36,7 +50,7 @@ function reasonOf(words: string[]): IrreversibleReason | null {
   const name = program(words[0]!);
   const args = words.slice(1);
   const line = words.join(" ");
-  if (PAYMENT_PROGRAMS.test(name) || PAYMENT_HOSTS.test(line)) return "payment";
+  if (PAYMENT_PROGRAMS.test(name) || touchesPaymentHost(words)) return "payment";
   if (DELETERS.has(name)) return "delete";
   if (name === "dd" && args.some((a) => a.startsWith("of="))) return "delete";
   if (name === "diskutil" && /^(erase|secureErase|zeroDisk|randomDisk|reformat|partitionDisk|apfs)/i.test(args[0] ?? "")) return "delete";
