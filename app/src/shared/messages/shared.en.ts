@@ -319,6 +319,9 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.role.devops": "DevOps",
   "shared.role.devops.tag": "DevOps",
   "shared.role.devops.competence": "Looks after the build, the package and the release.",
+  "shared.role.operator": "Operator",
+  "shared.role.operator.tag": "Operator",
+  "shared.role.operator.competence": "Runs commands on the Mac on the Coordinator's order, with secrets locked.",
   "shared.duty.spec.qa": "Names the test points to test.",
   "shared.duty.spec.ux": "Steps in when the spec touches the interface.",
   "shared.duty.spec.research": "Studies the unknown libraries and APIs.",
@@ -334,6 +337,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.duty.candidate.devops": "Checks the build and the package.",
   "shared.duty.candidate.documentation": "Checks that the documentation follows the diff.",
   "shared.duty.background.bugTriage": "Sorts incoming issues.",
+  "shared.duty.background.operator": "Runs on the Mac the commands the Coordinator orders, with secrets locked.",
   "shared.duty.background.cleanCode": "Proposes architecture improvements when the team is free.",
 
   // Fixed roles' automatic work (W11, issue #231)

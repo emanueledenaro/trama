@@ -1,0 +1,6 @@
+{
+  "commands": {
+    "ls docs": { "exitCode": 0, "output": "guida.md\nnote.md\n" },
+    "rm -rf build": { "exitCode": 0, "output": "" }
+  }
+}

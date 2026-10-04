@@ -69,3 +69,30 @@ describe("the pages Research reads (issue #408)", () => {
     expect(roleMayUse("command", "research")).toBe(false);
   });
 });
+
+describe("the Operator's commands (issue #409)", () => {
+  it("gives commands to the Operator alone, and the developers, the Coordinator's roles and Research none", () => {
+    expect(roleMayUse("command", "operator")).toBe(true);
+    for (const role of ["developer", "squadLead", "qa", "devops", "documentation", "security", "research", "ux"] as const) expect(roleMayUse("command", role)).toBe(false);
+    expect(roleMayUse("network", "operator")).toBe(false);
+  });
+
+  it("tells a command in Activity in both languages, under its own filter, with why it stopped or waits", () => {
+    const at = "2026-10-04T10:00:00.000Z";
+    const steps = [
+      { id: "a", at, agent: "Operatore", kind: "command" as const, target: "ls -la", outcome: "done" as const, detail: null },
+      { id: "b", at, agent: "Operatore", kind: "command" as const, target: "cat ~/.ssh/id_rsa", outcome: "refused" as const, detail: "locked:~/.ssh" },
+      { id: "c", at, agent: "Operatore", kind: "command" as const, target: "rm -rf build", outcome: "waiting" as const, detail: "reason:delete" },
+      { id: "d", at, agent: "Operatore", kind: "command" as const, target: "false", outcome: "failed" as const, detail: "exit:2" },
+    ];
+    const [ran, locked, waiting, failed] = accessStepEntries(translator("it"), steps);
+    expect(ran).toMatchObject({ kind: "command", label: "Operatore ha lanciato «ls -la»", outcome: "done", detail: null });
+    expect(locked).toMatchObject({ outcome: "failed", detail: "Non è partita. Sotto chiave: ~/.ssh." });
+    expect(waiting).toMatchObject({ outcome: "stopped", detail: "Aspetta il tuo sì. Cancella qualcosa." });
+    expect(failed!.detail).toBe("Non è riuscita. È finito con codice 2.");
+    const [ranEn, lockedEn, waitingEn] = accessStepEntries(translator("en"), steps);
+    expect(ranEn!.label).toBe("Operatore ran «ls -la»");
+    expect(lockedEn!.detail).toBe("It did not start. Locked: ~/.ssh.");
+    expect(waitingEn!.detail).toBe("Waiting for your yes. It deletes something.");
+  });
+});

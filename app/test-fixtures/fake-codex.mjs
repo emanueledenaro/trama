@@ -273,6 +273,27 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(lines.join("\n")), 10);
         return;
       }
+      // Issue #409: the Coordinator gives the Operator an order with "[operatore:<comando> ;; <comando>]" and tells what came
+      // back; the Operator session (its turn starts with "Order from the Coordinator:") runs each command with run_command
+      // and reports for each one whether it ran, with its output, or why it did not.
+      if (text.startsWith("Order from the Coordinator:") && toolServers.has(threadId)) {
+        const lines = [];
+        for (const command of text.split("\n").slice(1).join("\n").split(";;").map((c) => c.trim()).filter(Boolean)) {
+          const result = await callTool(threadId, "run_command", { command });
+          toolDone("run_command", result);
+          const body = JSON.parse(result.content[0].text);
+          lines.push(result.isError ? `${command}: rifiutato (${body.error.code})` : `${command}: eseguito (${body.exitCode}) ${body.output.trim()}`);
+        }
+        setTimeout(() => finish(lines.join("\n")), 10);
+        return;
+      }
+      const ordering = text.match(/\[operatore:([^\]]*)\]/);
+      if (ordering && toolServers.has(threadId)) {
+        const result = await callTool(threadId, "ask_operator", { order: ordering[1] });
+        toolDone("ask_operator", result);
+        setTimeout(() => finish(`Operatore: ${result.content[0].text}`), 10);
+        return;
+      }
       const asking = text.match(/\[ricerca:([^\]]*)\]/);
       if (asking && toolServers.has(threadId)) {
         const result = await callTool(threadId, "ask_research", { question: asking[1] });

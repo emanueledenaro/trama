@@ -318,6 +318,9 @@ export const sharedIt = {
   "shared.role.devops": "Pubblicazione e server",
   "shared.role.devops.tag": "Pubblicazione",
   "shared.role.devops.competence": "Cura build, pacchetto e rilascio.",
+  "shared.role.operator": "Operatore",
+  "shared.role.operator.tag": "Operatore",
+  "shared.role.operator.competence": "Lancia comandi sul Mac su ordine del Coordinatore, con i segreti sotto chiave.",
   "shared.duty.spec.qa": "Indica i punti di prova da testare.",
   "shared.duty.spec.ux": "Interviene quando la spec tocca l'interfaccia.",
   "shared.duty.spec.research": "Studia le librerie e le API sconosciute.",
@@ -333,6 +336,7 @@ export const sharedIt = {
   "shared.duty.candidate.devops": "Controlla build e pacchetto.",
   "shared.duty.candidate.documentation": "Controlla che la documentazione segua il diff.",
   "shared.duty.background.bugTriage": "Smista le issue in arrivo.",
+  "shared.duty.background.operator": "Lancia sul Mac i comandi che il Coordinatore ordina, con i segreti sotto chiave.",
   "shared.duty.background.cleanCode": "Propone miglioramenti dell'architettura quando il team è libero.",
 
   // Fixed roles' automatic work (W11, issue #231)
