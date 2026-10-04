@@ -468,7 +468,7 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
   if (!refusal) return null;
   const info = fixedBanInfo(t, refusal.ban);
   const by = refusal.by;
-  const specialist = by.kind === "specialist" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
+  const specialist = by.kind === "specialist" || by.kind === "operator" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
   return (
     <CardFrame
       icon={<IconLock stroke={1.8} />}

@@ -26,7 +26,7 @@ export interface ActivityEntry {
    * person to the squads (A11), a candidate the Coordinator declared superseded by a newer one of the same work
    * (issue #421), or an action a fixed ban stops that Trama did because the person asked for it (issue #422).
    */
-  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede" | "requested" | "access";
+  kind: "move" | "round" | "problem" | "step" | "merge" | "squad" | "supersede" | "requested" | "access" | "command";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round and for the squads the Coordinator formed (A10). */

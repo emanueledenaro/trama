@@ -20,7 +20,7 @@ export const ACCESS_POWERS: AccessPower[] = ["network", "browser", "command", "s
 export const POWER_ROLES: Record<AccessPower, TeamRole[]> = {
   network: ["research"],
   browser: [],
-  command: [],
+  command: ["operator"],
   screen: [],
 };
 
@@ -78,20 +78,45 @@ export function accessChangeEntries(t: Translate, changes: AccessChange[]): Acti
   }));
 }
 
-/** The searches and pages read through the access as rows of Activity, with the agent and the outcome. Pure. */
+/** The detail of a step as the person reads it: command steps keep a code in the record, words are chosen here. */
+function stepDetail(t: Translate, step: AccessStep): string | null {
+  if (step.kind !== "command") return step.outcome === "done" ? step.detail : [t(`activity.access.${step.outcome}`), step.detail].filter(Boolean).join(" ");
+  const [code, value = ""] = (step.detail ?? "").split(/:(.*)/s);
+  const why =
+    code === "locked"
+      ? value === "token"
+        ? t("activity.access.reason.token")
+        : value
+          ? t("activity.access.locked", { place: value })
+          : t("activity.access.lockedBan")
+      : code === "reason"
+        ? t(`activity.access.reason.${value as "delete" | "send" | "payment"}`)
+        : code === "exit"
+          ? t("activity.access.exit", { code: value })
+          : code === "expired"
+            ? t("activity.access.timeout")
+            : code === "start"
+              ? t("activity.access.start")
+              : null;
+  return [step.outcome === "refused" || step.outcome === "failed" || step.outcome === "waiting" ? t(`activity.access.${step.outcome}`) : null, why].filter(Boolean).join(" ") || null;
+}
+
+const stepLabelKey = { search: "activity.access.search", page: "activity.access.page", command: "activity.access.command" } as const;
+
+/** The searches, pages and commands run through the access as rows of Activity, with the agent and the outcome. Pure. */
 export function accessStepEntries(t: Translate, steps: AccessStep[]): ActivityEntry[] {
   return steps.map((step) => ({
     id: step.id,
-    kind: "access",
+    kind: step.kind === "command" ? "command" : "access",
     requestId: null,
     move: null,
     trigger: null,
-    label: t(step.kind === "page" ? "activity.access.page" : "activity.access.search", { agent: step.agent, target: step.target }),
+    label: t(stepLabelKey[step.kind], { agent: step.agent, target: step.target }),
     goalId: null,
     startedAt: step.at,
     endedAt: null,
-    outcome: step.outcome === "done" ? "done" : "failed",
-    detail: step.outcome === "done" ? step.detail : [t(`activity.access.${step.outcome}`), step.detail].filter(Boolean).join(" "),
+    outcome: step.outcome === "done" ? "done" : step.outcome === "waiting" ? "stopped" : "failed",
+    detail: stepDetail(t, step),
     toolErrors: [],
   }));
 }

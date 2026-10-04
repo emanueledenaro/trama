@@ -45,6 +45,7 @@ describe("team roster (W09)", () => {
       "security",
       "performance",
       "devops",
+      "operator",
     ]);
     for (const role of [...FIXED_ROLES, "developer" as const]) {
       const profile = roleProfile(t, role);
@@ -58,10 +59,11 @@ describe("team roster (W09)", () => {
     }
   });
 
-  it("gives security and performance no skill, as Trama's own additions", () => {
+  it("gives security, performance and the Operator no skill, as Trama's own additions", () => {
+    expect(roleDuties(t, "operator").flatMap((d) => d.skills)).toEqual([]);
     expect(roleDuties(t, "security").flatMap((d) => d.skills)).toEqual([]);
     expect(roleDuties(t, "performance").flatMap((d) => d.skills)).toEqual([]);
-    const others = [...FIXED_ROLES, "developer" as const].filter((r) => r !== "security" && r !== "performance");
+    const others = [...FIXED_ROLES, "developer" as const].filter((r) => r !== "security" && r !== "performance" && r !== "operator");
     for (const role of others) expect(roleDuties(t, role).flatMap((d) => d.skills).length, role).toBeGreaterThan(0);
   });
 
@@ -72,7 +74,7 @@ describe("team roster (W09)", () => {
       ["spec", ["qa", "ux", "research", "documentation"]],
       ["slices", ["squadLead", "developer", "bugTriage"]],
       ["candidate", ["specReviewer", "cleanCode", "regressionGuardian", "security", "performance", "ux", "devops", "documentation"]],
-      ["background", ["bugTriage", "cleanCode"]],
+      ["background", ["bugTriage", "cleanCode", "operator"]],
     ]);
     const duty = (moment: string, role: TeamRole) => roster.find((m) => m.moment === moment)!.figures.find((f) => f.profile.role === role)!.duty;
     expect(duty("slices", "developer").skills).toEqual(["implement", "tdd"]);

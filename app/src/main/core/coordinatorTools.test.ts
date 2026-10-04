@@ -63,11 +63,33 @@ describe("ask_research (issue #408)", () => {
   });
 });
 
+describe("ask_operator (issue #409)", () => {
+  it("passes the order to the Operator and returns what it answers, and fails when the Operator cannot run", async () => {
+    const asked: string[] = [];
+    const context = {
+      ...teamContext(emptyDocument("p")),
+      askOperator: async (order: string) => {
+        asked.push(order);
+        return toolSuccess({ kind: "data", source: "operator", report: "ok" });
+      },
+    } as unknown as ToolContext;
+    expect(parse(await runCoordinatorTool("ask_operator", { order: "  installa jq  " }, context))).toMatchObject({ kind: "data", source: "operator" });
+    expect(asked).toEqual(["installa jq"]);
+    expect(parse(await runCoordinatorTool("ask_operator", { order: " " }, context)).error.code).toBe("invalid_arguments");
+    expect(parse(await runCoordinatorTool("ask_operator", { order: "x" }, teamContext(emptyDocument("p")))).error.code).toBe("operator_unavailable");
+  });
+
+  it("is a Coordinator tool only: the Operator's own tool is no Coordinator tool, and the Coordinator has no shell", () => {
+    expect(COORDINATOR_TOOLS.some((tool) => tool.name === "ask_operator")).toBe(true);
+    expect(COORDINATOR_TOOLS.some((tool) => tool.name === "run_command")).toBe(false);
+  });
+});
+
 describe("Coordinator tools for the full team (W09)", () => {
   it("read_team shows every figure with its role, and one figure with its moments and its skills", async () => {
     const context = teamContext(emptyDocument("p"));
     const team = parse(await runCoordinatorTool("read_team", {}, context));
-    expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(11);
+    expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(12);
     const guardian = team.specialists.find((s: { role: string }) => s.role === "regressionGuardian");
     expect(guardian).toMatchObject({ name: "Niente si rompe", fixedRole: true });
     expect(parse(await runCoordinatorTool("read_team", { specialistID: guardian.id }, context))).toMatchObject({
@@ -380,7 +402,7 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     const summary = await runCoordinatorTool("read_team", {}, context);
     expect(summary.content[0]!.text.length).toBeLessThan(20_000);
     const team = parse(summary);
-    expect(team).toMatchObject({ page: 1, pages: 3, specialistCount: 41 });
+    expect(team).toMatchObject({ page: 1, pages: 3, specialistCount: 42 });
     expect(team.specialists).toHaveLength(20);
     expect(team.specialists[0]).not.toHaveProperty("moments");
     expect(team.providers).toEqual([{ id: "codex", models: 1 }]);
@@ -388,7 +410,7 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     expect(team.automaticWork).toEqual([
       { work: "architectureReview", role: "cleanCode", state: "waiting", assignmentID: null, detail: "Aspetta che il team sia libero: 2 incarichi sono al lavoro.", startNow: "allowed" },
     ]);
-    expect(parse(await runCoordinatorTool("read_team", { page: 3 }, context)).specialists).toHaveLength(1);
+    expect(parse(await runCoordinatorTool("read_team", { page: 3 }, context)).specialists).toHaveLength(2);
     const one = parse(await runCoordinatorTool("read_team", { specialistID: "Dev 30" }, context));
     expect(one.assignment.result).toContain("Risultato lungo.");
     expect((await runCoordinatorTool("read_team", { specialistID: "Nessuno" }, context)).isError).toBe(true);

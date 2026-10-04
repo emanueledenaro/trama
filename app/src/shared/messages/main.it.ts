@@ -297,6 +297,12 @@ export const mainIt = {
     "In attesa che il limite temporaneo di {provider} passi",
   "main.controller.waitingTemporaryLimitDetail":
     "Non è la quota dell'account. Trama riprende da sola l'incarico tra {seconds} secondi, se il mandato lo copre ancora.",
+  "main.controller.operatorRan": "{agent} ha lanciato un comando: {command}",
+  "main.controller.operatorFailed": "{agent} ha lanciato un comando che non è andato a buon fine: {command}",
+  "main.controller.operatorWaiting": "{agent} aspetta il tuo sì per un comando che non si annulla: {command}",
+  "main.controller.operatorOutput": "Risultato del comando di {agent}",
+  "main.controller.operatorDeclined": "Hai detto di no: il comando di {agent} non parte. {command}",
+  "main.controller.commandApprovalNotFound": "Questo comando non aspetta più il tuo sì.",
   "main.controller.dependenciesInstalledTitle": "Pacchetti installati da Trama",
   "main.controller.dependenciesInstalledDetail": "Trama ha installato i {count} pacchetti del progetto nella copia di lavoro, senza eseguire i loro script di installazione.",
   "main.controller.baseAlignedTitle": "{target} portato nella copia di lavoro",
