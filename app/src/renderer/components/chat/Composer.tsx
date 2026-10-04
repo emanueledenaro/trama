@@ -1,5 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconArrowUp, IconPhotoPlus, IconRoute, IconX } from "@/components/icons";
+import { IconArrowUp, IconPhotoPlus, IconRoute, IconWorld, IconWorldOff, IconX } from "@/components/icons";
 import type { ProviderId } from "@shared/codex";
 import { coordinatorDefaultModel } from "@shared/providers";
 import type { ImageAttachmentInput } from "@shared/ipc";
@@ -56,6 +56,35 @@ const PILL =
 
 /** Images and pasted texts not yet sent, kept per project while the app runs (UX02). */
 const unsentByProject = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
+
+/**
+ * The switch of computer access (ADR 0020, issue #413), in the composer's row beside the model picker. One state for the
+ * whole app. Only the icon shows it, a globe on and a crossed globe off, with no word and no state tint; the name and
+ * the hint say it in words. Off, the agents lose the network, the browser, commands outside the project and the screen
+ * at once; the work on the code goes on.
+ */
+function AccessSwitch() {
+  const t = useT();
+  const on = useUi((s) => s.app?.settings.computerAccess !== false);
+  const label = t(on ? "chat.composer.accessOnHint" : "chat.composer.accessOffHint");
+  return (
+    <Tooltip label={label}>
+      <Button
+        variant="chrome"
+        size="icon-sm"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        className="shrink-0 rounded-md"
+        data-testid="composer-access"
+        data-access={on ? "on" : "off"}
+        onClick={() => void act("access:set", { on: !on })}
+      >
+        {on ? <IconWorld className="size-4 text-primary" stroke={1.7} /> : <IconWorldOff className="size-4 text-primary" stroke={1.7} />}
+      </Button>
+    </Tooltip>
+  );
+}
 
 export function Composer() {
   const t = useT();
@@ -435,6 +464,7 @@ export function Composer() {
                 busy={busy}
                 fastMode={selection.selectedFastMode === true}
               />
+              <AccessSwitch />
               <ContextMeter />
             </div>
             <div className="flex shrink-0 items-center gap-2">

@@ -276,7 +276,7 @@ Consenso: il sì della persona per un sito o per un'app, valido nel progetto in 
 
 Sito vietato: un sito che la persona chiude agli agenti. Vale per tutti i progetti e nessun agente ci entra mai, neanche con un consenso. Da evitare: sito bloccato, lista nera.
 
-Interruttore dell'accesso: il comando nella barra di stato che spegne subito l'accesso al computer: rete, browser, comandi fuori dal progetto e schermo. Il lavoro sul codice del progetto continua. È distinto dalla Pausa, che ferma il lavoro continuo e spegne anche l'accesso. Da evitare: pausa, blocco.
+Interruttore dell'accesso: il comando nel composer, nella riga sotto il messaggio accanto al selettore del modello, con l'icona di internet (globo acceso, globo barrato spento), che spegne subito l'accesso al computer: rete, browser, comandi fuori dal progetto e schermo. Il lavoro sul codice del progetto continua. È distinto dalla Pausa, che ferma il lavoro continuo e spegne anche l'accesso. Da evitare: pausa, blocco.
 
 ## Comunicazione con la persona
 

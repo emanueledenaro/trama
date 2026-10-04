@@ -82,6 +82,7 @@ const TYPE_LABELS: Record<ActivityType, MessageKey> = {
   merges: "activity.type.merges",
   squads: "activity.type.squads",
   requested: "activity.type.requested",
+  access: "activity.type.access",
 };
 
 const TEST_IDS: Record<ActivityEntry["kind"], string> = {
@@ -92,6 +93,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   merge: "activity-merge",
   squad: "activity-squad",
   requested: "activity-requested",
+  access: "activity-access",
   supersede: "activity-supersede",
 };
 
@@ -574,6 +576,7 @@ export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; ov
       document.candidates,
       document.squadChanges ?? [],
       document.requestedActions ?? [],
+      document.accessChanges ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);

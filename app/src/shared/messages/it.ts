@@ -1754,6 +1754,14 @@ export const it = {
   "requestedAction.message.confirmed": "Confermo: {summary}",
   "requestedAction.message.declined": "Non farlo: {summary}",
   "activity.type.requested": "Su tua richiesta",
+  "activity.type.access": "Accesso al computer",
+  "activity.access.on": "Accesso al computer acceso",
+  "activity.access.off": "Accesso al computer spento",
+  "activity.access.by.person": "Lo hai cambiato tu con l'interruttore.",
+  "activity.access.by.pause": "Lo ha cambiato la Pausa del Coordinatore.",
+  "activity.access.stopped": "Fermata un'azione di {agent}: {action}.",
+  "chat.composer.accessOnHint": "Internet e comandi degli agenti: acceso. Clicca per spegnere.",
+  "chat.composer.accessOffHint": "Internet e comandi degli agenti: spento. Clicca per riaccendere.",
   "activity.openMessage": "Vai al tuo messaggio",
 
   // Full delegation: "fai tutto tu" (issue #423)
