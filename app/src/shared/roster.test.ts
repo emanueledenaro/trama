@@ -59,8 +59,12 @@ describe("team roster (W09)", () => {
     }
   });
 
-  it("gives security, performance and the Operator no skill, as Trama's own additions", () => {
+  it("gives the Operator no skill, as Trama's own addition (issue #409)", () => {
     expect(roleDuties(t, "operator").flatMap((d) => d.skills)).toEqual([]);
+    expect(roleDuties(t, "operator").length).toBeGreaterThan(0);
+  });
+
+  it("gives security and performance no skill, as Trama's own additions", () => {
     expect(roleDuties(t, "security").flatMap((d) => d.skills)).toEqual([]);
     expect(roleDuties(t, "performance").flatMap((d) => d.skills)).toEqual([]);
     const others = [...FIXED_ROLES, "developer" as const].filter((r) => r !== "security" && r !== "performance" && r !== "operator");
