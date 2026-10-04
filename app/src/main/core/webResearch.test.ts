@@ -217,3 +217,85 @@ describe("the tools of Research", () => {
     expect(parse(await runResearchTool("web_search", { query: "one more" }, value, calls)).error.code).toBe("limit");
   });
 });
+
+describe("blocked sites (issue #414)", () => {
+  const response = (body: string, init: { status?: number; location?: string } = {}) =>
+    new Response(body, { status: init.status ?? 200, headers: { "content-type": "text/html", ...(init.location ? { location: init.location } : {}) } });
+  const public_ = async () => ["93.184.216.34"];
+  const blocked = (url: URL) => url.hostname === "bank.example" || url.hostname.endsWith(".bank.example");
+
+  function session(blockedSites: string[], fetcher: Partial<WebFetcher> = {}) {
+    const gate = new ComputerAccessGate(() => true, () => blockedSites);
+    const steps: Omit<AccessStep, "id" | "at">[] = [];
+    let counter = 0;
+    const value: ResearchSession = {
+      gate,
+      fetcher: {
+        search: async () => [
+          { title: "Bank", url: "https://www.bank.example/login", snippet: "s" },
+          { title: "Docs", url: "https://docs.example.org/", snippet: "s" },
+        ],
+        read: async (url) => ({ url, finalUrl: url, title: "T", text: "pagina", truncated: false }),
+        ...fetcher,
+      },
+      agent: "Ricerca",
+      record: (step) => void steps.push(step),
+      signal: new AbortController().signal,
+      newId: () => `id-${++counter}`,
+    };
+    return { value, steps };
+  }
+
+  it("does not open a blocked site: no request leaves, and Activity records the refusal with the host", async () => {
+    const { value, steps } = session(["bank.example"], { read: async () => { throw new Error("must not run"); } });
+    const result = await runResearchTool("read_page", { url: "https://www.bank.example/login?next=1" }, value, new ResearchCalls());
+    expect(result.isError).toBe(true);
+    expect(parse(result).error.code).toBe("site_blocked");
+    expect(steps).toEqual([{ agent: "Ricerca", kind: "page", target: "https://www.bank.example/login", outcome: "blocked", detail: "www.bank.example" }]);
+  });
+
+  it("does not open it from a link either: a page that points there is no way in", async () => {
+    const { value, steps } = session(["bank.example"]);
+    const calls = new ResearchCalls();
+    expect(parse(await runResearchTool("read_page", { url: "https://docs.example.org/" }, value, calls)).data).toBe(true);
+    const link = await runResearchTool("read_page", { url: "https://login.bank.example/" }, value, calls);
+    expect(parse(link).error.code).toBe("site_blocked");
+    expect(steps.map((step) => step.outcome)).toEqual(["done", "blocked"]);
+    expect(calls.pages).toEqual(["https://docs.example.org"]);
+  });
+
+  it("stops a redirect that leads to a blocked site and requests nothing from it", async () => {
+    const asked: string[] = [];
+    const fetcher = httpWebFetcher(async (url) => {
+      asked.push(url);
+      return response("", { status: 302, location: "https://bank.example/account" });
+    }, public_, blocked);
+    const { value, steps } = session(["bank.example"], { read: (url, signal) => fetcher.read(url, signal) });
+    const result = await runResearchTool("read_page", { url: "https://short.example.org/x" }, value, new ResearchCalls());
+    expect(parse(result).error.code).toBe("site_blocked");
+    expect(asked).toEqual(["https://short.example.org/x"]);
+    expect(steps).toEqual([{ agent: "Ricerca", kind: "page", target: "https://short.example.org/x", outcome: "blocked", detail: "bank.example" }]);
+  });
+
+  it("refuses even when a fetcher ends on a blocked site without the hop check", async () => {
+    const { value, steps } = session(["bank.example"], { read: async (url) => ({ url, finalUrl: "https://bank.example/", title: null, text: "x", truncated: false }) });
+    const result = await runResearchTool("read_page", { url: "https://short.example.org/x" }, value, new ResearchCalls());
+    expect(parse(result).error.code).toBe("site_blocked");
+    expect(steps[0]).toMatchObject({ outcome: "blocked", detail: "bank.example" });
+  });
+
+  it("leaves blocked sites out of the search results", async () => {
+    const { value } = session(["bank.example"]);
+    const result = parse(await runResearchTool("web_search", { query: "conto" }, value, new ResearchCalls()));
+    expect(result.results.map((hit: { url: string }) => hit.url)).toEqual(["https://docs.example.org/"]);
+  });
+
+  it("opens the site again when the person takes it off the list", async () => {
+    const list = ["bank.example"];
+    const { value } = session(list);
+    const calls = new ResearchCalls();
+    expect((await runResearchTool("read_page", { url: "https://bank.example/" }, value, calls)).isError).toBe(true);
+    list.length = 0;
+    expect((await runResearchTool("read_page", { url: "https://bank.example/" }, value, calls)).isError).toBeUndefined();
+  });
+});

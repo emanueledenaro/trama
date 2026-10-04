@@ -1,5 +1,7 @@
+import { addBlockedSite, blockedHostFrom, removeBlockedSite } from "@shared/blockedSites";
 import { discussionModelSetting } from "@shared/discussions";
 import {
+  IconBan,
   IconBrain,
   IconBrandGithub,
   IconChecklist,
@@ -14,7 +16,9 @@ import {
   IconSettings,
   IconSun,
   IconTools,
+  IconTrash,
   IconUsers,
+  IconWorldOff,
 } from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { ProviderAccount } from "@shared/codex";
@@ -31,7 +35,7 @@ import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button, FilledScope } from "@/components/ui/button";
-import { Badge } from "@/components/ui/field";
+import { Badge, Input } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
@@ -221,6 +225,7 @@ function GeneralSection() {
           }
         />
       </Group>
+      <BlockedSitesGroup />
       <Group title={t("settings.about")}>
         <div className="flex items-center gap-3 px-4 py-3" data-testid="about-trama">
           <TramaMark size={40} variant="tile" />
@@ -234,6 +239,79 @@ function GeneralSection() {
         </div>
       </Group>
     </>
+  );
+}
+
+/** The sites the person blocks, one list for every project (ADR 0020, issue #414). */
+function BlockedSitesGroup() {
+  const sites = useUi((s) => s.app?.settings.blockedSites ?? []);
+  const [text, setText] = useState("");
+  const [problem, setProblem] = useState<"invalid" | "duplicate" | "full" | null>(null);
+  const t = useT();
+  const add = () => {
+    const result = addBlockedSite(sites, text);
+    if (result.problem) {
+      setProblem(result.problem);
+      return;
+    }
+    setProblem(null);
+    setText("");
+    void act("settings:update", { blockedSites: result.list });
+  };
+  return (
+    <Group title={t("settings.blocked.title")} note={t("settings.blocked.description")}>
+      <div className="px-4 py-3" data-testid="blocked-sites">
+        <form
+          className="flex flex-wrap items-center gap-x-4 gap-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            add();
+          }}
+        >
+          <Input
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              setProblem(null);
+            }}
+            aria-label={t("settings.blocked.label")}
+            aria-invalid={problem ? true : undefined}
+            placeholder={t("settings.blocked.placeholder")}
+            data-testid="blocked-site-input"
+            className="min-w-[12rem] flex-1"
+          />
+          <div className="cta-row ml-auto min-w-0 max-w-full">
+            <Button type="submit" variant="outline" disabled={!text.trim()} data-testid="blocked-site-add">
+              <IconBan stroke={1.8} /> {t("settings.blocked.add")}
+            </Button>
+          </div>
+        </form>
+        {problem ? (
+          <p role="alert" className="mt-2 text-ui-sm text-destructive" data-testid="blocked-site-problem">
+            {t(`settings.blocked.${problem}`, { site: blockedHostFrom(text) ?? text.trim() })}
+          </p>
+        ) : null}
+      </div>
+      {sites.length === 0 ? (
+        <div className="px-4 py-3 text-ui-sm text-muted-foreground" data-testid="blocked-sites-empty">
+          {t("settings.blocked.empty")}
+        </div>
+      ) : (
+        sites.map((site) => (
+          <div key={site} className="flex items-center gap-3 px-4 py-2" data-testid="blocked-site" data-site={site}>
+            <IconWorldOff className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
+            <span className="min-w-0 flex-1 truncate font-mono text-ui-sm text-foreground">{site}</span>
+            <div className="cta-row ml-auto">
+              <IconButton
+                label={t("settings.blocked.remove", { site })}
+                icon={<IconTrash stroke={1.7} />}
+                onClick={() => void act("settings:update", { blockedSites: removeBlockedSite(sites, site) })}
+              />
+            </div>
+          </div>
+        ))
+      )}
+    </Group>
   );
 }
 
