@@ -19,6 +19,13 @@ describe("which commands cannot be undone (issue #409)", () => {
     expect(irreversibleReason("curl https://api.stripe.com/v1/charges -u key:")).toBe("payment");
   });
 
+  it("reads the host of an address, not any text that looks like one", () => {
+    expect(irreversibleReason("curl https://checkout.stripe.com/pay/abc")).toBe("payment");
+    expect(irreversibleReason("curl https://eu.api.stripe.com/v1/charges")).toBe("payment");
+    expect(irreversibleReason("curl https://example.org/?next=api.stripe.com")).toBeNull();
+    expect(irreversibleReason("curl https://api.stripe.com.evil.example/x")).toBeNull();
+  });
+
   it("lets reads and reversible changes run", () => {
     for (const command of ["ls -la", "curl https://example.org", "curl -I https://example.org", "wget https://example.org/a.zip", "git status", "git commit -m 'x'", "mkdir x", "mv a b", "cp a b", "echo rm -rf /", "npm install", "brew install jq", "gh pr list", "grep rm file"]) {
       expect(irreversibleReason(command), command).toBeNull();
