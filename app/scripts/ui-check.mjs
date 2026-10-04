@@ -3489,8 +3489,18 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.getByText("ls docs: eseguito", { exact: false }).first().waitFor({ timeout: 60_000 });
   await page.getByText("Operatore ha lanciato un comando: ls docs", { exact: true }).first().waitFor({ timeout: 20_000 });
   await page.getByText("Operatore aspetta il tuo sì per un comando che non si annulla: rm -rf build", { exact: true }).first().waitFor({ timeout: 20_000 });
+  // These items have no reference in the chat: they open from the list of Aspetta te.
+  const openItem = async (kind, text) => {
+    await showWaiting();
+    const items = page.getByTestId("side-bar").locator(`[data-testid="waiting-item"][data-waiting-key^="${kind}:"]`).filter({ hasText: text });
+    await items.last().waitFor({ timeout: 20_000 });
+    const open = items.and(page.locator('[data-open="true"]'));
+    if (!(await open.count())) await items.last().getByRole("button").first().click();
+    await open.last().waitFor({ timeout: 20_000 });
+    return open.last();
+  };
   // The locked command is an item of Aspetta te with the place that stopped it.
-  const locked = await openWaiting("fixedBan", "cat ~/.ssh/id_rsa");
+  const locked = await openItem("fixedBan", "cat ~/.ssh/id_rsa");
   const lockedCard = locked.getByTestId("fixed-ban-card");
   await lockedCard.getByText("cat ~/.ssh/id_rsa (~/.ssh)").waitFor();
   await lockedCard.getByText("Operatore", { exact: false }).first().waitFor();
@@ -3499,7 +3509,7 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await lockedCard.getByRole("button", { name: "Ho visto" }).click();
   await locked.waitFor({ state: "detached", timeout: 20_000 });
   // The deletion asks for the yes: nothing ran yet.
-  const approval = await openWaiting("commandApproval", "rm -rf build");
+  const approval = await openItem("commandApproval", "rm -rf build");
   const approvalCard = approval.getByTestId("command-approval-card");
   await approvalCard.getByText("Cancella qualcosa e non si torna indietro.").waitFor();
   await primaryLast(approvalCard.locator(".cta-row"), "Operator command approval");
@@ -3532,7 +3542,7 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.getByRole("button", { name: "Chiudi il pannello" }).click();
   await closePanels();
   // The person says yes: Trama runs the deletion itself, then it is a row of Activity and a line in the chat.
-  const again = await openWaiting("commandApproval", "rm -rf build");
+  const again = await openItem("commandApproval", "rm -rf build");
   await again.getByTestId("command-approval-card").getByRole("button", { name: "Sì, lancialo" }).click();
   await again.waitFor({ state: "detached", timeout: 20_000 });
   await page.getByText("Operatore ha lanciato un comando: rm -rf build", { exact: true }).first().waitFor({ timeout: 20_000 });
