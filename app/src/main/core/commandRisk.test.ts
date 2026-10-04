@@ -17,11 +17,45 @@ describe("which commands cannot be undone (issue #409)", () => {
   it("asks for the yes on payments", () => {
     expect(irreversibleReason("stripe charges create --amount 100")).toBe("payment");
     expect(irreversibleReason("curl https://api.stripe.com/v1/charges -u key:")).toBe("payment");
+    for (const target of [
+      "api.stripe.com/v1/charges",
+      "api.stripe.com:443/v1/charges",
+      "https://checkout.stripe.com/pay",
+      "https://checkout.paypal.com/x",
+      "https://api-m.paypal.com/v2/orders",
+      "https://www.paypal.com/v1/payments",
+      "paypal.com/v1/payments",
+      "https://api.adyen.com/v70/payments",
+      "https://api.braintreegateway.com/merchants",
+      "HTTPS://API.STRIPE.COM/v1",
+      "https://user:pw@api.stripe.com/v1",
+    ]) expect(irreversibleReason(`curl ${target}`), target).toBe("payment");
+    expect(irreversibleReason("curl --url=https://api.stripe.com/v1/charges")).toBe("payment");
+    expect(irreversibleReason('curl -H "Host: api.stripe.com" http://10.0.0.1/v1')).toBe("payment");
   });
 
   it("lets reads and reversible changes run", () => {
     for (const command of ["ls -la", "curl https://example.org", "curl -I https://example.org", "wget https://example.org/a.zip", "git status", "git commit -m 'x'", "mkdir x", "mv a b", "cp a b", "echo rm -rf /", "npm install", "brew install jq", "gh pr list", "grep rm file"]) {
       expect(irreversibleReason(command), command).toBeNull();
     }
+  });
+});
+
+describe("payment hosts are compared by name", () => {
+  it("does not take a look-alike host for a payment host", () => {
+    for (const target of [
+      "https://stripe.com.evil.example/v1",
+      "https://api.stripe.com.evil.example/v1",
+      "https://evilapi.stripe.com.example/v1",
+      "https://notapi.stripe.com/v1",
+      "https://evil-paypal.com/v1/x",
+      "https://paypal.com.evil.example/v1/x",
+      "https://www.paypal.com/signin",
+      "https://stripe.com/docs",
+    ]) expect(irreversibleReason(`curl ${target}`), target).toBeNull();
+  });
+
+  it("keeps a real subdomain of a payment host", () => {
+    expect(irreversibleReason("curl https://eu.api.stripe.com/v1")).toBe("payment");
   });
 });
