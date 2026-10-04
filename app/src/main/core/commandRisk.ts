@@ -23,8 +23,41 @@ const SEND_ARGS: Record<string, RegExp> = {
   netlify: /^deploy$/,
 };
 const PAYMENT_PROGRAMS = /^(stripe|paypal|payoneer|braintree|adyen)$/;
-const PAYMENT_HOSTS = /(api\.stripe\.com|paypal\.com\/v\d|api-m\.paypal\.com|checkout\.(stripe|paypal)\.com|api\.adyen\.com|api\.braintreegateway\.com)/i;
+/** Payment hosts: matched by exact name or subdomain. `pathPrefix` limits a host to the paths that move money. */
+const PAYMENT_HOSTS: { host: string; pathPrefix?: RegExp }[] = [
+  { host: "api.stripe.com" },
+  { host: "checkout.stripe.com" },
+  { host: "checkout.paypal.com" },
+  { host: "api-m.paypal.com" },
+  { host: "paypal.com", pathPrefix: /^\/v\d/i },
+  { host: "api.adyen.com" },
+  { host: "api.braintreegateway.com" },
+];
 const BODY_OPTIONS = /^(-d|--data|--data-raw|--data-binary|--data-urlencode|-F|--form|-T|--upload-file|--post-data|--post-file|--body-data|--json)(=|$)/;
+
+/** Host name and path of a word that looks like a URL or a host[:port][/path], or null. */
+function hostAndPath(token: string): { host: string; path: string } | null {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(token)) {
+    try {
+      const url = new URL(token);
+      return { host: url.hostname.toLowerCase().replace(/\.$/, ""), path: url.pathname };
+    } catch {
+      // fall through to the plain host reading
+    }
+  }
+  const bare = token.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^[^/@]*@/, "");
+  const match = /^([a-z0-9-]+(?:\.[a-z0-9-]+)+)\.?(?::\d+)?(\/.*)?$/i.exec(bare);
+  return match ? { host: match[1]!.toLowerCase(), path: match[2] ?? "" } : null;
+}
+
+/** True when a word names a payment host, as the host itself or one of its subdomains (never as a substring). */
+export function mentionsPaymentHost(word: string): boolean {
+  return word.split(/[=&?#,;|()<>"'\s]+/).some((token) => {
+    const found = token ? hostAndPath(token) : null;
+    if (!found) return false;
+    return PAYMENT_HOSTS.some(({ host, pathPrefix }) => (found.host === host || found.host.endsWith(`.${host}`)) && (!pathPrefix || pathPrefix.test(found.path)));
+  });
+}
 
 const program = (word: string) => word.split("/").at(-1) ?? word;
 
@@ -36,7 +69,7 @@ function reasonOf(words: string[]): IrreversibleReason | null {
   const name = program(words[0]!);
   const args = words.slice(1);
   const line = words.join(" ");
-  if (PAYMENT_PROGRAMS.test(name) || PAYMENT_HOSTS.test(line)) return "payment";
+  if (PAYMENT_PROGRAMS.test(name) || words.some(mentionsPaymentHost)) return "payment";
   if (DELETERS.has(name)) return "delete";
   if (name === "dd" && args.some((a) => a.startsWith("of="))) return "delete";
   if (name === "diskutil" && /^(erase|secureErase|zeroDisk|randomDisk|reformat|partitionDisk|apfs)/i.test(args[0] ?? "")) return "delete";
