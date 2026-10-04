@@ -10,6 +10,7 @@ import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
 import { ProjectLearning } from "./learning/projectLearning";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { appendEvent, emptyDocument } from "./document";
+import { toolSuccess } from "./toolServer";
 import { proposeGoal, updateGoal } from "./goals";
 import { DutyRequestError } from "./duties";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
@@ -39,6 +40,28 @@ const parse = (result: { content: { text: string }[] }) => JSON.parse(result.con
 
 /** The parts of the assignment contract (W05) that the tests do not look at. */
 const CONTRACT = { seams: ["La nota degli ordini"], decisionIDs: [], dependencies: [] };
+
+describe("ask_research (issue #408)", () => {
+  it("passes the question to Research and returns what it answers, and fails when Research cannot run", async () => {
+    const asked: string[] = [];
+    const context = {
+      ...teamContext(emptyDocument("p")),
+      askResearch: async (question: string) => {
+        asked.push(question);
+        return toolSuccess({ kind: "data", source: "research", report: "ok" });
+      },
+    } as unknown as ToolContext;
+    expect(parse(await runCoordinatorTool("ask_research", { question: "  Quando esce?  " }, context))).toMatchObject({ kind: "data", report: "ok" });
+    expect(asked).toEqual(["Quando esce?"]);
+    expect(parse(await runCoordinatorTool("ask_research", { question: " " }, context)).error.code).toBe("invalid_arguments");
+    expect(parse(await runCoordinatorTool("ask_research", { question: "x" }, teamContext(emptyDocument("p")))).error.code).toBe("research_unavailable");
+  });
+
+  it("is a Coordinator tool only: the developers' tool server has no web tool", () => {
+    expect(COORDINATOR_TOOLS.some((tool) => tool.name === "ask_research")).toBe(true);
+    expect(COORDINATOR_TOOLS.some((tool) => ["web_search", "read_page"].includes(tool.name))).toBe(false);
+  });
+});
 
 describe("Coordinator tools for the full team (W09)", () => {
   it("read_team shows every figure with its role, and one figure with its moments and its skills", async () => {

@@ -1,4 +1,4 @@
-import type { AccessChange, AppSettings } from "./domain";
+import type { AccessChange, AccessStep, AppSettings, TeamRole } from "./domain";
 import type { ActivityEntry } from "./activity";
 import { type Translate } from "./i18n";
 
@@ -12,6 +12,19 @@ import { type Translate } from "./i18n";
 export type AccessPower = "network" | "browser" | "command" | "screen";
 
 export const ACCESS_POWERS: AccessPower[] = ["network", "browser", "command", "screen"];
+
+/**
+ * The roles that may use each power (ADR 0020). The network is Research's alone, and only to read: the Coordinator and
+ * the developers have none. The Operator (issue #409) joins the lists of the powers it gets. A role not listed is refused.
+ */
+export const POWER_ROLES: Record<AccessPower, TeamRole[]> = {
+  network: ["research"],
+  browser: [],
+  command: [],
+  screen: [],
+};
+
+export const roleMayUse = (power: AccessPower, role: TeamRole): boolean => POWER_ROLES[power].includes(role);
 
 type AccessSettings = Pick<AppSettings, "computerAccess" | "computerAccessPausedBy">;
 
@@ -61,6 +74,24 @@ export function accessChangeEntries(t: Translate, changes: AccessChange[]): Acti
       t(`activity.access.by.${change.by}`),
       ...change.stopped.map((action) => t("activity.access.stopped", { agent: action.agent, action: action.label })),
     ].join(" "),
+    toolErrors: [],
+  }));
+}
+
+/** The searches and pages read through the access as rows of Activity, with the agent and the outcome. Pure. */
+export function accessStepEntries(t: Translate, steps: AccessStep[]): ActivityEntry[] {
+  return steps.map((step) => ({
+    id: step.id,
+    kind: "access",
+    requestId: null,
+    move: null,
+    trigger: null,
+    label: t(step.kind === "page" ? "activity.access.page" : "activity.access.search", { agent: step.agent, target: step.target }),
+    goalId: null,
+    startedAt: step.at,
+    endedAt: null,
+    outcome: step.outcome === "done" ? "done" : "failed",
+    detail: step.outcome === "done" ? step.detail : [t(`activity.access.${step.outcome}`), step.detail].filter(Boolean).join(" "),
     toolErrors: [],
   }));
 }

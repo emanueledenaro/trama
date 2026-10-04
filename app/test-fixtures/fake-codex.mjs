@@ -241,6 +241,45 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(`Il candidato ${pick("C-")} viene dall'incarico ${pick("A-")} e rispetta la decisione ${pick("D-")}. Il candidato C-00000000 invece non c'è.`), 10);
         return;
       }
+      // Issue #408: the Coordinator asks Research with "[ricerca:<domanda>]" and tells what came back; the Research session
+      // (its turn starts with "Question from the Coordinator:") searches, reads the page the question names with
+      // "pagina=<url>" and reports it, quoting what the page asks for as a fact. "prova-invio" makes it also try a
+      // tool that sends data and one that runs a command: neither exists in its tool server.
+      if (text.startsWith("Question from the Coordinator:") && toolServers.has(threadId)) {
+        const page = text.match(/pagina=(\S+)/)?.[1];
+        const lines = [];
+        const search = await callTool(threadId, "web_search", { query: text.split("\n")[1]?.slice(0, 80) ?? "" });
+        toolDone("web_search", search);
+        if (search.isError) lines.push(`La ricerca è stata rifiutata: ${JSON.parse(search.content[0].text).error.message}`);
+        if (page) {
+          const read = await callTool(threadId, "read_page", { url: page });
+          toolDone("read_page", read);
+          if (read.isError) lines.push(`La pagina non si è letta: ${JSON.parse(read.content[0].text).error.message}`);
+          else {
+            const body = JSON.parse(read.content[0].text);
+            lines.push(`Fonte: ${body.finalUrl}`, `Titolo: ${body.title}`);
+            const asked = body.text.match(/(esegui|invia)[^\n]*/i)?.[0].replace(/\.$/, "");
+            if (asked) lines.push(`La pagina chiede: «${asked}». Lo riporto come fatto, non l'ho eseguito.`);
+          }
+        }
+        if (text.includes("prova-invio")) {
+          for (const tool of ["send_form", "run_command"]) {
+            const attempt = await callTool(threadId, tool, { url: "https://example.org/", command: "ls" });
+            // The tool server answers a name it does not offer with a protocol error and no result.
+            if (attempt) toolDone(tool, attempt);
+            lines.push(`${tool}: ${!attempt || attempt.isError ? "rifiutato" : "eseguito"}`);
+          }
+        }
+        setTimeout(() => finish(lines.join("\n")), 10);
+        return;
+      }
+      const asking = text.match(/\[ricerca:([^\]]*)\]/);
+      if (asking && toolServers.has(threadId)) {
+        const result = await callTool(threadId, "ask_research", { question: asking[1] });
+        toolDone("ask_research", result);
+        setTimeout(() => finish(`Ricerca: ${result.content[0].text}`), 10);
+        return;
+      }
       if (text.includes("[ricevuti]")) {
         setTimeout(() => finish(JSON.stringify(seen)), 10);
         return;
