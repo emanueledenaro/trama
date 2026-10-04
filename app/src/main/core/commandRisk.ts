@@ -29,6 +29,7 @@ const PAYMENT_HOSTS: { host: string; pathPrefix?: RegExp }[] = [
   { host: "checkout.stripe.com" },
   { host: "checkout.paypal.com" },
   { host: "api-m.paypal.com" },
+  { host: "api.paypal.com" },
   { host: "paypal.com", pathPrefix: /^\/v\d/i },
   { host: "api.adyen.com" },
   { host: "api.braintreegateway.com" },
@@ -52,7 +53,8 @@ function hostAndPath(token: string): { host: string; path: string } | null {
 
 /** True when a word names a payment host, as the host itself or one of its subdomains (never as a substring). */
 export function mentionsPaymentHost(word: string): boolean {
-  return word.split(/[=&?#,;|()<>"'\s]+/).some((token) => {
+  const pieces = word.split(/\s+/).map((piece) => piece.replace(/^-{1,2}[\w-]+=/, "").replace(/^["']|["']$/g, ""));
+  return pieces.some((token) => {
     const found = token ? hostAndPath(token) : null;
     if (!found) return false;
     return PAYMENT_HOSTS.some(({ host, pathPrefix }) => (found.host === host || found.host.endsWith(`.${host}`)) && (!pathPrefix || pathPrefix.test(found.path)));
