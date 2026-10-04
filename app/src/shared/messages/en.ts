@@ -1752,6 +1752,14 @@ export const en: Record<keyof typeof it, string> = {
   "requestedAction.message.confirmed": "I confirm: {summary}",
   "requestedAction.message.declined": "Don't do it: {summary}",
   "activity.type.requested": "At your request",
+  "activity.type.access": "Computer access",
+  "activity.access.on": "Computer access turned on",
+  "activity.access.off": "Computer access turned off",
+  "activity.access.by.person": "You changed it with the switch.",
+  "activity.access.by.pause": "The Coordinator's Pause changed it.",
+  "activity.access.stopped": "Stopped an action of {agent}: {action}.",
+  "chat.composer.accessOnHint": "Agents' internet and commands: on. Click to turn off.",
+  "chat.composer.accessOffHint": "Agents' internet and commands: off. Click to turn back on.",
   "activity.openMessage": "Go to your message",
 
   // Full delegation: "fai tutto tu" (issue #423)

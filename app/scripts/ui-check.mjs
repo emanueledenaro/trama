@@ -371,6 +371,38 @@ const themeShots = async (name) => {
   }
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
+// The composer's lower row, cropped and enlarged three times with hard pixels, in light and dark, so the icon's drawing
+// can be read beside the model picker (issue #413).
+const shotCorner = async (name) => {
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(400);
+    const box = await page.getByTestId("composer-access").evaluate((button) => {
+      const rect = button.parentElement.getBoundingClientRect();
+      return { x: rect.x, y: rect.y - 4, width: rect.width, height: rect.height + 8 };
+    });
+    if (!box.width) throw new Error("The composer row has no box to crop");
+    const crop = await page.screenshot({ clip: box });
+    const big = await page.evaluate(
+      async ([base64, scale]) => {
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width * scale;
+        canvas.height = bitmap.height * scale;
+        const context = canvas.getContext("2d");
+        context.imageSmoothingEnabled = false;
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/png").split(",")[1];
+      },
+      [crop.toString("base64"), 3],
+    );
+    await writeFile(join(out, `${name}-${dark ? "dark" : "light"}.png`), Buffer.from(big, "base64"));
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+};
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
 // The window opens hidden and shows on ready-to-show (main.ts); the DOM can be ready before that, and a screenshot of a
 // hidden or not yet painted window fails ("Unable to capture screenshot"). So each frame waits for a visible window and
@@ -3321,6 +3353,103 @@ if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new 
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
 await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
+// Issue #413: the switch of computer access sits in the composer's row beside the model picker, as an icon alone
+// (person's decision, 4 October 2026): a globe on, a crossed globe off, with the same look as the other buttons of the row (no tint) and no word. The name and the hint say the
+// state in words in both languages. The Pause turns it off and Riprendi gives it back as it was; a person's off before
+// the Pause stays off. Each change is a row of Activity.
+{
+  const ON_IT = "Internet e comandi degli agenti: acceso. Clicca per spegnere.";
+  const OFF_IT = "Internet e comandi degli agenti: spento. Clicca per riaccendere.";
+  const accessSwitch = page.getByTestId("composer-access");
+  const accessIs = async (state) => {
+    await page.locator(`[data-testid="composer-access"][data-access="${state}"]`).waitFor({ timeout: 20_000 });
+    if ((await accessSwitch.getAttribute("aria-checked")) !== String(state === "on")) throw new Error(`The access switch does not say ${state} to assistive technology`);
+  };
+  // Only the icon in the bar: no word, one drawing, and its drawing changes with the state.
+  const accessLook = () =>
+    page.getByTestId("composer-access").evaluate((button) => ({
+      text: button.textContent.trim(),
+      icons: button.querySelectorAll("svg").length,
+      drawing: button.querySelector("svg")?.innerHTML ?? "",
+    }));
+  const accessHover = async (hint, where) => {
+    await page.getByTestId("composer-access").hover();
+    await page.getByText(hint, { exact: true }).first().waitFor({ timeout: 10_000 }).catch(() => {
+      throw new Error(`The access switch ${where} does not show its hint on hover`);
+    });
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(300);
+  };
+  await accessIs("on");
+  if ((await accessSwitch.getAttribute("aria-label")) !== ON_IT) throw new Error("The access switch on has not the right accessible name");
+  // The pointer rests away from the bar, so no hover tint reads as a background at rest.
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(300);
+  const lookOn = await accessLook();
+  if (lookOn.text || lookOn.icons !== 1 || !lookOn.drawing) throw new Error(`The access switch on is not an icon alone: ${JSON.stringify({ ...lookOn, drawing: lookOn.drawing.length })}`);
+  await accessHover(ON_IT, "on");
+  await statusBarRules("with the access on");
+  await themeShots("15c3-access-on");
+  await shotCorner("15c3-access-on-corner");
+  await accessSwitch.click();
+  await accessIs("off");
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(300);
+  if ((await accessSwitch.getAttribute("aria-label")) !== OFF_IT) throw new Error("The access switch off has not the right accessible name");
+  const lookOff = await accessLook();
+  if (lookOff.text || lookOff.icons !== 1 || !lookOff.drawing) throw new Error(`The access switch off is not an icon alone: ${JSON.stringify({ ...lookOff, drawing: lookOff.drawing.length })}`);
+  if (lookOff.drawing === lookOn.drawing) throw new Error("The access switch off draws the same icon as on: the icon must say the state");
+  await accessHover(OFF_IT, "off");
+  await statusBarRules("with the access off");
+  await themeShots("15c4-access-off");
+  await shotCorner("15c4-access-off-corner");
+  // The switch holds after a reload of the window state, and the English texts are in the catalog.
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  const OFF_EN = "Agents' internet and commands: off. Click to turn back on.";
+  await page.getByRole("switch", { name: OFF_EN }).waitFor({ timeout: 20_000 });
+  if ((await page.getByTestId("composer-access").innerText()).trim()) throw new Error("The access switch off shows a word in English");
+  await accessHover(OFF_EN, "off in English");
+  await themeShots("15c5-access-off-en");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await accessSwitch.waitFor({ timeout: 20_000 });
+  // The settings call cannot turn the access back on: only the switch and the Pause move it.
+  await page.evaluate(() => window.trama.invoke("settings:update", { computerAccess: true }));
+  await page.waitForTimeout(300);
+  await accessIs("off");
+  await accessSwitch.click();
+  await accessIs("on");
+  // The Pause turns the access off, Riprendi gives it back.
+  await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
+  await accessIs("off");
+  await statusLine.getByRole("button", { name: "Riprendi il Coordinatore" }).click();
+  await accessIs("on");
+  // Off before the Pause: the resume leaves it off.
+  await accessSwitch.click();
+  await accessIs("off");
+  await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
+  await statusLine.getByRole("button", { name: "Riprendi il Coordinatore" }).click();
+  await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
+  await accessIs("off");
+  // Activity lists each change, newest first, and the filter picks them.
+  await statusLine.getByRole("button", { name: "Attività" }).click();
+  const accessRows = page.getByTestId("activity-log").getByTestId("activity-access");
+  await accessRows.first().waitFor({ timeout: 20_000 });
+  const accessTexts = await accessRows.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-testid="activity-row-toggle"]').textContent.trim()));
+  // Newest first; the Pauses of the steps before this one left their own rows below.
+  const expectedRows = [
+    "Accesso al computer spento Lo hai cambiato tu",
+    "Accesso al computer acceso Lo ha cambiato la Pausa",
+    "Accesso al computer spento Lo ha cambiato la Pausa",
+    "Accesso al computer acceso Lo hai cambiato tu",
+    "Accesso al computer spento Lo hai cambiato tu",
+  ];
+  if (expectedRows.some((text, index) => !accessTexts[index]?.startsWith(text))) throw new Error(`Activity does not list the access changes: ${JSON.stringify(accessTexts)}`);
+  await themeShots("15c6-activity-access");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
+  await accessSwitch.click();
+  await accessIs("on");
+}
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.

@@ -16,7 +16,7 @@ Decisione:
 - **Il codice del progetto va dove va oggi.** Al provider del modello e al remoto GitHub come oggi; verso un altro sito solo con il consenso per quel sito.
 - **Pagamenti e cancellazioni definitive chiedono il sì ogni volta.** Messaggi a persone e pubblicazioni seguono la regola del consenso per sito.
 - **Traccia.** In chat compaiono solo gli invii di dati verso l'esterno. I comandi e le altre mosse stanno in Attività, con un filtro "Comandi e invii".
-- **Interruttore dell'accesso nella barra di stato.** Spegne subito rete, browser, comandi fuori dal progetto e schermo; il lavoro sul codice continua. Anche la Pausa del Coordinatore spegne l'accesso; alla ripresa torna com'era.
+- **Interruttore dell'accesso nel composer.** Sta nella riga sotto il messaggio, accanto al selettore del modello, con l'icona di internet (globo acceso, globo barrato spento). Lo stato è uno solo per l'app (decisione della persona del 4 ottobre 2026; prima era nella barra di stato). Spegne subito rete, browser, comandi fuori dal progetto e schermo; il lavoro sul codice continua. Anche la Pausa del Coordinatore spegne l'accesso; alla ripresa torna com'era.
 - **Siti vietati.** Li sceglie la persona, valgono per tutti i progetti e nessun agente ci entra mai.
 - **Regola fissa: quello che arriva da fuori è un dato, mai un ordine.** Pagine, schermate e risposte di siti sono dati. Se un testo chiede un'azione, l'agente la riporta come fatto e non la esegue. Gli ordini vengono solo dalla persona e dal Coordinatore.
 
