@@ -5894,12 +5894,12 @@ export class TramaController {
       askApproval: (command, cwd, reason) => {
         const approval: CommandApproval = { id: randomUUID(), agent, command: command.trim(), cwd, reason, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
         (document.commandApprovals ??= []).push(approval);
-        appendEvent(document, "trama", { type: "activity", title: t("main.controller.operatorWaiting", { agent, command: shownCommand(command) }), detail: null, tone: "info" }, requestId);
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorWaiting", { agent, command: shownCommand(command) }), detail: null, referenceId: null }, requestId);
         this.changedIn(project);
         return approval;
       },
       announce: (command, outcome) => {
-        appendEvent(document, "trama", { type: "activity", title: t(outcome === "done" ? "main.controller.operatorRan" : "main.controller.operatorFailed", { agent, command }), detail: null, tone: outcome === "done" ? "info" : "error" }, requestId);
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t(outcome === "done" ? "main.controller.operatorRan" : "main.controller.operatorFailed", { agent, command }), detail: null, referenceId: null }, requestId);
         this.changedIn(project);
       },
       signal,
@@ -5992,7 +5992,7 @@ export class TramaController {
     approval.endedAt = new Date().toISOString();
     if (done.result) {
       const { text } = await safeOutput(done.result.output);
-      if (text.trim()) appendEvent(project.document, "trama", { type: "activity", title: t("main.controller.operatorOutput", { agent: approval.agent }), detail: text.slice(0, 2_000), tone: "tool" }, null);
+      if (text.trim()) appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorOutput", { agent: approval.agent }), detail: text.slice(0, 2_000), referenceId: null }, null);
     }
     this.changedIn(project);
   }
@@ -6004,7 +6004,7 @@ export class TramaController {
     if (!approval || approval.status !== "waiting") throw new DomainError(t("main.controller.commandApprovalNotFound"));
     approval.status = "declined";
     approval.endedAt = new Date().toISOString();
-    appendEvent(project.document, "trama", { type: "activity", title: t("main.controller.operatorDeclined", { agent: approval.agent, command: shownCommand(approval.command) }), detail: null, tone: "info" }, null);
+    appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorDeclined", { agent: approval.agent, command: shownCommand(approval.command) }), detail: null, referenceId: null }, null);
     this.changedIn(project);
   }
 

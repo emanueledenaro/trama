@@ -79,7 +79,7 @@ const answer = (c: TramaController, count: number) => {
   const text = replies(c).filter((r) => r.startsWith("Operatore: "))[count]!.slice("Operatore: ".length);
   return JSON.parse(text) as { kind?: string; source?: string; report?: string; commandsRun?: string[]; error?: { code: string } };
 };
-const activityTitles = (c: TramaController) => c.snapshot.project!.document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
+const chatLines = (c: TramaController) => c.snapshot.project!.document.events.flatMap((e) => (e.content.type === "card" && e.content.kind === "contextNotice" ? [e.content.title] : []));
 
 describe("the Operator runs commands on the Mac with secrets locked (issue #409)", () => {
   it("exists in every project, runs what is safe, stops what touches a secret and asks before what cannot be undone", async () => {
@@ -103,7 +103,7 @@ describe("the Operator runs commands on the Mac with secrets locked (issue #409)
     // Nothing locked or waiting ever reached the shell.
     expect(shell.ran).toEqual(["ls docs"]);
 
-    // Every command is a row of Activity, in the Operator's name; the chat tells only the one that ran and the one that waits.
+    // Every command is a row of Activity, in the Operator's name; the chat has a line for the one that ran and the one that waits.
     const steps = document().accessSteps!;
     expect(steps.map((s) => [s.agent, s.kind, s.target, s.outcome])).toEqual([
       ["Operatore", "command", "ls docs", "done"],
@@ -112,8 +112,8 @@ describe("the Operator runs commands on the Mac with secrets locked (issue #409)
       ["Operatore", "command", "rm -rf build", "waiting"],
       ["Operatore", "command", "printenv", "refused"],
     ]);
-    expect(activityTitles(c)).toContain("Operatore ha lanciato un comando: ls docs");
-    expect(activityTitles(c).some((title) => title.startsWith("Operatore aspetta il tuo sì"))).toBe(true);
+    expect(chatLines(c)).toContain("Operatore ha lanciato un comando: ls docs");
+    expect(chatLines(c).some((title) => title.startsWith("Operatore aspetta il tuo sì"))).toBe(true);
 
     // The locked commands wait in "Aspetta te" with the secrets ban and the place; the deletion waits for a yes.
     expect(document().fixedBanRefusals!.map((r) => [r.ban, r.by.kind])).toEqual([["secrets", "operator"], ["secrets", "operator"], ["secrets", "operator"]]);
