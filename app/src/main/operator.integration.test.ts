@@ -127,6 +127,7 @@ describe("the Operator runs commands on the Mac with secrets locked (issue #409)
     expect(approval).toMatchObject({ command: "rm -rf build", reason: "delete", status: "waiting" });
     await c.confirmCommandApproval(approval.id);
     expect(shell.ran).toEqual(["ls docs", "rm -rf build"]);
+    expect(chatLines(c)).toContain("Operatore ha lanciato un comando: rm -rf build");
     expect(document().commandApprovals![0]!.status).toBe("done");
     expect(document().accessSteps!.at(-1)).toMatchObject({ agent: "Operatore", kind: "command", target: "rm -rf build", outcome: "done" });
     expect((c.snapshot.project!.waiting ?? []).some((item) => item.kind === "commandApproval")).toBe(false);

@@ -3545,7 +3545,11 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   const again = await openItem("commandApproval", "rm -rf build");
   await again.getByTestId("command-approval-card").getByRole("button", { name: "Sì, lancialo" }).click();
   await again.waitFor({ state: "detached", timeout: 20_000 });
-  await page.getByText("Operatore ha lanciato un comando: rm -rf build", { exact: true }).first().waitFor({ timeout: 20_000 });
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+  const deletionRow = page.getByTestId("activity-log").getByTestId("activity-command").filter({ hasText: "Operatore ha lanciato «rm -rf build»" });
+  await deletionRow.filter({ hasNotText: "Aspetta il tuo sì" }).first().waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
 }
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
