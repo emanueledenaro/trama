@@ -1337,8 +1337,8 @@ export interface AccessStep {
   kind: "search" | "page" | "command";
   /** What was searched, the page address without its query string and fragment, or the command line without its secrets. */
   target: string;
-  /** `refused` when the switch was off, the address was not allowed or it carried a secret. */
-  outcome: "done" | "failed" | "refused" | "waiting";
+  /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host); `waiting` while a command waits for the person. */
+  outcome: "done" | "failed" | "refused" | "blocked" | "waiting";
   /** Why it failed or was refused, or the host of a page that moved elsewhere; null when it went well. */
   detail: string | null;
 }
@@ -2508,6 +2508,8 @@ export interface AppSettings {
   computerAccess?: boolean;
   /** The projects whose Pause turned the access off: it comes back on when the last of them resumes. */
   computerAccessPausedBy?: string[];
+  /** The sites the person blocks (ADR 0020, issue #414): hosts, one list for every project. No agent opens them. */
+  blockedSites?: string[];
   /** What the learning loop may do (ADR 0014); missing keys take the defaults. */
   learning?: Partial<LearningSettings>;
   /**

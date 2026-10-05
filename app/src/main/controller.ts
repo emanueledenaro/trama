@@ -451,6 +451,7 @@ import { confirmByButton, declineAction, finishAction, runnableArgs } from "./co
 import { redactSensitiveData, repositoryLocator } from "./core/redaction";
 import { runnableCommand, searchFoundNothing } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
+import { cleanBlockedSites } from "@shared/blockedSites";
 import { accessIsOn, followPause, personSwitch } from "@shared/computerAccess";
 import { ComputerAccessGate } from "./core/computerAccess";
 import {
@@ -872,10 +873,13 @@ export class TramaController {
     step: RequestStep | null;
   }[] = [];
 
-  /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
   private secretLock: SecretLock | null = null;
 
-  readonly computerAccess = new ComputerAccessGate(() => accessIsOn(this.state.settings));
+  /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
+  readonly computerAccess = new ComputerAccessGate(
+    () => accessIsOn(this.state.settings),
+    () => this.state.settings.blockedSites ?? [],
+  );
 
   constructor(
     storageRoot: string,
@@ -1061,6 +1065,7 @@ export class TramaController {
       computerAccessPausedBy: Array.isArray(settings.computerAccessPausedBy)
         ? settings.computerAccessPausedBy.filter((id): id is string => typeof id === "string")
         : [],
+      blockedSites: cleanBlockedSites(settings.blockedSites),
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
       ...(clampSharedDevelopers(settings.sharedDevelopers) !== null ? { sharedDevelopers: clampSharedDevelopers(settings.sharedDevelopers)! } : {}),
@@ -5837,7 +5842,7 @@ export class TramaController {
       return toolFailure("access_off", "Computer access is off: the person turned it off. Tell them and go on without the web.");
     }
     const calls = new ResearchCalls();
-    const fetcher = this.host.webFetcher ?? httpWebFetcher();
+    const fetcher = this.host.webFetcher ?? httpWebFetcher(undefined, undefined, (url) => this.computerAccess.isBlocked(url));
     const toolServer = new CoordinatorToolServer(
       RESEARCH_TOOLS,
       (name, args) => runResearchTool(name, args, { gate: this.computerAccess, fetcher, agent, record, signal: abort.signal, newId: randomUUID }, calls),
@@ -9594,6 +9599,8 @@ export class TramaController {
       const { computerAccess: _access, computerAccessPausedBy: _holders, ...rest } = update;
       update = rest;
     }
+    // The blocked sites are hosts, once each: whatever the person typed is read as a host and the rest is dropped.
+    if (update.blockedSites !== undefined) update = { ...update, blockedSites: cleanBlockedSites(update.blockedSites) };
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
     const continuousTurnedOn = this.state.settings.continuousWork === false && update.continuousWork === true;
     this.state.settings = { ...this.state.settings, ...update, learning };
