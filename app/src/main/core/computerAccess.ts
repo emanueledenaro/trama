@@ -1,3 +1,4 @@
+import { isBlockedAddress } from "@shared/blockedSites";
 import { roleMayUse, type AccessPower } from "@shared/computerAccess";
 import type { TeamRole } from "@shared/domain";
 
@@ -8,7 +9,7 @@ import type { TeamRole } from "@shared/domain";
  * project's code never asks it.
  */
 
-export type AccessDecision = { allowed: true } | { allowed: false; reason: "switchedOff" | "roleNotAllowed" };
+export type AccessDecision = { allowed: true } | { allowed: false; reason: "switchedOff" | "roleNotAllowed" | "blockedSite" };
 
 /** An action in progress that uses one of the powers: `stop` ends it at once and never throws. */
 export interface RunningAccessAction {
@@ -26,15 +27,28 @@ export interface RunningAccessAction {
 export class ComputerAccessGate {
   private readonly running = new Map<string, RunningAccessAction>();
 
-  constructor(private readonly isOn: () => boolean) {}
+  constructor(
+    private readonly isOn: () => boolean,
+    private readonly blockedSites: () => readonly string[] = () => [],
+  ) {}
 
   /**
-   * Whether a power may start now, for the role that asks (when given). The switch decides first, then the role. A
-   * refusal is the caller's to record in Activity. The mandate never enters: it neither grants nor takes the access.
+   * Whether an address leads to a site the person blocked (ADR 0020, issue #414). It holds for every power that reaches
+   * a site, in every project, and for every step: the first address, a redirect and a link. A consent never lifts it.
    */
-  decide(power: AccessPower, role?: TeamRole): AccessDecision {
+  isBlocked(address: string | URL): boolean {
+    return isBlockedAddress(address, this.blockedSites());
+  }
+
+  /**
+   * Whether a power may start now, for the role that asks (when given) and the address it goes to (when it goes to a
+   * site). The switch decides first, then the role, then the blocked sites. A refusal is the caller's to record in
+   * Activity. The mandate never enters: it neither grants nor takes the access.
+   */
+  decide(power: AccessPower, role?: TeamRole, address?: string | URL): AccessDecision {
     if (!this.isOn()) return { allowed: false, reason: "switchedOff" };
     if (role && !roleMayUse(power, role)) return { allowed: false, reason: "roleNotAllowed" };
+    if (address !== undefined && this.isBlocked(address)) return { allowed: false, reason: "blockedSite" };
     return { allowed: true };
   }
 
