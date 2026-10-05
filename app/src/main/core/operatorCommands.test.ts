@@ -10,6 +10,7 @@ import {
   type OperatorSession,
   runOperatorTool,
 } from "./operatorCommands";
+import { fixtureScreenDriver } from "./operatorScreen";
 import { SecretLock } from "./secretLock";
 
 const parse = (result: { content: { text: string }[] }) => JSON.parse(result.content[0]!.text);
@@ -76,6 +77,12 @@ function harness(): Harness {
     askConsent: () => undefined,
     announceSite: () => undefined,
     needsLogin: () => undefined,
+    // The screen tools have their own checks in operatorScreen.test.ts.
+    screen: fixtureScreenDriver(() => ({ front: { app: "Finder" } })),
+    appConsents: () => [],
+    askAppConsent: () => undefined,
+    needsPermission: () => undefined,
+    passwordFieldStopped: () => undefined,
     signal: controller.signal,
     newId: () => `id${++counter}`,
   };

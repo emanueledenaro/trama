@@ -1,13 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, screen, shell, systemPreferences } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
 import { fixtureCommandRunner } from "./core/operatorCommands";
 import { fixtureBrowserDriver } from "./core/operatorBrowser";
+import { fixtureScreenDriver } from "./core/operatorScreen";
 import { fixtureWebFetcher } from "./core/webResearch";
 import { t } from "./core/personLanguage";
 import { type MenuCommand, menuTemplate } from "./menu";
@@ -109,6 +110,13 @@ const controller = new TramaController(dataRoot, {
   // A check that runs the app reads its pages from a file, never from the network.
   ...(process.env.TRAMA_SHELL_FIXTURE ? { commandRunner: fixtureCommandRunner(JSON.parse(readFileSync(process.env.TRAMA_SHELL_FIXTURE, "utf8"))) } : {}),
   ...(process.env.TRAMA_BROWSER_FIXTURE ? { browserDriver: fixtureBrowserDriver(JSON.parse(readFileSync(process.env.TRAMA_BROWSER_FIXTURE, "utf8"))) } : {}),
+  // The two macOS permissions of the screen are only asked, never prompted for: Trama does not open or change a system setting.
+  screenPermissions: () =>
+    process.platform === "darwin"
+      ? { accessibility: systemPreferences.isTrustedAccessibilityClient(false), screenRecording: systemPreferences.getMediaAccessStatus("screen") === "granted" }
+      : { accessibility: false, screenRecording: false },
+  // The file is read at every call, so a check can change it between two steps.
+  ...(process.env.TRAMA_SCREEN_FIXTURE ? { screenDriver: fixtureScreenDriver(() => JSON.parse(readFileSync(process.env.TRAMA_SCREEN_FIXTURE as string, "utf8"))) } : {}),
   ...(process.env.TRAMA_WEB_FIXTURE ? { webFetcher: fixtureWebFetcher(JSON.parse(readFileSync(process.env.TRAMA_WEB_FIXTURE, "utf8"))) } : {}),
 }, legacyRoot);
 
@@ -248,6 +256,9 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "siteConsent:confirm": ({ id }) => controller.confirmSiteConsentRequest(id),
   "siteConsent:decline": ({ id }) => controller.declineSiteConsentRequest(id),
   "siteConsent:withdraw": ({ id }) => controller.withdrawSiteConsent(id),
+  "appConsent:confirm": ({ id }) => controller.confirmAppConsentRequest(id),
+  "appConsent:decline": ({ id }) => controller.declineAppConsentRequest(id),
+  "appConsent:withdraw": ({ id }) => controller.withdrawAppConsent(id),
   "requestedAction:confirm": ({ id }) => controller.confirmRequestedAction(id),
   "requestedAction:decline": ({ id }) => controller.declineRequestedAction(id),
   "delegation:revoke": () => controller.revokeDelegation(),

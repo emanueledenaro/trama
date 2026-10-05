@@ -9,7 +9,7 @@ import type { SiteConsent } from "./domain";
  */
 
 export const MAXIMUM_CONSENTS = 200;
-const MAXIMUM_PHRASE = 160;
+export const MAXIMUM_PHRASE = 160;
 
 /** What a message of the person says about a site: the consent given or withdrawn, the host, and the sentence it comes from. */
 export interface ConsentStatement {
@@ -18,19 +18,22 @@ export interface ConsentStatement {
   phrase: string;
 }
 
-const WITHDRAW =
+export const WITHDRAW =
   /\b(?:ritiro il consenso|ritira il consenso|revoco il consenso|revoca il consenso|togli il consenso|non hai più il mio consenso|non puoi più (?:usare|aprire|entrare su|entrare in)|withdraw (?:my |the )?consent|revoke (?:my |the )?consent|you no longer have my consent|you can no longer (?:use|open|access))\b/i;
-const GRANT =
+export const GRANT =
   /\b(?:hai il mio consenso|ti do il consenso|do il consenso|ti consento di (?:usare|aprire|entrare su)|consenso (?:a|per)(?: usare| aprire| entrare su)?|puoi (?:usare|aprire|entrare su|entrare in|accedere a|accedere su)|you have my consent|i give (?:you )?(?:my )?consent|consent (?:to|for)|you (?:can|may) (?:use|open|log into|go to|visit|access))\b/i;
 /** A denial, a condition or a question is not a yes. */
-const NOT_A_YES = /\b(?:non|mai|senza|se|don'?t|do not|never|without|cannot|can'?t|not|if|unless)\b|\?/i;
+export const NOT_A_YES = /\b(?:non|mai|senza|se|don'?t|do not|never|without|cannot|can'?t|not|if|unless)\b|\?/i;
 const HOSTS = /(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:\/[^\s,;)»"]*)?/gi;
 
-const sentences = (text: string): string[] =>
+export const sentences = (text: string): string[] =>
   text
     .split(/(?<=[.!?])\s+|\n+/)
     .map((part) => part.trim())
     .filter(Boolean);
+
+/** The sentence as the chat and the list quote it, cut short. */
+export const quotedPhrase = (sentence: string): string => (sentence.length > MAXIMUM_PHRASE ? `${sentence.slice(0, MAXIMUM_PHRASE - 3)}...` : sentence);
 
 /**
  * What the person's message says about sites, as sentences that give or withdraw a consent. Pure. Conservative on
@@ -45,7 +48,7 @@ export function consentStatements(message: string): ConsentStatement[] {
     const match = withdraw ?? grant;
     if (!match) continue;
     if (grant && NOT_A_YES.test(sentence)) continue;
-    const phrase = sentence.length > MAXIMUM_PHRASE ? `${sentence.slice(0, MAXIMUM_PHRASE - 3)}...` : sentence;
+    const phrase = quotedPhrase(sentence);
     const hosts = new Set<string>();
     for (const candidate of sentence.slice(match.index + match[0].length).matchAll(HOSTS)) {
       const host = blockedHostFrom(candidate[0]);
