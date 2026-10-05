@@ -481,7 +481,7 @@ export interface FixedBanRefusal {
   ban: import("./fixedBans").FixedBan;
   /** The command, the file or the branch the action named. */
   action: string;
-  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "trama" };
+  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "operator"; specialistId: string } | { kind: "trama" };
   refusedAt: string;
   acknowledgedAt: string | null;
 }
@@ -1215,7 +1215,8 @@ export type TeamRole =
   | "regressionGuardian"
   | "security"
   | "performance"
-  | "devops";
+  | "devops"
+  | "operator";
 
 /** A color of the fixed agent palette (W15, `@shared/identity`). */
 export type AgentColor = "blue" | "indigo" | "violet" | "fuchsia" | "pink" | "copper" | "olive" | "teal" | "cyan";
@@ -1327,19 +1328,37 @@ export interface AccessChange {
   stopped: { agent: string; label: string }[];
 }
 
-/** A step of an agent that used computer access, shown in Activity: a search or a page Research read (issue #408). */
+/** A step of an agent that used computer access, shown in Activity: a search or a page Research read (issue #408), a command of the Operator (issue #409). */
 export interface AccessStep {
   id: string;
   at: string;
   /** The agent that took the step, as the person sees it in Activity. */
   agent: string;
-  kind: "search" | "page";
-  /** What was searched, or the page address without its query string and fragment. */
+  kind: "search" | "page" | "command";
+  /** What was searched, the page address without its query string and fragment, or the command line without its secrets. */
   target: string;
-  /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host). */
-  outcome: "done" | "failed" | "refused" | "blocked";
+  /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host); `waiting` while a command waits for the person. */
+  outcome: "done" | "failed" | "refused" | "blocked" | "waiting";
   /** Why it failed or was refused, or the host of a page that moved elsewhere; null when it went well. */
   detail: string | null;
+}
+
+/**
+ * A command of the Operator that cannot be undone (a deletion, a send, a payment), which waits for the person's yes
+ * (ADR 0020, issue #409). Trama runs it itself after the yes; the Operator never sees the answer as an order.
+ */
+export interface CommandApproval {
+  id: string;
+  /** The agent that asked, as the person sees it. */
+  agent: string;
+  command: string;
+  /** The folder it would run in. */
+  cwd: string;
+  /** Why it asks: `delete`, `send` or `payment`. */
+  reason: "delete" | "send" | "payment";
+  askedAt: string;
+  status: "waiting" | "done" | "failed" | "declined";
+  endedAt: string | null;
 }
 
 export interface SquadChange {
@@ -1871,6 +1890,8 @@ export interface ProjectDocument {
   accessChanges?: AccessChange[];
   /** The searches and pages Research read through computer access, oldest first (issue #408); absent until the first. */
   accessSteps?: AccessStep[];
+  /** The Operator's commands that wait for the person's yes (issue #409); absent in documents written before. */
+  commandApprovals?: CommandApproval[];
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */

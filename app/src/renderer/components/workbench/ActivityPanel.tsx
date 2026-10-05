@@ -83,6 +83,7 @@ const TYPE_LABELS: Record<ActivityType, MessageKey> = {
   squads: "activity.type.squads",
   requested: "activity.type.requested",
   access: "activity.type.access",
+  commands: "activity.type.commands",
 };
 
 const TEST_IDS: Record<ActivityEntry["kind"], string> = {
@@ -94,6 +95,7 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   squad: "activity-squad",
   requested: "activity-requested",
   access: "activity-access",
+  command: "activity-command",
   supersede: "activity-supersede",
 };
 

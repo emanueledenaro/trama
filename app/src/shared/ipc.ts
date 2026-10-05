@@ -100,6 +100,8 @@ export interface ActionMap {
   "mandate:restrict": [{ scopeModuleIds: string[]; authorizedActions: MandateAction[] }, void];
   /** The person has seen an action a fixed ban stopped; it leaves Aspetta te (issue #244). */
   "fixedBan:acknowledge": [{ id: string }, void];
+  "commandApproval:confirm": [{ id: string }, void];
+  "commandApproval:decline": [{ id: string }, void];
   /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
   "requestedAction:confirm": [{ id: string }, void];
   "requestedAction:decline": [{ id: string }, void];

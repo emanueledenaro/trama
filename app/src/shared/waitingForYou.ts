@@ -25,7 +25,8 @@ export type WaitingKind =
   | "candidate"
   | "memory"
   | "fixedBan"
-  | "confirmation";
+  | "confirmation"
+  | "commandApproval";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
@@ -321,6 +322,20 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       title: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${oneLine(action.summary)}`,
       goalId: null,
       askedAt: action.confirmation?.askedAt ?? action.requestedAt,
+      blocks: 0,
+    });
+  }
+
+  // A command of the Operator that cannot be undone (issue #409): it runs only after the person's yes.
+  for (const approval of (document.commandApprovals ?? []).filter((a) => a.status === "waiting")) {
+    items.push({
+      key: `commandApproval:${approval.id}`,
+      kind: "commandApproval",
+      targetId: approval.id,
+      label: t("commandApproval.waiting.label"),
+      title: oneLine(approval.command),
+      goalId: null,
+      askedAt: approval.askedAt,
       blocks: 0,
     });
   }

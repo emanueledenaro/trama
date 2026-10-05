@@ -96,7 +96,7 @@ describe("squads by product area (A10)", () => {
     expect(formation.hired).toEqual([]);
     // The shared roles belong to no squad.
     const shared = sharedRoleMembers(document);
-    expect(shared.map((s) => s.role)).toEqual(["ux", "research", "documentation", "bugTriage", "specReviewer", "cleanCode", "regressionGuardian", "security", "performance", "devops"]);
+    expect(shared.map((s) => s.role)).toEqual(["ux", "research", "documentation", "bugTriage", "specReviewer", "cleanCode", "regressionGuardian", "security", "performance", "devops", "operator"]);
     expect(shared.every((s) => squadOf(document, s.id) === null)).toBe(true);
   });
 
