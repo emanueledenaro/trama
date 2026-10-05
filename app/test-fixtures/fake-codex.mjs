@@ -279,6 +279,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.startsWith("Order from the Coordinator:") && toolServers.has(threadId)) {
         const lines = [];
         for (const command of text.split("\n").slice(1).join("\n").split(";;").map((c) => c.trim()).filter(Boolean)) {
+          // Issue #410: "chrome:<address>" opens the page in the person's Chrome with open_in_chrome.
+          if (command.startsWith("chrome:")) {
+            const opened = await callTool(threadId, "open_in_chrome", { url: command.slice("chrome:".length).trim() });
+            toolDone("open_in_chrome", opened);
+            const page = JSON.parse(opened.content[0].text);
+            lines.push(opened.isError ? `${command}: rifiutato (${page.error.code})` : `${command}: aperto «${page.title}» ${page.text.trim()}`);
+            continue;
+          }
           const result = await callTool(threadId, "run_command", { command });
           toolDone("run_command", result);
           const body = JSON.parse(result.content[0].text);

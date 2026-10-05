@@ -1,0 +1,6 @@
+{
+  "pages": {
+    "https://github.com/acme/repo": { "title": "acme/repo", "text": "Le issue aperte del progetto." },
+    "https://private.example/inbox": { "title": "Accedi", "finalAddress": "https://private.example/login", "text": "Password", "asksForLogin": true }
+  }
+}
