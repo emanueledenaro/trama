@@ -1384,6 +1384,8 @@ export interface SiteConsentRequest {
   host: string;
   /** The address it wanted to open, without its query string and fragment. */
   address: string;
+  /** The request of the chat it came from: the lines that answer it go to the same place. */
+  requestId: string | null;
   askedAt: string;
   status: "waiting" | "granted" | "declined";
   endedAt: string | null;
