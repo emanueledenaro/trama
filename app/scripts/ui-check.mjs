@@ -3618,6 +3618,34 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await composer().fill("Ritiro il consenso per private.example.");
   await page.keyboard.press("Enter");
   await chatLine("Consenso ritirato per private.example, dalla tua frase «Ritiro il consenso per private.example.»", "15p-site-consent-withdrawn");
+  // Issue #411: a send of data goes only to a site with the consent, and it is a line in the chat and a row of Activity.
+  await composer().fill('[operatore:send:https://npmjs.com/forum/reply | message | {"text":"Ciao"}] rispondi nel forum');
+  await page.keyboard.press("Enter");
+  await chatLine("Operatore ha inviato dati a npmjs.com", "15q-send-chat-line");
+  // A secret in the data: the send never leaves and waits in Aspetta te with the reason, without showing the secret.
+  await composer().fill('[operatore:send:https://npmjs.com/forum/reply | message | {"note":"ghp_abcdefghijklmnopqrstuvwxyz0123456789"}] rispondi');
+  await page.keyboard.press("Enter");
+  await openItem("fixedBan", "POST npmjs.com/forum/reply");
+  await themeShots("15r-send-secret-item");
+  await closePanels();
+  // A payment asks for the yes every time, even on a site with the consent: the card says what goes out and where.
+  await composer().fill('[operatore:send:https://npmjs.com/checkout | payment | {"plan":"pro"}] abbonati');
+  await page.keyboard.press("Enter");
+  const sendItem = await openItem("commandApproval", "POST npmjs.com/checkout");
+  const sendCard = sendItem.getByTestId("command-approval-card");
+  await sendCard.getByText("Un invio che non si annulla").waitFor();
+  await sendCard.getByText('{"plan":"pro"}').waitFor();
+  await primaryLast(sendCard.locator(".cta-row"), "Send approval");
+  await themeShots("15s-send-approval-item");
+  await sendCard.getByRole("button", { name: "Sì, invialo" }).click();
+  await sendItem.waitFor({ state: "detached", timeout: 20_000 });
+  await closePanels();
+  await chatLine("Operatore ha inviato dati a npmjs.com");
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+  await page.getByTestId("activity-log").getByText("Operatore ha inviato dati a «POST npmjs.com/forum/reply»", { exact: false }).first().waitFor({ timeout: 20_000 });
+  await themeShots("15t-activity-sends");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
 }
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with

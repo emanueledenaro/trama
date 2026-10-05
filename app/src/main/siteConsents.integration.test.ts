@@ -33,6 +33,9 @@ function fakeChrome(): FakeChrome {
       [GITHUB]: { status: "opened", page: { finalAddress: GITHUB, title: "acme/repo", text: "Le issue aperte.", asksForLogin: false } },
       "https://private.example/inbox": { status: "opened", page: { finalAddress: "https://private.example/login", title: "Accedi", text: "Password", asksForLogin: true } },
     },
+    async send() {
+      return { status: "unavailable", reason: "no send" };
+    },
     async open(address) {
       chrome.opened.push(address);
       return chrome.pages[address] ?? { status: "unavailable", reason: "no page" };

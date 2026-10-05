@@ -287,6 +287,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             lines.push(opened.isError ? `${command}: rifiutato (${page.error.code})` : `${command}: aperto «${page.title}» ${page.text.trim()}`);
             continue;
           }
+          // Issue #411: "send:<address> | <purpose> | <body> | <method>" sends data to a site with send_data.
+          if (command.startsWith("send:")) {
+            const [address, purpose, body, method] = command.slice("send:".length).split(" | ").map((part) => part.trim());
+            const sent = await callTool(threadId, "send_data", { url: address, ...(purpose ? { purpose } : {}), ...(body ? { body } : {}), ...(method ? { method } : {}) });
+            toolDone("send_data", sent);
+            const answer = JSON.parse(sent.content[0].text);
+            lines.push(sent.isError ? `${command}: rifiutato (${answer.error.code})` : `${command}: inviato (${answer.status})`);
+            continue;
+          }
           const result = await callTool(threadId, "run_command", { command });
           toolDone("run_command", result);
           const body = JSON.parse(result.content[0].text);
