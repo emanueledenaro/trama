@@ -130,8 +130,18 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
       });
     socket.addEventListener("error", () => finish(new Error("Chrome closed the connection.")));
     socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown };
-      if (message.id !== undefined) pending.get(message.id)?.(message.result);
+      let message: { id?: unknown; result?: unknown };
+      try {
+        message = JSON.parse(String(event.data)) as { id?: unknown; result?: unknown };
+      } catch {
+        return;
+      }
+      // What Chrome sends is data: only an answer to a call this driver made is taken, once.
+      if (typeof message.id !== "number") return;
+      const answer = pending.get(message.id);
+      if (!answer) return;
+      pending.delete(message.id);
+      answer(message.result);
     });
     // The tab opened the address by itself: ask until the page is complete, then read it once.
     const wait = async () => {
