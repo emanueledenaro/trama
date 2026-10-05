@@ -473,6 +473,7 @@ import {
   type OperatorSession,
 } from "./core/operatorCommands";
 import { chromeDebuggingDriver, type BrowserDriver } from "./core/operatorBrowser";
+import { sendApproved } from "./core/operatorSend";
 import { SecretLock } from "./core/secretLock";
 import {
   httpWebFetcher,
@@ -5911,6 +5912,24 @@ export class TramaController {
         this.changedIn(project);
         return approval;
       },
+      askSendApproval: (request, label, reason) => {
+        const approval: CommandApproval = {
+          id: randomUUID(),
+          agent,
+          command: label,
+          cwd: "",
+          reason,
+          send: { address: request.address, method: request.method, contentType: request.contentType, body: request.body },
+          askedAt: new Date().toISOString(),
+          status: "waiting",
+          endedAt: null,
+        };
+        (document.commandApprovals ??= []).push(approval);
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorSendWaiting", { agent, site: label }), detail: null, referenceId: null }, requestId);
+        this.changedIn(project);
+        return approval;
+      },
+      announceSend: (host, outcome) => this.projectNotice(project, t(outcome === "done" ? "main.controller.operatorSent" : "main.controller.operatorSendFailed", { agent, site: host }), requestId),
       announce: (command, outcome) => {
         appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t(outcome === "done" ? "main.controller.operatorRan" : "main.controller.operatorFailed", { agent, command }), detail: null, referenceId: null }, requestId);
         this.changedIn(project);
@@ -6104,6 +6123,14 @@ export class TramaController {
     const specialist = project.document.team.specialists.find((s) => s.role === OPERATOR_ROLE && s.status !== "removed");
     if (!specialist) throw new DomainError(t("main.controller.commandApprovalNotFound"));
     const session = this.operatorSession(project, specialist, new AbortController().signal, null);
+    if (approval.send) {
+      // A send of data: the yes is for this send only, and the switch, the blocked sites, the filter and the consent are asked again.
+      approval.status = (await sendApproved({ ...approval.send }, { ...session, role: OPERATOR_ROLE })) ? "done" : "failed";
+      approval.endedAt = new Date().toISOString();
+      approval.send = undefined;
+      this.changedIn(project);
+      return;
+    }
     // The lock and the fixed bans are asked again: nothing the person approved bypasses them.
     const stopper = session.lock.check(approval.command, { cwd: approval.cwd });
     approval.status = "failed";

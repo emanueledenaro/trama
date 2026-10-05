@@ -18,24 +18,31 @@ export function CommandApprovalCard({ approvalId }: { approvalId: string }) {
     setBusy(true);
     void act(channel, { id: approval.id }).finally(() => setBusy(false));
   };
+  const send = approval.send;
   return (
-    <CardFrame icon={<IconLockOpen stroke={1.8} />} title={t("commandApproval.card.title")}>
-      <div data-testid="command-approval-card" data-reason={approval.reason}>
-        <p className="text-ui text-foreground/90">{t("commandApproval.card.intro", { agent: approval.agent })}</p>
-        <Field label={t("commandApproval.card.command")}>
+    <CardFrame icon={<IconLockOpen stroke={1.8} />} title={t(send ? "commandApproval.send.title" : "commandApproval.card.title")}>
+      <div data-testid="command-approval-card" data-reason={approval.reason} data-kind={send ? "send" : "command"}>
+        <p className="text-ui text-foreground/90">{t(send ? "commandApproval.send.intro" : "commandApproval.card.intro", { agent: approval.agent })}</p>
+        <Field label={t(send ? "commandApproval.send.site" : "commandApproval.card.command")}>
           <code className="block font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{approval.command}</code>
         </Field>
-        <Field label={t("commandApproval.card.folder")}>
-          <code className="block font-mono text-ui-sm break-all text-foreground/90">{approval.cwd}</code>
-        </Field>
+        {send ? (
+          <Field label={t("commandApproval.send.data")}>
+            <code className="block max-h-32 overflow-auto font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{send.body.trim() ? send.body.slice(0, 600) : t("commandApproval.send.noData")}</code>
+          </Field>
+        ) : (
+          <Field label={t("commandApproval.card.folder")}>
+            <code className="block font-mono text-ui-sm break-all text-foreground/90">{approval.cwd}</code>
+          </Field>
+        )}
         <Field label={t("commandApproval.card.why")}>{t(`commandApproval.why.${approval.reason}`)}</Field>
-        <p className="mt-2 text-ui-sm text-muted-foreground">{t("commandApproval.card.hint")}</p>
+        <p className="mt-2 text-ui-sm text-muted-foreground">{t(send ? "commandApproval.send.hint" : "commandApproval.card.hint")}</p>
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" disabled={busy} onClick={() => answer("commandApproval:decline")}>
             {t("commandApproval.card.decline")}
           </Button>
           <Button size="sm" disabled={busy} onClick={() => answer("commandApproval:confirm")}>
-            {t("commandApproval.card.confirm")}
+            {t(send ? "commandApproval.send.confirm" : "commandApproval.card.confirm")}
           </Button>
         </div>
       </div>

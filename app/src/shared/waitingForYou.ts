@@ -333,7 +333,7 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       key: `commandApproval:${approval.id}`,
       kind: "commandApproval",
       targetId: approval.id,
-      label: t("commandApproval.waiting.label"),
+      label: t(approval.send ? "commandApproval.send.waitingLabel" : "commandApproval.waiting.label"),
       title: oneLine(approval.command),
       goalId: null,
       askedAt: approval.askedAt,

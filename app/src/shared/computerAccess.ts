@@ -84,6 +84,22 @@ function stepDetail(t: Translate, step: AccessStep): string | null {
   if (step.kind === "browser" && (step.detail === "consent" || step.detail === "login" || step.detail === "start")) {
     return [t(step.outcome === "waiting" ? "activity.access.waiting" : "activity.access.failed"), t(`activity.access.browser.${step.detail}`)].join(" ");
   }
+  if (step.kind === "send") {
+    const [code, value = ""] = (step.detail ?? "").split(/:(.*)/s);
+    const why =
+      code === "consent"
+        ? t("activity.access.send.consent")
+        : code === "locked"
+          ? t("activity.access.reason.token")
+          : code === "reason"
+            ? t(`activity.access.reason.${value as "delete" | "payment"}`)
+            : code === "status"
+              ? t("activity.access.send.status", { code: value })
+              : code === "start"
+                ? t("activity.access.send.start")
+                : null;
+    return [step.outcome === "done" ? null : t(`activity.access.${step.outcome}`), why].filter(Boolean).join(" ") || null;
+  }
   if (step.kind !== "command") return step.outcome === "done" ? step.detail : [t(`activity.access.${step.outcome}`), step.detail].filter(Boolean).join(" ");
   const [code, value = ""] = (step.detail ?? "").split(/:(.*)/s);
   const why =
@@ -110,6 +126,7 @@ const stepLabelKey = {
   page: "activity.access.page",
   command: "activity.access.command",
   browser: "activity.access.browser",
+  send: "activity.access.send",
   consent: "activity.access.consent",
 } as const;
 
@@ -118,7 +135,7 @@ export function accessStepEntries(t: Translate, steps: AccessStep[]): ActivityEn
   return steps.map((step) => ({
     id: step.id,
     // What the Operator does on the Mac, in Chrome or in the shell, is one family in Activity: "Comandi e invii".
-    kind: step.kind === "command" || step.kind === "browser" ? "command" : "access",
+    kind: step.kind === "command" || step.kind === "browser" || step.kind === "send" ? "command" : "access",
     requestId: null,
     move: null,
     trigger: null,
