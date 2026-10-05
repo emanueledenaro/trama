@@ -6007,7 +6007,7 @@ export class TramaController {
   private askSiteConsent(project: ActiveProjectState, agent: string, host: string, address: string, requestId: string | null): void {
     const document = project.document;
     if (document.siteConsentRequests?.some((request) => request.status === "waiting" && request.host === host)) return;
-    const request: SiteConsentRequest = { id: randomUUID(), agent, host, address: shownSite(address), askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+    const request: SiteConsentRequest = { id: randomUUID(), agent, host, address: shownSite(address), requestId, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
     (document.siteConsentRequests ??= []).push(request);
     this.projectNotice(project, t("main.controller.siteConsentAsked", { agent, site: host }), requestId);
   }
@@ -6079,7 +6079,7 @@ export class TramaController {
     const project = this.requireProject();
     const request = project.document.siteConsentRequests?.find((item) => item.id === id);
     if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
-    const given = this.grantSiteConsent(project, request.host, "button", null, null);
+    const given = this.grantSiteConsent(project, request.host, "button", null, request.requestId);
     // A blocked site cannot be consented to: the request ends, and the chat has said why.
     request.status = given || consentFor(project.document.siteConsents, request.host) ? "granted" : "declined";
     request.endedAt = new Date().toISOString();
@@ -6093,7 +6093,7 @@ export class TramaController {
     if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
     request.status = "declined";
     request.endedAt = new Date().toISOString();
-    this.projectNotice(project, t("main.controller.siteConsentDeclined", { agent: request.agent, site: request.host }), null);
+    this.projectNotice(project, t("main.controller.siteConsentDeclined", { agent: request.agent, site: request.host }), request.requestId);
   }
 
   /** The person said yes to a command that cannot be undone (issue #409): Trama runs it itself, with every check again. */
