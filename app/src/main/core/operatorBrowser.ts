@@ -107,7 +107,8 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
   return new Promise((done, fail) => {
     const socket = new WebSocket(socketAddress);
     let next = 0;
-    const pending = new Map<number, (result: unknown) => void>();
+    // The calls are made one at a time: one answer is waited for, and only the one with its own number is taken.
+    let waiting: { id: number; resolve: (result: unknown) => void } | null = null;
     const timer = setTimeout(() => finish(new Error("The page took too long to load.")), 25_000);
     const finish = (error: Error | null, page?: OpenedPage) => {
       clearTimeout(timer);
@@ -125,7 +126,7 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
     const call = (method: string, params: Record<string, unknown> = {}) =>
       new Promise<unknown>((resolve) => {
         const id = ++next;
-        pending.set(id, resolve);
+        waiting = { id, resolve };
         socket.send(JSON.stringify({ id, method, params }));
       });
     socket.addEventListener("error", () => finish(new Error("Chrome closed the connection.")));
@@ -137,11 +138,10 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
         return;
       }
       // What Chrome sends is data: only an answer to a call this driver made is taken, once.
-      if (typeof message.id !== "number") return;
-      const answer = pending.get(message.id);
-      if (!answer) return;
-      pending.delete(message.id);
-      answer(message.result);
+      if (!waiting || message.id !== waiting.id) return;
+      const { resolve } = waiting;
+      waiting = null;
+      resolve(message.result);
     });
     // The tab opened the address by itself: ask until the page is complete, then read it once.
     const wait = async () => {
