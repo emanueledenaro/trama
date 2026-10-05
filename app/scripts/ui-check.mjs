@@ -3722,7 +3722,7 @@ await settings.getByRole("button", { name: "Togli shop.example dai siti vietati"
 await settings.locator('[data-testid="blocked-site"][data-site="shop.example"]').waitFor({ state: "detached" });
 // Issue #410: the consents of the open project, with how each was given and the button to withdraw it.
 {
-  await settings.getByRole("heading", { name: "Consensi per sito" }).scrollIntoViewIfNeeded();
+  await settings.getByRole("heading", { name: "Consensi per sito" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
   const listed = settings.locator('[data-testid="site-consent"]');
   await listed.first().waitFor({ timeout: 20_000 });
   if ((await listed.count()) !== 2) throw new Error(`The consents are not two: ${await listed.count()}`);
@@ -3744,7 +3744,7 @@ await settings.getByTestId("blocked-sites-empty").getByText("No blocked sites.")
 await settings.getByRole("heading", { name: "Consents per site" }).waitFor();
 await settings.getByRole("button", { name: "Withdraw the consent for npmjs.com" }).waitFor();
 await settings.locator('[data-testid="site-consent"][data-site="npmjs.com"]').getByText("From your sentence", { exact: false }).waitFor();
-await settings.getByRole("heading", { name: "Consents per site" }).scrollIntoViewIfNeeded();
+await settings.getByRole("heading", { name: "Consents per site" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
 await themeShots("12h-site-consents-en");
 // Issue #348: Informazioni shows the version of app/package.json, in each language.
 const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
