@@ -72,11 +72,11 @@ function harness(options: { blocked?: string[]; consents?: string[]; role?: Brow
 const open = (h: Harness, url: string) => runBrowserTool({ url }, h.session);
 
 describe("the real driver of Chrome never reaches for a cookie, a saved password or the keyboard (issue #411)", () => {
-  it("calls only the protocol's page reading and evaluation, never a cookie, storage, password or input command", async () => {
+  it("calls only the protocol's evaluation of the page, never a cookie, storage, password or input command", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync(new URL("./operatorBrowser.ts", import.meta.url), "utf8");
     const called = [...source.matchAll(/call\("([A-Za-z]+\.[A-Za-z]+)"/g)].map((match) => match[1]);
-    expect(new Set(called)).toEqual(new Set(["Runtime.evaluate"]));
+    expect(new Set(called)).toEqual(new Set(["Runtime.evaluate", "Runtime.callFunctionOn"]));
     expect(source).not.toMatch(/\b(?:Network\.(?:getCookies|getAllCookies|setCookie)|Storage\.|Input\.|Autofill|PasswordManager|document\.cookie)/);
   });
 });

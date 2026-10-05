@@ -208,16 +208,31 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
   });
 }
 
+const SEND_REQUEST = `async function (address, method, contentType, body) {
+  const options = { method, credentials: "same-origin", redirect: "manual" };
+  if (method !== "DELETE" || body) Object.assign(options, { headers: { "content-type": contentType }, body });
+  return (await fetch(address, options)).status;
+}`;
+
 /**
  * Sends one request from inside a tab of the site itself. The browser adds the person's session on its own: this code
  * never reads a cookie or a saved password, and it never fills a field of a page.
  */
 function sendFromTab(socketAddress: string, request: OutgoingRequest, signal: AbortSignal): Promise<number> {
-  const expression = `(async () => { const response = await fetch(${JSON.stringify(request.address)}, { method: ${JSON.stringify(request.method)}, credentials: "same-origin", redirect: "manual"${request.method === "DELETE" && !request.body ? "" : `, headers: { "content-type": ${JSON.stringify(request.contentType)} }, body: ${JSON.stringify(request.body)}`} }); return response.status; })()`;
   return talkToTab(socketAddress, signal, async (call) => {
     await untilComplete(call);
-    const evaluated = (await call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true })) as { result?: { value?: number } } | undefined;
-    const status = evaluated?.result?.value;
+    // The values travel as arguments of a fixed function: no code is built from the address or the data.
+    const root = (await call("Runtime.evaluate", { expression: "globalThis" })) as { result?: { objectId?: string } } | undefined;
+    const objectId = root?.result?.objectId;
+    if (!objectId) throw new Error("The page could not be reached.");
+    const sent = (await call("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: SEND_REQUEST,
+      arguments: [{ value: request.address }, { value: request.method }, { value: request.contentType }, { value: request.body }],
+      awaitPromise: true,
+      returnByValue: true,
+    })) as { result?: { value?: number } } | undefined;
+    const status = sent?.result?.value;
     if (typeof status !== "number") throw new Error("The request got no answer.");
     return status;
   });
