@@ -25,6 +25,8 @@ const launch = async (env = {}) => {
       TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
       // Research reads its pages from a file: the check never reaches the network (issue #408).
       TRAMA_WEB_FIXTURE: resolve("test-fixtures/web-fixture.json"),
+      // The Operator's commands answer from a file: the check never runs a command on the machine (issue #409).
+      TRAMA_SHELL_FIXTURE: resolve("test-fixtures/shell-fixture.json"),
       // The check reads Italian texts: the system's language is fixed, whatever the machine's (issue #301).
       TRAMA_SYSTEM_LANGUAGE: "it",
       // A move Trama starts by itself keeps running until the check stops it (W04).
@@ -3475,6 +3477,77 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   if (!englishTexts.some((text) => text.startsWith(`Ricerca read ${researchPage}`))) throw new Error(`The page row is not in English: ${JSON.stringify(englishTexts)}`);
   await themeShots("15c8-activity-research-en");
   await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
+}
+// Issue #409: the Coordinator gives the Operator an order. A safe command runs and leaves a row in the chat and one in
+// Activity; a command that touches a secret does not start and waits in Aspetta te with the place; a deletion waits for
+// the person's yes and Trama runs it only then. The filter "Comandi e invii" of Activity shows exactly these rows.
+{
+  await composer().fill("[operatore:ls docs ;; cat ~/.ssh/id_rsa ;; rm -rf build] controlla i documenti");
+  await page.keyboard.press("Enter");
+  await page.getByText("ls docs: eseguito", { exact: false }).first().waitFor({ timeout: 60_000 });
+  await page.getByText("Operatore ha lanciato un comando: ls docs", { exact: true }).first().waitFor({ timeout: 20_000 });
+  await page.getByText("Operatore aspetta il tuo sì per un comando che non si annulla: rm -rf build", { exact: true }).first().waitFor({ timeout: 20_000 });
+  // These items have no reference in the chat: they open from the list of Aspetta te.
+  const openItem = async (kind, text) => {
+    await showWaiting();
+    const items = page.getByTestId("side-bar").locator(`[data-testid="waiting-item"][data-waiting-key^="${kind}:"]`).filter({ hasText: text });
+    await items.last().waitFor({ timeout: 20_000 });
+    const open = items.and(page.locator('[data-open="true"]'));
+    if (!(await open.count())) await items.last().getByRole("button").first().click();
+    await open.last().waitFor({ timeout: 20_000 });
+    return open.last();
+  };
+  // The locked command is an item of Aspetta te with the place that stopped it.
+  const locked = await openItem("fixedBan", "cat ~/.ssh/id_rsa");
+  const lockedCard = locked.getByTestId("fixed-ban-card");
+  await lockedCard.getByText("cat ~/.ssh/id_rsa (~/.ssh)").waitFor();
+  await lockedCard.getByText("Operatore", { exact: false }).first().waitFor();
+  await primaryLast(lockedCard.locator(".cta-row"), "Operator locked command");
+  await themeShots("15e-operator-locked");
+  await lockedCard.getByRole("button", { name: "Ho visto" }).click();
+  await locked.waitFor({ state: "detached", timeout: 20_000 });
+  // The deletion asks for the yes: nothing ran yet.
+  const approval = await openItem("commandApproval", "rm -rf build");
+  const approvalCard = approval.getByTestId("command-approval-card");
+  await approvalCard.getByText("Cancella qualcosa e non si torna indietro.").waitFor();
+  await primaryLast(approvalCard.locator(".cta-row"), "Operator command approval");
+  await themeShots("15f-operator-approval");
+  // Activity: the filter shows the commands and nothing else.
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+  await page.getByRole("button", { name: /^Tipo: / }).click();
+  await page.getByRole("option", { name: "Comandi e invii" }).click();
+  const commandRows = page.getByTestId("activity-log").getByTestId("activity-command");
+  await commandRows.first().waitFor({ timeout: 20_000 });
+  const commandTexts = await commandRows.evaluateAll((rows) => rows.map((row) => row.querySelector('[data-testid="activity-row-toggle"]').textContent.trim()));
+  const expectedCommands = ["Operatore ha lanciato «rm -rf build»", "Operatore ha lanciato «cat ~/.ssh/id_rsa»", "Operatore ha lanciato «ls docs»"];
+  if (commandTexts.length !== 3 || expectedCommands.slice(1).some((text) => !commandTexts.some((row) => row.startsWith(text)))) {
+    throw new Error(`Activity does not list the Operator's commands: ${JSON.stringify(commandTexts)}`);
+  }
+  if (!commandTexts.some((row) => row.includes("Sotto chiave: ~/.ssh.")) || !commandTexts.some((row) => row.includes("Aspetta il tuo sì."))) {
+    throw new Error(`The command rows do not say why they stopped: ${JSON.stringify(commandTexts)}`);
+  }
+  if (await page.getByTestId("activity-log").getByTestId("activity-access").count()) throw new Error("The commands filter shows other rows");
+  await themeShots("15g-activity-commands");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await page.getByRole("button", { name: /^Type: / }).waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Type: Commands and sends" }).waitFor({ timeout: 20_000 });
+  await page.getByTestId("activity-log").getByTestId("activity-command").filter({ hasText: "Operatore ran «ls docs»" }).waitFor({ timeout: 20_000 });
+  await themeShots("15h-activity-commands-en");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await page.getByRole("button", { name: "Tipo: Comandi e invii" }).waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Tipo: Comandi e invii" }).click();
+  await page.getByRole("option", { name: "Tutto" }).click();
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
+  // The person says yes: Trama runs the deletion itself, then it is a row of Activity and a line in the chat.
+  const again = await openItem("commandApproval", "rm -rf build");
+  await again.getByTestId("command-approval-card").getByRole("button", { name: "Sì, lancialo" }).click();
+  await again.waitFor({ state: "detached", timeout: 20_000 });
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+  const deletionRow = page.getByTestId("activity-log").getByTestId("activity-command").filter({ hasText: "Operatore ha lanciato «rm -rf build»" });
+  await deletionRow.filter({ hasNotText: "Aspetta il tuo sì" }).first().waitFor({ timeout: 20_000 });
   await page.getByRole("button", { name: "Chiudi il pannello" }).click();
   await closePanels();
 }

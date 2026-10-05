@@ -70,6 +70,7 @@ import type {
   SpecialistAssignment,
   ContextRollover,
   AccessStep,
+  CommandApproval,
 } from "@shared/domain";
 import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
 import { contextSummary, personSummary } from "./core/contextSummary";
@@ -454,6 +455,23 @@ import { cleanBlockedSites } from "@shared/blockedSites";
 import { accessIsOn, followPause, personSwitch } from "@shared/computerAccess";
 import { ComputerAccessGate } from "./core/computerAccess";
 import {
+  executeCommand,
+  OPERATOR_ROLE,
+  OPERATOR_TOOL_SERVER_INSTRUCTIONS,
+  OPERATOR_TOOLS,
+  OperatorCalls,
+  operatorEnvelope,
+  operatorInstructions,
+  operatorPrompt,
+  runOperatorTool,
+  safeOutput,
+  shellCommandRunner,
+  shownCommand,
+  type CommandRunner,
+  type OperatorSession,
+} from "./core/operatorCommands";
+import { SecretLock } from "./core/secretLock";
+import {
   httpWebFetcher,
   RESEARCH_ROLE,
   RESEARCH_TOOL_SERVER_INSTRUCTIONS,
@@ -805,6 +823,10 @@ export interface ControllerHost {
   setKeepAwake?(awake: boolean): void;
   /** What Trama does on the network for Research (issue #408). The real one reads the web; tests give a fake. */
   webFetcher?: WebFetcher;
+  /** What Trama does on the Mac for the Operator (issue #409). The real one runs a shell; tests give a fake. */
+  commandRunner?: CommandRunner;
+  /** The lock on secrets of the Operator's commands. The default reads the real home folder; tests give their own. */
+  secretLock?: SecretLock;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
   codexExecutable: string | null;
@@ -850,6 +872,8 @@ export class TramaController {
     /** The next step the message takes, when the person pressed its button (W04). */
     step: RequestStep | null;
   }[] = [];
+
+  private secretLock: SecretLock | null = null;
 
   /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
   readonly computerAccess = new ComputerAccessGate(
@@ -2477,6 +2501,7 @@ export class TramaController {
           readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheckInTurn(current, check, current.runningRequestId),
           askResearch: (question) => this.askResearch(current, question),
+          askOperator: (order) => this.askOperator(current, order),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
             const assignment = findAssignment(current.document, assignmentId);
@@ -5850,6 +5875,142 @@ export class TramaController {
       client?.stop();
       toolServer.stop();
     }
+  }
+
+  /** The Operator's session as the tool and the person's yes both run commands: the trace, the lock, the lines in the chat. */
+  private operatorSession(project: ActiveProjectState, specialist: Specialist, signal: AbortSignal, requestId: string | null): OperatorSession {
+    const document = project.document;
+    const agent = specialist.name;
+    return {
+      gate: this.computerAccess,
+      runner: this.host.commandRunner ?? shellCommandRunner(),
+      lock: this.host.secretLock ?? (this.secretLock ??= new SecretLock()),
+      agent,
+      projectRoot: project.rootPath,
+      record: (step) => {
+        (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), ...step });
+        if (document.accessSteps.length > 400) document.accessSteps.splice(0, document.accessSteps.length - 400);
+        this.changedIn(project);
+      },
+      stopped: (command, stopper) => {
+        const place = "place" in stopper ? ` (${stopper.place})` : "";
+        this.recordFixedBan(project, { type: "fixedBanRefused", itemId: randomUUID(), ban: "ban" in stopper ? stopper.ban : "secrets", action: `${shownCommand(command)}${place}` }, { kind: "operator", specialistId: specialist.id }, requestId);
+      },
+      askApproval: (command, cwd, reason) => {
+        const approval: CommandApproval = { id: randomUUID(), agent, command: command.trim(), cwd, reason, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+        (document.commandApprovals ??= []).push(approval);
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorWaiting", { agent, command: shownCommand(command) }), detail: null, referenceId: null }, requestId);
+        this.changedIn(project);
+        return approval;
+      },
+      announce: (command, outcome) => {
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t(outcome === "done" ? "main.controller.operatorRan" : "main.controller.operatorFailed", { agent, command }), detail: null, referenceId: null }, requestId);
+        this.changedIn(project);
+      },
+      signal,
+      newId: randomUUID,
+    };
+  }
+
+  /**
+   * The Coordinator gives the Operator an order (issue #409). The Operator runs in its own session with no provider
+   * tools: its only way to the Mac is run_command, which Trama runs outside the sandbox through the access gate and
+   * the lock on secrets. The report goes back marked as data. Only the Coordinator's tool server offers this call, so
+   * an order from another agent or from a text it read has no way in. The switch off, or a Pause, ends the session
+   * and the command in progress at once.
+   */
+  private async askOperator(project: ActiveProjectState, order: string) {
+    const document = project.document;
+    const specialist = document.team.specialists.find((s) => s.role === OPERATOR_ROLE && s.status !== "removed");
+    const runner = this.dutyRunner(document);
+    if (!specialist || !runner) return toolFailure("operator_unavailable", "The Operator cannot run now: no provider is ready for it.");
+    const agent = specialist.name;
+    const abort = new AbortController();
+    let client: AgentRuntime | null = null;
+    const requestId = project.runningRequestId;
+    const base = this.operatorSession(project, specialist, abort.signal, requestId);
+    const session = this.computerAccess.begin({
+      id: randomUUID(),
+      power: "command",
+      role: OPERATOR_ROLE,
+      agent,
+      label: order.slice(0, 80),
+      stop: () => {
+        abort.abort();
+        client?.stop();
+      },
+    });
+    if (!session) {
+      base.record({ agent, kind: "command", target: order.slice(0, 120), outcome: "refused", detail: null });
+      return toolFailure("access_off", "Computer access is off: the person turned it off. Tell them and go on without commands on the Mac.");
+    }
+    const calls = new OperatorCalls();
+    const toolServer = new CoordinatorToolServer(OPERATOR_TOOLS, (name, args) => runOperatorTool(name, args, base, calls), OPERATOR_TOOL_SERVER_INSTRUCTIONS);
+    const choice = runner.chosen?.(specialist) ?? { provider: runner.provider, model: runner.model };
+    try {
+      await toolServer.start();
+      client = createRuntime(choice.provider, {
+        executable: choice.provider === "codex" ? this.host.codexExecutable : null,
+        toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
+        requestTimeoutMs: 15_000,
+        language: () => this.state.language,
+      });
+      const opening = await client.openThread({
+        model: choice.model,
+        cwd: project.rootPath,
+        developerInstructions: operatorInstructions(project.name, agent, specialist.competence, LANGUAGE_NAMES_IN_ENGLISH[this.state.language]),
+        sandbox: "read-only",
+        ephemeral: true,
+        hostToolsOnly: true,
+      });
+      const report = await client.runTurn({ threadId: opening.threadId, prompt: operatorPrompt(order), cwd: project.rootPath, model: choice.model, onEvent: () => undefined });
+      return toolSuccess(operatorEnvelope(agent, report.trim(), calls.commands));
+    } catch (error) {
+      if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: the Operator stopped. Tell the person and go on without commands on the Mac.");
+      return toolFailure("operator_failed", `The Operator could not finish: ${(error as Error).message}`);
+    } finally {
+      session.done();
+      client?.stop();
+      toolServer.stop();
+    }
+  }
+
+  /** The person said yes to a command that cannot be undone (issue #409): Trama runs it itself, with every check again. */
+  async confirmCommandApproval(id: string): Promise<void> {
+    const project = this.requireProject();
+    const approval = project.document.commandApprovals?.find((a) => a.id === id);
+    if (!approval || approval.status !== "waiting") throw new DomainError(t("main.controller.commandApprovalNotFound"));
+    const specialist = project.document.team.specialists.find((s) => s.role === OPERATOR_ROLE && s.status !== "removed");
+    if (!specialist) throw new DomainError(t("main.controller.commandApprovalNotFound"));
+    const session = this.operatorSession(project, specialist, new AbortController().signal, null);
+    // The lock and the fixed bans are asked again: nothing the person approved bypasses them.
+    const stopper = session.lock.check(approval.command, { cwd: approval.cwd });
+    approval.status = "failed";
+    approval.endedAt = new Date().toISOString();
+    if (stopper) {
+      session.stopped(approval.command, "ban" in stopper ? { ban: stopper.ban } : { place: stopper.locked.place });
+      this.changedIn(project);
+      return;
+    }
+    const done = await executeCommand(approval.command, approval.cwd, 120_000, session);
+    approval.status = done.result && done.result.exitCode === 0 && !done.result.timedOut ? "done" : "failed";
+    approval.endedAt = new Date().toISOString();
+    if (done.result) {
+      const { text } = await safeOutput(done.result.output);
+      if (text.trim()) appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorOutput", { agent: approval.agent }), detail: text.slice(0, 2_000), referenceId: null }, null);
+    }
+    this.changedIn(project);
+  }
+
+  /** The person said no to a command that cannot be undone: it never runs (issue #409). */
+  declineCommandApproval(id: string): void {
+    const project = this.requireProject();
+    const approval = project.document.commandApprovals?.find((a) => a.id === id);
+    if (!approval || approval.status !== "waiting") throw new DomainError(t("main.controller.commandApprovalNotFound"));
+    approval.status = "declined";
+    approval.endedAt = new Date().toISOString();
+    appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorDeclined", { agent: approval.agent, command: shownCommand(approval.command) }), detail: null, referenceId: null }, null);
+    this.changedIn(project);
   }
 
   /**

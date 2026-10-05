@@ -6,6 +6,7 @@ import type { AppSettings } from "@shared/domain";
 import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
+import { fixtureCommandRunner } from "./core/operatorCommands";
 import { fixtureWebFetcher } from "./core/webResearch";
 import { t } from "./core/personLanguage";
 import { type MenuCommand, menuTemplate } from "./menu";
@@ -105,6 +106,7 @@ const controller = new TramaController(dataRoot, {
     : join(app.getAppPath(), "resources", "DemoProject"),
   codexExecutable: process.env.TRAMA_CODEX_PATH ?? null,
   // A check that runs the app reads its pages from a file, never from the network.
+  ...(process.env.TRAMA_SHELL_FIXTURE ? { commandRunner: fixtureCommandRunner(JSON.parse(readFileSync(process.env.TRAMA_SHELL_FIXTURE, "utf8"))) } : {}),
   ...(process.env.TRAMA_WEB_FIXTURE ? { webFetcher: fixtureWebFetcher(JSON.parse(readFileSync(process.env.TRAMA_WEB_FIXTURE, "utf8"))) } : {}),
 }, legacyRoot);
 
@@ -239,6 +241,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "mandate:revoke": ({ reason }) => controller.revokeMandate(reason),
   "mandate:restrict": (input) => controller.restrictMandate(input),
   "fixedBan:acknowledge": ({ id }) => controller.acknowledgeFixedBan(id),
+  "commandApproval:confirm": ({ id }) => controller.confirmCommandApproval(id),
+  "commandApproval:decline": ({ id }) => controller.declineCommandApproval(id),
   "requestedAction:confirm": ({ id }) => controller.confirmRequestedAction(id),
   "requestedAction:decline": ({ id }) => controller.declineRequestedAction(id),
   "delegation:revoke": () => controller.revokeDelegation(),

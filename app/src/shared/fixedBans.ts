@@ -82,6 +82,9 @@ function simpleCommands(line: string): string[][] {
   return rawCommands(line).map(unwrap).filter((words) => words.length > 0);
 }
 
+/** The simple commands of a line as lists of words (wrappers and assignments removed), for the locks that read them. */
+export const commandWords = simpleCommands;
+
 /** The simple commands of a line as written, wrappers and environment assignments included. */
 function rawCommands(line: string): string[][] {
   const commands: string[][] = [];

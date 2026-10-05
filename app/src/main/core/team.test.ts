@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ProjectMandate, Specialist } from "@shared/domain";
 import { AGENT_PALETTE, isAgentColor } from "@shared/identity";
-import { FIXED_ROLES, roleProfile } from "@shared/roster";
+import { FIXED_ROLES, isFixedRole, roleProfile, SHARED_ROLES } from "@shared/roster";
 import { emptyDocument, normalizeDocument } from "./document";
 import {
   completeTeam,
@@ -388,6 +388,20 @@ describe("team texts in the person's language (issue #301)", () => {
     expect(assignment.lastUpdate).toBe(`Assignment received: ${assignment.objective}`);
     beginTurn(document, assignment.id, "t1", "gpt-5.5");
     expect(findSpecialist(document, "Ada")!.assignments.at(-1)!.lastUpdate).toBe("Turn 1 running with gpt-5.5");
+  });
+
+  it("adds the Operator to a project that has none, shared and fixed like Security (issue #409)", () => {
+    const document = emptyDocument("p");
+    completeTeam(document.team);
+    document.team.specialists = document.team.specialists.filter((s) => s.role !== "operator");
+    const added = completeTeam(document.team);
+    expect(added.map((s) => s.role)).toEqual(["operator"]);
+    const operator = added[0]!;
+    expect(operator).toMatchObject({ name: "Operatore", tag: "Operatore" });
+    expect(isFixedRole("operator")).toBe(true);
+    expect(SHARED_ROLES).toContain("operator");
+    expect(completeTeam(document.team)).toEqual([]);
+    expect(() => removeSpecialist(document, operator.id, "no", "person")).toThrow(/fixed role/);
   });
 
   it("gives the fixed roles still named the old way their plain names, and keeps a name the person chose (1 October 2026)", () => {

@@ -44,6 +44,7 @@ const ROLES: TeamRole[] = [
   "security",
   "performance",
   "devops",
+  "operator",
 ];
 
 /** The spec's table of moments, row by row and in its order. */
@@ -65,6 +66,7 @@ const DUTIES: { moment: TeamMoment; role: TeamRole; task: MessageKey; skills: st
   { moment: "candidate", role: "documentation", task: "shared.duty.candidate.documentation", skills: ["code-review"] },
   { moment: "background", role: "bugTriage", task: "shared.duty.background.bugTriage", skills: ["triage"] },
   { moment: "background", role: "cleanCode", task: "shared.duty.background.cleanCode", skills: ["improve-codebase-architecture"] },
+  { moment: "background", role: "operator", task: "shared.duty.background.operator", skills: [] },
 ];
 
 /** The roles every team always has, beside the developers chosen for the project; squad leads come with the squads (A10). */

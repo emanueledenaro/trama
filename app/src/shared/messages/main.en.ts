@@ -290,6 +290,12 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Waiting for the temporary limit of {provider} to pass",
   "main.controller.waitingTemporaryLimitDetail":
     "It is not the account quota. Trama resumes the assignment by itself in {seconds} seconds, if the mandate still covers it.",
+  "main.controller.operatorRan": "{agent} ran a command: {command}",
+  "main.controller.operatorFailed": "{agent} ran a command that did not go well: {command}",
+  "main.controller.operatorWaiting": "{agent} waits for your yes on a command that cannot be undone: {command}",
+  "main.controller.operatorOutput": "Result of {agent}'s command",
+  "main.controller.operatorDeclined": "You said no: {agent}'s command does not run. {command}",
+  "main.controller.commandApprovalNotFound": "This command no longer waits for your yes.",
   "main.controller.dependenciesInstalledTitle": "Packages installed by Trama",
   "main.controller.dependenciesInstalledDetail": "Trama installed the project's {count} packages in the worktree, without running their install scripts.",
   "main.controller.baseAlignedTitle": "{target} brought into the working copy",
