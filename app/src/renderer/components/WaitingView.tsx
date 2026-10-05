@@ -32,6 +32,7 @@ import { GoalCard } from "@/components/inspector/GoalsView";
 import { MemoryProposalCard } from "@/components/inspector/MemoryView";
 import { ReferenceText } from "@/components/chat/ReferenceText";
 import { CommandApprovalCard } from "@/components/chat/CommandApproval";
+import { SiteConsentCard } from "@/components/chat/SiteConsent";
 import { RequestedActionCard } from "@/components/chat/RequestedAction";
 
 /**
@@ -77,6 +78,7 @@ const KIND_ICONS: Record<WaitingKind, React.ComponentType<{ className?: string; 
   fixedBan: IconBan,
   confirmation: IconLockOpen,
   commandApproval: IconLockOpen,
+  siteConsent: IconLockOpen,
 };
 
 /**
@@ -265,6 +267,8 @@ function WaitingCard({ item }: { item: WaitingItem }) {
       return <RequestedActionCard actionId={item.targetId} />;
     case "commandApproval":
       return <CommandApprovalCard approvalId={item.targetId} />;
+    case "siteConsent":
+      return <SiteConsentCard requestId={item.targetId} />;
     case "memory":
       // Its margins come from the open item's frame (index.css, .waiting-open-card).
       return proposal ? <MemoryProposalCard proposal={proposal} /> : null;
