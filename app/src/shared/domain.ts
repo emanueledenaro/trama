@@ -1334,7 +1334,7 @@ export interface AccessStep {
   at: string;
   /** The agent that took the step, as the person sees it in Activity. */
   agent: string;
-  kind: "search" | "page" | "command" | "browser" | "send" | "consent";
+  kind: "search" | "page" | "command" | "browser" | "send" | "consent" | "screen";
   /** What was searched, the page address without its query string and fragment (a page Research read or a site the Operator opened in Chrome), the command line without its secrets, or the site a consent is about. */
   target: string;
   /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host); `waiting` while a command waits for the person. */
@@ -1387,6 +1387,30 @@ export interface SiteConsentRequest {
   /** The address it wanted to open, without its query string and fragment. */
   address: string;
   /** The request of the chat it came from: the lines that answer it go to the same place. */
+  requestId: string | null;
+  askedAt: string;
+  status: "waiting" | "granted" | "declined";
+  endedAt: string | null;
+}
+
+/**
+ * The person's yes for one app, valid in the project where it is given until they withdraw it (ADR 0020, issue #412).
+ * Same form as the consent for a site: the button of "Aspetta te" or a message typed in the composer give it.
+ */
+export interface AppConsent {
+  id: string;
+  /** The name of the app as the system shows it. A consent covers that app only. */
+  app: string;
+  grantedAt: string;
+  by: "button" | "composer";
+  phrase: string | null;
+}
+
+/** The Operator wants to use the screen on an app that has no consent: the request waits in "Aspetta te" (issue #412). */
+export interface AppConsentRequest {
+  id: string;
+  agent: string;
+  app: string;
   requestId: string | null;
   askedAt: string;
   status: "waiting" | "granted" | "declined";
@@ -1928,6 +1952,10 @@ export interface ProjectDocument {
   siteConsents?: SiteConsent[];
   /** The Operator's requests to open a site without consent, which wait for the person (issue #410); absent until the first. */
   siteConsentRequests?: SiteConsentRequest[];
+  /** The apps the person consented to in this project, oldest first (issue #412); absent until the first. */
+  appConsents?: AppConsent[];
+  /** The Operator's requests to use the screen on an app without consent, which wait for the person (issue #412); absent until the first. */
+  appConsentRequests?: AppConsentRequest[];
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */

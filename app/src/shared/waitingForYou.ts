@@ -27,7 +27,8 @@ export type WaitingKind =
   | "fixedBan"
   | "confirmation"
   | "commandApproval"
-  | "siteConsent";
+  | "siteConsent"
+  | "appConsent";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
@@ -342,6 +343,20 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
   }
 
   // The Operator wants a site that has no consent (issue #410): it opens only after the person's yes.
+  // The same for an app the Operator wants to use on the screen (issue #412).
+  for (const request of (document.appConsentRequests ?? []).filter((r) => r.status === "waiting")) {
+    items.push({
+      key: `appConsent:${request.id}`,
+      kind: "appConsent",
+      targetId: request.id,
+      label: t("appConsent.waiting.label"),
+      title: request.app,
+      goalId: null,
+      askedAt: request.askedAt,
+      blocks: 0,
+    });
+  }
+
   for (const request of (document.siteConsentRequests ?? []).filter((r) => r.status === "waiting")) {
     items.push({
       key: `siteConsent:${request.id}`,

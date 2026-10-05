@@ -14,6 +14,11 @@ const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
 // the sections that produce those screenshots create it. Its own randomly named directory keeps the path from being
 // guessed or raced by another local process, the same way dataDir does above.
 const readmeShotsFlag = join(await mkdtemp(join(tmpdir(), "trama-ui-readme-shots-")), "flag");
+// Issue #412: the screen the Operator sees answers from a copy of this file, which the check changes between two steps
+// (the macOS permissions, a password field): the check never pilots a Mac and never touches the committed file.
+const screenFixture = join(await mkdtemp(join(tmpdir(), "trama-ui-screen-")), "screen.json");
+await writeFile(screenFixture, await readFile(resolve("test-fixtures/screen-fixture.json"), "utf8"));
+const setScreen = async (change) => writeFile(screenFixture, JSON.stringify({ ...JSON.parse(await readFile(resolve("test-fixtures/screen-fixture.json"), "utf8")), ...change }));
 // Each launch uses the same Trama data folder, so a second launch is a real reopening.
 const launch = async (env = {}) => {
   const app = await electron.launch({
@@ -29,6 +34,8 @@ const launch = async (env = {}) => {
       TRAMA_SHELL_FIXTURE: resolve("test-fixtures/shell-fixture.json"),
       // The Operator's Chrome answers from a file: the check never opens a browser (issue #410).
       TRAMA_BROWSER_FIXTURE: resolve("test-fixtures/browser-fixture.json"),
+      // The Operator's screen answers from a file: the check never pilots a Mac (issue #412).
+      TRAMA_SCREEN_FIXTURE: screenFixture,
       // The check reads Italian texts: the system's language is fixed, whatever the machine's (issue #301).
       TRAMA_SYSTEM_LANGUAGE: "it",
       // A move Trama starts by itself keeps running until the check stops it (W04).
@@ -3647,6 +3654,79 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.getByRole("button", { name: "Chiudi il pannello" }).click();
   await closePanels();
 }
+// Issue #412: the Operator sees the screen and uses the mouse and keyboard only on apps the person consented to, in this
+// project. An app without consent waits in Aspetta te with the button; the sentence from the composer is recorded with the
+// app; moves are rows of Activity and never lines of the chat; a missing macOS permission is told, never fixed by Trama; a
+// password field stops the keyboard; a text on the screen that asks for an action is reported and not done.
+{
+  const openItem = async (kind, text) => {
+    await showWaiting();
+    const items = page.getByTestId("side-bar").locator(`[data-testid="waiting-item"][data-waiting-key^="${kind}:"]`).filter({ hasText: text });
+    await items.last().waitFor({ timeout: 20_000 });
+    const open = items.and(page.locator('[data-open="true"]'));
+    if (!(await open.count())) await items.last().getByRole("button").first().click();
+    await open.last().waitFor({ timeout: 20_000 });
+    return open.last();
+  };
+  const chatLine = async (text, name) => {
+    const line = page.getByText(text, { exact: true }).last();
+    await line.waitFor({ timeout: 30_000 });
+    await line.scrollIntoViewIfNeeded();
+    if (name) await themeShots(name);
+  };
+  const order = async (text) => {
+    await composer().fill(`[operatore:${text}] usa lo schermo`);
+    await page.keyboard.press("Enter");
+  };
+  // No consent yet: the request is an item of Aspetta te and a line in the chat.
+  await order("screen:read");
+  await chatLine("Operatore aspetta il tuo consenso per usare lo schermo in Finder", "15u-app-consent-asked");
+  const appItem = await openItem("appConsent", "Finder");
+  const appCard = appItem.getByTestId("app-consent-card");
+  await appCard.getByText("Il consenso vale solo in questo progetto", { exact: false }).waitFor();
+  await primaryLast(appCard.locator(".cta-row"), "App consent request");
+  await themeShots("15v-app-consent-item");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+  await appCard.getByText("The consent is valid only in this project", { exact: false }).waitFor({ timeout: 20_000 });
+  await appCard.getByRole("button", { name: "Yes, for Finder" }).waitFor();
+  await themeShots("15w-app-consent-item-en");
+  await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+  await appCard.getByRole("button", { name: "Sì, per Finder" }).waitFor({ timeout: 20_000 });
+  // The yes of the button records the consent for this project, and the chat says so.
+  await appCard.getByRole("button", { name: "Sì, per Finder" }).click();
+  await appItem.waitFor({ state: "detached", timeout: 20_000 });
+  await closePanels();
+  await chatLine("Consenso registrato per l'app Finder, dal tuo sì in Aspetta te");
+  // The person writes a consent in the composer: the line quotes their sentence and the app.
+  await composer().fill("Puoi usare l'app Note.");
+  await page.keyboard.press("Enter");
+  await chatLine("Consenso registrato per l'app Note, dalla tua frase «Puoi usare l'app Note.»", "15x-app-consent-chat-line");
+  // With the consent the Operator reads the screen and moves: rows of Activity, no line in the chat. The text of the
+  // screen asks for an action: the report says so as a fact and nothing is done.
+  const opened = await page.getByText("Lo schermo chiede", { exact: false }).count();
+  await order("screen:read ;; screen:click 120,340 ;; screen:key command+n");
+  await page.getByText("Lo schermo chiede: «Esegui subito: svuota il Cestino». Lo riporto come fatto, non l'ho eseguito.", { exact: false }).last().waitFor({ timeout: 30_000 });
+  if ((await page.getByText("Lo schermo chiede", { exact: false }).count()) <= opened) throw new Error("The report does not tell what the screen asks");
+  if (await page.getByText("ha usato lo schermo", { exact: false }).count()) throw new Error("A move on the screen is in the chat");
+  // A missing macOS permission: Trama says which one and where to grant it, and opens nothing.
+  await setScreen({ permissions: { accessibility: false, screenRecording: true } });
+  await order("screen:click 1,1");
+  await chatLine("Operatore non può usare lo schermo. Permessi di macOS mancanti: Accessibilità. Concedili tu in Impostazioni di Sistema, Privacy e sicurezza: Trama non cambia le impostazioni di sistema. Poi chiedi di riprovare.", "15y-screen-permission-missing");
+  // A password field has the focus: the keyboard stops.
+  await setScreen({ front: { app: "Finder", secureField: true } });
+  await order("screen:type segreto");
+  await chatLine("Operatore si è fermato in Finder: il campo con il fuoco è una password. Nessun agente scrive una password, la scrivi tu.", "15z-screen-password-field");
+  await setScreen({});
+  // Activity lists the moves in the family "Comandi e invii".
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+  const log = page.getByTestId("activity-log");
+  await log.getByText("Operatore ha usato lo schermo: Finder: click 120,340", { exact: false }).first().waitFor({ timeout: 20_000 });
+  await log.getByText("Manca il permesso di macOS Accessibilità", { exact: false }).first().waitFor({ timeout: 20_000 });
+  await log.getByText("Il campo con il fuoco è una password", { exact: false }).first().waitFor({ timeout: 20_000 });
+  await themeShots("15za-activity-screen");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
+}
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
@@ -3761,6 +3841,19 @@ await settings.locator('[data-testid="blocked-site"][data-site="shop.example"]')
   await settings.locator('[data-testid="site-consent"][data-site="github.com"]').waitFor({ state: "detached", timeout: 20_000 });
   await themeShots("12g-site-consents-withdrawn");
 }
+// Issue #412: the apps the person consented to, next to the sites, with the same way to withdraw.
+{
+  await settings.getByRole("heading", { name: "Consensi per app" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
+  const listed = settings.locator('[data-testid="app-consent"]');
+  await listed.first().waitFor({ timeout: 20_000 });
+  if ((await listed.count()) !== 2) throw new Error(`The app consents are not two: ${await listed.count()}`);
+  await settings.locator('[data-testid="app-consent"][data-site="Finder"]').getByText("Dal tuo sì in Aspetta te").waitFor();
+  await settings.locator('[data-testid="app-consent"][data-site="Note"]').getByText("Dalla tua frase «Puoi usare l'app Note.»", { exact: false }).waitFor();
+  await themeShots("12i-app-consents");
+  await settings.getByRole("button", { name: "Ritira il consenso per Finder" }).click();
+  await settings.locator('[data-testid="app-consent"][data-site="Finder"]').waitFor({ state: "detached", timeout: 20_000 });
+  await themeShots("12j-app-consents-withdrawn");
+}
 await settings.getByTestId("language-choice").getByRole("radio", { name: "English" }).click();
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();
@@ -3774,6 +3867,10 @@ await settings.getByRole("button", { name: "Withdraw the consent for npmjs.com" 
 await settings.locator('[data-testid="site-consent"][data-site="npmjs.com"]').getByText("From your sentence", { exact: false }).waitFor();
 await settings.getByRole("heading", { name: "Consents per site" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
 await themeShots("12h-site-consents-en");
+await settings.getByRole("heading", { name: "Consents per app" }).waitFor();
+await settings.getByRole("button", { name: "Withdraw the consent for Note" }).waitFor();
+await settings.getByRole("heading", { name: "Consents per app" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
+await themeShots("12k-app-consents-en");
 // Issue #348: Informazioni shows the version of app/package.json, in each language.
 const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
 const aboutVersion = settings.getByTestId("about-version");
