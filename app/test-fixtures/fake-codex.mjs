@@ -296,6 +296,30 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             lines.push(sent.isError ? `${command}: rifiutato (${answer.error.code})` : `${command}: inviato (${answer.status})`);
             continue;
           }
+          // Issue #412: "screen:read", "screen:click <x>,<y>", "screen:type <text>" and "screen:key <mod+...+key>" use the screen.
+          if (command.startsWith("screen:")) {
+            const [verb, ...rest] = command.slice("screen:".length).trim().split(" ");
+            const argument = rest.join(" ");
+            const [name, args] =
+              verb === "click"
+                ? ["click_screen", { x: Number(argument.split(",")[0]), y: Number(argument.split(",")[1]) }]
+                : verb === "type"
+                  ? ["type_on_screen", { text: argument }]
+                  : verb === "key"
+                    ? ["press_key", { key: argument.split("+").at(-1), modifiers: argument.split("+").slice(0, -1) }]
+                    : ["read_screen", {}];
+            const used = await callTool(threadId, name, args);
+            toolDone(name, used);
+            const answer = JSON.parse(used.content[0].text);
+            if (used.isError) lines.push(`${command}: rifiutato (${answer.error.code})`);
+            else if (name === "read_screen") {
+              lines.push(`${command}: letto «${answer.title}» ${answer.text.trim()}`);
+              // A text on the screen that asks for an action is told as a fact, never done (issue #412).
+              const asked = answer.text.match(/(esegui|premi|cancella|invia)[^\n]*/i)?.[0].replace(/\.$/, "");
+              if (asked) lines.push(`Lo schermo chiede: «${asked}». Lo riporto come fatto, non l'ho eseguito.`);
+            } else lines.push(`${command}: fatto`);
+            continue;
+          }
           const result = await callTool(threadId, "run_command", { command });
           toolDone("run_command", result);
           const body = JSON.parse(result.content[0].text);

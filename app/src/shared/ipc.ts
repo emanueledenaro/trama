@@ -105,6 +105,9 @@ export interface ActionMap {
   "siteConsent:confirm": [{ id: string }, void];
   "siteConsent:decline": [{ id: string }, void];
   "siteConsent:withdraw": [{ id: string }, void];
+  "appConsent:confirm": [{ id: string }, void];
+  "appConsent:decline": [{ id: string }, void];
+  "appConsent:withdraw": [{ id: string }, void];
   /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
   "requestedAction:confirm": [{ id: string }, void];
   "requestedAction:decline": [{ id: string }, void];

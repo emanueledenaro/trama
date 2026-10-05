@@ -72,7 +72,9 @@ import type {
   AccessStep,
   CommandApproval,
   SiteConsentRequest,
+  AppConsentRequest,
 } from "@shared/domain";
+import { addAppConsent, appConsentFor, appConsentStatements, withdrawAppConsent } from "@shared/appConsents";
 import { addConsent, consentFor, consentStatements, shownSite, withdrawConsent } from "@shared/siteConsents";
 import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
 import { contextSummary, personSummary } from "./core/contextSummary";
@@ -473,6 +475,7 @@ import {
   type OperatorSession,
 } from "./core/operatorCommands";
 import { chromeDebuggingDriver, type BrowserDriver } from "./core/operatorBrowser";
+import { macScreenDriver, type MissingPermission, type ScreenDriver, type ScreenPermissions } from "./core/operatorScreen";
 import { sendApproved } from "./core/operatorSend";
 import { SecretLock } from "./core/secretLock";
 import {
@@ -831,6 +834,10 @@ export interface ControllerHost {
   commandRunner?: CommandRunner;
   /** What Trama does in the person's Chrome for the Operator (issue #410). The real one talks to Chrome; tests give a fake. */
   browserDriver?: BrowserDriver;
+  /** What Trama does on the screen for the Operator (issue #412). The real one pilots macOS; tests give a fake. */
+  screenDriver?: ScreenDriver;
+  /** Which of the two macOS permissions for the screen are granted. It only asks, never prompts. Without it none is. */
+  screenPermissions?: () => ScreenPermissions;
   /** The lock on secrets of the Operator's commands. The default reads the real home folder; tests give their own. */
   secretLock?: SecretLock;
   demoResourceDirectory: string;
@@ -881,6 +888,7 @@ export class TramaController {
 
   private secretLock: SecretLock | null = null;
   private chrome: BrowserDriver | null = null;
+  private screen: ScreenDriver | null = null;
 
   /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
   readonly computerAccess = new ComputerAccessGate(
@@ -5937,6 +5945,11 @@ export class TramaController {
       browser: this.host.browserDriver ?? (this.chrome ??= chromeDebuggingDriver()),
       consents: () => document.siteConsents ?? [],
       askConsent: (host, address) => this.askSiteConsent(project, agent, host, address, requestId),
+      screen: this.host.screenDriver ?? (this.screen ??= macScreenDriver(this.host.screenPermissions ?? (() => ({ accessibility: false, screenRecording: false })))),
+      appConsents: () => document.appConsents ?? [],
+      askAppConsent: (app) => this.askAppConsent(project, agent, app, requestId),
+      needsPermission: (missing) => this.projectNotice(project, t("main.controller.screenPermissionMissing", { agent, permissions: this.screenPermissionNames(missing) }), requestId),
+      passwordFieldStopped: (app) => this.projectNotice(project, t("main.controller.screenPasswordField", { agent, app }), requestId),
       announceSite: (host) => this.projectNotice(project, t("main.controller.operatorOpened", { agent, site: host }), requestId),
       needsLogin: (host) => this.projectNotice(project, t("main.controller.operatorNeedsLogin", { agent, site: host }), requestId),
       signal,
@@ -6013,6 +6026,13 @@ export class TramaController {
     this.changedIn(project);
   }
 
+  /** The names of the missing macOS permissions as the person finds them in System Settings. */
+  private screenPermissionNames(missing: MissingPermission): string {
+    const accessibility = t("main.controller.screenPermission.accessibility");
+    const recording = t("main.controller.screenPermission.screenRecording");
+    return missing === "both" ? `${accessibility}, ${recording}` : missing === "accessibility" ? accessibility : recording;
+  }
+
   private recordConsentStep(project: ActiveProjectState, agent: string, host: string, outcome: AccessStep["outcome"], detail: string | null): void {
     const document = project.document;
     (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), agent, kind: "consent", target: host, outcome, detail });
@@ -6074,6 +6094,17 @@ export class TramaController {
         // Told in the chat by the withdrawal itself.
       }
     }
+    // The same sentences name an app with the word "app": the consent for it is given or withdrawn the same way (issue #412).
+    for (const statement of appConsentStatements(text)) {
+      if (statement.action === "grant") {
+        if (!this.grantAppConsent(project, statement.app, "composer", statement.phrase, requestId)) continue;
+        for (const request of project.document.appConsentRequests ?? []) {
+          if (request.status === "waiting" && request.app.toLowerCase() === statement.app.toLowerCase()) Object.assign(request, { status: "granted", endedAt: new Date().toISOString() });
+        }
+      } else {
+        this.withdrawAppConsentFor(project, statement.app, statement.phrase, requestId);
+      }
+    }
   }
 
   private withdrawSiteConsentFor(project: ActiveProjectState, host: string, phrase: string | null, requestId: string | null): boolean {
@@ -6113,6 +6144,74 @@ export class TramaController {
     request.status = "declined";
     request.endedAt = new Date().toISOString();
     this.projectNotice(project, t("main.controller.siteConsentDeclined", { agent: request.agent, site: request.host }), request.requestId);
+  }
+
+  /**
+   * The Operator wants an app that has no consent (issue #412): a request waits in "Aspetta te" with the button to give
+   * it, as for a site. A request already waiting for the same app is the same request.
+   */
+  private askAppConsent(project: ActiveProjectState, agent: string, app: string, requestId: string | null): void {
+    const document = project.document;
+    if (document.appConsentRequests?.some((request) => request.status === "waiting" && request.app.toLowerCase() === app.toLowerCase())) return;
+    const request: AppConsentRequest = { id: randomUUID(), agent, app, requestId, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+    (document.appConsentRequests ??= []).push(request);
+    this.projectNotice(project, t("main.controller.appConsentAsked", { agent, app }), requestId);
+  }
+
+  /** Records a consent for an app the person gave and tells it in the chat. Returns whether it was recorded. */
+  private grantAppConsent(project: ActiveProjectState, app: string, by: "button" | "composer", phrase: string | null, requestId: string | null): boolean {
+    const result = addAppConsent(project.document.appConsents ?? [], { app, by, phrase, id: randomUUID(), at: new Date().toISOString() });
+    const name = result.consent?.app ?? app;
+    if (result.problem === "duplicate") {
+      this.projectNotice(project, t("main.controller.appConsentAlready", { app: name }), requestId);
+      return false;
+    }
+    if (!result.consent) {
+      this.projectNotice(project, t("main.controller.appConsentNotRecorded", { app: name }), requestId);
+      return false;
+    }
+    project.document.appConsents = result.list;
+    this.recordConsentStep(project, "", name, "done", null);
+    this.projectNotice(project, phrase ? t("main.controller.appConsentFromPhrase", { app: name, phrase }) : t("main.controller.appConsentFromButton", { app: name }), requestId);
+    return true;
+  }
+
+  private withdrawAppConsentFor(project: ActiveProjectState, app: string, phrase: string | null, requestId: string | null): boolean {
+    const result = withdrawAppConsent(project.document.appConsents ?? [], app);
+    if (!result.consent) return false;
+    project.document.appConsents = result.list;
+    this.recordConsentStep(project, "", result.consent.app, "done", "withdrawn");
+    this.projectNotice(project, phrase ? t("main.controller.appConsentWithdrawnFromPhrase", { app: result.consent.app, phrase }) : t("main.controller.appConsentWithdrawn", { app: result.consent.app }), requestId);
+    return true;
+  }
+
+  /** The person withdraws a consent for an app from the list (issue #412). */
+  withdrawAppConsent(id: string): void {
+    const project = this.requireProject();
+    const consent = project.document.appConsents?.find((item) => item.id === id);
+    if (!consent) throw new DomainError(t("main.controller.siteConsentNotFound"));
+    this.withdrawAppConsentFor(project, consent.app, null, null);
+  }
+
+  /** The person's yes to a request of the Operator for an app (issue #412): the button of "Aspetta te". */
+  confirmAppConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.appConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    const given = this.grantAppConsent(project, request.app, "button", null, request.requestId);
+    request.status = given || appConsentFor(project.document.appConsents, request.app) ? "granted" : "declined";
+    request.endedAt = new Date().toISOString();
+    this.changedIn(project);
+  }
+
+  /** The person's no to a request of the Operator for an app: nothing is recorded (issue #412). */
+  declineAppConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.appConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    request.status = "declined";
+    request.endedAt = new Date().toISOString();
+    this.projectNotice(project, t("main.controller.appConsentDeclined", { agent: request.agent, app: request.app }), request.requestId);
   }
 
   /** The person said yes to a command that cannot be undone (issue #409): Trama runs it itself, with every check again. */
