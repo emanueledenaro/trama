@@ -1334,8 +1334,8 @@ export interface AccessStep {
   at: string;
   /** The agent that took the step, as the person sees it in Activity. */
   agent: string;
-  kind: "search" | "page" | "command";
-  /** What was searched, the page address without its query string and fragment, or the command line without its secrets. */
+  kind: "search" | "page" | "command" | "browser" | "consent";
+  /** What was searched, the page address without its query string and fragment (a page Research read or a site the Operator opened in Chrome), the command line without its secrets, or the site a consent is about. */
   target: string;
   /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host); `waiting` while a command waits for the person. */
   outcome: "done" | "failed" | "refused" | "blocked" | "waiting";
@@ -1358,6 +1358,36 @@ export interface CommandApproval {
   reason: "delete" | "send" | "payment";
   askedAt: string;
   status: "waiting" | "done" | "failed" | "declined";
+  endedAt: string | null;
+}
+
+/**
+ * The person's yes for one site, valid in the project where it is given until they withdraw it (ADR 0020, issue #410).
+ * Only the person gives one: with the button of an item of "Aspetta te" or with a message typed in the composer.
+ */
+export interface SiteConsent {
+  id: string;
+  /** The host the consent is for, without `www.`. It covers that host only, not another site. */
+  host: string;
+  grantedAt: string;
+  /** `button` from "Aspetta te", `composer` from a message the person typed. */
+  by: "button" | "composer";
+  /** The sentence the person wrote, quoted in the chat and in the list; null for the button. */
+  phrase: string | null;
+}
+
+/** The Operator wants to open a site that has no consent: the request waits in "Aspetta te" for the person's yes (issue #410). */
+export interface SiteConsentRequest {
+  id: string;
+  /** The agent that asked, as the person sees it. */
+  agent: string;
+  host: string;
+  /** The address it wanted to open, without its query string and fragment. */
+  address: string;
+  /** The request of the chat it came from: the lines that answer it go to the same place. */
+  requestId: string | null;
+  askedAt: string;
+  status: "waiting" | "granted" | "declined";
   endedAt: string | null;
 }
 
@@ -1892,6 +1922,10 @@ export interface ProjectDocument {
   accessSteps?: AccessStep[];
   /** The Operator's commands that wait for the person's yes (issue #409); absent in documents written before. */
   commandApprovals?: CommandApproval[];
+  /** The sites the person consented to in this project, oldest first (issue #410); absent until the first. */
+  siteConsents?: SiteConsent[];
+  /** The Operator's requests to open a site without consent, which wait for the person (issue #410); absent until the first. */
+  siteConsentRequests?: SiteConsentRequest[];
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */

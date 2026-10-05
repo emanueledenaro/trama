@@ -68,6 +68,12 @@ function harness(): Harness {
       return approval;
     },
     announce: (command, outcome) => void h.announced.push([command, outcome]),
+    // The browser tool has its own checks in operatorBrowser.test.ts.
+    browser: { open: async () => ({ status: "unavailable", reason: "none" }) },
+    consents: () => [],
+    askConsent: () => undefined,
+    announceSite: () => undefined,
+    needsLogin: () => undefined,
     signal: controller.signal,
     newId: () => `id${++counter}`,
   };

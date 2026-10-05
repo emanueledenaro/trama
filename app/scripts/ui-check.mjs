@@ -27,6 +27,8 @@ const launch = async (env = {}) => {
       TRAMA_WEB_FIXTURE: resolve("test-fixtures/web-fixture.json"),
       // The Operator's commands answer from a file: the check never runs a command on the machine (issue #409).
       TRAMA_SHELL_FIXTURE: resolve("test-fixtures/shell-fixture.json"),
+      // The Operator's Chrome answers from a file: the check never opens a browser (issue #410).
+      TRAMA_BROWSER_FIXTURE: resolve("test-fixtures/browser-fixture.json"),
       // The check reads Italian texts: the system's language is fixed, whatever the machine's (issue #301).
       TRAMA_SYSTEM_LANGUAGE: "it",
       // A move Trama starts by itself keeps running until the check stops it (W04).
@@ -3551,6 +3553,72 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.getByRole("button", { name: "Chiudi il pannello" }).click();
   await closePanels();
 }
+// Issue #410: the Operator uses the person's Chrome only on sites they consented to, in this project. A site without
+// consent waits in Aspetta te with the button; the person's sentence from the composer is recorded with the site and
+// quoted in the chat; a blocked site is never recorded; a site with no open session stops the Operator.
+{
+  const openItem = async (kind, text) => {
+    await showWaiting();
+    const items = page.getByTestId("side-bar").locator(`[data-testid="waiting-item"][data-waiting-key^="${kind}:"]`).filter({ hasText: text });
+    await items.last().waitFor({ timeout: 20_000 });
+    const open = items.and(page.locator('[data-open="true"]'));
+    if (!(await open.count())) await items.last().getByRole("button").first().click();
+    await open.last().waitFor({ timeout: 20_000 });
+    return open.last();
+  };
+  const chatLine = async (text, name) => {
+    const line = page.getByText(text, { exact: true }).last();
+    await line.waitFor({ timeout: 30_000 });
+    await line.scrollIntoViewIfNeeded();
+    if (name) await themeShots(name);
+  };
+  // No consent yet: the request is an item of Aspetta te and a line in the chat, and nothing opened.
+  await composer().fill("[operatore:chrome:https://github.com/acme/repo] apri la repo");
+  await page.keyboard.press("Enter");
+  await chatLine("Operatore aspetta il tuo consenso per aprire github.com", "15i-site-consent-asked");
+  const consentItem = await openItem("siteConsent", "github.com");
+  const consentCard = consentItem.getByTestId("site-consent-card");
+  await consentCard.getByText("Il consenso vale solo in questo progetto", { exact: false }).waitFor();
+  await primaryLast(consentCard.locator(".cta-row"), "Site consent request");
+  await themeShots("15j-site-consent-item");
+  // The yes of the button records the consent for this project, and the chat says so.
+  await consentCard.getByRole("button", { name: "Sì, per github.com" }).click();
+  await consentItem.waitFor({ state: "detached", timeout: 20_000 });
+  await closePanels();
+  await chatLine("Consenso registrato per github.com, dal tuo sì in Aspetta te");
+  // The person writes a consent in the composer: the line quotes their sentence and the site.
+  await composer().fill("Hai il mio consenso per npmjs.com.");
+  await page.keyboard.press("Enter");
+  await chatLine("Consenso registrato per npmjs.com, dalla tua frase «Hai il mio consenso per npmjs.com.»", "15k-site-consent-chat-line");
+  // With the consent the site opens: a line in the chat and a row of Activity, in the Operator's name.
+  await composer().fill("[operatore:chrome:https://github.com/acme/repo] apri la repo");
+  await page.keyboard.press("Enter");
+  await chatLine("Operatore ha aperto github.com nel tuo Chrome", "15l-site-opened");
+  // A site where the person is not signed in: the Operator stops and asks them to sign in; no password is typed.
+  await composer().fill("Puoi usare private.example.");
+  await page.keyboard.press("Enter");
+  await chatLine("Consenso registrato per private.example, dalla tua frase «Puoi usare private.example.»");
+  await composer().fill("[operatore:chrome:https://private.example/inbox] apri la posta");
+  await page.keyboard.press("Enter");
+  await chatLine("Operatore si è fermato su private.example: non hai la sessione aperta. Entra tu nel sito in Chrome, poi chiedi di riprovare. Nessun agente scrive una password.", "15m-site-login-needed");
+  // A blocked site: the consent is not recorded and the person reads why.
+  await page.evaluate(() => window.trama.invoke("settings:update", { blockedSites: ["bank.example"] }));
+  await composer().fill("Hai il mio consenso per bank.example.");
+  await page.keyboard.press("Enter");
+  await chatLine("Non registro il consenso per bank.example: è tra i siti vietati e nessun agente lo apre, con o senza consenso.", "15n-site-consent-blocked");
+  await page.evaluate(() => window.trama.invoke("settings:update", { blockedSites: [] }));
+  // Activity lists the opening and the consents.
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+  await page.getByTestId("activity-log").getByText("Operatore ha aperto github.com/acme/repo in Chrome", { exact: false }).first().waitFor({ timeout: 20_000 });
+  await page.getByTestId("activity-log").getByText("Consenso registrato per npmjs.com", { exact: false }).first().waitFor({ timeout: 20_000 });
+  await themeShots("15o-activity-site-consents");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await closePanels();
+  // Written in the chat, a consent is withdrawn.
+  await composer().fill("Ritiro il consenso per private.example.");
+  await page.keyboard.press("Enter");
+  await chatLine("Consenso ritirato per private.example, dalla tua frase «Ritiro il consenso per private.example.»", "15p-site-consent-withdrawn");
+}
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
@@ -3652,6 +3720,19 @@ await settingsRules("Generale con siti vietati");
 await themeShots("12e-blocked-sites");
 await settings.getByRole("button", { name: "Togli shop.example dai siti vietati" }).click();
 await settings.locator('[data-testid="blocked-site"][data-site="shop.example"]').waitFor({ state: "detached" });
+// Issue #410: the consents of the open project, with how each was given and the button to withdraw it.
+{
+  await settings.getByRole("heading", { name: "Consensi per sito" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
+  const listed = settings.locator('[data-testid="site-consent"]');
+  await listed.first().waitFor({ timeout: 20_000 });
+  if ((await listed.count()) !== 2) throw new Error(`The consents are not two: ${await listed.count()}`);
+  await settings.locator('[data-testid="site-consent"][data-site="github.com"]').getByText("Dal tuo sì in Aspetta te").waitFor();
+  await settings.locator('[data-testid="site-consent"][data-site="npmjs.com"]').getByText("Dalla tua frase «Hai il mio consenso per npmjs.com.»", { exact: false }).waitFor();
+  await themeShots("12f-site-consents");
+  await settings.getByRole("button", { name: "Ritira il consenso per github.com" }).click();
+  await settings.locator('[data-testid="site-consent"][data-site="github.com"]').waitFor({ state: "detached", timeout: 20_000 });
+  await themeShots("12g-site-consents-withdrawn");
+}
 await settings.getByTestId("language-choice").getByRole("radio", { name: "English" }).click();
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();
@@ -3660,6 +3741,11 @@ await settings.getByRole("heading", { name: "Blocked sites" }).waitFor();
 await settings.getByTestId("blocked-site-add").getByText("Block", { exact: true }).waitFor();
 await settings.getByRole("button", { name: "Remove bank.example from the blocked sites" }).click();
 await settings.getByTestId("blocked-sites-empty").getByText("No blocked sites.").waitFor();
+await settings.getByRole("heading", { name: "Consents per site" }).waitFor();
+await settings.getByRole("button", { name: "Withdraw the consent for npmjs.com" }).waitFor();
+await settings.locator('[data-testid="site-consent"][data-site="npmjs.com"]').getByText("From your sentence", { exact: false }).waitFor();
+await settings.getByRole("heading", { name: "Consents per site" }).evaluate((el) => el.scrollIntoView({ block: "start" }));
+await themeShots("12h-site-consents-en");
 // Issue #348: Informazioni shows the version of app/package.json, in each language.
 const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
 const aboutVersion = settings.getByTestId("about-version");

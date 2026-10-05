@@ -71,7 +71,9 @@ import type {
   ContextRollover,
   AccessStep,
   CommandApproval,
+  SiteConsentRequest,
 } from "@shared/domain";
+import { addConsent, consentFor, consentStatements, shownSite, withdrawConsent } from "@shared/siteConsents";
 import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
 import { contextSummary, personSummary } from "./core/contextSummary";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
@@ -470,6 +472,7 @@ import {
   type CommandRunner,
   type OperatorSession,
 } from "./core/operatorCommands";
+import { chromeDebuggingDriver, type BrowserDriver } from "./core/operatorBrowser";
 import { SecretLock } from "./core/secretLock";
 import {
   httpWebFetcher,
@@ -825,6 +828,8 @@ export interface ControllerHost {
   webFetcher?: WebFetcher;
   /** What Trama does on the Mac for the Operator (issue #409). The real one runs a shell; tests give a fake. */
   commandRunner?: CommandRunner;
+  /** What Trama does in the person's Chrome for the Operator (issue #410). The real one talks to Chrome; tests give a fake. */
+  browserDriver?: BrowserDriver;
   /** The lock on secrets of the Operator's commands. The default reads the real home folder; tests give their own. */
   secretLock?: SecretLock;
   demoResourceDirectory: string;
@@ -874,6 +879,7 @@ export class TramaController {
   }[] = [];
 
   private secretLock: SecretLock | null = null;
+  private chrome: BrowserDriver | null = null;
 
   /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
   readonly computerAccess = new ComputerAccessGate(
@@ -2951,6 +2957,8 @@ export class TramaController {
         },
         request.id,
       );
+      // Only a message the person typed in the composer can give or withdraw a consent (issue #410).
+      if (typed) this.applyConsentMessage(project, trimmed, request.id);
     }
     project.runningRequestId = request.id;
     // The running request now keeps the Coordinator busy in place of the starting move.
@@ -5907,6 +5915,11 @@ export class TramaController {
         appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t(outcome === "done" ? "main.controller.operatorRan" : "main.controller.operatorFailed", { agent, command }), detail: null, referenceId: null }, requestId);
         this.changedIn(project);
       },
+      browser: this.host.browserDriver ?? (this.chrome ??= chromeDebuggingDriver()),
+      consents: () => document.siteConsents ?? [],
+      askConsent: (host, address) => this.askSiteConsent(project, agent, host, address, requestId),
+      announceSite: (host) => this.projectNotice(project, t("main.controller.operatorOpened", { agent, site: host }), requestId),
+      needsLogin: (host) => this.projectNotice(project, t("main.controller.operatorNeedsLogin", { agent, site: host }), requestId),
       signal,
       newId: randomUUID,
     };
@@ -5973,6 +5986,114 @@ export class TramaController {
       client?.stop();
       toolServer.stop();
     }
+  }
+
+  /** A line of Trama's in the chat. */
+  private projectNotice(project: ActiveProjectState, title: string, requestId: string | null): void {
+    appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title, detail: null, referenceId: null }, requestId);
+    this.changedIn(project);
+  }
+
+  private recordConsentStep(project: ActiveProjectState, agent: string, host: string, outcome: AccessStep["outcome"], detail: string | null): void {
+    const document = project.document;
+    (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), agent, kind: "consent", target: host, outcome, detail });
+    if (document.accessSteps.length > 400) document.accessSteps.splice(0, document.accessSteps.length - 400);
+  }
+
+  /**
+   * The Operator wants a site that has no consent (issue #410): a request waits in "Aspetta te" with the button to
+   * give it. A request already waiting for the same site is the same request: it is not asked twice.
+   */
+  private askSiteConsent(project: ActiveProjectState, agent: string, host: string, address: string, requestId: string | null): void {
+    const document = project.document;
+    if (document.siteConsentRequests?.some((request) => request.status === "waiting" && request.host === host)) return;
+    const request: SiteConsentRequest = { id: randomUUID(), agent, host, address: shownSite(address), requestId, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+    (document.siteConsentRequests ??= []).push(request);
+    this.projectNotice(project, t("main.controller.siteConsentAsked", { agent, site: host }), requestId);
+  }
+
+  /**
+   * Records a consent the person gave and tells it in the chat. A blocked site is never recorded: the chat says so.
+   * Returns whether it was recorded. Only the person's button and the person's typed message reach this.
+   */
+  private grantSiteConsent(project: ActiveProjectState, host: string, by: "button" | "composer", phrase: string | null, requestId: string | null): boolean {
+    const document = project.document;
+    const result = addConsent(document.siteConsents ?? [], { host, by, phrase, id: randomUUID(), at: new Date().toISOString() }, this.state.settings.blockedSites ?? []);
+    const site = result.consent?.host ?? host;
+    if (result.problem === "blocked") {
+      this.projectNotice(project, t("main.controller.siteConsentBlocked", { site }), requestId);
+      return false;
+    }
+    if (result.problem === "duplicate") {
+      this.projectNotice(project, t("main.controller.siteConsentAlready", { site }), requestId);
+      return false;
+    }
+    if (!result.consent) {
+      this.projectNotice(project, t("main.controller.siteConsentNotRecorded", { site }), requestId);
+      return false;
+    }
+    document.siteConsents = result.list;
+    this.recordConsentStep(project, "", site, "done", null);
+    this.projectNotice(project, phrase ? t("main.controller.siteConsentFromPhrase", { site, phrase }) : t("main.controller.siteConsentFromButton", { site }), requestId);
+    return true;
+  }
+
+  /**
+   * What the person wrote in the composer says about consents (issue #410): given or withdrawn, with their sentence
+   * quoted in the chat. The caller passes only a message the person typed; a reply of the model, a page or a tool
+   * result never comes here.
+   */
+  private applyConsentMessage(project: ActiveProjectState, text: string, requestId: string | null): void {
+    for (const statement of consentStatements(text)) {
+      if (statement.action === "grant") {
+        if (!this.grantSiteConsent(project, statement.host, "composer", statement.phrase, requestId)) continue;
+        // A request for the same site that waited is answered by the same yes.
+        for (const request of project.document.siteConsentRequests ?? []) {
+          if (request.status === "waiting" && request.host === statement.host) Object.assign(request, { status: "granted", endedAt: new Date().toISOString() });
+        }
+      } else if (this.withdrawSiteConsentFor(project, statement.host, statement.phrase, requestId)) {
+        // Told in the chat by the withdrawal itself.
+      }
+    }
+  }
+
+  private withdrawSiteConsentFor(project: ActiveProjectState, host: string, phrase: string | null, requestId: string | null): boolean {
+    const result = withdrawConsent(project.document.siteConsents ?? [], host);
+    if (!result.consent) return false;
+    project.document.siteConsents = result.list;
+    this.recordConsentStep(project, "", host, "done", "withdrawn");
+    this.projectNotice(project, phrase ? t("main.controller.siteConsentWithdrawnFromPhrase", { site: host, phrase }) : t("main.controller.siteConsentWithdrawn", { site: host }), requestId);
+    return true;
+  }
+
+  /** The person withdraws a consent from the list (issue #410). */
+  withdrawSiteConsent(id: string): void {
+    const project = this.requireProject();
+    const consent = project.document.siteConsents?.find((item) => item.id === id);
+    if (!consent) throw new DomainError(t("main.controller.siteConsentNotFound"));
+    this.withdrawSiteConsentFor(project, consent.host, null, null);
+  }
+
+  /** The person's yes to a request of the Operator for a site (issue #410): the button of "Aspetta te". */
+  confirmSiteConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.siteConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    const given = this.grantSiteConsent(project, request.host, "button", null, request.requestId);
+    // A blocked site cannot be consented to: the request ends, and the chat has said why.
+    request.status = given || consentFor(project.document.siteConsents, request.host) ? "granted" : "declined";
+    request.endedAt = new Date().toISOString();
+    this.changedIn(project);
+  }
+
+  /** The person's no to a request of the Operator for a site: nothing is recorded (issue #410). */
+  declineSiteConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.siteConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    request.status = "declined";
+    request.endedAt = new Date().toISOString();
+    this.projectNotice(project, t("main.controller.siteConsentDeclined", { agent: request.agent, site: request.host }), request.requestId);
   }
 
   /** The person said yes to a command that cannot be undone (issue #409): Trama runs it itself, with every check again. */

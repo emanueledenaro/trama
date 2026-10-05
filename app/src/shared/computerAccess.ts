@@ -15,11 +15,11 @@ export const ACCESS_POWERS: AccessPower[] = ["network", "browser", "command", "s
 
 /**
  * The roles that may use each power (ADR 0020). The network is Research's alone, and only to read: the Coordinator and
- * the developers have none. The Operator (issue #409) joins the lists of the powers it gets. A role not listed is refused.
+ * the developers have none. The Operator joins the lists of the powers it gets: commands (issue #409) and the browser (issue #410). A role not listed is refused.
  */
 export const POWER_ROLES: Record<AccessPower, TeamRole[]> = {
   network: ["research"],
-  browser: [],
+  browser: ["operator"],
   command: ["operator"],
   screen: [],
 };
@@ -80,6 +80,10 @@ export function accessChangeEntries(t: Translate, changes: AccessChange[]): Acti
 
 /** The detail of a step as the person reads it: command steps keep a code in the record, words are chosen here. */
 function stepDetail(t: Translate, step: AccessStep): string | null {
+  if (step.kind === "consent") return step.detail === "withdrawn" ? t("activity.access.consent.withdrawnDetail") : null;
+  if (step.kind === "browser" && (step.detail === "consent" || step.detail === "login" || step.detail === "start")) {
+    return [t(step.outcome === "waiting" ? "activity.access.waiting" : "activity.access.failed"), t(`activity.access.browser.${step.detail}`)].join(" ");
+  }
   if (step.kind !== "command") return step.outcome === "done" ? step.detail : [t(`activity.access.${step.outcome}`), step.detail].filter(Boolean).join(" ");
   const [code, value = ""] = (step.detail ?? "").split(/:(.*)/s);
   const why =
@@ -101,17 +105,24 @@ function stepDetail(t: Translate, step: AccessStep): string | null {
   return [step.outcome === "refused" || step.outcome === "failed" || step.outcome === "waiting" ? t(`activity.access.${step.outcome}`) : null, why].filter(Boolean).join(" ") || null;
 }
 
-const stepLabelKey = { search: "activity.access.search", page: "activity.access.page", command: "activity.access.command" } as const;
+const stepLabelKey = {
+  search: "activity.access.search",
+  page: "activity.access.page",
+  command: "activity.access.command",
+  browser: "activity.access.browser",
+  consent: "activity.access.consent",
+} as const;
 
 /** The searches, pages and commands run through the access as rows of Activity, with the agent and the outcome. Pure. */
 export function accessStepEntries(t: Translate, steps: AccessStep[]): ActivityEntry[] {
   return steps.map((step) => ({
     id: step.id,
-    kind: step.kind === "command" ? "command" : "access",
+    // What the Operator does on the Mac, in Chrome or in the shell, is one family in Activity: "Comandi e invii".
+    kind: step.kind === "command" || step.kind === "browser" ? "command" : "access",
     requestId: null,
     move: null,
     trigger: null,
-    label: t(stepLabelKey[step.kind], { agent: step.agent, target: step.target }),
+    label: t(step.kind === "consent" && step.detail === "withdrawn" ? "activity.access.consentWithdrawn" : stepLabelKey[step.kind], { agent: step.agent, target: step.target }),
     goalId: null,
     startedAt: step.at,
     endedAt: null,
