@@ -18,6 +18,7 @@ import {
   IconTools,
   IconTrash,
   IconUsers,
+  IconWorld,
   IconWorldOff,
 } from "@/components/icons";
 import { useEffect, useState } from "react";
@@ -41,7 +42,7 @@ import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
-import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
+import { formatDate, formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
 import { SwitchArea } from "@/components/settings/SwitchArea";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { PresenceControls, PresenceStatus } from "@/components/PresencePanel";
@@ -226,6 +227,7 @@ function GeneralSection() {
         />
       </Group>
       <BlockedSitesGroup />
+      <SiteConsentsGroup />
       <Group title={t("settings.about")}>
         <div className="flex items-center gap-3 px-4 py-3" data-testid="about-trama">
           <TramaMark size={40} variant="tile" />
@@ -311,6 +313,54 @@ function BlockedSitesGroup() {
             </div>
           </div>
         ))
+      )}
+    </Group>
+  );
+}
+
+/** The sites the person consented to in the open project, with the way they gave it and the button to withdraw it (ADR 0020, issue #410). */
+function SiteConsentsGroup() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const language = useLanguage();
+  const t = useT();
+  if (!project) {
+    return (
+      <Group title={t("settings.consents.title")} note={t("settings.consents.noProject")}>
+        <div className="px-4 py-4 text-ui-sm text-muted-foreground" data-testid="site-consents-empty">
+          {t("settings.consents.empty")}
+        </div>
+      </Group>
+    );
+  }
+  const consents = project.document.siteConsents ?? [];
+  return (
+    <Group title={t("settings.consents.title")} note={t("settings.consents.description", { project: project.name })}>
+      {consents.length === 0 ? (
+        <div className="px-4 py-4 text-ui-sm text-muted-foreground" data-testid="site-consents-empty">
+          {t("settings.consents.empty")}
+        </div>
+      ) : (
+        <div data-testid="site-consents">
+          {consents.map((consent) => (
+            <div key={consent.id} className="flex items-center gap-4 px-4 py-2" data-testid="site-consent" data-site={consent.host}>
+              <IconWorld className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-mono text-ui-sm text-foreground">{consent.host}</div>
+                <div className="truncate text-ui-sm text-muted-foreground">
+                  {consent.phrase ? t("settings.consents.fromPhrase", { phrase: consent.phrase }) : t("settings.consents.fromButton")} {formatDate(language, consent.grantedAt)}
+                </div>
+              </div>
+              <div className="cta-row ml-auto">
+                <IconButton
+                  label={t("settings.consents.withdraw", { site: consent.host })}
+                  icon={<IconTrash stroke={1.7} />}
+                  size="icon"
+                  onClick={() => void act("siteConsent:withdraw", { id: consent.id })}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </Group>
   );

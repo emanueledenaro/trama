@@ -102,6 +102,9 @@ export interface ActionMap {
   "fixedBan:acknowledge": [{ id: string }, void];
   "commandApproval:confirm": [{ id: string }, void];
   "commandApproval:decline": [{ id: string }, void];
+  "siteConsent:confirm": [{ id: string }, void];
+  "siteConsent:decline": [{ id: string }, void];
+  "siteConsent:withdraw": [{ id: string }, void];
   /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
   "requestedAction:confirm": [{ id: string }, void];
   "requestedAction:decline": [{ id: string }, void];
