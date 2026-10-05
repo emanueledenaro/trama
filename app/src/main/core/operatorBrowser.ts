@@ -25,6 +25,19 @@ export interface OpenedPage {
   asksForLogin: boolean;
 }
 
+/** One data send to a site (ADR 0020, issue #411): the person's Chrome sends it, with the person's session. */
+export interface OutgoingRequest {
+  address: string;
+  method: "POST" | "PUT" | "PATCH" | "DELETE";
+  contentType: string;
+  body: string;
+}
+
+export type BrowserSending =
+  | { status: "unavailable"; reason: string }
+  /** `code` is the HTTP status the site answered. */
+  | { status: "sent"; code: number };
+
 export type BrowserOpening =
   /** Chrome is not reachable: not installed, closed, or not open for Trama. */
   | { status: "unavailable"; reason: string }
@@ -34,6 +47,8 @@ export type BrowserOpening =
 export interface BrowserDriver {
   /** Opens an address in a tab of the person's Chrome, reads it and closes the tab. It never types anything. */
   open(address: string, options: { signal: AbortSignal }): Promise<BrowserOpening>;
+  /** Sends one request from a tab of the address's own site. It reads no cookie and no saved password. */
+  send(request: OutgoingRequest, options: { signal: AbortSignal }): Promise<BrowserSending>;
 }
 
 const SIGN_IN_PATH = /\/(?:log-?in|sign-?in|signin|sso|auth(?:orize)?|session\/new|account\/login)(?:\/|$|\?)/i;
@@ -50,11 +65,15 @@ export const signedOut = (page: Pick<OpenedPage, "asksForLogin" | "finalAddress"
 
 /**
  * A driver that answers from a file instead of a browser, for the checks that run the app (`TRAMA_BROWSER_FIXTURE`):
- * `{ "pages": { "<address>": { "title": "...", "text": "...", "finalAddress": "...", "asksForLogin": false } } }`. An address
- * the file lacks is a browser that cannot be reached.
+ * `{ "pages": { "<address>": { "title": "...", "text": "...", "finalAddress": "...", "asksForLogin": false } },
+ * "sends": { "<address>": { "code": 200 } } }`. An address the file lacks is a browser that cannot be reached.
  */
-export function fixtureBrowserDriver(fixture: { pages?: Record<string, Partial<OpenedPage>> }): BrowserDriver {
+export function fixtureBrowserDriver(fixture: { pages?: Record<string, Partial<OpenedPage>>; sends?: Record<string, { code?: number }> }): BrowserDriver {
   return {
+    async send(request) {
+      const answer = fixture.sends?.[request.address];
+      return answer ? { status: "sent", code: answer.code ?? 200 } : { status: "unavailable", reason: "no send in the fixture" };
+    },
     async open(address) {
       const page = fixture.pages?.[address];
       if (!page) return { status: "unavailable", reason: "no page in the fixture" };
@@ -76,6 +95,24 @@ interface CdpTarget {
 export function chromeDebuggingDriver(port = 9222): BrowserDriver {
   const base = `http://127.0.0.1:${port}`;
   return {
+    async send(request, { signal }) {
+      let target: CdpTarget;
+      try {
+        // The tab opens the site's own front page: the request is sent from there, so it is the site's own origin.
+        const created = await fetch(`${base}/json/new?${encodeURIComponent(`${new URL(request.address).origin}/`)}`, { method: "PUT", signal });
+        if (!created.ok) return { status: "unavailable", reason: `Chrome answered ${created.status}` };
+        target = (await created.json()) as CdpTarget;
+      } catch (error) {
+        return { status: "unavailable", reason: signal.aborted ? "stopped" : (error as Error).message };
+      }
+      try {
+        return { status: "sent", code: await sendFromTab(target.webSocketDebuggerUrl, request, signal) };
+      } catch (error) {
+        return { status: "unavailable", reason: signal.aborted ? "stopped" : (error as Error).message };
+      } finally {
+        await fetch(`${base}/json/close/${target.id}`, { signal: AbortSignal.timeout(3_000) }).catch(() => undefined);
+      }
+    },
     async open(address, { signal }) {
       let target: CdpTarget;
       try {
@@ -103,14 +140,17 @@ const READ_PAGE = `JSON.stringify({
   asksForLogin: Array.from(document.querySelectorAll('input[type="password"]')).some((field) => field.offsetParent !== null),
 })`;
 
-function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage> {
+type TabCall = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+
+/** One conversation with a tab over its debugging socket: `work` makes its calls one at a time and the socket closes after. */
+function talkToTab<T>(socketAddress: string, signal: AbortSignal, work: (call: TabCall) => Promise<T>, timeoutMs = 25_000): Promise<T> {
   return new Promise((done, fail) => {
     const socket = new WebSocket(socketAddress);
     let next = 0;
     // The calls are made one at a time: one answer is waited for, and only the one with its own number is taken.
     let waiting: { id: number; resolve: (result: unknown) => void } | null = null;
-    const timer = setTimeout(() => finish(new Error("The page took too long to load.")), 25_000);
-    const finish = (error: Error | null, page?: OpenedPage) => {
+    const timer = setTimeout(() => finish(new Error("The page took too long to load.")), timeoutMs);
+    const finish = (error: Error | null, value?: T) => {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
       try {
@@ -119,11 +159,11 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
         // Already closed.
       }
       if (error) fail(error);
-      else done(page!);
+      else done(value as T);
     };
     const onAbort = () => finish(new Error("stopped"));
     signal.addEventListener("abort", onAbort, { once: true });
-    const call = (method: string, params: Record<string, unknown> = {}) =>
+    const call: TabCall = (method, params = {}) =>
       new Promise<unknown>((resolve) => {
         const id = ++next;
         waiting = { id, resolve };
@@ -143,21 +183,58 @@ function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage
       waiting = null;
       resolve(message.result);
     });
-    // The tab opened the address by itself: ask until the page is complete, then read it once.
-    const wait = async () => {
-      for (;;) {
-        const state = (await call("Runtime.evaluate", { expression: "document.readyState", returnByValue: true })) as { result?: { value?: string } } | undefined;
-        if (state?.result?.value === "complete") break;
-        await new Promise((resolve) => setTimeout(resolve, 300));
-      }
-      const evaluated = (await call("Runtime.evaluate", { expression: READ_PAGE, returnByValue: true })) as { result?: { value?: string } } | undefined;
-      try {
-        finish(null, JSON.parse(evaluated?.result?.value ?? "") as OpenedPage);
-      } catch {
-        finish(new Error("The page could not be read."));
-      }
-    };
-    socket.addEventListener("open", () => void wait());
+    socket.addEventListener("open", () => void work(call).then((value) => finish(null, value), (error: unknown) => finish(error instanceof Error ? error : new Error(String(error)))));
+  });
+}
+
+/** Asks until the tab's page is complete. The tab opened the address by itself. */
+async function untilComplete(call: TabCall): Promise<void> {
+  for (;;) {
+    const state = (await call("Runtime.evaluate", { expression: "document.readyState", returnByValue: true })) as { result?: { value?: string } } | undefined;
+    if (state?.result?.value === "complete") return;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+}
+
+function readTab(socketAddress: string, signal: AbortSignal): Promise<OpenedPage> {
+  return talkToTab(socketAddress, signal, async (call) => {
+    await untilComplete(call);
+    const evaluated = (await call("Runtime.evaluate", { expression: READ_PAGE, returnByValue: true })) as { result?: { value?: string } } | undefined;
+    try {
+      return JSON.parse(evaluated?.result?.value ?? "") as OpenedPage;
+    } catch {
+      throw new Error("The page could not be read.");
+    }
+  });
+}
+
+const SEND_REQUEST = `async function (address, method, contentType, body) {
+  const options = { method, credentials: "same-origin", redirect: "manual" };
+  if (method !== "DELETE" || body) Object.assign(options, { headers: { "content-type": contentType }, body });
+  return (await fetch(address, options)).status;
+}`;
+
+/**
+ * Sends one request from inside a tab of the site itself. The browser adds the person's session on its own: this code
+ * never reads a cookie or a saved password, and it never fills a field of a page.
+ */
+function sendFromTab(socketAddress: string, request: OutgoingRequest, signal: AbortSignal): Promise<number> {
+  return talkToTab(socketAddress, signal, async (call) => {
+    await untilComplete(call);
+    // The values travel as arguments of a fixed function: no code is built from the address or the data.
+    const root = (await call("Runtime.evaluate", { expression: "globalThis" })) as { result?: { objectId?: string } } | undefined;
+    const objectId = root?.result?.objectId;
+    if (!objectId) throw new Error("The page could not be reached.");
+    const sent = (await call("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: SEND_REQUEST,
+      arguments: [{ value: request.address }, { value: request.method }, { value: request.contentType }, { value: request.body }],
+      awaitPromise: true,
+      returnByValue: true,
+    })) as { result?: { value?: number } } | undefined;
+    const status = sent?.result?.value;
+    if (typeof status !== "number") throw new Error("The request got no answer.");
+    return status;
   });
 }
 

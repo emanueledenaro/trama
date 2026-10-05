@@ -45,6 +45,8 @@ function harness(options: { blocked?: string[]; consents?: string[]; role?: Brow
     session: null as never,
   };
   const browser: BrowserDriver = {
+    // The sends have their own checks in operatorSend.test.ts.
+    send: async () => ({ status: "unavailable", reason: "none" }),
     async open(address) {
       h.opened.push(address);
       return typeof h.answer.next === "function" ? h.answer.next() : h.answer.next;
@@ -68,6 +70,16 @@ function harness(options: { blocked?: string[]; consents?: string[]; role?: Brow
 }
 
 const open = (h: Harness, url: string) => runBrowserTool({ url }, h.session);
+
+describe("the real driver of Chrome never reaches for a cookie, a saved password or the keyboard (issue #411)", () => {
+  it("calls only the protocol's evaluation of the page, never a cookie, storage, password or input command", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("./operatorBrowser.ts", import.meta.url), "utf8");
+    const called = [...source.matchAll(/call\("([A-Za-z]+\.[A-Za-z]+)"/g)].map((match) => match[1]);
+    expect(new Set(called)).toEqual(new Set(["Runtime.evaluate", "Runtime.callFunctionOn"]));
+    expect(source).not.toMatch(/\b(?:Network\.(?:getCookies|getAllCookies|setCookie)|Storage\.|Input\.|Autofill|PasswordManager|document\.cookie)/);
+  });
+});
 
 describe("the Operator opens a site in the person's Chrome (issue #410)", () => {
   it("opens a site with a consent, reads it as data, and leaves a row in Activity and a line in the chat", async () => {
@@ -133,7 +145,8 @@ describe("the Operator opens a site in the person's Chrome (issue #410)", () => 
     expect(h.steps.at(-1)).toMatchObject({ kind: "browser", outcome: "waiting", detail: "login" });
     expect(h.announced).toEqual([]);
     // The driver can only open an address: there is no way to type into the page.
-    expect(Object.keys(h.session.browser)).toEqual(["open"]);
+    // Since issue #411 it can also send one request, from the site's own tab; there is still no call to fill a field.
+    expect(Object.keys(h.session.browser).sort()).toEqual(["open", "send"]);
   });
 
   it("recognises a sign-in by its address even without a visible field", () => {

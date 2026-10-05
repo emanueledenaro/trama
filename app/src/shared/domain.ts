@@ -1334,7 +1334,7 @@ export interface AccessStep {
   at: string;
   /** The agent that took the step, as the person sees it in Activity. */
   agent: string;
-  kind: "search" | "page" | "command" | "browser" | "consent";
+  kind: "search" | "page" | "command" | "browser" | "send" | "consent";
   /** What was searched, the page address without its query string and fragment (a page Research read or a site the Operator opened in Chrome), the command line without its secrets, or the site a consent is about. */
   target: string;
   /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host); `waiting` while a command waits for the person. */
@@ -1352,10 +1352,12 @@ export interface CommandApproval {
   /** The agent that asked, as the person sees it. */
   agent: string;
   command: string;
-  /** The folder it would run in. */
+  /** The folder it would run in. Empty for a send of data. */
   cwd: string;
   /** Why it asks: `delete`, `send` or `payment`. */
   reason: "delete" | "send" | "payment";
+  /** A send of data to a site that waits for the yes (issue #411): Trama sends it itself after the yes, and the yes is for this send only. */
+  send?: { address: string; method: "POST" | "PUT" | "PATCH" | "DELETE"; contentType: string; body: string };
   askedAt: string;
   status: "waiting" | "done" | "failed" | "declined";
   endedAt: string | null;

@@ -69,7 +69,9 @@ function harness(): Harness {
     },
     announce: (command, outcome) => void h.announced.push([command, outcome]),
     // The browser tool has its own checks in operatorBrowser.test.ts.
-    browser: { open: async () => ({ status: "unavailable", reason: "none" }) },
+    browser: { open: async () => ({ status: "unavailable", reason: "none" }), send: async () => ({ status: "unavailable", reason: "none" }) },
+    askSendApproval: () => { throw new Error("not under test"); },
+    announceSend: () => undefined,
     consents: () => [],
     askConsent: () => undefined,
     announceSite: () => undefined,
