@@ -953,6 +953,32 @@ describe("TramaController", () => {
     expect(controller.computerAccess.decide("browser")).toEqual({ allowed: true });
   }, 60_000);
 
+  it("keeps one list of blocked sites for the whole app, cleaned, saved across a restart and read by the gate (issue #414)", async () => {
+    const { data } = await setup();
+    expect(controller!.snapshot.settings.blockedSites).toEqual([]);
+    await controller!.updateSettings({ blockedSites: ["https://www.bank.example/login", "shop.example", "bank.example", "not a site"] });
+    expect(controller!.snapshot.settings.blockedSites).toEqual(["bank.example", "shop.example"]);
+    expect(controller!.computerAccess.decide("network", "research", "https://login.bank.example/")).toEqual({ allowed: false, reason: "blockedSite" });
+    // The list is the app's, not a project's: it lives in the settings, so every project reads the same one.
+    await controller!.stop();
+
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    expect(controller.snapshot.settings.blockedSites).toEqual(["bank.example", "shop.example"]);
+    expect(controller.computerAccess.isBlocked("https://shop.example/admin")).toBe(true);
+    await controller.updateSettings({ blockedSites: ["shop.example"] });
+    expect(controller.computerAccess.isBlocked("https://bank.example/")).toBe(false);
+  }, 60_000);
+
   it("turns computer access off with the Pause and gives it back as it was at the resume (issue #413)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
