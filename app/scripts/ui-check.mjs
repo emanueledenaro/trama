@@ -3633,7 +3633,7 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.keyboard.press("Enter");
   const sendItem = await openItem("commandApproval", "POST npmjs.com/checkout");
   const sendCard = sendItem.getByTestId("command-approval-card");
-  await sendCard.getByText("Un invio che non si annulla").waitFor();
+  await sendItem.getByText("Un invio che non si annulla").waitFor();
   await sendCard.getByText('{"plan":"pro"}').waitFor();
   await primaryLast(sendCard.locator(".cta-row"), "Send approval");
   await themeShots("15s-send-approval-item");
