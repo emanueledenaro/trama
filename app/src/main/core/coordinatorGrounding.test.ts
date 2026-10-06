@@ -305,3 +305,27 @@ describe("currentStateText: the state the Coordinator reads every turn (issue #2
     expect(text).toContain("Candidati aperti: nessuno.");
   });
 });
+
+describe("currentStateText: the state of a candidate's checks as it is now (issue #590)", () => {
+  const setup = () => {
+    const document = shop();
+    const value = candidate(document, work(document, "Luca", "Sources/Orders", 2).id, null, "approved");
+    return { document, value };
+  };
+
+  it("says a check is running only while Trama runs it", () => {
+    const { document, value } = setup();
+    expect(currentStateText(document, "r3", null, [{ candidateId: value.id, check: "node_typecheck" }])).toContain("Verifiche adesso: node_typecheck in corso ora.");
+    expect(currentStateText(document, "r3")).toContain("Verifiche adesso: node_typecheck non ancora eseguita.");
+  });
+
+  it("tells a check that ended, red or green, with no trace of running", () => {
+    const { document, value } = setup();
+    recordEvidence(document, value.id, { check: "node_typecheck", passed: false, command: "npm run typecheck", output: "TS2322", snapshotId: value.snapshotId });
+    const red = currentStateText(document, "r3");
+    expect(red).toContain("Verifiche adesso: node_typecheck non superata.");
+    expect(red).not.toContain("in corso ora");
+    recordEvidence(document, value.id, { check: "node_typecheck", passed: true, command: "npm run typecheck", output: "", snapshotId: value.snapshotId });
+    expect(currentStateText(document, "r3")).toContain("Verifiche adesso: node_typecheck superata.");
+  });
+});

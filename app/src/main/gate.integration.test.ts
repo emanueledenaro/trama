@@ -367,6 +367,37 @@ describe("the candidate gate (W10)", () => {
     expect(prompts[0]).toContain("Verifiche finite dopo il loro turno");
   }, 120_000);
 
+  it("tells the Coordinator the state of a candidate's check as it is now, running or ended (issue #590)", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const { document, decision } = await openTeam(await repository(false));
+    await controller!.send("[assegna] [clean-contro-patto]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    const check = candidate.requiredChecks[0]!;
+    delete candidate.evidence[check];
+    // The check is at work: the first turn says so, as Trama's records do.
+    const inFlight = (controller as unknown as { checksInFlight: Map<string, Promise<unknown>> }).checksInFlight;
+    inFlight.set(`candidate:${candidate.id}:${check}`, new Promise(() => undefined));
+    const stateOf = async (message: string) => {
+      const before = (await readLog(log)).length;
+      await controller!.send(message, null, null, null);
+      const turn = (await readLog(log)).slice(before).findLast((r) => r.method === "turn/start" && JSON.stringify(r.params.input).includes("Stato attuale di Trama"))!;
+      return JSON.stringify(turn.params.input);
+    };
+    expect(await stateOf("Come va la verifica?")).toContain(`Verifiche adesso: ${check} in corso ora`);
+    // The check ends red, then green: the next turn reads that, not "in corso".
+    inFlight.clear();
+    candidate.evidence[check] = { check, result: "fail", command: "", output: "", snapshotId: candidate.snapshotId, decisionVersions: {}, recordedAt: new Date().toISOString() };
+    const red = await stateOf("E adesso?");
+    expect(red).toContain(`Verifiche adesso: ${check} non superata`);
+    expect(red).not.toContain(`${check} in corso ora`);
+    candidate.evidence[check] = { ...candidate.evidence[check]!, result: "pass" };
+    expect(await stateOf("E ora?")).toContain(`Verifiche adesso: ${check} superata`);
+  }, 120_000);
+
   it("does not block on a Clean Code finding against a Pact decision the candidate was not declared with", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;
