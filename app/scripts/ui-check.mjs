@@ -1123,11 +1123,11 @@ await shot("02-demo-study");
     const button = activityBar().getByRole("button", { name: icon, exact: true });
     if (!aria.test((await button.getAttribute("aria-description")) ?? "")) throw new Error(`The ${icon} icon does not say what it opens`);
     await button.hover();
-    await page.getByRole("tooltip").filter({ hasText: hint }).waitFor();
+    await page.locator(".translucent-popup").filter({ hasText: hint }).waitFor();
     for (const dark of [false, true]) {
       await setLookTo(windowLook.provider, dark);
       await button.hover();
-      await page.getByRole("tooltip").filter({ hasText: hint }).waitFor();
+      await page.locator(".translucent-popup").filter({ hasText: hint }).waitFor();
       await shot(`31-icon-name-${icon.toLowerCase()}-${dark ? "dark" : "light"}`);
     }
     await setLookTo(windowLook.provider, windowLook.dark);
@@ -1138,7 +1138,7 @@ await shot("02-demo-study");
   for (const dark of [false, true]) {
     await setLookTo(windowLook.provider, dark);
     await sliceTerm.hover();
-    await page.getByRole("tooltip").filter({ hasText: "Una parte del piano che si può fare, provare e unire da sola." }).waitFor();
+    await page.locator(".translucent-popup").filter({ hasText: "Una parte del piano che si può fare, provare e unire da sola." }).waitFor();
     await shot(`31-term-slice-${dark ? "dark" : "light"}`);
   }
   await setLookTo(windowLook.provider, windowLook.dark);
