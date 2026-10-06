@@ -28,6 +28,7 @@ const TRAMA_NAMES = ["trama", "electron"];
 const TRAMA_BUNDLES = ["dev.trama.app", "com.github.electron"];
 
 /** Settings, authorization windows and the keychain: the places where a permission is given. */
+// i18n-exempt: names of macOS apps, compared with what the system reports
 const SYSTEM_NAMES = [
   "system settings",
   "system preferences",
