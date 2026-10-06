@@ -80,6 +80,7 @@ function harness(): Harness {
     // The screen tools have their own checks in operatorScreen.test.ts.
     screen: fixtureScreenDriver(() => ({ front: { app: "Finder" } })),
     appConsents: () => [],
+    protectedApp: () => undefined,
     askAppConsent: () => undefined,
     needsPermission: () => undefined,
     passwordFieldStopped: () => undefined,

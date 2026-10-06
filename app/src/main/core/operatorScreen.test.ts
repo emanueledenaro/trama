@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccessStep, AppConsent } from "@shared/domain";
+import type { SelfIdentity } from "@shared/protectedApps";
 import { ComputerAccessGate } from "./computerAccess";
 import {
   CLICK_SCREEN_TOOL,
@@ -26,7 +27,9 @@ interface Harness {
   permissionNotices: string[];
   passwordNotices: string[];
   secretStops: string[];
-  state: { permissions: ScreenPermissions; front: { app: string; secureField: boolean } | null; appAt: string | null; text: string; hang: boolean };
+  protectedNotices: string[];
+  self: SelfIdentity;
+  state: { permissions: ScreenPermissions; front: { app: string; secureField: boolean; bundleId?: string; pid?: number } | null; appAt: string | { name: string; pid?: number } | null; text: string; hang: boolean };
   consents: AppConsent[];
   controller: AbortController;
   setOn: (on: boolean) => void;
@@ -70,6 +73,8 @@ function harness(options: { consents?: string[] } = {}): Harness {
     permissionNotices: [],
     passwordNotices: [],
     secretStops: [],
+    protectedNotices: [],
+    self: { pids: [4242, 4243] },
     state,
     consents: (options.consents ?? ["Finder"]).map(consent),
     controller,
@@ -83,6 +88,8 @@ function harness(options: { consents?: string[] } = {}): Harness {
     role: "operator",
     appConsents: () => h.consents,
     record: (step) => void h.steps.push(step),
+    self: () => h.self,
+    protectedApp: (app, kind) => void h.protectedNotices.push(`${app}:${kind}`),
     askAppConsent: (app) => void h.asked.push(app),
     needsPermission: (missing) => void h.permissionNotices.push(missing),
     passwordFieldStopped: (app) => void h.passwordNotices.push(app),
@@ -249,5 +256,85 @@ describe("the Operator sees the screen and uses the mouse and the keyboard (issu
     fixture = { permissions: { screenRecording: false }, front: { app: "Notes", secureField: true } };
     expect(await driver.permissions()).toEqual({ accessibility: true, screenRecording: false });
     expect(await driver.frontApp({ signal })).toEqual({ app: "Notes", secureField: true });
+  });
+});
+
+describe("the Operator never controls Trama, the system's permission windows or a password manager (issue #597)", () => {
+  const MOVES = [
+    ["read", READ_SCREEN_TOOL, {}],
+    ["type", TYPE_ON_SCREEN_TOOL, { text: "ciao" }],
+    ["key", PRESS_KEY_TOOL, { key: "return" }],
+  ] as const;
+  const FRONT_NAMES = ["Trama", "trama", "Electron", "Trama Helper (Renderer)", "System Settings", "Impostazioni di Sistema", "SecurityAgent", "1Password 7", "Bitwarden"];
+
+  it.each(FRONT_NAMES)("refuses every move when %s is in front: no request, no move, one row of Activity", async (app) => {
+    for (const [, name, args] of MOVES) {
+      const h = harness({ consents: [] });
+      h.state.front = { app, secureField: false };
+      const result = parse(await use(h, name, args));
+      expect(result.error.code).toBe("protected_app");
+      expect(h.asked).toEqual([]);
+      expect(h.moves).toEqual([]);
+      expect(h.protectedNotices).toHaveLength(1);
+      expect(h.steps).toHaveLength(1);
+      expect(h.steps[0]).toMatchObject({ kind: "screen", outcome: "refused" });
+      expect(h.steps[0]!.detail).toMatch(/^protected:/);
+    }
+  });
+
+  it("refuses a click when the window under the point is Trama, even when another app is in front", async () => {
+    const h = harness({ consents: [] });
+    h.state.front = { app: "Finder", secureField: false };
+    h.state.appAt = "Trama";
+    expect(parse(await use(h, CLICK_SCREEN_TOOL, { x: 50, y: 60 })).error.code).toBe("protected_app");
+    expect(h.moves).toEqual([]);
+    expect(h.asked).toEqual([]);
+  });
+
+  it("still clicks on another app while Trama is in front: the click lands under the point", async () => {
+    const h = harness();
+    h.state.front = { app: "Trama", secureField: false };
+    h.state.appAt = "Finder";
+    expect(parse(await use(h, CLICK_SCREEN_TOOL, { x: 50, y: 60 }))).toMatchObject({ done: true });
+    expect(h.moves).toEqual(["click 50,60"]);
+  });
+
+  it("ignores a consent saved before for Trama: nothing moves", async () => {
+    for (const app of ["Trama", "Electron", "System Settings"]) {
+      const h = harness({ consents: [app] });
+      h.state.front = { app, secureField: false };
+      h.state.appAt = app;
+      expect(parse(await use(h, READ_SCREEN_TOOL)).error.code).toBe("protected_app");
+      expect(parse(await use(h, CLICK_SCREEN_TOOL, { x: 1, y: 1 })).error.code).toBe("protected_app");
+      expect(h.moves).toEqual([]);
+    }
+  });
+
+  it("recognizes Trama by the process under another name, and by its bundle id", async () => {
+    const byPid = harness({ consents: ["Qualcosa"] });
+    byPid.state.front = { app: "Qualcosa", secureField: false, pid: 4243 };
+    expect(parse(await use(byPid, TYPE_ON_SCREEN_TOOL, { text: "x" })).error.code).toBe("protected_app");
+    const byBundle = harness({ consents: ["Qualcosa"] });
+    byBundle.state.front = { app: "Qualcosa", secureField: false, bundleId: "dev.trama.app" };
+    expect(parse(await use(byBundle, READ_SCREEN_TOOL)).error.code).toBe("protected_app");
+    const underPoint = harness({ consents: ["Qualcosa"] });
+    underPoint.state.appAt = { name: "Qualcosa", pid: 4242 };
+    expect(parse(await use(underPoint, CLICK_SCREEN_TOOL, { x: 3, y: 3 })).error.code).toBe("protected_app");
+    expect(byPid.moves.concat(byBundle.moves, underPoint.moves)).toEqual([]);
+  });
+
+  it("tells the Operator that nothing waits for the person", async () => {
+    const h = harness({ consents: [] });
+    h.state.front = { app: "Trama", secureField: false };
+    const message = parse(await use(h, READ_SCREEN_TOOL)).error.message as string;
+    expect(message).toMatch(/nothing waits for the person/);
+    expect(message).toMatch(/no consent was asked/);
+  });
+
+  it("an unrelated app keeps its consent flow", async () => {
+    const h = harness({ consents: [] });
+    h.state.front = { app: "Chrome", secureField: false };
+    expect(parse(await use(h, READ_SCREEN_TOOL)).error.code).toBe("waiting_for_person");
+    expect(h.asked).toEqual(["Chrome"]);
   });
 });

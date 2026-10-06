@@ -51,4 +51,15 @@ describe("the consents per app (issue #412)", () => {
     expect(result.list.map((item) => item.app)).toEqual(["Notes"]);
     expect(withdrawAppConsent(result.list, "Finder").consent).toBeNull();
   });
+
+  it("never records or honors a consent for Trama, a permission window or a password manager (issue #597)", () => {
+    for (const app of ["Trama", "Electron", "System Settings", "Impostazioni di Sistema", "1Password", "Bitwarden"]) {
+      const result = addAppConsent([], { app, by: "composer", phrase: "x", id: "a", at: AT });
+      expect(result).toMatchObject({ consent: null, problem: "protected", list: [] });
+      // A consent saved before is ignored, and still can be withdrawn.
+      const saved: AppConsent[] = [{ id: "old", app, grantedAt: AT, by: "button", phrase: null }];
+      expect(appConsentFor(saved, app)).toBeNull();
+      expect(withdrawAppConsent(saved, app)).toMatchObject({ list: [], consent: { id: "old" } });
+    }
+  });
 });

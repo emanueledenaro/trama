@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
+import { descendantPids } from "@shared/protectedApps";
 import type { AccessStep, AppConsent, TeamRole } from "@shared/domain";
 import { appConsentFor } from "@shared/appConsents";
+import { type AppIdentity, protectedAppKind, type ProtectedKind, type SelfIdentity } from "@shared/protectedApps";
 import type { ComputerAccessGate } from "./computerAccess";
 import { findSensitiveData, redactSensitiveData } from "./redaction";
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
@@ -34,6 +36,9 @@ export type MissingPermission = "accessibility" | "screen" | "both";
 export interface FrontApp {
   app: string;
   secureField: boolean;
+  /** When the driver can tell them: the app's bundle id and the process behind its window. */
+  bundleId?: string | null;
+  pid?: number | null;
 }
 
 /** What the screen shows in the app in front: its window and the text the person would read there. */
@@ -50,8 +55,8 @@ export interface ScreenDriver {
   /** Which of the two macOS permissions are granted. It only asks: it never opens the settings and never prompts. */
   permissions(): Promise<ScreenPermissions>;
   frontApp(options: { signal: AbortSignal }): Promise<FrontApp | null>;
-  /** The app whose window is at a point of the screen. */
-  appAt(x: number, y: number, options: { signal: AbortSignal }): Promise<string | null>;
+  /** The app whose window is at a point of the screen: its name, or more when the driver knows more. */
+  appAt(x: number, y: number, options: { signal: AbortSignal }): Promise<string | AppIdentity | null>;
   read(options: { signal: AbortSignal }): Promise<ScreenReading | null>;
   click(x: number, y: number, options: { signal: AbortSignal; double: boolean }): Promise<ScreenAction>;
   type(text: string, options: { signal: AbortSignal }): Promise<ScreenAction>;
@@ -103,6 +108,23 @@ export function fixtureScreenDriver(fixture: () => ScreenFixture): ScreenDriver 
   };
 }
 
+/** Trama's own process: this one and every process that descends from it (helpers, renderers). Without `ps`, only this one. */
+export async function ownProcessIdentity(): Promise<SelfIdentity> {
+  const rows = await new Promise<{ pid: number; ppid: number }[]>((done) => {
+    execFile("/bin/ps", ["-axo", "pid=,ppid="], { timeout: 5_000, maxBuffer: 4_000_000 }, (error, stdout) => {
+      if (error) return done([]);
+      done(
+        stdout
+          .split("\n")
+          .map((line) => line.trim().split(/\s+/).map(Number))
+          .filter((pair) => pair.length === 2 && pair.every(Number.isInteger))
+          .map(([pid, ppid]) => ({ pid: pid as number, ppid: ppid as number })),
+      );
+    });
+  });
+  return { pids: descendantPids(process.pid, rows) };
+}
+
 // MARK: The Mac
 
 const KEY_CODES: Record<string, number> = { return: 36, enter: 76, tab: 48, space: 49, delete: 51, escape: 53, left: 123, right: 124, down: 125, up: 126 };
@@ -112,7 +134,11 @@ const JXA_FRONT = `function run() {
   const process = events.processes.whose({ frontmost: true })[0];
   let subrole = "";
   try { subrole = String(process.attributes.byName("AXFocusedUIElement").value().attributes.byName("AXSubrole").value()); } catch (error) {}
-  return JSON.stringify({ app: process.name(), secureField: subrole === "AXSecureTextField" });
+  let bundleId = null;
+  try { bundleId = process.bundleIdentifier(); } catch (error) {}
+  let pid = null;
+  try { pid = process.unixId(); } catch (error) {}
+  return JSON.stringify({ app: process.name(), secureField: subrole === "AXSecureTextField", bundleId, pid });
 }`;
 
 const JXA_READ = `function run() {
@@ -143,7 +169,7 @@ function run(argv) {
   const windows = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)));
   for (const window of windows) {
     const bounds = window.kCGWindowBounds;
-    if (window.kCGWindowLayer === 0 && x >= bounds.X && x <= bounds.X + bounds.Width && y >= bounds.Y && y <= bounds.Y + bounds.Height) return window.kCGWindowOwnerName;
+    if (window.kCGWindowLayer === 0 && x >= bounds.X && x <= bounds.X + bounds.Width && y >= bounds.Y && y <= bounds.Y + bounds.Height) return JSON.stringify({ name: window.kCGWindowOwnerName, pid: window.kCGWindowOwnerPID });
   }
   return "";
 }`;
@@ -216,7 +242,8 @@ export function macScreenDriver(probe: () => ScreenPermissions): ScreenDriver {
     },
     async appAt(x, y, { signal }) {
       try {
-        return (await osascript("JavaScript", JXA_APP_AT, [String(x), String(y)], signal)) || null;
+        const answer = await osascript("JavaScript", JXA_APP_AT, [String(x), String(y)], signal);
+        return answer ? (JSON.parse(answer) as AppIdentity) : null;
       } catch {
         return null;
       }
@@ -290,6 +317,10 @@ const CONSENT_MESSAGE =
   "The person has not given their consent for this app in this project. Trama asked them in Aspetta te. Do not retry or look for another way; go on with what does not need it and say in the report that it waits for the consent.";
 
 /** @model-text */
+const PROTECTED_MESSAGE = (kind: ProtectedKind): string =>
+  `Trama never lets the Operator control ${kind === "trama" ? "its own window" : kind === "system" ? "System Settings or a window that grants a permission" : "a password manager"}. Nothing was done, no consent was asked and nothing waits for the person in Aspetta te: do not ask for one, do not tell the person to approve anything, do not retry or look for another way. Say in the report that this app is off limits and that the work needs another way.`;
+
+/** @model-text */
 const PASSWORD_MESSAGE = "The field with the focus is a password field. No agent types a password: the person does. Nothing was typed. Stop here and say in the report that you stopped for that.";
 
 /** @model-text */
@@ -307,6 +338,10 @@ export interface ScreenSession {
   /** The consents per app of this project, read at every call: the person may give or withdraw one at any time. */
   appConsents: () => readonly AppConsent[];
   record: (step: Omit<AccessStep, "id" | "at">) => void;
+  /** Trama's own process, read at every call: its pid and the pids of its helpers. */
+  self?: () => Promise<SelfIdentity> | SelfIdentity;
+  /** The app is one the Operator never controls: nothing was asked and nothing waits for the person. */
+  protectedApp: (app: string, kind: ProtectedKind) => void;
   /** The app has no consent: a request waits for the person in "Aspetta te" and the chat says so. */
   askAppConsent: (app: string) => void;
   /** A macOS permission is missing: the chat says which one and where the person grants it. */
@@ -378,10 +413,21 @@ export async function runScreenTool(name: string, args: Record<string, unknown>,
   try {
     // The app the move lands on: under the point for a click, the one in front for the rest.
     const front = await session.screen.frontApp({ signal: abort.signal });
-    const app = name === CLICK_SCREEN_TOOL ? await session.screen.appAt(x as number, y as number, { signal: abort.signal }) : (front?.app ?? null);
+    const frontIdentity: AppIdentity | null = front ? { name: front.app, bundleId: front.bundleId, pid: front.pid } : null;
+    const under = name === CLICK_SCREEN_TOOL ? await session.screen.appAt(x as number, y as number, { signal: abort.signal }) : frontIdentity;
+    const underIdentity: AppIdentity | null = typeof under === "string" ? { name: under } : under;
+    const app = underIdentity?.name || null;
     if (stopped()) return refuse(action, "stopped", "Stopped: computer access was turned off.", "failed", null);
     if (!app) return refuse(action, "failed", "No app could be found on the screen. Say so in the report.", "failed", "start");
     const shown = `${app}: ${action}`;
+    // Trama's own window, the windows that grant permissions and the password managers are never used, with or without a consent.
+    const self = await session.self?.();
+    // The app the move lands on is under the point for a click and in front for the rest: that one is checked.
+    const kind = protectedAppKind(underIdentity as AppIdentity, self);
+    if (kind) {
+      session.protectedApp(app, kind);
+      return refuse(shown, "protected_app", PROTECTED_MESSAGE(kind), "refused", `protected:${kind}`);
+    }
     if (!appConsentFor(session.appConsents(), app)) {
       session.askAppConsent(app);
       return refuse(shown, "waiting_for_person", CONSENT_MESSAGE, "waiting", "consent");
