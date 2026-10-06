@@ -110,3 +110,43 @@ export function irreversibleReason(command: string): IrreversibleReason | null {
   }
   return null;
 }
+
+const READERS = new Set([
+  "cat", "head", "tail", "less", "more", "ls", "find", "rg", "grep", "egrep", "fgrep", "sed", "awk", "wc", "sort", "uniq", "cut", "tr", "pwd", "echo", "printf",
+  "stat", "file", "du", "df", "which", "whoami", "date", "diff", "cmp", "tree", "basename", "dirname", "realpath", "readlink", "jq", "nl", "column", "xxd",
+  "hexdump", "strings", "test", "[", "true", "uname", "id", "hostname", "ps", "lsof",
+]);
+const READING_GIT = new Set(["status", "log", "diff", "show", "ls-files", "rev-parse", "blame", "grep", "describe", "shortlog", "ls-tree", "cat-file"]);
+const FIND_WRITERS = /^-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)$/;
+const SED_WRITES = /(^|[;\n{}])\s*[0-9,$]*\s*[we]\b|\/[a-zA-Z0-9]*[we][a-zA-Z0-9]*\s*(;|$)/;
+
+function wordsRead(words: string[]): boolean {
+  const name = program(words[0]!);
+  const args = words.slice(1);
+  // A redirection writes a file, whatever the program is; a quoted `>` over-counts, which only adds a line to the chat.
+  if (words.some((word) => word.includes(">"))) return false;
+  if (name === "git") return READING_GIT.has(args.find((a) => !a.startsWith("-")) ?? "") && !args.some((a) => /^--(output|ext-diff|open-files-in-pager)(=|$)/.test(a));
+  if (!READERS.has(name)) return false;
+  if (name === "find") return !args.some((a) => FIND_WRITERS.test(a));
+  if (name === "sed") return !args.some((a) => /^-[a-z]*i/.test(a) || a === "--in-place" || a.startsWith("--in-place=") || SED_WRITES.test(a));
+  if (name === "awk") return !args.some((a) => /system\s*\(|\|&|getline/.test(a));
+  if (name === "sort") return !args.some((a) => /^(-[a-z]*o|--output)/.test(a));
+  return true;
+}
+
+/**
+ * True when every simple command of the line only reads: it cannot change a file, a setting or the outside world.
+ * Such a line stays in Activity and does not get a line in the chat (issue #583). Unknown programs count as changing
+ * something, so the chat keeps showing them.
+ */
+export function onlyReads(command: string): boolean {
+  const lines = commandWords(command);
+  if (!lines.length) return false;
+  return lines.every((words) => {
+    if (/^(sh|bash|zsh|dash|ksh)$/.test(program(words[0]!))) {
+      const flag = words.findIndex((a, i) => i > 0 && /^-[a-z]*c[a-z]*$/.test(a));
+      return flag >= 0 && !!words[flag + 1] && onlyReads(words[flag + 1]!);
+    }
+    return wordsRead(words);
+  });
+}

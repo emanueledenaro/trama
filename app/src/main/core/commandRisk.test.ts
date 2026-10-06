@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { irreversibleReason } from "./commandRisk";
+import { irreversibleReason, onlyReads } from "./commandRisk";
 
 describe("which commands cannot be undone (issue #409)", () => {
   it("asks for the yes on deletions", () => {
@@ -64,5 +64,19 @@ describe("payment hosts are compared by name", () => {
 
   it("keeps a real subdomain of a payment host", () => {
     expect(irreversibleReason("curl https://eu.api.stripe.com/v1")).toBe("payment");
+  });
+});
+
+describe("commands that only read (issue #583)", () => {
+  it("counts reads, searches and pipes of reads", () => {
+    for (const line of ["cat README.md", "ls -la docs", "find . -name '*.md'", "rg foo src | head -20", "sed -n '1,20p' a.ts", "git log --oneline", "git diff HEAD", "bash -c 'cat a && ls'", "grep -rn x . | wc -l"]) {
+      expect(onlyReads(line), line).toBe(true);
+    }
+  });
+
+  it("keeps a line that changes something, runs an unknown program or writes through a redirection", () => {
+    for (const line of ["mkdir build", "sed -i s/a/b/ f", "find . -delete", "find . -exec rm {} ;", "cat a > b", "echo x >> log", "git commit -m x", "git push", "npm install", "sort -o out in", "cat a && touch b", "ls $(mkdir x)", "awk 'BEGIN{system(\"ls\")}'", "tee f", ""]) {
+      expect(onlyReads(line), line).toBe(false);
+    }
   });
 });

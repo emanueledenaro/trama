@@ -42,7 +42,7 @@ function fakeShell(): FakeShell {
   return shell;
 }
 
-async function open(shell: CommandRunner): Promise<TramaController> {
+async function open(shell: CommandRunner, askLimitMs?: number): Promise<TramaController> {
   controller = new TramaController(await mkdtemp(join(tmpdir(), "trama-data-")), {
     publish: () => undefined,
     openExternal: async () => undefined,
@@ -54,6 +54,7 @@ async function open(shell: CommandRunner): Promise<TramaController> {
     codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     commandRunner: shell,
     secretLock: new SecretLock({ home: "/Users/ada", realpath: () => null }),
+    ...(askLimitMs ? { askLimitMs } : {}),
   });
   const repo = await mkdtemp(join(tmpdir(), "trama-operator-"));
   await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
@@ -112,7 +113,8 @@ describe("the Operator runs commands on the Mac with secrets locked (issue #409)
       ["Operatore", "command", "rm -rf build", "waiting"],
       ["Operatore", "command", "printenv", "refused"],
     ]);
-    expect(chatLines(c)).toContain("Operatore ha lanciato un comando: ls docs");
+    // A command that only reads stays in Activity (issue #583).
+    expect(chatLines(c).some((title) => title.includes("ls docs"))).toBe(false);
     expect(chatLines(c).some((title) => title.startsWith("Operatore aspetta il tuo sì"))).toBe(true);
 
     // The locked commands wait in "Aspetta te" with the secrets ban and the place; the deletion waits for a yes.
@@ -184,5 +186,41 @@ describe("the Operator runs commands on the Mac with secrets locked (issue #409)
     expect(change.stopped.every((action) => action.agent === "Operatore")).toBe(true);
     expect(change.stopped.length).toBeGreaterThan(0);
     expect(c.computerAccess.actions()).toEqual([]);
+  }, 90_000);
+
+  it("keeps the reads in Activity, tells in the chat what changes something, and does not count a search without results as an error (issue #583)", async () => {
+    const shell = fakeShell();
+    shell.answers['rg "gta" docs'] = { exitCode: 1, output: "", timedOut: false };
+    shell.answers["cat missing.txt"] = { exitCode: 1, output: "", timedOut: false };
+    const c = await open(shell);
+    await c.send('[operatore:cat README.md ;; find . -name "*.md" ;; rg "gta" docs ;; cat missing.txt ;; mkdir build ;; sed -i s/a/b/ NOTE.md]', null, null, null);
+    await until(() => replies(c).some((r) => r.startsWith("Operatore: ")));
+    expect(shell.ran).toEqual(["cat README.md", 'find . -name "*.md"', 'rg "gta" docs', "cat missing.txt", "mkdir build", "sed -i s/a/b/ NOTE.md"]);
+    const lines = chatLines(c);
+    expect(lines).toEqual(["Operatore ha lanciato un comando: mkdir build", "Operatore ha lanciato un comando: sed -i s/a/b/ NOTE.md"]);
+    const steps = c.snapshot.project!.document.accessSteps!;
+    expect(steps.map((s) => [s.target, s.outcome, s.detail])).toEqual([
+      ["cat README.md", "done", null],
+      ['find . -name "*.md"', "done", null],
+      ['rg "gta" docs', "done", "nothing"],
+      ["cat missing.txt", "failed", "exit:1"],
+      ["mkdir build", "done", null],
+      ["sed -i s/a/b/ NOTE.md", "done", null],
+    ]);
+  }, 90_000);
+
+  it("hands back what the Operator did, with the reason, and stops its command when its time limit runs out (issue #583)", async () => {
+    const shell = fakeShell();
+    shell.hang = true;
+    const c = await open(shell, 600);
+    await c.send("[operatore:sleep 100]", null, null, null);
+    await until(() => replies(c).some((r) => r.startsWith("Operatore: ")));
+    const result = answer(c, 0) as ReturnType<typeof answer> & { stoppedBy?: string; note?: string };
+    expect(result).toMatchObject({ kind: "data", source: "operator", stoppedBy: "timeLimit" });
+    expect(result.error).toBeUndefined();
+    expect(result.note).toContain("time limit");
+    // The command in progress ended with the session: no action is left running and the switch did not move.
+    expect(c.computerAccess.actions()).toEqual([]);
+    expect(c.snapshot.project!.document.accessChanges ?? []).toEqual([]);
   }, 90_000);
 });

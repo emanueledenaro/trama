@@ -96,7 +96,7 @@ describe("Codex runtime and the provider's own tools (issue #228)", () => {
     const started = (await readFile(log, "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { method: string; params: { config?: Record<string, unknown> } });
     const config = started.find((entry) => entry.method === "thread/start")!.params.config!;
     expect(config).toMatchObject({ web_search: "disabled", features: expect.objectContaining({ apps: false, plugins: false }) });
-    expect(config["mcp_servers.trama"]).toMatchObject({ url: server.url });
+    expect(config["mcp_servers.trama"]).toMatchObject({ url: server.url, tool_timeout_sec: 120 });
     // The profile hides the home folder: git in the shell reads no global file there (issue #391).
     expect(config["shell_environment_policy.set"]).toMatchObject({ GIT_CONFIG_GLOBAL: "/dev/null" });
     expect(config["shell_environment_policy.set"]).not.toHaveProperty("TMPDIR");
@@ -113,5 +113,22 @@ describe("Codex runtime and the provider's own tools (issue #228)", () => {
     const developerStart = writing.filter((entry) => entry.method === "thread/start").at(-1)!.params as { developerInstructions?: string };
     expect(developerStart.developerInstructions).toContain("--- project-doc ---");
     expect((developer["permissions.trama_write"] as { filesystem: Record<string, string> }).filesystem[environment.TMPDIR!]).toBe("write");
+  });
+});
+
+describe("Codex runtime and the limit of a tool call (issue #583)", () => {
+  it("gives the tool server the limit it asks for, and the short one by default", async () => {
+    const log = join(project, "limit.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const limits: unknown[] = [];
+    for (const toolTimeoutSec of [undefined, 600]) {
+      const runtime = new CodexRuntime({ executable: fake, toolServer: { name: "trama", url: "http://127.0.0.1:1/mcp", token: "t", tools: [], ...(toolTimeoutSec ? { toolTimeoutSec } : {}) } });
+      await runtime.openThread({ model: "gpt-5.5", cwd: project, developerInstructions: "test" });
+      runtime.stop();
+      const started = (await readFile(log, "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { method: string; params: { config?: Record<string, { tool_timeout_sec?: number }> } });
+      limits.push(started.filter((entry) => entry.method === "thread/start").at(-1)!.params.config!["mcp_servers.trama"]!.tool_timeout_sec);
+    }
+    delete process.env.FAKE_CODEX_LOG;
+    expect(limits).toEqual([120, 600]);
   });
 });
