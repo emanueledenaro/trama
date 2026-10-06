@@ -265,7 +265,8 @@ async function tramaReach(command: string, cwd: string, session: OperatorSession
   if (byWords) return byWords;
   if (!places) return null;
   const folders = protectedTramaPaths(places, session.projectRoot).map((path) => ({ label: shownPath(path), path }));
-  return session.lock.reaches(command, { cwd }, folders) ? "data" : null;
+  // The project itself stays open, also when Trama keeps it in its data folder (the demo project).
+  return session.lock.reaches(command, { cwd }, folders, session.projectRoot) ? "data" : null;
 }
 
 /** Runs the Operator's tool through the gate: the switch and the role, the lock, the person's yes, then the command. */

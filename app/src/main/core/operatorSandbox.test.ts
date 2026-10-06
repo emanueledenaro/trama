@@ -25,6 +25,14 @@ describe("the sandbox of the Operator's commands on macOS (issue #597)", () => {
     expect(params.filter((p) => p === "-D")).toHaveLength(params.length / 2);
   });
 
+  it("keeps the project open when it sits inside Trama's data, after the rules that hide the rest", () => {
+    const { profile, params } = sandboxProfile({ hidden: ["/Users/ada/Trama"], readOnly: [], open: ["/Users/ada/Trama/Examples/Demo"] }, () => null);
+    expect(params).toContain("OPEN_1=/Users/ada/Trama/Examples/Demo");
+    expect(profile.trim().split("\n").at(-1)).toBe('(allow file-read* file-write* process-exec (subpath (param "OPEN_1")))');
+    // A project that holds Trama's data opens nothing of it.
+    expect(sandboxProfile({ hidden: ["/Users/ada/Trama"], readOnly: [], open: ["/Users/ada"] }, () => null).profile).not.toContain("(allow file-read*");
+  });
+
   it("names both the written and the real path of a folder", () => {
     const { params } = sandboxProfile({ hidden: ["/var/trama"], readOnly: [] }, (path) => (path === "/var/trama" ? "/private/var/trama" : null));
     expect(params).toEqual(["-D", "HIDDEN_0=/var/trama", "-D", "HIDDEN_1=/private/var/trama"]);

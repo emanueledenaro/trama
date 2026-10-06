@@ -5988,7 +5988,7 @@ export class TramaController {
       { data: [this.storage.root, ...(this.legacyRoot ? [this.legacyRoot] : []), ...(this.host.tramaPlaces?.data ?? [])], install: this.host.tramaPlaces?.install ?? [] },
       project.rootPath,
     );
-    return { hidden: [...trama, ...system.hidden], readOnly: system.readOnly };
+    return { hidden: [...trama, ...system.hidden], readOnly: system.readOnly, open: [project.rootPath] };
   }
 
   /** The Operator's session as the tool and the person's yes both run commands: the trace, the lock, the lines in the chat. */

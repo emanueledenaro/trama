@@ -122,8 +122,8 @@ const ASKS_A_YES = /\b(approva\w*|conferm\w*|accett\w*|consenso|autorizz\w*|dai 
  */
 export function sendsToEmptyWaitingList(reply: string, waiting: number): boolean {
   if (waiting > 0) return false;
-  const text = reply.replace(/\s+/g, " ");
-  return TO_WAITING_LIST.test(text) && ASKS_A_YES.test(text);
+  // The place and the yes in the same sentence: a sentence that only names Aspetta te asks nothing.
+  return reply.split(/(?<=[.!?])\s+|\n+/).some((sentence) => TO_WAITING_LIST.test(sentence) && ASKS_A_YES.test(sentence));
 }
 
 /** Button labels as the Coordinator reads them. */

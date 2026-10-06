@@ -82,6 +82,16 @@ describe("the Operator's commands never reach Trama by their words (issue #597)"
     expect(reaches(`cat ~/Library/Application\\ Support/Code/User/settings.json`)).toBeNull();
   });
 
+  it("leaves open a project Trama keeps in its own data (the demo project), and nothing else there", () => {
+    const demo = `${DATA}/Examples/Demo`;
+    expect(lock.reaches("ls docs", { cwd: demo }, folders, demo)).toBeNull();
+    expect(lock.reaches(`grep -r ordine .`, { cwd: demo }, folders, demo)).toBeNull();
+    expect(lock.reaches(`cat ../../settings.json`, { cwd: demo }, folders, demo)).not.toBeNull();
+    expect(lock.reaches(`grep -r x "${DATA}"`, { cwd: demo }, folders, demo)).not.toBeNull();
+    // A project that holds Trama's data (the home folder) opens nothing of it.
+    expect(lock.reaches(`cat "${DATA}/settings.json"`, { cwd: HOME }, folders, HOME)).not.toBeNull();
+  });
+
   it("leaves Trama's code to the person who works on Trama with Trama", () => {
     const own = protectedTramaPaths({ data: [DATA], install: [`${HOME}/dev/trama/app`, INSTALL] }, `${HOME}/dev/trama`);
     expect(own).toEqual([DATA, INSTALL]);

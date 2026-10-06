@@ -26,6 +26,8 @@ export interface SandboxPlan {
   hidden: readonly string[];
   /** Folders a command never writes. */
   readOnly: readonly string[];
+  /** The project, open even when it sits inside a hidden folder (Trama keeps the demo project in its data). */
+  open?: readonly string[];
 }
 
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
@@ -77,6 +79,10 @@ export function sandboxProfile(plan: SandboxPlan, realpath: (path: string) => st
   if (hidden.length) rules.push(`(deny file-read* file-write* process-exec ${hidden.join(" ")})`);
   const readOnly = add("READONLY", plan.readOnly);
   if (readOnly.length) rules.push(`(deny file-write* ${readOnly.join(" ")})`);
+  // The last rule that matches decides: the project stays open inside a hidden folder, and nothing else does.
+  // Only a project inside a hidden folder: one that holds a hidden folder (the home folder) would open it again.
+  const open = add("OPEN", (plan.open ?? []).filter((path) => plan.hidden.some((folder) => normalize(path).startsWith(normalize(folder) + "/"))));
+  if (open.length && hidden.length) rules.push(`(allow file-read* file-write* process-exec ${open.join(" ")})`);
   return { profile: rules.join("\n"), params };
 }
 

@@ -152,11 +152,21 @@ export class SecretLock {
    * The first of `folders` a command reaches, read the way the secrets are: `~` and `$HOME` opened, `cd` followed,
    * globs and links resolved, a folder above one read in depth. Used for Trama's own folders (issue #597).
    */
-  reaches(command: string, context: Pick<LockContext, "cwd">, folders: readonly { label: string; path: string }[]): string | null {
+  reaches(command: string, context: Pick<LockContext, "cwd">, folders: readonly { label: string; path: string }[], except: string | null = null): string | null {
     if (!folders.length) return null;
     const places = folders.map(({ label, path }) => ({ label, paths: [...new Set([normalize(path), this.realpath(path) ?? normalize(path)])] }));
-    return this.checkLine(command, context.cwd, 0, places, false)?.place ?? null;
+    // Only a project inside a place stays open: a project that holds a place (the home folder) opens nothing of it.
+    const open = except ? [...new Set([normalize(except), this.realpath(except) ?? normalize(except)])] : [];
+    this.except = open.filter((path) => places.some((place) => place.paths.some((locked) => path.startsWith(locked + sep))));
+    try {
+      return this.checkLine(command, context.cwd, 0, places, false)?.place ?? null;
+    } finally {
+      this.except = [];
+    }
   }
+
+  /** A folder inside a place that stays open: the project, when Trama keeps it in its own data (the demo project). */
+  private except: string[] = [];
 
   private checkLine(line: string, startCwd: string, depth: number, places: readonly Place[], secrets: boolean): Locked | null {
     if (depth > 4) return null;
@@ -255,6 +265,7 @@ export class SecretLock {
   }
 
   private checkPlaces(path: string, deep: boolean, places: readonly Place[]): Locked | null {
+    if (this.except.some((open) => path === open || path.startsWith(open + sep))) return null;
     for (const place of places) {
       for (const locked of place.paths) {
         if (path === locked || path.startsWith(locked + sep)) return { kind: "place", place: place.label };
