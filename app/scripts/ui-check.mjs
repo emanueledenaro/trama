@@ -1927,7 +1927,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[rinomina:Giulia:Bea]")
 await page.keyboard.press("Enter");
 await page.getByText("Ho rinominato Giulia in Bea.").first().waitFor({ timeout: 20_000 });
 await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
-await page.getByText("ha lavorato per").first().waitFor();
+await page.getByText("ha lavorato").first().waitFor();
 await shot("04e5-team-renamed-in-chat");
 
 // W16: each agent is a bot in its own color; no two agents of the team share a body, the chat shows them too, the
@@ -4665,7 +4665,7 @@ if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the la
 await slowCard.getByRole("button", { name: "Ferma" }).click();
 await slowCard.getByText("Fermato", { exact: true }).waitFor({ timeout: 20_000 });
 // The turn's activities are one line in the chat; its steps open in Activity (issue #271).
-const stoppedTurn = page.getByRole("button", { name: /ha lavorato per/ }).first();
+const stoppedTurn = page.getByRole("button", { name: /ha lavorato/ }).first();
 await stoppedTurn.click();
 await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
 await stoppedTurn.scrollIntoViewIfNeeded();
@@ -4994,7 +4994,7 @@ await page.getByRole("button", { name: `Chiudi: Candidato ${blockedId}` }).click
 await fixedCandidate.scrollIntoViewIfNeeded();
 await shot("24a1-candidate-after-the-fix");
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
-await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
+await page.getByRole("button", { name: /ha lavorato/ }).last().click();
 await page.getByText("Candidato nuovo sulla copia di lavoro").last().waitFor({ timeout: 10_000 });
 // The step names the candidate, not its id (issue #392).
 const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
@@ -6400,7 +6400,7 @@ await page.evaluate(() => window.trama.invoke("settings:update", { theme: "syste
 await closePanels();
 const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
 // The chat's lines only: the side bar sits before the chat (issue #330) and its Activity lists the same names.
-for (const group of await page.getByRole("main").getByRole("button", { name: /ha lavorato per/ }).all()) {
+for (const group of await page.getByRole("main").getByRole("button", { name: /ha lavorato/ }).all()) {
   if (await blockedRead.count()) break;
   await group.click();
 }
