@@ -70,6 +70,7 @@ import type {
   SpecialistAssignment,
   ContextRollover,
   AccessStep,
+  ResearchReport,
   CommandApproval,
   SiteConsentRequest,
   AppConsentRequest,
@@ -587,6 +588,8 @@ const ASK_TRAMA_INVOKED =
 const CLEARED_CONVERSATION = "La persona ha aperto una sessione nuova senza la conversazione precedente, al confine di fase di un percorso di Ask Trama.";
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
+/** The reports of Research kept in the document; the oldest go first (issue #589). */
+const MAXIMUM_RESEARCH_REPORTS = 20;
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
 /**
  * How long a Coordinator turn waits for long work, a candidate's gate or a check, before the work goes on in the
@@ -5897,6 +5900,7 @@ export class TramaController {
         hostToolsOnly: true,
       });
       const report = await client.runTurn({ threadId: opening.threadId, prompt: researchPrompt(question), cwd: project.rootPath, model: choice.model, onEvent: limit.listen });
+      this.keepResearchReport(project, { agent, question, pages: calls.pages, report: report.trim() });
       return toolSuccess(researchEnvelope(agent, report.trim(), calls.pages));
     } catch (error) {
       // The time limit ended the session: what Research has goes back with the reason, never an error.
@@ -5909,6 +5913,15 @@ export class TramaController {
       client?.stop();
       toolServer.stop();
     }
+  }
+
+  /** Keeps what Research reported, so the context summary can hand the verified facts to a new session (issue #589). */
+  private keepResearchReport(project: ActiveProjectState, report: Omit<ResearchReport, "id" | "at">): void {
+    if (!report.report) return;
+    const reports = (project.document.researchReports ??= []);
+    reports.push({ id: randomUUID(), at: new Date().toISOString(), ...report });
+    if (reports.length > MAXIMUM_RESEARCH_REPORTS) reports.splice(0, reports.length - MAXIMUM_RESEARCH_REPORTS);
+    this.changedIn(project);
   }
 
   /**

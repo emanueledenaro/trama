@@ -22,6 +22,9 @@ const VERBATIM_EXCHANGES = 8;
 const DIGEST_MESSAGES = 12;
 const VERBATIM_LIMIT = 4_000;
 const DIGEST_LIMIT = 160;
+/** The reports of Research the summary carries, newest last, each cut so the brief stays short (issue #589). */
+const RESEARCH_REPORTS = 8;
+const RESEARCH_REPORT_LIMIT = 1_500;
 
 export interface ContextSummaryInput {
   document: ProjectDocument;
@@ -94,6 +97,17 @@ function routeAndGrillingSection(document: ProjectDocument, requestId: string | 
 }
 
 // @model-text: part of the Coordinator's brief.
+function verifiedFactsSection(document: ProjectDocument): string[] {
+  const reports = (document.researchReports ?? []).slice(-RESEARCH_REPORTS);
+  if (!reports.length) return [];
+  return [
+    "## Fatti verificati con Ricerca",
+    "Sono già verificati: prima di dire che una cosa non è verificata, controlla qui e rileggi con read_history.",
+    ...reports.map((r) => `- ${r.at.slice(0, 10)}, "${oneLine(r.question, 200)}": ${oneLine(r.report, RESEARCH_REPORT_LIMIT)}${r.pages.length ? ` Fonti: ${r.pages.join(", ")}.` : ""}`),
+  ];
+}
+
+// @model-text: part of the Coordinator's brief.
 function exchangeLine(event: ConversationEvent, limit: number | null): string | null {
   const content = event.content;
   const text = content.type === "personMessage" ? content.text : content.type === "coordinatorText" ? content.text : null;
@@ -134,6 +148,7 @@ export function contextSummary({ document, waiting, headSHA }: ContextSummaryInp
     waitingSection(waiting),
     requestId ? [workStateText(workState(document, requestId))] : [],
     routeAndGrillingSection(document, requestId),
+    verifiedFactsSection(document),
     exchangesSection(document),
   ];
   return sections
@@ -184,12 +199,16 @@ export function personSummary({ document, waiting, candidateStates = {}, languag
         objective: oneLine(assignment.objective, 300),
       });
     });
+  const facts = (document.researchReports ?? []).slice(-RESEARCH_REPORTS).map((r) =>
+    t("context.summary.verifiedFact", { question: oneLine(r.question, 200), sources: r.pages.join(", ") || t("context.summary.noSources") }),
+  );
   return [
     section(t("context.summary.goals"), goals, t("context.summary.noGoals")),
     section(t("context.summary.pact"), decisions, t("context.summary.noDecisions")),
     [`## ${t("context.summary.mandate")}`, ...mandateLines].join("\n"),
     section(t("context.summary.assignments"), assignments, t("context.summary.noAssignments")),
     section(t("context.summary.candidates"), candidates, t("context.summary.noCandidates")),
+    ...(facts.length ? [section(t("context.summary.verifiedFacts"), facts, "")] : []),
     section(t("context.summary.waiting"), waiting.map((w) => t("context.summary.waitingItem", { label: w.label, title: w.title })), t("context.summary.noWaiting")),
   ].join("\n\n");
 }
