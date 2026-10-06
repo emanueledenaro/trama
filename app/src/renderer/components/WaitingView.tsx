@@ -31,6 +31,8 @@ import { CandidateCard, DecisionCard, FixedBanCard, MandateCard, PlanCard, Prese
 import { GoalCard } from "@/components/inspector/GoalsView";
 import { MemoryProposalCard } from "@/components/inspector/MemoryView";
 import { ReferenceText } from "@/components/chat/ReferenceText";
+import { CommandApprovalCard } from "@/components/chat/CommandApproval";
+import { AppConsentCard, SiteConsentCard } from "@/components/chat/SiteConsent";
 import { RequestedActionCard } from "@/components/chat/RequestedAction";
 
 /**
@@ -75,6 +77,9 @@ const KIND_ICONS: Record<WaitingKind, React.ComponentType<{ className?: string; 
   memory: IconBrain,
   fixedBan: IconBan,
   confirmation: IconLockOpen,
+  commandApproval: IconLockOpen,
+  siteConsent: IconLockOpen,
+  appConsent: IconLockOpen,
 };
 
 /**
@@ -261,6 +266,12 @@ function WaitingCard({ item }: { item: WaitingItem }) {
       return <FixedBanCard refusalId={item.targetId} />;
     case "confirmation":
       return <RequestedActionCard actionId={item.targetId} />;
+    case "commandApproval":
+      return <CommandApprovalCard approvalId={item.targetId} />;
+    case "siteConsent":
+      return <SiteConsentCard requestId={item.targetId} />;
+    case "appConsent":
+      return <AppConsentCard requestId={item.targetId} />;
     case "memory":
       // Its margins come from the open item's frame (index.css, .waiting-open-card).
       return proposal ? <MemoryProposalCard proposal={proposal} /> : null;

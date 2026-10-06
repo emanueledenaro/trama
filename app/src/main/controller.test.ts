@@ -1,3 +1,4 @@
+import { contentFingerprint } from "./core/candidates";
 import { workState } from "./core/workPhase";
 import { openGrillingQuestions } from "@shared/grilling";
 import { chmod, cp, mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
@@ -13,6 +14,7 @@ import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
 import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
+import { git } from "./core/process";
 import { recordChoice } from "./core/fullDelegation";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
@@ -183,6 +185,17 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     expect(project.document.createdFromIdea).toBe("Un'app per salvare ricette di famiglia");
     expect(project.snapshot.headSHA).toMatch(/^[0-9a-f]{40}$/);
+    // Without the method chosen, the project starts with the README alone.
+    expect((await git(["log", "--format=%s"], project.rootPath)).trim()).toBe("chore: start the project");
+
+    // With it, the agents' method is committed after the start, so every worktree has AGENTS.md and the skills.
+    await controller!.updateSettings({ autoPrepareMethod: true });
+    await controller!.createProject(parent, "Orto", "Un diario dell'orto");
+    await until(() => controller!.snapshot.project?.name === "Orto" && controller!.snapshot.project.phase.kind === "ready");
+    const orto = controller!.snapshot.project!.rootPath;
+    expect((await git(["log", "--format=%s"], orto)).trim().split("\n")).toEqual(["chore: prepare the agents' method", "chore: start the project"]);
+    expect((await git(["ls-files", "AGENTS.md", ".agents/skills/AIHERO-VERSION.md"], orto)).trim().split("\n")).toHaveLength(2);
+    expect((await git(["status", "--porcelain"], orto)).trim()).toBe("");
   });
 
   it("opens the Coordinator of a project opened while the previous one's was still starting (F01)", async () => {
@@ -907,6 +920,88 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("turns computer access off from the switch, stops what runs, keeps it off after a restart and tells Activity (issue #413)", async () => {
+    const { data } = await setup();
+    const stop = vi.fn();
+    controller!.computerAccess.begin({ id: "run", power: "command", agent: "Operatore", label: "npm install", stop });
+    expect(controller!.snapshot.settings.computerAccess).not.toBe(false);
+    await controller!.setComputerAccess(false);
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(controller!.computerAccess.decide("network")).toEqual({ allowed: false, reason: "switchedOff" });
+    // The work on the project's code is not a power of the switch: the Coordinator still answers.
+    expect(controller!.snapshot.project!.document.accessChanges).toMatchObject([{ on: false, by: "person", stopped: [{ agent: "Operatore", label: "npm install" }] }]);
+    // The settings in a window or a file cannot turn it back on: only the switch and the Pause change it.
+    await controller!.updateSettings({ computerAccess: true });
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    await controller!.stop();
+
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    expect(controller.snapshot.settings.computerAccess).toBe(false);
+    await controller.setComputerAccess(true);
+    expect(controller.snapshot.settings.computerAccess).toBe(true);
+    expect(controller.computerAccess.decide("browser")).toEqual({ allowed: true });
+  }, 60_000);
+
+  it("keeps one list of blocked sites for the whole app, cleaned, saved across a restart and read by the gate (issue #414)", async () => {
+    const { data } = await setup();
+    expect(controller!.snapshot.settings.blockedSites).toEqual([]);
+    await controller!.updateSettings({ blockedSites: ["https://www.bank.example/login", "shop.example", "bank.example", "not a site"] });
+    expect(controller!.snapshot.settings.blockedSites).toEqual(["bank.example", "shop.example"]);
+    expect(controller!.computerAccess.decide("network", "research", "https://login.bank.example/")).toEqual({ allowed: false, reason: "blockedSite" });
+    // The list is the app's, not a project's: it lives in the settings, so every project reads the same one.
+    await controller!.stop();
+
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    expect(controller.snapshot.settings.blockedSites).toEqual(["bank.example", "shop.example"]);
+    expect(controller.computerAccess.isBlocked("https://shop.example/admin")).toBe(true);
+    await controller.updateSettings({ blockedSites: ["shop.example"] });
+    expect(controller.computerAccess.isBlocked("https://bank.example/")).toBe(false);
+  }, 60_000);
+
+  it("turns computer access off with the Pause and gives it back as it was at the resume (issue #413)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const stop = vi.fn();
+    controller!.computerAccess.begin({ id: "run", power: "screen", agent: "Operatore", label: "screenshot", stop });
+    await controller!.pauseContinuousWork(true);
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    expect(stop).toHaveBeenCalledTimes(1);
+    await controller!.pauseContinuousWork(false);
+    expect(controller!.snapshot.settings.computerAccess).toBe(true);
+    expect(controller!.snapshot.settings.computerAccessPausedBy).toEqual([]);
+    expect(document.accessChanges!.map((c) => [c.on, c.by])).toEqual([[false, "pause"], [true, "pause"]]);
+    const rows = activityLog(t, document.requests, document.events, [], [], [], [], [], [], document.accessChanges);
+    expect(rows.filter((r) => r.kind === "access").map((r) => r.label).sort()).toEqual(["Accesso al computer acceso", "Accesso al computer spento"]);
+
+    // Off by the person's choice before the Pause: the resume leaves it off.
+    await controller!.setComputerAccess(false);
+    await controller!.pauseContinuousWork(true);
+    await controller!.pauseContinuousWork(false);
+    expect(controller!.snapshot.settings.computerAccess).toBe(false);
+    expect(document.accessChanges).toHaveLength(3);
+  }, 60_000);
+
   it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
@@ -1542,7 +1637,10 @@ describe("TramaController", () => {
     // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
     await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
     expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
-    expect(activityLog(t, project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
+    // One line in the chat says it, without a question (person's choice, 2 October 2026).
+    const seamsLine = project.document.events.find((e) => e.content.type === "card" && e.content.kind === "contextNotice" && e.content.title.startsWith("Il Coordinatore ha confermato i punti di prova"));
+    expect(seamsLine?.content.type === "card" && seamsLine.content.detail).toContain("correggi il passo in Attività");
+    expect(activityLog(t, project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Punti di prova confermati dal Coordinatore");
 
     // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
     const plan = project.document.plans[0]!;
@@ -1553,7 +1651,7 @@ describe("TramaController", () => {
     expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: false, note: "Testa anche il rimborso" });
     await until(() => plan.status === "ready");
     expect(plan.spec!.sections!.furtherNotes).toContain("Testa anche il rimborso");
-    const corrected = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Seam confermati dal Coordinatore: corretto");
+    const corrected = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Punti di prova confermati dal Coordinatore: corretto");
     expect(corrected?.origin).toBe("person");
   });
 
@@ -1589,7 +1687,7 @@ describe("TramaController", () => {
     expect(plan.spec!.issue).toBeNull();
     await expect(controller!.publishPlanSpec(plan.id)).rejects.toThrow(/GitHub non è collegato/);
     const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
-    expect(activities).toContain(`Seam del piano ${plan.id} confermati`);
+    expect(activities).toContain(`Punti di prova del piano ${plan.id} confermati`);
 
     // M05: the written spec goes to the slicer, which runs to-tickets; the breakdown waits for the person.
     await until(() => plan.slicing?.status === "proposed");
@@ -1701,6 +1799,152 @@ describe("TramaController", () => {
       }
       process.env.PATH = path;
       delete process.env.FAKE_GH_LOG;
+    }
+  });
+
+  it("closes the issue of a slice once its pull request is merged, with the evidence of the merged candidate and green checks (issue #550)", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
+    const ticketFile = join(bin, "ticket.json");
+    const { symlink, readFile } = await import("node:fs/promises");
+    const { execFileSync } = await import("node:child_process");
+    const ticket = async () => JSON.parse(await readFile(ticketFile, "utf8")) as { state: string; body: string; comments: string[]; closeCalls?: number };
+    const change = async (update: Record<string, unknown>) => writeFile(ticketFile, JSON.stringify({ ...(await ticket()), ...update }));
+    const now = new Date().toISOString();
+    await writeFile(
+      ticketFile,
+      JSON.stringify({
+        number: 42,
+        title: "Ticket di prova",
+        state: "open",
+        body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano",
+        comments: [],
+        pulls: { 12: { state: "MERGED", mergedAt: now, checks: "PENDING" } },
+      }),
+    );
+    await symlink(join(root, "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    process.env.FAKE_GH_TICKET = ticketFile;
+    try {
+      const { project: projectPath } = await setup();
+      const run = (...args: string[]) => execFileSync("git", args, { cwd: projectPath, encoding: "utf8" }).trim();
+      run("init", "-q", "-b", "main");
+      run("-c", "user.name=t", "-c", "user.email=t@t", "add", ".");
+      run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init");
+      run("remote", "add", "origin", "https://github.com/trama-fixture/ordini-finti.git");
+      const sha = run("rev-parse", "HEAD");
+      await controller!.refreshGitHub();
+      const internal = controller as unknown as { state: { project: { document: ProjectDocument; github: { issues: { state: string }[] } } }; closeSliceIssue(project: unknown, candidate: unknown): Promise<void> };
+      const project = internal.state.project;
+      const document = project.document;
+      await controller!.grantMandate({
+        requestId: null,
+        objectives: ["Ordini"],
+        priorities: [],
+        scopeModuleIds: ["Sources/Orders"],
+        authorizedActions: ["openPullRequest", "integrateCandidate"],
+        limits: [],
+      });
+      document.plans.push({
+        id: "P-550",
+        summary: "Annullo degli ordini",
+        slicing: { status: "approved", tickets: [{ id: "S1", title: "Annullo", whatToBuild: "x", acceptanceCriteria: [], blockedBy: [], issue: { number: 42, url: "u", at: now } }] },
+      } as never);
+      const proposal = proposeTeam(document, {
+        requestId: null,
+        summary: null,
+        members: [{ name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIds: ["Sources/Orders"] }],
+      });
+      confirmTeam(document, proposal.id, null, null);
+      const assignment = assign(
+        document,
+        { specialist: "Ada", kind: "agreedTicket", objective: "Annullo", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: [], instructions: "Scrivi" },
+        document.mandate!.version,
+        null,
+      );
+      assignment.slice = { planId: "P-550", sliceId: "S1" };
+      const candidate = {
+        id: "C-0000000A",
+        assignmentId: assignment.id,
+        specialistId: assignment.specialistId,
+        snapshotId: "s",
+        baseSHA: sha,
+        diff: "",
+        changedFiles: [],
+        touchedModules: [],
+        requiredDecisionIds: [],
+        decisionVersions: {},
+        requiredChecks: [],
+        unresolvedChoices: [],
+        externalEffects: [],
+        declaredAt: now,
+        updatedAt: now,
+        evidence: {},
+        technicalReview: null,
+        clearance: null,
+        humanApproval: null,
+        pullRequest: { url: "https://github.com/trama-fixture/ordini-finti/pull/12", number: 12, branch: "trama/annullo", at: now, mergedAt: now, headSHA: sha },
+      };
+      document.candidates.push(candidate as never);
+      const lastActivity = () => {
+        const content = document.events.findLast((e) => e.content.type === "activity" && e.content.title.startsWith("Issue #42"))?.content;
+        return content?.type === "activity" ? content : null;
+      };
+
+      // Checks not green yet: nothing is posted, the round reads them again.
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+
+      // A candidate with a choice still open leaves the issue alone, even with green checks.
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "SUCCESS" } } });
+      (candidate.unresolvedChoices as string[]).push("Quale arrotondamento?");
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+
+      // A candidate whose module the mandate no longer covers leaves the issue alone too.
+      candidate.unresolvedChoices.length = 0;
+      (candidate as { touchedModules: string[] }).touchedModules = ["Sources/Other"];
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      (candidate as { touchedModules: string[] }).touchedModules = ["Sources/Orders"];
+
+      // Green checks on the merged pull request close it, without asking the person: both criteria ticked, one report.
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 1, body: "## Criteri\n\n- [x] Il riepilogo mostra l'annullo\n- [x] Le verifiche passano" });
+      expect((await ticket()).comments).toHaveLength(1);
+      expect((await ticket()).comments[0]).toContain("La pull request #12 è unita");
+      expect(lastActivity()!.title).toBe("Issue #42 «Ticket di prova»: chiusa con le prove");
+
+      // A repository without CI (no checks on GitHub): Trama's checks of the merged candidate are the proof (issue #550).
+      await change({ state: "open", closeCalls: 0, comments: [], body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano", pulls: { 12: { state: "MERGED", mergedAt: now, checks: "", headSHA: sha } } });
+      project.github.issues.forEach((i) => (i.state = "open"));
+      candidate.clearance = null as never;
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      // A green light whose fingerprint no longer matches the candidate is not proof.
+      candidate.clearance = { actor: "Coordinator", fingerprint: "stale", at: now } as never;
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      candidate.clearance = { actor: "Coordinator", fingerprint: contentFingerprint(document, candidate as never), at: now } as never;
+      candidate.technicalReview = { id: "R-1", reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "Ok", at: now } as never;
+      // Checks that are red still keep it open, even with Trama's proof.
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "FAILURE" } } });
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      // Merged at a head other than the one Trama published and verified: the proof is about other work.
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "", headSHA: "0".repeat(40) } } });
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "open", comments: [] });
+      await change({ pulls: { 12: { state: "MERGED", mergedAt: now, checks: "", headSHA: sha } } });
+      await internal.closeSliceIssue(project, candidate);
+      expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 1, body: "## Criteri\n\n- [x] Il riepilogo mostra l'annullo\n- [x] Le verifiche passano" });
+      expect((await ticket()).comments[0]).toContain("Il repository non ha CI: contano le verifiche di Trama sul candidato");
+    } finally {
+      await controller?.stop();
+      controller = null;
+      await new Promise((r) => setTimeout(r, 1_000));
+      process.env.PATH = path;
+      delete process.env.FAKE_GH_TICKET;
     }
   });
 

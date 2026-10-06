@@ -69,7 +69,13 @@ import type {
   Specialist,
   SpecialistAssignment,
   ContextRollover,
+  AccessStep,
+  CommandApproval,
+  SiteConsentRequest,
+  AppConsentRequest,
 } from "@shared/domain";
+import { addAppConsent, appConsentFor, appConsentStatements, withdrawAppConsent } from "@shared/appConsents";
+import { addConsent, consentFor, consentStatements, shownSite, withdrawConsent } from "@shared/siteConsents";
 import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
 import { contextSummary, personSummary } from "./core/contextSummary";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
@@ -186,7 +192,9 @@ import {
   PROJECT_EVENTS,
   projectMove,
   ticketMove,
+  recordHeldMoves,
   recordRound,
+  type HeldMove,
   ROUND_INTERVAL_MS,
   setPaused,
   stalledMove,
@@ -262,7 +270,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, formatDateTime, ITALIAN, isLanguage, type Language, languageFromSystem, type MessageKey, translate, type Translate, translator } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, formatDateTime, ITALIAN, LANGUAGE_NAMES_IN_ENGLISH, isLanguage, type Language, languageFromSystem, type MessageKey, translate, type Translate, translator } from "@shared/i18n";
 import { personLanguage, setPersonLanguage, t } from "./core/personLanguage";
 import { curatorRunLine, curatorRunView } from "@shared/curatorReport";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
@@ -304,6 +312,8 @@ import {
   type TurnEnd,
   recordTurnContext,
 } from "./core/team";
+import { ALIGN_WITH_BASE_TOOL, alignmentNote, alignmentTargetFor, alignWithBase, COORDINATOR_TOOL_RULES, DEVELOPER_TOOL_RULES, developerRulesDue } from "./core/baseAlignment";
+import { INSTALL_DEPENDENCIES_TOOL, installNodeDependencies } from "./core/dependencyInstall";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import {
   adoptRemoteBranch,
@@ -312,6 +322,7 @@ import {
   concludeMerge,
   mergeCommitMessage,
   prepareWorktree,
+  realignBase,
   removeWorktree,
   reviewWorktree,
   validateWorktree,
@@ -349,6 +360,8 @@ import {
   returnWaiting,
   type ReviewerTurn,
   reviewerTurn,
+  roundLines,
+  ROUND_RULE,
   reviewThread,
   SESSION_ROLES,
   stopAtChecks,
@@ -384,9 +397,9 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateAfterTurn, candidateReport, verifiedByTrama, contentFingerprint, findCandidate, type IntegrationHeads, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessProjectDivergence } from "./core/branchDivergence";
-import { type BranchBase, readBranchBase } from "./core/branchBase";
+import { advanceAfterMerge, type BranchBase, readBranchBase } from "./core/branchBase";
 import { assessConflict, assessWithRemoteBase, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
@@ -440,16 +453,52 @@ import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git, runProcess } from "./core/process";
 import { confirmByButton, declineAction, finishAction, runnableArgs } from "./core/personRequest";
 import { redactSensitiveData, repositoryLocator } from "./core/redaction";
-import { runnableCommand } from "@shared/fixedBans";
+import { runnableCommand, searchFoundNothing } from "@shared/fixedBans";
 import { keepsAwake } from "@shared/delegation";
+import { cleanBlockedSites } from "@shared/blockedSites";
+import { accessIsOn, followPause, personSwitch } from "@shared/computerAccess";
+import { ComputerAccessGate } from "./core/computerAccess";
+import {
+  executeCommand,
+  OPERATOR_ROLE,
+  OPERATOR_TOOL_SERVER_INSTRUCTIONS,
+  OPERATOR_TOOLS,
+  OperatorCalls,
+  operatorEnvelope,
+  operatorInstructions,
+  operatorPrompt,
+  runOperatorTool,
+  safeOutput,
+  shellCommandRunner,
+  shownCommand,
+  type CommandRunner,
+  type OperatorSession,
+} from "./core/operatorCommands";
+import { chromeDebuggingDriver, type BrowserDriver } from "./core/operatorBrowser";
+import { macScreenDriver, type MissingPermission, type ScreenDriver, type ScreenPermissions } from "./core/operatorScreen";
+import { sendApproved } from "./core/operatorSend";
+import { SecretLock } from "./core/secretLock";
+import {
+  httpWebFetcher,
+  RESEARCH_ROLE,
+  RESEARCH_TOOL_SERVER_INSTRUCTIONS,
+  RESEARCH_TOOLS,
+  ResearchCalls,
+  researchEnvelope,
+  researchInstructions,
+  researchPrompt,
+  runResearchTool,
+  type WebFetcher,
+} from "./core/webResearch";
 import { activeDelegation, markChoiceSeen, mandateForDelegation, mandateForNewModules, nextTicket, READY_LABEL, recordChoice, revokeDelegation, settleCoveredMandateRequest } from "./core/fullDelegation";
 import { AppStorage } from "./core/storage";
-import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { cloneRepository, createGitHubRepository, hasAiHero, readGitHubCliStatus, readGitHubLogin, repositoryName, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
 import { candidateSuperseded, divergenceHolds, divergenceSummary } from "@shared/conflictScope";
 import { blockedReviews, REVIEW_LOOP_LIMIT } from "@shared/reviewLoop";
+import { applyRoundScope, reviewRound, type SliceNote } from "./core/gateRound";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -606,14 +655,17 @@ type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: Stand
 
 function lateRules(skills: NativeSkill[], provider: ProviderId, language: Language): LateRules {
   const style = [messageStyle("the person", language), toolErrorsRule(language)].join("\n");
-  const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
+  const full = [style, NEXT_STEP_RULES, COORDINATOR_TOOL_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
     key: `sha256:${createHash("sha256").update(full).digest("hex")}`,
-    text: [style, NEXT_STEP_RULES, delivery.text].join("\n\n"),
+    text: [style, NEXT_STEP_RULES, COORDINATOR_TOOL_RULES, delivery.text].join("\n\n"),
     skills: delivery.skills,
   };
 }
+
+/** The developer's current rules for a thread opened before they changed, as a section of its turn (issue #555). @model-text */
+const DEVELOPER_RULES_SECTION = `## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${DEVELOPER_TOOL_RULES}`;
 
 /** The Coordinator forgets its thread: the next opening starts a new session that receives the study again. */
 function forgetCoordinatorThread(document: ProjectDocument): void {
@@ -731,6 +783,23 @@ export async function initializeRepository(root: string): Promise<void> {
   }
 }
 
+/** The commit that adds the agents' method to a project Trama created, in Conventional Commits. */
+export const METHOD_COMMIT_MESSAGE = "chore: prepare the agents' method";
+
+/**
+ * Commits everything the method setup wrote in a project Trama created. Worktrees start from a commit, so files left
+ * uncommitted never reached the agents: no AGENTS.md and no docs/agents in their copies (2 October 2026).
+ */
+export async function commitProjectMethod(root: string): Promise<void> {
+  requireValidCommitMessage(METHOD_COMMIT_MESSAGE);
+  await git(["add", "-A"], root, false);
+  try {
+    await git(["commit", "-m", METHOD_COMMIT_MESSAGE], root, false);
+  } catch {
+    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", METHOD_COMMIT_MESSAGE], root, false);
+  }
+}
+
 /** A failure message the person can act on: network problems are named as such (C11). */
 export function describeFailure(message: string): string {
   // A provider's JSON body never reaches a card: its class in plain words, the raw text stays in the logs (P10).
@@ -759,6 +828,18 @@ export interface ControllerHost {
    * delegation has open work. Absent where the host cannot.
    */
   setKeepAwake?(awake: boolean): void;
+  /** What Trama does on the network for Research (issue #408). The real one reads the web; tests give a fake. */
+  webFetcher?: WebFetcher;
+  /** What Trama does on the Mac for the Operator (issue #409). The real one runs a shell; tests give a fake. */
+  commandRunner?: CommandRunner;
+  /** What Trama does in the person's Chrome for the Operator (issue #410). The real one talks to Chrome; tests give a fake. */
+  browserDriver?: BrowserDriver;
+  /** What Trama does on the screen for the Operator (issue #412). The real one pilots macOS; tests give a fake. */
+  screenDriver?: ScreenDriver;
+  /** Which of the two macOS permissions for the screen are granted. It only asks, never prompts. Without it none is. */
+  screenPermissions?: () => ScreenPermissions;
+  /** The lock on secrets of the Operator's commands. The default reads the real home folder; tests give their own. */
+  secretLock?: SecretLock;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
   codexExecutable: string | null;
@@ -770,6 +851,9 @@ interface CoordinatorRuntime {
   toolServer: CoordinatorToolServer;
   projectId: string;
 }
+
+/** How many times Trama looks again, a minute apart, at the checks of a merged slice's pull request before it leaves them to the next round. */
+const SLICE_ISSUE_CHECK_WAITS = 60;
 
 export class TramaController {
   private state: AppState;
@@ -801,6 +885,16 @@ export class TramaController {
     /** The next step the message takes, when the person pressed its button (W04). */
     step: RequestStep | null;
   }[] = [];
+
+  private secretLock: SecretLock | null = null;
+  private chrome: BrowserDriver | null = null;
+  private screen: ScreenDriver | null = null;
+
+  /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
+  readonly computerAccess = new ComputerAccessGate(
+    () => accessIsOn(this.state.settings),
+    () => this.state.settings.blockedSites ?? [],
+  );
 
   constructor(
     storageRoot: string,
@@ -957,7 +1051,14 @@ export class TramaController {
     );
     project.backlogs = squadBacklogs(project.document, project.snapshot.modules);
     project.focus = focusView(project.document);
-    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project), new Date(), this.state.settings.continuousWork !== false);
+    project.statusLine = statusLine(
+      project.document,
+      project.runningRequestId,
+      this.coordinatorWait(project),
+      new Date(),
+      this.state.settings.continuousWork !== false,
+      project.phase.kind === "studying",
+    );
     project.waiting = waitingForYou(this.t, project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
@@ -975,6 +1076,11 @@ export class TramaController {
       sounds: settings.sounds === true,
       autoPrepareMethod: settings.autoPrepareMethod !== false,
       continuousWork: settings.continuousWork !== false,
+      computerAccess: settings.computerAccess !== false,
+      computerAccessPausedBy: Array.isArray(settings.computerAccessPausedBy)
+        ? settings.computerAccessPausedBy.filter((id): id is string => typeof id === "string")
+        : [],
+      blockedSites: cleanBlockedSites(settings.blockedSites),
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
       ...(clampSharedDevelopers(settings.sharedDevelopers) !== null ? { sharedDevelopers: clampSharedDevelopers(settings.sharedDevelopers)! } : {}),
@@ -1534,7 +1640,7 @@ export class TramaController {
     await this.openProject(path, true);
   }
 
-  async createProject(parent: string, name: string, idea: string): Promise<void> {
+  async createProject(parent: string, name: string, idea: string, github = false): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed || /[/\\]/.test(trimmed) || trimmed.startsWith(".")) throw new DomainError(t("main.controller.folderNameInvalid"));
     const root = join(parent, trimmed);
@@ -1542,7 +1648,37 @@ export class TramaController {
     await mkdir(root, { recursive: true });
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
     await initializeRepository(root);
+    // The private repository on GitHub (2 October 2026): the slices become its issues and the work its pull requests.
+    // A repository that cannot be created leaves the project open, local, and says why.
+    let repositoryProblem: string | null = null;
+    let repository: string | null = null;
+    const method = shouldAutoPrepareMethod(this.state.settings, this.state.onboarding);
+    let planned: string | null = null;
+    if (github) {
+      if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
+      if (this.state.gitHubCli.status !== "ready") repositoryProblem = t("main.controller.repositoryNeedsGh");
+      else {
+        const login = (await readGitHubLogin()) ?? this.state.gitHubCli.account;
+        planned = login ? `${login}/${repositoryName(trimmed)}` : null;
+      }
+    }
+    // The method is part of the project from its second commit, on GitHub too, so every worktree has it. It is
+    // committed before the repository is created, so the one push of `gh repo create` carries both commits.
+    if (method) {
+      await prepareSkills(root, this.host.aiHeroResourceDirectory, planned);
+      await commitProjectMethod(root);
+    }
+    if (github && !repositoryProblem) {
+      repository = await createGitHubRepository(root, trimmed).catch((error: Error) => ((repositoryProblem = error.message), null));
+      if (!repository && planned && method) {
+        // The documents name a repository that does not exist: the project stays local and coherent.
+        await git(["reset", "--hard", "--quiet", "HEAD~1"], root, false);
+        await prepareSkills(root, this.host.aiHeroResourceDirectory, null);
+        await commitProjectMethod(root);
+      }
+    }
     await this.openProject(root, false, idea.trim() || null);
+    if (repositoryProblem) throw new DomainError(t("main.controller.repositoryNotCreated", { reason: repositoryProblem }));
   }
 
   /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */
@@ -2379,6 +2515,8 @@ export class TramaController {
           proposePractice: (input) => this.proposePractice(current, input),
           readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheckInTurn(current, check, current.runningRequestId),
+          askResearch: (question) => this.askResearch(current, question),
+          askOperator: (order) => this.askOperator(current, order),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
             const assignment = findAssignment(current.document, assignmentId);
@@ -2828,6 +2966,8 @@ export class TramaController {
         },
         request.id,
       );
+      // Only a message the person typed in the composer can give or withdraw a consent (issue #410).
+      if (typed) this.applyConsentMessage(project, trimmed, request.id);
     }
     project.runningRequestId = request.id;
     // The running request now keeps the Coordinator busy in place of the starting move.
@@ -3399,9 +3539,18 @@ export class TramaController {
       for (const step of steps) {
         const summary = this.takeDelegatedStep(project, step);
         if (!summary) continue;
-        // Told in Activity and in the recap from the record, not in the chat: the single moves stay out of it (Q6).
+        // Told in Activity and in the recap from the record (Q6). The seams and the slices also get one line in the chat,
+        // without a question: the person sees what the plan became and can correct it (person's choice, 2 October 2026).
         const record = recordAutonomousStep(document, step, summary);
         taken.push(STEP_LABELS[record.move]);
+        const plan = document.plans.find((p) => p.id === record.targetId);
+        if (plan && (record.move === "confirmSeams" || record.move === "confirmSlices")) {
+          const title =
+            record.move === "confirmSlices"
+              ? t("main.controller.stepInChatSlices", { plan: plan.id, count: plan.slicing?.tickets.length ?? 0 })
+              : t("main.controller.stepInChatSeams", { plan: plan.id });
+          appendEvent(document, "trama", { type: "card", kind: "contextNotice", title, detail: `${record.summary}\n${t("main.controller.stepInChatCorrect")}`, referenceId: record.id }, record.requestId);
+        }
         // The squads follow the team, recorded as a step of their own (A10).
         if (record.move === "confirmTeam" && this.formSquads(project)) taken.push(STEP_LABELS.formSquads);
       }
@@ -3439,7 +3588,7 @@ export class TramaController {
       case "confirmSeams": {
         if (!plan?.spec || plan.status !== "seams") return null;
         this.applySeamsAnswer(project, plan, { confirmed: true, note: null, by: "coordinator" });
-        return t("main.controller.stepSeamsSummary", { plan: plan.id, seams: plan.spec.seams.map((seam) => seam.seam).join("; ") });
+        return t("main.controller.stepSeamsSummary", { plan: plan.id, seams: plan.spec.seams.map((seam) => seam.seam.trim().replace(/[.\s]+$/, "")).join("; ") });
       }
       case "confirmSlices": {
         if (!plan || plan.slicing?.status !== "proposed") return null;
@@ -3550,7 +3699,7 @@ export class TramaController {
     );
     const starting = { projectId: project.id };
     this.automaticStarting = starting;
-    void this.answerRoute(route.id, true)
+    void this.answerRoute(route.id, true, true)
       .catch((error) => this.fail(error))
       .finally(() => {
         if (this.automaticStarting === starting) this.automaticStarting = null;
@@ -3586,6 +3735,16 @@ export class TramaController {
         if (this.automaticStarting === starting) this.automaticStarting = null;
       });
     return move.label;
+  }
+
+  /**
+   * A move the round stopped starting after its attempts (issues #549, #557): Activity and the status line say it once per
+   * series, so neither the Coordinator nor the person finds the work silent. A question is tried again after QUESTION_RETRY_MS.
+   */
+  private tellHeldMoves(project: ActiveProjectState): void {
+    const held: HeldMove[] = [];
+    projectMove(project.document, "round", this.continuationGuards(project), new Date(), (h) => held.push(h));
+    if (recordHeldMoves(project.document, held).length) this.changedIn(project);
   }
 
   /** Starts the periodic round (A05): it runs while Trama is open, on the project with open work. */
@@ -3641,6 +3800,8 @@ export class TramaController {
       // The events of the work that waited for Riprendi come before the round's own retry: they are news (no work is lost).
       const waited = busy ? [] : this.deferredWork.filter((d) => d.projectId === project.id);
       if (waited.length) this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+      // A move whose attempts are used up is told even when another dialog's move starts now.
+      if (!busy) this.tellHeldMoves(project);
       const move = busy ? null : (this.startAutomaticMove(project, [...waited, { requestId: null, event: "round" }]) ?? this.startTicketMove(project));
       if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;
@@ -3798,6 +3959,42 @@ export class TramaController {
    * the work that arrive meanwhile wait: resuming runs a round at once, which weighs them before its own retry. The state
    * is saved with the project and holds after a restart.
    */
+  /**
+   * The person flips the access switch in the composer (issue #413). Off, it stops the actions that use the network,
+   * the browser, commands outside the project or the screen, and the next ones are refused; the work on the project's
+   * code goes on. The person's choice also clears what a Pause remembered.
+   */
+  async setComputerAccess(on: boolean): Promise<void> {
+    if (accessIsOn(this.state.settings) === on && (this.state.settings.computerAccessPausedBy ?? []).length === 0) return;
+    await this.applyAccess(personSwitch(on), on, "person");
+  }
+
+  /** The Pause switches the access off and the resume gives it back as it was (issue #413). */
+  private async accessFollowsPause(projectId: string, paused: boolean): Promise<void> {
+    const next = followPause(this.state.settings, projectId, paused);
+    if (!next) return;
+    const changed = accessIsOn(this.state.settings) !== next.on;
+    await this.applyAccess(next.settings, next.on, "pause", changed);
+  }
+
+  private async applyAccess(patch: Pick<AppSettings, "computerAccess" | "computerAccessPausedBy">, on: boolean, by: "person" | "pause", record = true): Promise<void> {
+    this.state.settings = { ...this.state.settings, ...patch };
+    const stopped = on ? [] : await this.computerAccess.stopAll();
+    const project = this.state.project;
+    if (record && project?.stateWritable) {
+      const at = new Date().toISOString();
+      (project.document.accessChanges ??= []).push({
+        id: randomUUID(),
+        at,
+        on,
+        by,
+        stopped: stopped.map((action) => ({ agent: action.agent, label: action.label })),
+      });
+      this.changedIn(project);
+    } else this.publish();
+    await this.saveSettings();
+  }
+
   async pauseContinuousWork(paused: boolean, options: { fromTurn?: boolean } = {}): Promise<void> {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
@@ -3823,6 +4020,7 @@ export class TramaController {
       null,
     );
     this.changedIn(project);
+    await this.accessFollowsPause(project.id, paused);
     // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
     if (!paused) this.startNextInLine();
     // From the Coordinator's own turn the round follows that turn, never inside it.
@@ -3902,17 +4100,19 @@ export class TramaController {
       case "compacted":
         this.coordinatorCompacted(project);
         return;
-      case "commandCompleted":
+      case "commandCompleted": {
+        const nothing = !event.succeeded && searchFoundNothing(event.command, event.exitCode ?? null);
         activity(
           event.command || t("main.controller.commandActivityFallback"),
-          event.succeeded ? null : t("main.controller.commandExitCode", { code: String(event.exitCode ?? "?") }),
-          event.succeeded ? "tool" : "error",
+          event.succeeded ? null : nothing ? t("main.controller.searchFoundNothing") : t("main.controller.commandExitCode", { code: String(event.exitCode ?? "?") }),
+          event.succeeded || nothing ? "tool" : "error",
         );
         if (isGitPushCommand(event.command)) {
           const push = agentPushActivity(event.command, event.succeeded);
           activity(push.title, push.detail, push.tone);
         }
         return;
+      }
       case "fileChangeCompleted":
         activity(
           t("main.controller.fileChangeTitle", { count: event.paths.length, files: String(event.paths.length) }),
@@ -4234,7 +4434,7 @@ export class TramaController {
    * Coordinator's session (PHASE-BOUNDARIES.md) and writes the start message, with the original text of the route's
    * bundled skills that have no Trama flow.
    */
-  async answerRoute(routeId: string, start: boolean): Promise<void> {
+  async answerRoute(routeId: string, start: boolean, byTrama = false): Promise<void> {
     const project = this.requireProject();
     const document = project.document;
     const route = findRoute(document, routeId);
@@ -4281,7 +4481,9 @@ export class TramaController {
     }
     this.changed();
     const routeSkills = start ? route.steps.filter((step) => step.kind === "skill").map((step) => step.skill) : [];
-    await this.send(message, null, null, null, [], null, route.goalId, false, null, null, routeSkills);
+    // Started by Trama, the route is Trama's line in the chat: its message, with the skills' names, reaches only the Coordinator.
+    const step: RequestStep | null = byTrama ? { move: "startRoute", by: "trama" } : null;
+    await this.send(message, null, null, null, [], null, route.goalId, false, step, null, routeSkills);
   }
 
   /** The provider refused `model` for this account: the picker keeps it visible but disabled until Trama restarts. */
@@ -5309,7 +5511,7 @@ export class TramaController {
             conventions,
             baseSHA: base?.baseSHA ?? null,
           });
-          recordWorkspace(document, assignmentId, workspace);
+          recordWorkspace(document, assignmentId, base?.branch ? { ...workspace, baseBranch: base.branch } : workspace);
           this.specialistActivity(project, assignmentId, preKey, t("main.controller.worktreeReadyTitle"), workspace.branch, "info");
           // The specialist can run the project's tests only with its dependencies; lent from the checkout.
           const missing = await lendNodeDependencies(workspace.worktreeRoot, project.rootPath).catch((error: Error) => error.message);
@@ -5359,7 +5561,10 @@ export class TramaController {
         resumeThreadId: reorder ? null : assignment.threadId,
         readableRoots: this.readableRoots(project),
       });
+      const freshThread = opening.threadId !== assignment.threadId || opening.replaced;
       recordThread(document, assignmentId, opening.threadId);
+      // A thread opened before the rules changed holds the old ones: it receives the current ones once, in this turn.
+      const lateRules = needsWorktree(assignment) && developerRulesDue(assignment, freshThread) ? DEVELOPER_RULES_SECTION : null;
       if (reorder) {
         this.specialistActivity(
           project,
@@ -5377,7 +5582,7 @@ export class TramaController {
       const continues =
         assignment.replaces?.find((id) => findAssignment(document, id)?.workspace?.worktreeRoot === assignment.workspace?.worktreeRoot) ?? null;
       const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions, continues));
-      const prompt = [brief, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
+      const prompt = [brief, lateRules, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
@@ -5412,20 +5617,27 @@ export class TramaController {
             case "reasoning":
               this.specialistActivity(project, assignmentId, key, t("main.controller.specialistReasoningTitle"), event.text, "info");
               return;
-            case "commandCompleted":
+            case "commandCompleted": {
+              // A search that found nothing is no error in Activity: its row says so instead.
+              const nothing = !event.succeeded && searchFoundNothing(event.command, event.exitCode ?? null);
               this.specialistActivity(
-        project,
+                project,
                 assignmentId,
                 key,
                 event.command || t("main.controller.specialistCommandTitle"),
-                event.succeeded ? null : `${t("main.controller.specialistCommandExit", { code: `${event.exitCode ?? "?"}` })}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
-                event.succeeded ? "tool" : "error",
+                event.succeeded
+                  ? null
+                  : nothing
+                    ? t("main.controller.searchFoundNothing")
+                    : `${t("main.controller.specialistCommandExit", { code: `${event.exitCode ?? "?"}` })}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
+                event.succeeded || nothing ? "tool" : "error",
               );
               if (isGitPushCommand(event.command)) {
                 const push = agentPushActivity(event.command, event.succeeded);
                 this.specialistActivity(project, assignmentId, key, push.title, push.detail, push.tone);
               }
               return;
+            }
             case "fileChangeCompleted":
               this.specialistActivity(
         project,
@@ -5585,8 +5797,10 @@ export class TramaController {
   /** The developer's tool server (W06): ask_coordinator records the question on its running work. */
   private developerToolServer(project: ActiveProjectState, assignmentId: string): CoordinatorToolServer {
     return new CoordinatorToolServer(
-      [ASK_COORDINATOR_TOOL],
+      [ASK_COORDINATOR_TOOL, INSTALL_DEPENDENCIES_TOOL, ALIGN_WITH_BASE_TOOL],
       async (name, args) => {
+        if (name === INSTALL_DEPENDENCIES_TOOL.name) return this.installDependencies(project, assignmentId);
+        if (name === ALIGN_WITH_BASE_TOOL.name) return this.alignWorktreeWithBase(project, assignmentId);
         if (name !== ASK_COORDINATOR_TOOL.name) return toolFailure("unknown_tool", `Unknown tool ${name}.`);
         try {
           const question = askCoordinator(project.document, assignmentId, {
@@ -5607,6 +5821,500 @@ export class TramaController {
       },
       DEVELOPER_TOOL_SERVER_INSTRUCTIONS,
     );
+  }
+
+  /**
+   * The Coordinator asks Research to read the web (issue #408). Research runs in its own read-only session with no
+   * provider tools: its only way out is the two tools below, which Trama runs outside the sandbox through the access
+   * gate. The report goes back marked as data. The switch off, or a Pause, ends the session and its requests at once.
+   */
+  private async askResearch(project: ActiveProjectState, question: string) {
+    const document = project.document;
+    const specialist = document.team.specialists.find((s) => s.role === RESEARCH_ROLE);
+    const runner = this.dutyRunner(document);
+    if (!specialist || !runner) return toolFailure("research_unavailable", "Research cannot run now: no provider is ready for it.");
+    const agent = specialist.name;
+    const record = (step: Omit<AccessStep, "id" | "at">) => {
+      (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), ...step });
+      if (document.accessSteps.length > 400) document.accessSteps.splice(0, document.accessSteps.length - 400);
+      this.changedIn(project);
+    };
+    const abort = new AbortController();
+    let client: AgentRuntime | null = null;
+    // The whole session is one action of the switch: turning it off interrupts the turn and every request in progress.
+    const session = this.computerAccess.begin({
+      id: randomUUID(),
+      power: "network",
+      role: RESEARCH_ROLE,
+      agent,
+      label: question.slice(0, 80),
+      // Ends the provider's process at once: waiting for a polite interrupt could hold the switch.
+      stop: () => {
+        abort.abort();
+        client?.stop();
+      },
+    });
+    if (!session) {
+      record({ agent, kind: "search", target: question.slice(0, 120), outcome: "refused", detail: null });
+      return toolFailure("access_off", "Computer access is off: the person turned it off. Tell them and go on without the web.");
+    }
+    const calls = new ResearchCalls();
+    const fetcher = this.host.webFetcher ?? httpWebFetcher(undefined, undefined, (url) => this.computerAccess.isBlocked(url));
+    const toolServer = new CoordinatorToolServer(
+      RESEARCH_TOOLS,
+      (name, args) => runResearchTool(name, args, { gate: this.computerAccess, fetcher, agent, record, signal: abort.signal, newId: randomUUID }, calls),
+      RESEARCH_TOOL_SERVER_INSTRUCTIONS,
+    );
+    const choice = runner.chosen?.(specialist) ?? { provider: runner.provider, model: runner.model };
+    try {
+      await toolServer.start();
+      client = createRuntime(choice.provider, {
+        executable: choice.provider === "codex" ? this.host.codexExecutable : null,
+        toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
+        requestTimeoutMs: 15_000,
+        language: () => this.state.language,
+      });
+      const opening = await client.openThread({
+        model: choice.model,
+        cwd: project.rootPath,
+        developerInstructions: researchInstructions(project.name, agent, specialist.competence, LANGUAGE_NAMES_IN_ENGLISH[this.state.language]),
+        sandbox: "read-only",
+        ephemeral: true,
+        hostToolsOnly: true,
+      });
+      const report = await client.runTurn({ threadId: opening.threadId, prompt: researchPrompt(question), cwd: project.rootPath, model: choice.model, onEvent: () => undefined });
+      return toolSuccess(researchEnvelope(agent, report.trim(), calls.pages));
+    } catch (error) {
+      if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: Research stopped. Tell the person and go on without the web.");
+      return toolFailure("research_failed", `Research could not finish: ${(error as Error).message}`);
+    } finally {
+      session.done();
+      client?.stop();
+      toolServer.stop();
+    }
+  }
+
+  /** The Operator's session as the tool and the person's yes both run commands: the trace, the lock, the lines in the chat. */
+  private operatorSession(project: ActiveProjectState, specialist: Specialist, signal: AbortSignal, requestId: string | null): OperatorSession {
+    const document = project.document;
+    const agent = specialist.name;
+    return {
+      gate: this.computerAccess,
+      runner: this.host.commandRunner ?? shellCommandRunner(),
+      lock: this.host.secretLock ?? (this.secretLock ??= new SecretLock()),
+      agent,
+      projectRoot: project.rootPath,
+      record: (step) => {
+        (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), ...step });
+        if (document.accessSteps.length > 400) document.accessSteps.splice(0, document.accessSteps.length - 400);
+        this.changedIn(project);
+      },
+      stopped: (command, stopper) => {
+        const place = "place" in stopper ? ` (${stopper.place})` : "";
+        this.recordFixedBan(project, { type: "fixedBanRefused", itemId: randomUUID(), ban: "ban" in stopper ? stopper.ban : "secrets", action: `${shownCommand(command)}${place}` }, { kind: "operator", specialistId: specialist.id }, requestId);
+      },
+      askApproval: (command, cwd, reason) => {
+        const approval: CommandApproval = { id: randomUUID(), agent, command: command.trim(), cwd, reason, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+        (document.commandApprovals ??= []).push(approval);
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorWaiting", { agent, command: shownCommand(command) }), detail: null, referenceId: null }, requestId);
+        this.changedIn(project);
+        return approval;
+      },
+      askSendApproval: (request, label, reason) => {
+        const approval: CommandApproval = {
+          id: randomUUID(),
+          agent,
+          command: label,
+          cwd: "",
+          reason,
+          send: { address: request.address, method: request.method, contentType: request.contentType, body: request.body },
+          askedAt: new Date().toISOString(),
+          status: "waiting",
+          endedAt: null,
+        };
+        (document.commandApprovals ??= []).push(approval);
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorSendWaiting", { agent, site: label }), detail: null, referenceId: null }, requestId);
+        this.changedIn(project);
+        return approval;
+      },
+      announceSend: (host, outcome) => this.projectNotice(project, t(outcome === "done" ? "main.controller.operatorSent" : "main.controller.operatorSendFailed", { agent, site: host }), requestId),
+      announce: (command, outcome) => {
+        appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t(outcome === "done" ? "main.controller.operatorRan" : "main.controller.operatorFailed", { agent, command }), detail: null, referenceId: null }, requestId);
+        this.changedIn(project);
+      },
+      browser: this.host.browserDriver ?? (this.chrome ??= chromeDebuggingDriver()),
+      consents: () => document.siteConsents ?? [],
+      askConsent: (host, address) => this.askSiteConsent(project, agent, host, address, requestId),
+      screen: this.host.screenDriver ?? (this.screen ??= macScreenDriver(this.host.screenPermissions ?? (() => ({ accessibility: false, screenRecording: false })))),
+      appConsents: () => document.appConsents ?? [],
+      askAppConsent: (app) => this.askAppConsent(project, agent, app, requestId),
+      needsPermission: (missing) => this.projectNotice(project, t("main.controller.screenPermissionMissing", { agent, permissions: this.screenPermissionNames(missing) }), requestId),
+      passwordFieldStopped: (app) => this.projectNotice(project, t("main.controller.screenPasswordField", { agent, app }), requestId),
+      announceSite: (host) => this.projectNotice(project, t("main.controller.operatorOpened", { agent, site: host }), requestId),
+      needsLogin: (host) => this.projectNotice(project, t("main.controller.operatorNeedsLogin", { agent, site: host }), requestId),
+      signal,
+      newId: randomUUID,
+    };
+  }
+
+  /**
+   * The Coordinator gives the Operator an order (issue #409). The Operator runs in its own session with no provider
+   * tools: its only way to the Mac is run_command, which Trama runs outside the sandbox through the access gate and
+   * the lock on secrets. The report goes back marked as data. Only the Coordinator's tool server offers this call, so
+   * an order from another agent or from a text it read has no way in. The switch off, or a Pause, ends the session
+   * and the command in progress at once.
+   */
+  private async askOperator(project: ActiveProjectState, order: string) {
+    const document = project.document;
+    const specialist = document.team.specialists.find((s) => s.role === OPERATOR_ROLE && s.status !== "removed");
+    const runner = this.dutyRunner(document);
+    if (!specialist || !runner) return toolFailure("operator_unavailable", "The Operator cannot run now: no provider is ready for it.");
+    const agent = specialist.name;
+    const abort = new AbortController();
+    let client: AgentRuntime | null = null;
+    const requestId = project.runningRequestId;
+    const base = this.operatorSession(project, specialist, abort.signal, requestId);
+    const session = this.computerAccess.begin({
+      id: randomUUID(),
+      power: "command",
+      role: OPERATOR_ROLE,
+      agent,
+      label: order.slice(0, 80),
+      stop: () => {
+        abort.abort();
+        client?.stop();
+      },
+    });
+    if (!session) {
+      base.record({ agent, kind: "command", target: order.slice(0, 120), outcome: "refused", detail: null });
+      return toolFailure("access_off", "Computer access is off: the person turned it off. Tell them and go on without commands on the Mac.");
+    }
+    const calls = new OperatorCalls();
+    const toolServer = new CoordinatorToolServer(OPERATOR_TOOLS, (name, args) => runOperatorTool(name, args, base, calls), OPERATOR_TOOL_SERVER_INSTRUCTIONS);
+    const choice = runner.chosen?.(specialist) ?? { provider: runner.provider, model: runner.model };
+    try {
+      await toolServer.start();
+      client = createRuntime(choice.provider, {
+        executable: choice.provider === "codex" ? this.host.codexExecutable : null,
+        toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
+        requestTimeoutMs: 15_000,
+        language: () => this.state.language,
+      });
+      const opening = await client.openThread({
+        model: choice.model,
+        cwd: project.rootPath,
+        developerInstructions: operatorInstructions(project.name, agent, specialist.competence, LANGUAGE_NAMES_IN_ENGLISH[this.state.language]),
+        sandbox: "read-only",
+        ephemeral: true,
+        hostToolsOnly: true,
+      });
+      const report = await client.runTurn({ threadId: opening.threadId, prompt: operatorPrompt(order), cwd: project.rootPath, model: choice.model, onEvent: () => undefined });
+      return toolSuccess(operatorEnvelope(agent, report.trim(), calls.commands));
+    } catch (error) {
+      if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: the Operator stopped. Tell the person and go on without commands on the Mac.");
+      return toolFailure("operator_failed", `The Operator could not finish: ${(error as Error).message}`);
+    } finally {
+      session.done();
+      client?.stop();
+      toolServer.stop();
+    }
+  }
+
+  /** A line of Trama's in the chat. */
+  private projectNotice(project: ActiveProjectState, title: string, requestId: string | null): void {
+    appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title, detail: null, referenceId: null }, requestId);
+    this.changedIn(project);
+  }
+
+  /** The names of the missing macOS permissions as the person finds them in System Settings. */
+  private screenPermissionNames(missing: MissingPermission): string {
+    const accessibility = t("main.controller.screenPermission.accessibility");
+    const recording = t("main.controller.screenPermission.screenRecording");
+    return missing === "both" ? `${accessibility}, ${recording}` : missing === "accessibility" ? accessibility : recording;
+  }
+
+  private recordConsentStep(project: ActiveProjectState, agent: string, host: string, outcome: AccessStep["outcome"], detail: string | null): void {
+    const document = project.document;
+    (document.accessSteps ??= []).push({ id: randomUUID(), at: new Date().toISOString(), agent, kind: "consent", target: host, outcome, detail });
+    if (document.accessSteps.length > 400) document.accessSteps.splice(0, document.accessSteps.length - 400);
+  }
+
+  /**
+   * The Operator wants a site that has no consent (issue #410): a request waits in "Aspetta te" with the button to
+   * give it. A request already waiting for the same site is the same request: it is not asked twice.
+   */
+  private askSiteConsent(project: ActiveProjectState, agent: string, host: string, address: string, requestId: string | null): void {
+    const document = project.document;
+    if (document.siteConsentRequests?.some((request) => request.status === "waiting" && request.host === host)) return;
+    const request: SiteConsentRequest = { id: randomUUID(), agent, host, address: shownSite(address), requestId, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+    (document.siteConsentRequests ??= []).push(request);
+    this.projectNotice(project, t("main.controller.siteConsentAsked", { agent, site: host }), requestId);
+  }
+
+  /**
+   * Records a consent the person gave and tells it in the chat. A blocked site is never recorded: the chat says so.
+   * Returns whether it was recorded. Only the person's button and the person's typed message reach this.
+   */
+  private grantSiteConsent(project: ActiveProjectState, host: string, by: "button" | "composer", phrase: string | null, requestId: string | null): boolean {
+    const document = project.document;
+    const result = addConsent(document.siteConsents ?? [], { host, by, phrase, id: randomUUID(), at: new Date().toISOString() }, this.state.settings.blockedSites ?? []);
+    const site = result.consent?.host ?? host;
+    if (result.problem === "blocked") {
+      this.projectNotice(project, t("main.controller.siteConsentBlocked", { site }), requestId);
+      return false;
+    }
+    if (result.problem === "duplicate") {
+      this.projectNotice(project, t("main.controller.siteConsentAlready", { site }), requestId);
+      return false;
+    }
+    if (!result.consent) {
+      this.projectNotice(project, t("main.controller.siteConsentNotRecorded", { site }), requestId);
+      return false;
+    }
+    document.siteConsents = result.list;
+    this.recordConsentStep(project, "", site, "done", null);
+    this.projectNotice(project, phrase ? t("main.controller.siteConsentFromPhrase", { site, phrase }) : t("main.controller.siteConsentFromButton", { site }), requestId);
+    return true;
+  }
+
+  /**
+   * What the person wrote in the composer says about consents (issue #410): given or withdrawn, with their sentence
+   * quoted in the chat. The caller passes only a message the person typed; a reply of the model, a page or a tool
+   * result never comes here.
+   */
+  private applyConsentMessage(project: ActiveProjectState, text: string, requestId: string | null): void {
+    for (const statement of consentStatements(text)) {
+      if (statement.action === "grant") {
+        if (!this.grantSiteConsent(project, statement.host, "composer", statement.phrase, requestId)) continue;
+        // A request for the same site that waited is answered by the same yes.
+        for (const request of project.document.siteConsentRequests ?? []) {
+          if (request.status === "waiting" && request.host === statement.host) Object.assign(request, { status: "granted", endedAt: new Date().toISOString() });
+        }
+      } else if (this.withdrawSiteConsentFor(project, statement.host, statement.phrase, requestId)) {
+        // Told in the chat by the withdrawal itself.
+      }
+    }
+    // The same sentences name an app with the word "app": the consent for it is given or withdrawn the same way (issue #412).
+    for (const statement of appConsentStatements(text)) {
+      if (statement.action === "grant") {
+        if (!this.grantAppConsent(project, statement.app, "composer", statement.phrase, requestId)) continue;
+        for (const request of project.document.appConsentRequests ?? []) {
+          if (request.status === "waiting" && request.app.toLowerCase() === statement.app.toLowerCase()) Object.assign(request, { status: "granted", endedAt: new Date().toISOString() });
+        }
+      } else {
+        this.withdrawAppConsentFor(project, statement.app, statement.phrase, requestId);
+      }
+    }
+  }
+
+  private withdrawSiteConsentFor(project: ActiveProjectState, host: string, phrase: string | null, requestId: string | null): boolean {
+    const result = withdrawConsent(project.document.siteConsents ?? [], host);
+    if (!result.consent) return false;
+    project.document.siteConsents = result.list;
+    this.recordConsentStep(project, "", host, "done", "withdrawn");
+    this.projectNotice(project, phrase ? t("main.controller.siteConsentWithdrawnFromPhrase", { site: host, phrase }) : t("main.controller.siteConsentWithdrawn", { site: host }), requestId);
+    return true;
+  }
+
+  /** The person withdraws a consent from the list (issue #410). */
+  withdrawSiteConsent(id: string): void {
+    const project = this.requireProject();
+    const consent = project.document.siteConsents?.find((item) => item.id === id);
+    if (!consent) throw new DomainError(t("main.controller.siteConsentNotFound"));
+    this.withdrawSiteConsentFor(project, consent.host, null, null);
+  }
+
+  /** The person's yes to a request of the Operator for a site (issue #410): the button of "Aspetta te". */
+  confirmSiteConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.siteConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    const given = this.grantSiteConsent(project, request.host, "button", null, request.requestId);
+    // A blocked site cannot be consented to: the request ends, and the chat has said why.
+    request.status = given || consentFor(project.document.siteConsents, request.host) ? "granted" : "declined";
+    request.endedAt = new Date().toISOString();
+    this.changedIn(project);
+  }
+
+  /** The person's no to a request of the Operator for a site: nothing is recorded (issue #410). */
+  declineSiteConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.siteConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    request.status = "declined";
+    request.endedAt = new Date().toISOString();
+    this.projectNotice(project, t("main.controller.siteConsentDeclined", { agent: request.agent, site: request.host }), request.requestId);
+  }
+
+  /**
+   * The Operator wants an app that has no consent (issue #412): a request waits in "Aspetta te" with the button to give
+   * it, as for a site. A request already waiting for the same app is the same request.
+   */
+  private askAppConsent(project: ActiveProjectState, agent: string, app: string, requestId: string | null): void {
+    const document = project.document;
+    if (document.appConsentRequests?.some((request) => request.status === "waiting" && request.app.toLowerCase() === app.toLowerCase())) return;
+    const request: AppConsentRequest = { id: randomUUID(), agent, app, requestId, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
+    (document.appConsentRequests ??= []).push(request);
+    this.projectNotice(project, t("main.controller.appConsentAsked", { agent, app }), requestId);
+  }
+
+  /** Records a consent for an app the person gave and tells it in the chat. Returns whether it was recorded. */
+  private grantAppConsent(project: ActiveProjectState, app: string, by: "button" | "composer", phrase: string | null, requestId: string | null): boolean {
+    const result = addAppConsent(project.document.appConsents ?? [], { app, by, phrase, id: randomUUID(), at: new Date().toISOString() });
+    const name = result.consent?.app ?? app;
+    if (result.problem === "duplicate") {
+      this.projectNotice(project, t("main.controller.appConsentAlready", { app: name }), requestId);
+      return false;
+    }
+    if (!result.consent) {
+      this.projectNotice(project, t("main.controller.appConsentNotRecorded", { app: name }), requestId);
+      return false;
+    }
+    project.document.appConsents = result.list;
+    this.recordConsentStep(project, "", name, "done", null);
+    this.projectNotice(project, phrase ? t("main.controller.appConsentFromPhrase", { app: name, phrase }) : t("main.controller.appConsentFromButton", { app: name }), requestId);
+    return true;
+  }
+
+  private withdrawAppConsentFor(project: ActiveProjectState, app: string, phrase: string | null, requestId: string | null): boolean {
+    const result = withdrawAppConsent(project.document.appConsents ?? [], app);
+    if (!result.consent) return false;
+    project.document.appConsents = result.list;
+    this.recordConsentStep(project, "", result.consent.app, "done", "withdrawn");
+    this.projectNotice(project, phrase ? t("main.controller.appConsentWithdrawnFromPhrase", { app: result.consent.app, phrase }) : t("main.controller.appConsentWithdrawn", { app: result.consent.app }), requestId);
+    return true;
+  }
+
+  /** The person withdraws a consent for an app from the list (issue #412). */
+  withdrawAppConsent(id: string): void {
+    const project = this.requireProject();
+    const consent = project.document.appConsents?.find((item) => item.id === id);
+    if (!consent) throw new DomainError(t("main.controller.siteConsentNotFound"));
+    this.withdrawAppConsentFor(project, consent.app, null, null);
+  }
+
+  /** The person's yes to a request of the Operator for an app (issue #412): the button of "Aspetta te". */
+  confirmAppConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.appConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    const given = this.grantAppConsent(project, request.app, "button", null, request.requestId);
+    request.status = given || appConsentFor(project.document.appConsents, request.app) ? "granted" : "declined";
+    request.endedAt = new Date().toISOString();
+    this.changedIn(project);
+  }
+
+  /** The person's no to a request of the Operator for an app: nothing is recorded (issue #412). */
+  declineAppConsentRequest(id: string): void {
+    const project = this.requireProject();
+    const request = project.document.appConsentRequests?.find((item) => item.id === id);
+    if (!request || request.status !== "waiting") throw new DomainError(t("main.controller.siteConsentRequestNotFound"));
+    request.status = "declined";
+    request.endedAt = new Date().toISOString();
+    this.projectNotice(project, t("main.controller.appConsentDeclined", { agent: request.agent, app: request.app }), request.requestId);
+  }
+
+  /** The person said yes to a command that cannot be undone (issue #409): Trama runs it itself, with every check again. */
+  async confirmCommandApproval(id: string): Promise<void> {
+    const project = this.requireProject();
+    const approval = project.document.commandApprovals?.find((a) => a.id === id);
+    if (!approval || approval.status !== "waiting") throw new DomainError(t("main.controller.commandApprovalNotFound"));
+    const specialist = project.document.team.specialists.find((s) => s.role === OPERATOR_ROLE && s.status !== "removed");
+    if (!specialist) throw new DomainError(t("main.controller.commandApprovalNotFound"));
+    const session = this.operatorSession(project, specialist, new AbortController().signal, null);
+    if (approval.send) {
+      // A send of data: the yes is for this send only, and the switch, the blocked sites, the filter and the consent are asked again.
+      approval.status = (await sendApproved({ ...approval.send }, { ...session, role: OPERATOR_ROLE })) ? "done" : "failed";
+      approval.endedAt = new Date().toISOString();
+      approval.send = undefined;
+      this.changedIn(project);
+      return;
+    }
+    // The lock and the fixed bans are asked again: nothing the person approved bypasses them.
+    const stopper = session.lock.check(approval.command, { cwd: approval.cwd });
+    approval.status = "failed";
+    approval.endedAt = new Date().toISOString();
+    if (stopper) {
+      session.stopped(approval.command, "ban" in stopper ? { ban: stopper.ban } : { place: stopper.locked.place });
+      this.changedIn(project);
+      return;
+    }
+    const done = await executeCommand(approval.command, approval.cwd, 120_000, session);
+    approval.status = done.result && done.result.exitCode === 0 && !done.result.timedOut ? "done" : "failed";
+    approval.endedAt = new Date().toISOString();
+    if (done.result) {
+      const { text } = await safeOutput(done.result.output);
+      if (text.trim()) appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorOutput", { agent: approval.agent }), detail: text.slice(0, 2_000), referenceId: null }, null);
+    }
+    this.changedIn(project);
+  }
+
+  /** The person said no to a command that cannot be undone: it never runs (issue #409). */
+  declineCommandApproval(id: string): void {
+    const project = this.requireProject();
+    const approval = project.document.commandApprovals?.find((a) => a.id === id);
+    if (!approval || approval.status !== "waiting") throw new DomainError(t("main.controller.commandApprovalNotFound"));
+    approval.status = "declined";
+    approval.endedAt = new Date().toISOString();
+    appendEvent(project.document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorDeclined", { agent: approval.agent, command: shownCommand(approval.command) }), detail: null, referenceId: null }, null);
+    this.changedIn(project);
+  }
+
+  /**
+   * Installs the npm dependencies of the developer's worktree outside the sandbox (2 October 2026): a project created
+   * from nothing has none to lend, so its work could never build or run its tests. Told in Activity.
+   */
+  private async installDependencies(project: ActiveProjectState, assignmentId: string) {
+    const assignment = findAssignment(project.document, assignmentId);
+    const worktree = assignment?.workspace?.worktreeRoot;
+    if (!worktree) return toolFailure("invalid_arguments", "This assignment has no worktree yet.");
+    const turns = assignment.turns.length;
+    const outcome = await installNodeDependencies(worktree);
+    this.specialistActivity(
+      project,
+      assignmentId,
+      `${turns}`,
+      t(outcome.ok ? "main.controller.dependenciesInstalledTitle" : "main.controller.dependenciesFailedTitle"),
+      outcome.ok ? t("main.controller.dependenciesInstalledDetail", { count: String(outcome.packages) }) : outcome.reason,
+      outcome.ok ? "info" : "error",
+    );
+    return outcome.ok
+      ? toolSuccess({ status: "installed", packages: outcome.packages, lockfileChanged: outcome.lockfileChanged })
+      : toolFailure("install_failed", outcome.reason);
+  }
+
+  /**
+   * Brings the base branch into the developer's worktree outside the sandbox (issue #547): fetch, then a merge left
+   * without a commit, with conflicts in the files. Uncommitted work is saved first. Told in Activity.
+   */
+  private async alignWorktreeWithBase(project: ActiveProjectState, assignmentId: string) {
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) return toolFailure("invalid_arguments", "This assignment has no worktree yet.");
+    const turns = assignment.turns.length;
+    await validateWorktree(assignment.workspace, this.worktreesRoot);
+    const base = await this.readBranchBase(project, true);
+    const outcome = await alignWithBase(assignment.workspace, base);
+    // Already aligned, as after a merge concluded before the base followed its merges: the base catches up now.
+    if (outcome.ok && outcome.state === "upToDate") await realignBase(assignment.workspace, alignmentTargetFor(assignment.workspace, base)?.ref ?? null);
+    const detail = !outcome.ok
+      ? t(`main.controller.baseAlignFailed.${outcome.code}`, { detail: outcome.detail })
+      : [
+          t(`main.controller.baseAligned.${outcome.state}`, { files: outcome.conflicts.join(", ") }),
+          ...(outcome.savedWork ? [t("main.controller.baseAligned.savedWork")] : []),
+          ...(outcome.fetchError ? [t("main.controller.baseAligned.fetchError", { error: outcome.fetchError })] : []),
+        ].join(" ");
+    this.specialistActivity(
+      project,
+      assignmentId,
+      `${turns}`,
+      outcome.ok ? t("main.controller.baseAlignedTitle", { target: outcome.target }) : t("main.controller.baseAlignFailedTitle"),
+      detail,
+      outcome.ok ? "info" : "error",
+    );
+    this.changedIn(project);
+    return outcome.ok
+      ? toolSuccess({ status: outcome.state, target: outcome.target, conflicts: outcome.conflicts, savedWork: outcome.savedWork, note: alignmentNote(outcome) })
+      : toolFailure(outcome.code, outcome.reason);
   }
 
   /**
@@ -6084,6 +6792,9 @@ export class TramaController {
     const redacted = await redactSensitiveData(written, repositoryLocator(assignment.workspace.worktreeRoot));
     requireValidCommitMessage(redacted, conventions);
     const done = await concludeMerge(assignment.workspace, redacted, secretFindings);
+    // The copy now holds what main brought: later comparisons start from the merge-base with it, not from the old base.
+    const base = await this.readBranchBase(project, false);
+    await realignBase(assignment.workspace, alignmentTargetFor(assignment.workspace, base)?.ref ?? null);
     appendEvent(
       project.document,
       "trama",
@@ -6605,6 +7316,9 @@ export class TramaController {
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
     const gate = openGate(document, candidate);
+    // From the second round the reviewers read what changed since the candidate already reviewed (issue #567).
+    const round = reviewRound(document, candidate);
+    gate.reviewedAgainst = round?.previous.id ?? null;
     this.changedIn(project);
     const run = { projectId: project.id, clients: new Set<AgentRuntime>() };
     this.gateRuns.set(gate.id, run);
@@ -6646,6 +7360,7 @@ export class TramaController {
           spec,
           decisions: document.decisions,
           decided: overruledFor(document, assignment.id),
+          round,
           language: this.state.language,
         };
         const skill = await this.nativeSkill("code-review");
@@ -6667,6 +7382,8 @@ export class TramaController {
         // stop it (ADR 0023).
         applyPactRule(document, gate);
         applyOverruled(document, gate);
+        // A new finding on code nobody changed, or on another slice's files, does not stop this slice (issue #567).
+        this.noteForOtherSlices(project, gate, applyRoundScope(document, gate, candidate, round));
         closeGate(gate);
       }
     } catch (error) {
@@ -6728,6 +7445,7 @@ export class TramaController {
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     clients.add(client);
     try {
+      const round = reviewRound(document, candidate);
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
       const standard = await checkStandard(candidate, assignment.workspace!.worktreeRoot, document.cleanCode);
       const opening = await client.openThread({
@@ -6745,7 +7463,8 @@ export class TramaController {
         pactLines(document.decisions),
         reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
         decidedLines(overruledFor(document, assignment.id).filter((d) => d.role === "cleanCode")),
-        `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
+        round ? roundLines(round) : `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
+        round ? ROUND_RULE : "",
         "Rispondi con verdict approved oppure changesRequested, un riassunto breve e i findings (un elenco vuoto se non ne hai).",
       ]
         .filter(Boolean)
@@ -6829,6 +7548,29 @@ export class TramaController {
       run?.clients.delete(client);
       client.stop();
       this.changedIn(project);
+    }
+  }
+
+  /** A finding about another slice's files does not block this one: it lands in that slice's work as a note (issue #567). */
+  private noteForOtherSlices(project: ActiveProjectState, gate: CandidateGate, notes: SliceNote[]): void {
+    const document = project.document;
+    for (const note of notes) {
+      const assignment = findAssignment(document, note.assignmentId);
+      if (!assignment) continue;
+      const reviewer = document.team.specialists.find((s) => s.role === note.role && s.status !== "removed")?.name ?? roleProfile(this.t, note.role).name;
+      appendEvent(
+        document,
+        "specialist",
+        {
+          type: "activity",
+          title: t("main.controller.sliceNoteTitle", { reviewer, candidate: gate.candidateId }),
+          detail: `- ${note.finding.title}${note.finding.file ? ` (${note.finding.file})` : ""}${note.finding.detail !== note.finding.title ? `: ${note.finding.detail}` : ""}`,
+          tone: "tool",
+        },
+        null,
+        new Date(),
+        { assignmentId: assignment.id, workKey: `${assignment.id}:${assignment.turns.length + 1}` },
+      );
     }
   }
 
@@ -7472,6 +8214,18 @@ export class TramaController {
   }
 
   /**
+   * After a merge on GitHub the checkout's branch moves up to the merged one with a fast-forward, when the checkout is on
+   * that branch and has no change; otherwise it stays as the person left it. Never fails the merge that was recorded.
+   */
+  private async advanceCheckoutAfterMerge(project: ActiveProjectState): Promise<void> {
+    const branch = project.snapshot.branch;
+    if (!branch || project.isDemo) return;
+    const moved = await advanceAfterMerge(project.rootPath, branch).catch(() => null);
+    await this.readBranchBase(project, false);
+    if (moved) void this.refreshProject(false);
+  }
+
+  /**
    * Compares a candidate with its base branch as it is on the remote, after a fetch of the branch. A conflict is recorded
    * as with the other remote heads, with its card, and the Coordinator resolves it within the mandate.
    */
@@ -7536,7 +8290,11 @@ export class TramaController {
     const document = project.document;
     const head = await this.integrationHeads(project);
     for (const candidate of document.candidates) {
-      if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
+      if (candidate.pullRequest?.mergedAt) {
+        await this.closeSliceIssue(project, candidate);
+        continue;
+      }
+      if (this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
       // A goal the person put away merges nothing more.
       if (goalPutAway(document, candidate.goalId)) continue;
@@ -7570,6 +8328,7 @@ export class TramaController {
       } finally {
         this.integrating.delete(candidate.id);
       }
+      await this.closeSliceIssue(project, candidate);
     }
     // Merged work leaves its working copy: it would only pile up.
     await this.freeMergedWorktrees(project);
@@ -7604,6 +8363,7 @@ export class TramaController {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
         candidate.merge!.mergeSHA = checks.mergeSHA ?? null;
+        void this.advanceCheckoutAfterMerge(project);
         this.changedIn(project);
         return;
       }
@@ -7633,6 +8393,7 @@ export class TramaController {
       pull.mergedBy = by;
       recordMerge(document, candidate, by, "merged");
       candidate.merge!.mergeSHA = merged.sha;
+      void this.advanceCheckoutAfterMerge(project);
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
     } catch (error) {
       const reason = (error as Error).message;
@@ -7644,6 +8405,7 @@ export class TramaController {
         pull.mergedBy = by;
         recordMerge(document, candidate, by, "merged");
         candidate.merge!.mergeSHA = after.mergeSHA ?? null;
+        void this.advanceCheckoutAfterMerge(project);
         appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
         this.changedIn(project);
         return;
@@ -7824,6 +8586,58 @@ export class TramaController {
 
   // MARK: Tickets
 
+  private readonly sliceIssueCloseFailures = new Map<string, number>();
+  private readonly sliceIssueCloseWaits = new Map<string, number>();
+
+  /**
+   * Closes the issue a slice was published as once its pull request is merged (issue #550), without asking the person. It
+   * goes through the same rules as the Coordinator's update_ticket with close (C10): every criterion is ticked with the
+   * merged candidate and its pull request as evidence, and the issue closes only when the pull request's checks are green.
+   * The mandate must allow the merge. Trama gives the evidence itself because it is the one that merged the candidate; a
+   * candidate with open choices or a pull request merged by someone else with red checks leaves the issue open.
+   * A retry posts nothing new (the report is idempotent) and a GitHub failure is retried a few times at most.
+   */
+  private async closeSliceIssue(project: ActiveProjectState, candidate: Candidate): Promise<void> {
+    const pull = candidate.pullRequest;
+    const document = project.document;
+    if (!pull?.mergedAt || !project.github.repository || !project.stateWritable || project.isDemo) return;
+    if (authorize(document.mandate, "integrateCandidate", candidate.touchedModules) !== "authorized" || candidate.unresolvedChoices.length) return;
+    const assignment = findAssignment(document, candidate.assignmentId);
+    const number = assignment ? (assignmentSlice(document, assignment)?.ticket.issue?.number ?? null) : null;
+    const open = number === null ? undefined : project.github.issues.find((i) => i.number === number);
+    if (number === null || !open || open.state !== "open") return;
+    // Checks that are not green yet are read again in the next round, without a report on the issue each time.
+    const status = await readPullRequestStatus(project.github.repository, pull.number).catch(() => null);
+    // A repository without CI never gets green checks: Trama's checks of the merged candidate are the proof then.
+    const withoutCi = status?.checks === "none" && verifiedByTrama(document, candidate, status?.headSHA);
+    if (status?.state !== "MERGED" || (status.checks !== "success" && !withoutCi)) {
+      // The merged work leaves the round (no open work): Trama looks again by itself, a few times at most.
+      const waits = this.sliceIssueCloseWaits.get(candidate.id) ?? 0;
+      if (waits < SLICE_ISSUE_CHECK_WAITS) {
+        this.sliceIssueCloseWaits.set(candidate.id, waits + 1);
+        this.integrateLater(project, CHECKS_RETRY_MS);
+      }
+      return;
+    }
+    // The person may have opened another project while GitHub answered: updateTicket works on the selected one.
+    if (this.state.project !== project) return;
+    const failures = this.sliceIssueCloseFailures.get(candidate.id) ?? 0;
+    if (failures >= 3) return;
+    const t = translator(this.state.language);
+    try {
+      await this.updateTicket({
+        issueNumber: number,
+        summary: t(withoutCi ? "ticket.mergedSummaryNoCi" : "ticket.mergedSummary", { number: String(pull.number), candidate: candidate.id }),
+        criteria: parseChecklist(open.body).map((_, index) => ({ index, outcome: "met" as const, evidence: [candidate.id, `#${pull.number}`], limits: null })),
+        openParts: [],
+        close: true,
+      });
+    } catch {
+      // updateTicket already told the failure in Activity; the next round tries again, a few times at most.
+      this.sliceIssueCloseFailures.set(candidate.id, failures + 1);
+    }
+  }
+
   /**
    * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
    * idempotent, so a retry after a timeout duplicates nothing; the issue closes only when every
@@ -7900,7 +8714,10 @@ export class TramaController {
           }
         }
         const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
-        blockers = closeBlockers(parseChecklist(body), statuses);
+        const verified = new Set(
+          statuses.filter((st) => document.candidates.some((c) => c.pullRequest?.number === st.number && verifiedByTrama(document, c, st.headSHA))).map((st) => st.number),
+        );
+        blockers = closeBlockers(parseChecklist(body), statuses, verified);
         if (!blockers.length) {
           await closeIssue(repository, input.issueNumber);
           closed = true;
@@ -9024,6 +9841,13 @@ export class TramaController {
       const { projectPriority: _ignored, ...rest } = update;
       update = rest;
     }
+    // Computer access changes only with the access switch or the Pause, which stop what runs and tell Activity.
+    if ("computerAccess" in update || "computerAccessPausedBy" in update) {
+      const { computerAccess: _access, computerAccessPausedBy: _holders, ...rest } = update;
+      update = rest;
+    }
+    // The blocked sites are hosts, once each: whatever the person typed is read as a host and the rest is dropped.
+    if (update.blockedSites !== undefined) update = { ...update, blockedSites: cleanBlockedSites(update.blockedSites) };
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
     const continuousTurnedOn = this.state.settings.continuousWork === false && update.continuousWork === true;
     this.state.settings = { ...this.state.settings, ...update, learning };

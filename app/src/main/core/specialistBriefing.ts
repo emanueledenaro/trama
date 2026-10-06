@@ -5,6 +5,7 @@ import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
 import { contractBriefing, REPORT_HEADINGS } from "./implementation";
 import { answerBriefing, asksCoordinator } from "./developerQuestions";
+import { DEVELOPER_CODE_RULE, DEVELOPER_WORKTREE_RULE } from "./baseAlignment";
 import { providerToolsRule } from "./providers/toolRefusal";
 import { stoppedByClosing } from "./resumeWork";
 
@@ -19,7 +20,7 @@ export function specialistInstructions(
     `Your competence: ${specialist.competence.replace(/\.$/, "")}.`,
     "Trama owns this thread and runs it for one assignment. Do the work, then answer with what you changed, what you checked and what is left.",
     needsWorktree(assignment)
-      ? "You work in your own Git worktree, the working directory of this thread. Write only inside it: the project checkout, its index and every other directory are out of reach, and so is the network. Do not commit, push, or run Git commands that write."
+      ? DEVELOPER_WORKTREE_RULE
       : "This assignment is read-only: read the project and report. Do not change files and do not use the network.",
     `Stay inside these modules: ${assignment.moduleIds.join(", ")}.`,
     "Do not start other agents and do not ask for broader permissions. If the sandbox stops you, say so in your answer instead of working around it.",
@@ -32,6 +33,7 @@ export function specialistInstructions(
       "When a doubt stops the work and the code, the spec, the contract and the Pact decisions do not answer it, ask the Coordinator with the ask_coordinator tool instead of guessing. Then stop and end your answer with the report: Trama resumes this session with the answer.",
     );
   }
+  if (needsWorktree(assignment)) lines.push(DEVELOPER_CODE_RULE);
   if (assignment.requiredChecks.length) {
     const checks = assignment.requiredChecks.map((c) => CHECKS[c as ReadOnlyCheck]?.summary ?? c);
     lines.push(`The work is done when these checks pass: ${checks.join("; ")}. Run them when you can and report their output.`);

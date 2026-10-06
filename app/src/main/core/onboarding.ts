@@ -44,6 +44,43 @@ export async function cloneRepository(repository: string, destination: string, u
   }
 }
 
+/** The name of the GitHub repository of a project Trama creates: the folder's name, in the characters GitHub keeps. */
+export const repositoryName = (folder: string) =>
+  folder
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9._-]/g, "")
+    .replace(/^[.-]+/, "") || "project";
+
+/**
+ * Creates the private GitHub repository of a project Trama just created and pushes its first commit (2 October 2026):
+ * the person works on GitHub, and without it the slices could not become issues nor the work a pull request. Hooks
+ * never run. Returns the repository as `owner/name`.
+ */
+export async function createGitHubRepository(root: string, folder: string): Promise<string> {
+  const name = repositoryName(folder);
+  const result = await runProcess("gh", ["repo", "create", name, "--private", "--source", root, "--remote", "origin", "--push"], {
+    cwd: root,
+    env: { ...ghEnvironment(), GIT_TERMINAL_PROMPT: "0" },
+    timeoutMs: 2 * 60_000,
+  });
+  if (result.timedOut || result.exitCode !== 0) {
+    throw new Error(result.stderr.trim().split("\n").at(-1)?.trim() || t("main.onboarding.repositoryCreateFailed", { name }));
+  }
+  const url = /https:\/\/github\.com\/([^/\s]+\/[^/\s]+)/.exec(`${result.stdout}\n${result.stderr}`)?.[1];
+  return url ?? name;
+}
+
+/** The login of the person signed in to gh, or null when it cannot be read. */
+export async function readGitHubLogin(): Promise<string | null> {
+  try {
+    const result = await runProcess("gh", ["api", "user", "--jq", ".login"], { env: ghEnvironment(), timeoutMs: 15_000 });
+    return !result.timedOut && result.exitCode === 0 ? result.stdout.trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The marker file the AI Hero setup writes in a project. */
 export const hasAiHero = (projectRoot: string): boolean => existsSync(join(projectRoot, ".agents", "skills", "AIHERO-VERSION.md"));
 

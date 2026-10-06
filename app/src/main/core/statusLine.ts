@@ -82,6 +82,8 @@ function runningPhrase(move: CoordinatorMove, target: string | null): string {
       return t("delegation.move.decide.running");
     case "takeTicket":
       return t("delegation.move.ticket.running");
+    case "startRoute":
+      return t("main.statusLine.running.startRoute");
   }
 }
 
@@ -104,6 +106,8 @@ function nextPhrase(move: CoordinatorMove, target: string | null): string {
       return t("delegation.move.decide.next");
     case "takeTicket":
       return t("delegation.move.ticket.next");
+    case "startRoute":
+      return t("main.statusLine.next.startRoute");
   }
 }
 
@@ -171,6 +175,8 @@ export function statusLine(
   wait: ProviderWait | null = null,
   at = new Date(),
   continuousWork = true,
+  /** The study of the project runs, which has no Coordinator request: the line says so, not "nothing going on". */
+  studying = false,
 ): StatusLineView {
   const running = runningRequestId ? (document.requests.find((r) => r.id === runningRequestId && r.state === "running") ?? null) : null;
   const focus = focusView(document).focus;
@@ -179,7 +185,7 @@ export function statusLine(
 
   const turn = running ? runningTurn(document, running) : null;
   const plan = latest && !turn ? planPhrase(document, latest.id) : null;
-  const now = turn?.phrase ?? plan;
+  const now = turn?.phrase ?? plan ?? (studying ? t("main.statusLine.running.study") : null);
   const workers = workersPhrase(document);
 
   // The next move of the task in focus: the person's first, since the work waits for it; else the Coordinator's own. A

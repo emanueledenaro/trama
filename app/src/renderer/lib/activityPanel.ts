@@ -6,9 +6,9 @@ import type { WorkRow } from "@shared/technicalSteps";
 import { failedSteps } from "@shared/technicalSteps";
 
 /** The types the panel filters on. Moves and rounds are one type: a round is the Coordinator's periodic move. */
-export type ActivityType = "moves" | "work" | "problems" | "steps" | "merges" | "squads" | "requested";
+export type ActivityType = "moves" | "work" | "problems" | "steps" | "merges" | "squads" | "requested" | "access" | "commands";
 
-export const ACTIVITY_TYPES: ActivityType[] = ["moves", "work", "problems", "steps", "merges", "squads", "requested"];
+export const ACTIVITY_TYPES: ActivityType[] = ["moves", "work", "problems", "steps", "merges", "squads", "requested", "access", "commands"];
 
 /** Who did it: the Coordinator, or the developer of the team by its id. */
 export type ActivityWho = "coordinator" | string;
@@ -28,7 +28,11 @@ export const typeOfEntry = (entry: Pick<ActivityEntry, "kind">): ActivityType =>
           ? "squads"
           : entry.kind === "requested"
             ? "requested"
-            : "merges";
+            : entry.kind === "access"
+              ? "access"
+              : entry.kind === "command"
+                ? "commands"
+                : "merges";
 
 /**
  * The entries of Activity and the turns of work in one list, newest first. Entries keep their own order at the same

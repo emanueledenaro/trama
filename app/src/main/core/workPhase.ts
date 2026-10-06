@@ -177,7 +177,8 @@ export type CoordinatorMove =
   | "settleReview"
   | "clearCandidate"
   | "decideWithDelegation"
-  | "takeTicket";
+  | "takeTicket"
+  | "startRoute";
 
 /** A move's words in the person's language, read when used. */
 const moveWords = (label: MessageKey, message: MessageKey): { label: string; message: string } => ({
@@ -202,6 +203,8 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   // The moves of the full delegation (issue #423): Trama starts them only while the person's delegation is in force.
   decideWithDelegation: moveWords("delegation.move.decide.label", "delegation.move.decide.message"),
   takeTicket: moveWords("delegation.move.ticket.label", "delegation.move.ticket.label"),
+  // The route's own message carries its steps: the chat shows the start as Trama's line, not as the person's words.
+  startRoute: moveWords("main.askTrama.startLabel", "main.askTrama.startLabel"),
 };
 
 /** The name of the move that resolves a technical block (A06), as the status line, Activity and the recap show it. */
@@ -371,7 +374,13 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const limit = projectCapacity(document);
   const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork, limit } : undefined;
   // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a squad has room (M05, A10).
-  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || v.state === "verifying"));
+  // A verifying slice whose candidate waits for the person or for its merge is not work to assign again: the slices that
+  // wait for it stay blocked until then, and the automatic move would only stall (issue #565).
+  const awaitsOthers = (view: SliceView) => {
+    const candidate = view.assignmentId ? latestCandidate(document, view.assignmentId) : null;
+    return candidate !== null && candidateAwaitsOthers(document, candidate);
+  };
+  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || (v.state === "verifying" && !awaitsOthers(v))));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
@@ -409,7 +418,8 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   };
 
   if (assignments.length) {
-    const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable });
+    const sliceBlocked = (a: SpecialistAssignment) => Boolean(a.slice) && views.some((v) => v.id === a.slice!.sliceId && v.state === "blocked");
+    const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable, sliceBlocked });
     if (state) {
       if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification, state.why, state.block);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
@@ -454,6 +464,22 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     return finish("clarification");
   }
   return finish(open.length || mandateAsked ? "clarification" : null);
+}
+
+/**
+ * Whether the candidate waits for the person (a blocker only they settle, a review, the merge) or for a merge Trama runs
+ * itself, so that assigning work again would settle nothing. A red check, a conflict or the reviewers' changes are not
+ * waiting: the work goes back to its developer.
+ */
+function candidateAwaitsOthers(document: ProjectDocument, candidate: Candidate): boolean {
+  if (candidateSuperseded(document, candidate) || worktreeChanged(document, candidate)) return false;
+  const blockers = hardBlockers(inspectCandidate(document, candidate, null));
+  if (blockers.length) return blockers.every((b) => PERSON_BLOCKERS.includes(b.code));
+  if (candidate.technicalReview?.verdict !== "approved") return false;
+  const request = candidate.pullRequest;
+  if (!request) return true;
+  if (request.mergedAt || pullRequestConflicted(candidate)) return false;
+  return !(candidate.merge?.checksRed && candidate.merge.fingerprint === contentFingerprint(document, candidate));
 }
 
 /** The phase of a ready plan: its spec is split into slices with to-tickets (M05), then the unblocked slices are assigned. */
@@ -516,12 +542,21 @@ function answerQuestions(open: DecisionRequest[]): MoveOption {
   return person("answerQuestions", open.length === 1 ? PERSON_MOVE_LABELS.answerQuestions : t("main.workPhase.answerQuestionsMany", { count: open.length }), open[0]!.id);
 }
 
+/** Whether a fixed role's work is running in the worktree of `assignment`, as the fix of a diagnosed failed check. */
+function fixUnderway(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
+  const root = assignment.workspace?.worktreeRoot;
+  if (!root) return false;
+  return document.team.specialists.some((s) =>
+    s.assignments.some((other) => other.id !== assignment.id && other.duty && isActive(other) && other.workspace?.worktreeRoot === root),
+  );
+}
+
 /** The phase of assigned work: execution, verification, candidate, merged or blocked. Null when only read-only work ended. */
 function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
-  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
-): { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets; block?: TechnicalBlock } | null {
+  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean; sliceBlocked(assignment: SpecialistAssignment): boolean },
+): AssignedState | null {
   // A developer's question pauses its work (W06): the Coordinator answers it before its other moves.
   const paused = assignments.filter((a) => a.status === "paused");
   for (const assignment of paused) {
@@ -530,11 +565,48 @@ function assignedWork(
   // A candidate replaced by later work (U02) is neither verified nor blocks the phase: the newer work does.
   // A candidate whose findings went back to its developer, who has finished since (W10), describes a worktree that no
   // longer exists: the work needs a new candidate, not a correction of the old one (issue #389).
-  const items = assignments
+  const all = assignments
     .filter((a) => a.status !== "paused")
     .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
     .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate))
     .map(({ assignment, candidate }) => ({ assignment, candidate: candidate && correctedSince(assignment, candidate) ? null : candidate }));
+  // Work that stopped or failed without a candidate hides no other slice's move (issue #557): the others go first, and
+  // the stopped work is told after them, as the phase only when nothing else is going on.
+  const ended = ({ assignment, candidate }: (typeof all)[number]) => !candidate && (assignment.status === "failed" || assignment.status === "stopped");
+  const items = all.filter((i) => !ended(i));
+  const stoppedItem = all.find(ended);
+  const state = workOfOthers(document, paused, items, moves);
+  if (!stoppedItem) return state;
+  const { assignment } = stoppedItem;
+  // Work the person stopped waits for their word, and a slice other slices still block is not assigned yet.
+  if (!heldByPersonStop(document, assignment) && !moves.sliceBlocked(assignment)) moves.assignWork();
+  // Other work at hand keeps its own phase; the stop is the phase when it is all there is.
+  if (state && state.phase !== "merged") return state;
+  const failed = assignment.status === "failed";
+  const blocker = !failed
+    ? t("main.workPhase.blockerStopped", { id: assignment.id })
+    : assignment.failure
+      ? t("main.workPhase.blockerFailedWith", { id: assignment.id, failure: assignment.failure })
+      : t("main.workPhase.blockerFailed", { id: assignment.id });
+  const work = workOf(document, assignment);
+  // Only work that failed is a technical block the Coordinator resolves by itself (A06): a stop is someone's choice.
+  return {
+    phase: "blocked",
+    blocker,
+    why: sentence(failed ? t("main.workPhase.whyFailed", { work }) : t("main.workPhase.whyStopped", { work })),
+    ...(failed ? { block: "stalledAssignment" as const } : {}),
+  };
+}
+
+type AssignedState = { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets; block?: TechnicalBlock };
+
+/** The phase of the assigned work that has not stopped or failed without a candidate, and the moves it allows. */
+function workOfOthers(
+  document: ProjectDocument,
+  paused: SpecialistAssignment[],
+  items: { assignment: SpecialistAssignment; candidate: Candidate | null }[],
+  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
+): AssignedState | null {
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       const provider = providerName(assignment.waitingForProvider.provider);
@@ -542,24 +614,6 @@ function assignedWork(
         phase: "blocked",
         blocker: t("main.workPhase.blockerProvider", { id: assignment.id, provider }),
         why: sentence(t("main.workPhase.whyProvider", { work: workOf(document, assignment), provider })),
-      };
-    }
-    if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
-      // Work the person stopped waits for their word: no automatic move takes it up again before they write.
-      if (!heldByPersonStop(document, assignment)) moves.assignWork();
-      const failed = assignment.status === "failed";
-      const blocker = !failed
-        ? t("main.workPhase.blockerStopped", { id: assignment.id })
-        : assignment.failure
-          ? t("main.workPhase.blockerFailedWith", { id: assignment.id, failure: assignment.failure })
-          : t("main.workPhase.blockerFailed", { id: assignment.id });
-      const work = workOf(document, assignment);
-      // Only work that failed is a technical block the Coordinator resolves by itself (A06): a stop is someone's choice.
-      return {
-        phase: "blocked",
-        blocker,
-        why: sentence(failed ? t("main.workPhase.whyFailed", { work }) : t("main.workPhase.whyStopped", { work })),
-        ...(assignment.status === "failed" ? { block: "stalledAssignment" as const } : {}),
       };
     }
     if (!candidate) continue;
@@ -592,6 +646,9 @@ function assignedWork(
         block: "reviewLoop",
       };
     }
+    // A fixed role already fixes this work in its worktree (a diagnosed failed check): the work is in progress. Asking the
+    // Coordinator to assign it again only made its automatic move stall, round after round (2 October 2026).
+    if (blocker && fixUnderway(document, assignment)) return { phase: "execution", blocker: null };
     if (blocker) {
       // A blocker only the person settles waits for them (issue #390): new work would not settle it.
       if (PERSON_BLOCKERS.includes(blocker.code)) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));

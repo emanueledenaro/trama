@@ -338,6 +338,23 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(red.moves.filter((m) => m.actor === "person")).toEqual([]);
   });
 
+  it("waits for a fixed role's fix in the worktree instead of assigning the red work again (2 October 2026)", () => {
+    const { document, assignment } = withAssignment();
+    assignment.workspace = { sourceRoot: "/p", worktreeRoot: "/w/a", branch: "feature/s1", baseSHA: "base" };
+    candidate(document, assignment.id, "fail", null);
+    expect(moves(document, "r3")).toContain("assignWork");
+    // Trama gave the diagnosed failure to a fixed role, which works in the same worktree.
+    const specialist = document.team.specialists.find((s) => s.assignments.includes(assignment))!;
+    specialist.assignments.push({
+      ...assignment,
+      id: "A-FIX",
+      status: "running",
+      duty: { skill: "diagnosing-bugs", trigger: { kind: "diagnosisFix", diagnosisId: "A-DIAG" }, outcome: null },
+    });
+    expect(workState(document, "r3")).toMatchObject({ phase: "execution", blocker: null });
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
   it("never offers a candidate that lags its worktree to the person, nor calls the work done (issue #388)", () => {
     const { document, assignment } = withAssignment();
     const ready = candidate(document, assignment.id, "pass", "approved");
@@ -518,5 +535,106 @@ describe("nextStepViews: the button under the latest reply (W01)", () => {
     first.nextStep = { move: "confirmUnderstanding", reason: "x", declaredAt: at(2).toISOString() };
     request(document, "r2", null, "running");
     expect(nextStepViews(document)).toEqual({});
+  });
+});
+
+describe("work that stopped hides no other slice's move (issue #557)", () => {
+  /** Ada's work on S1 stopped without a candidate; Bruno's work on S2 ended with a new candidate. */
+  function stoppedBesideCandidate() {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.slice = { planId: "P-1", sliceId: "S1" };
+    stopped.status = "stopped";
+    const other = work(document, "r3", 3, "Bruno");
+    other.slice = { planId: "P-1", sliceId: "S2" };
+    candidate(document, other.id, null, null);
+    return { document, stopped, other };
+  }
+
+  it("proposes the verification of the other slice's candidate while the stopped work waits", () => {
+    const { document } = stoppedBesideCandidate();
+    const state = workState(document, "r3");
+    expect(state.moves.map((m) => m.move)).toEqual(["verifyCandidate", "assignWork"]);
+    expect(state.phase).toBe("verification");
+  });
+
+  it("tells the stop as the blocked phase when it is all there is", () => {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.status = "stopped";
+    const state = workState(document, "r3");
+    expect(state.phase).toBe("blocked");
+    expect(state.blocker).toContain(stopped.id);
+    expect(state.moves.map((m) => m.move)).toEqual(["assignWork"]);
+  });
+
+  it("does not propose assigning a stopped slice that other slices still block", () => {
+    const { document, assignment: stopped } = withAssignment();
+    stopped.slice = { planId: "P-1", sliceId: "S2" };
+    stopped.status = "stopped";
+    const plan = document.plans[0]!;
+    plan.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [] },
+        { id: "S2", title: "Seconda", blockedBy: ["S1"] },
+      ],
+    } as never;
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+});
+
+describe("no assignment while every slice waits for another (issue #565)", () => {
+  /** S1 is on GitHub (so only a merged pull request delivers it) and has an approved candidate; S2 depends on S1 and cannot start before S1 is delivered. */
+  function candidateBeforeBlockedSlice() {
+    const { document, assignment } = withAssignment();
+    assignment.slice = { planId: "P-1", sliceId: "S1" };
+    document.plans[0]!.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [], issue: { number: 7, url: "https://github.com/o/r/issues/7" } },
+        { id: "S2", title: "Seconda", blockedBy: ["S1"] },
+      ],
+    } as never;
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    return { document, ready };
+  }
+  const openPullRequest = (ready: { pullRequest?: unknown }) => {
+    ready.pullRequest = { number: 25, url: "https://github.com/o/r/pull/25", headSHA: "abc", draft: false, openedAt: at(9).toISOString(), mergedAt: null };
+  };
+
+  it("offers only the review while the candidate waits for the person", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    expect(moves(document, "r3")).toEqual(["reviewCandidate"]);
+    expect(workState(document, "r3").moves[0]).toMatchObject({ targetId: ready.id });
+  });
+
+  it("offers only the merge while the pull request waits for it", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    openPullRequest(ready);
+    expect(moves(document, "r3")).toEqual(["mergePullRequest"]);
+  });
+
+  it("offers no assignment while Trama runs the merge itself", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    openPullRequest(ready);
+    recordMerge(document, ready, "coordinator", "failed", "in attesa delle verifiche");
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
+  it("still offers the assignment when red checks send the work back", () => {
+    const { document, ready } = candidateBeforeBlockedSlice();
+    mandate(document, ["plan", "executeInWorktree", "integrateCandidate"]);
+    clearCandidate(document, ready.id, "Coordinatore", null);
+    openPullRequest(ready);
+    recordMerge(document, ready, "coordinator", "failed", "verifiche rosse");
+    ready.merge!.checksRed = true;
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+
+  it("offers the assignment again when another slice is ready", () => {
+    const { document } = candidateBeforeBlockedSlice();
+    (document.plans[0]!.slicing as { tickets: unknown[] }).tickets.push({ id: "S3", title: "Terza", blockedBy: [] });
+    expect(moves(document, "r3")).toContain("assignWork");
   });
 });

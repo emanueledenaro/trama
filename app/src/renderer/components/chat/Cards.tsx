@@ -48,7 +48,7 @@ import { candidateSuperseded, conflictSide, conflictSideTitle, explainedByDiverg
 import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
 import { fixedBanInfo, fixedBans } from "@shared/fixedBans";
-import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
+import { adrMarkdown, adrPath, findDomainProposal } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
 import { boundaryLabel, findRoute, firstRunnableStep, flowLabel, routePathLabel, type RouteStatus, stepKindLabel } from "@shared/askTrama";
 import type { ActionResult } from "@shared/ipc";
@@ -468,7 +468,7 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
   if (!refusal) return null;
   const info = fixedBanInfo(t, refusal.ban);
   const by = refusal.by;
-  const specialist = by.kind === "specialist" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
+  const specialist = by.kind === "specialist" || by.kind === "operator" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
   return (
     <CardFrame
       icon={<IconLock stroke={1.8} />}
@@ -1043,7 +1043,12 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
         {proposal.terms.length ? (
           <Field label={t("chat.card.domain.terms", { path: proposal.contextPath })}>
             <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
-              <ChatMarkdown text={proposal.terms.map(glossaryEntry).join("\n\n")} />
+              {/* The terms in the person's words; the file keeps the format of the domain-modeling skill (2 October 2026). The words not to use go on a line of their own: a backslash is a hard break in Markdown. */}
+              <ChatMarkdown
+                text={proposal.terms
+                  .map((term) => [`**${term.term}**: ${term.definition}`, ...(term.avoid.length ? [t("chat.card.domain.avoid", { words: term.avoid.join(", ") })] : [])].join("\\\n"))
+                  .join("\n\n")}
+              />
             </div>
           </Field>
         ) : null}
@@ -2204,12 +2209,11 @@ export function RouteCard({ routeId }: { routeId: string }) {
             {route.steps.map((step, index) => (
               <li key={step.skill} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
-                <code className="rounded-none bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
-                {step.kind === "unavailable" ? (
-                  <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge>
-                ) : (
-                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? flowLabel(t, step.skill) : stepKindLabel(t, "skill")}</span>
-                )}
+                {/* What the step does leads, in the person's words; the skill's own name stays on the hover (2 October 2026). */}
+                <span className="text-ui-sm text-foreground" title={step.skill} data-skill={step.skill}>
+                  {(step.kind === "flow" && flowLabel(t, step.skill)) || step.skill}
+                </span>
+                {step.kind === "unavailable" ? <Badge tone="warning">{stepKindLabel(t, "unavailable")}</Badge> : null}
               </li>
             ))}
           </ol>

@@ -82,6 +82,8 @@ const TYPE_LABELS: Record<ActivityType, MessageKey> = {
   merges: "activity.type.merges",
   squads: "activity.type.squads",
   requested: "activity.type.requested",
+  access: "activity.type.access",
+  commands: "activity.type.commands",
 };
 
 const TEST_IDS: Record<ActivityEntry["kind"], string> = {
@@ -92,6 +94,8 @@ const TEST_IDS: Record<ActivityEntry["kind"], string> = {
   merge: "activity-merge",
   squad: "activity-squad",
   requested: "activity-requested",
+  access: "activity-access",
+  command: "activity-command",
   supersede: "activity-supersede",
 };
 
@@ -422,6 +426,9 @@ function Summary({ items, onShow }: { items: ActivityItem[]; onShow: (id: string
   const t = useT();
   const { running, lastProblem } = activitySummary(items);
   const first = running[0];
+  // The study, the plan and the slicing run with no row of their own: the status line says what runs (2 October 2026),
+  // so the summary never says "nothing going on" while the bar below says the Coordinator works.
+  const working = useUi((s) => (s.app?.project?.statusLine?.state === "working" ? s.app.project.statusLine.text : null));
   return (
     <section
       aria-label={t("activity.summary.label")}
@@ -435,6 +442,10 @@ function Summary({ items, onShow }: { items: ActivityItem[]; onShow: (id: string
             <ItemText item={first} />
             {running.length > 1 ? <span className="text-muted-foreground"> {t("activity.summary.more", { count: running.length - 1 })}</span> : null}
           </button>
+        ) : working ? (
+          <span className="min-w-0 truncate text-foreground" data-testid="activity-summary-working">
+            {working}
+          </span>
         ) : (
           <span className="text-muted-foreground">{t("activity.summary.idle")}</span>
         )}
@@ -567,6 +578,8 @@ export function ActivityPanel({ size, overlay = false }: { size: PanelHeight; ov
       document.candidates,
       document.squadChanges ?? [],
       document.requestedActions ?? [],
+      document.accessChanges ?? [],
+      document.accessSteps ?? [],
     );
     // A turn with only empty notes has no line in the chat, and no row here.
     const turns = workTurns(document.events, document.requests, running ?? []).filter((row) => compactSteps(row.activities).length);

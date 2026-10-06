@@ -82,6 +82,9 @@ function simpleCommands(line: string): string[][] {
   return rawCommands(line).map(unwrap).filter((words) => words.length > 0);
 }
 
+/** The simple commands of a line as lists of words (wrappers and assignments removed), for the locks that read them. */
+export const commandWords = simpleCommands;
+
 /** The simple commands of a line as written, wrappers and environment assignments included. */
 function rawCommands(line: string): string[][] {
   const commands: string[][] = [];
@@ -326,6 +329,24 @@ export function commandBan(command: string, mainBranches: string[] = MAIN_BRANCH
     if (cmd.some((word) => !word.startsWith("-") && isSecretPath(word.replace(/^[<>]+/, "")))) return "secrets";
   }
   return null;
+}
+
+/**
+ * A search that found nothing: grep, rg and git grep end with 1 then, which is no failure. Only a line that is that
+ * one search counts, so a failed command before it in `a && b` is never hidden (2 October 2026).
+ */
+export function searchFoundNothing(command: string, exitCode: number | null): boolean {
+  if (exitCode !== 1) return false;
+  const commands = simpleCommands(command);
+  if (commands.length !== 1) return false;
+  const [word, ...args] = commands[0]!;
+  const name = program(word!);
+  if (SHELLS.has(name)) {
+    const flag = args.findIndex((a) => /^-[a-z]*c[a-z]*$/.test(a));
+    const script = flag >= 0 ? args[flag + 1] : undefined;
+    return script ? searchFoundNothing(script, exitCode) : false;
+  }
+  return ["rg", "grep", "egrep", "fgrep"].includes(name) || (name === "git" && args.includes("grep"));
 }
 
 // MARK: Actions the person asks for (issue #422)

@@ -10,6 +10,7 @@ import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
 import { ProjectLearning } from "./learning/projectLearning";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { appendEvent, emptyDocument } from "./document";
+import { toolSuccess } from "./toolServer";
 import { proposeGoal, updateGoal } from "./goals";
 import { DutyRequestError } from "./duties";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
@@ -40,11 +41,55 @@ const parse = (result: { content: { text: string }[] }) => JSON.parse(result.con
 /** The parts of the assignment contract (W05) that the tests do not look at. */
 const CONTRACT = { seams: ["La nota degli ordini"], decisionIDs: [], dependencies: [] };
 
+describe("ask_research (issue #408)", () => {
+  it("passes the question to Research and returns what it answers, and fails when Research cannot run", async () => {
+    const asked: string[] = [];
+    const context = {
+      ...teamContext(emptyDocument("p")),
+      askResearch: async (question: string) => {
+        asked.push(question);
+        return toolSuccess({ kind: "data", source: "research", report: "ok" });
+      },
+    } as unknown as ToolContext;
+    expect(parse(await runCoordinatorTool("ask_research", { question: "  Quando esce?  " }, context))).toMatchObject({ kind: "data", report: "ok" });
+    expect(asked).toEqual(["Quando esce?"]);
+    expect(parse(await runCoordinatorTool("ask_research", { question: " " }, context)).error.code).toBe("invalid_arguments");
+    expect(parse(await runCoordinatorTool("ask_research", { question: "x" }, teamContext(emptyDocument("p")))).error.code).toBe("research_unavailable");
+  });
+
+  it("is a Coordinator tool only: the developers' tool server has no web tool", () => {
+    expect(COORDINATOR_TOOLS.some((tool) => tool.name === "ask_research")).toBe(true);
+    expect(COORDINATOR_TOOLS.some((tool) => ["web_search", "read_page"].includes(tool.name))).toBe(false);
+  });
+});
+
+describe("ask_operator (issue #409)", () => {
+  it("passes the order to the Operator and returns what it answers, and fails when the Operator cannot run", async () => {
+    const asked: string[] = [];
+    const context = {
+      ...teamContext(emptyDocument("p")),
+      askOperator: async (order: string) => {
+        asked.push(order);
+        return toolSuccess({ kind: "data", source: "operator", report: "ok" });
+      },
+    } as unknown as ToolContext;
+    expect(parse(await runCoordinatorTool("ask_operator", { order: "  installa jq  " }, context))).toMatchObject({ kind: "data", source: "operator" });
+    expect(asked).toEqual(["installa jq"]);
+    expect(parse(await runCoordinatorTool("ask_operator", { order: " " }, context)).error.code).toBe("invalid_arguments");
+    expect(parse(await runCoordinatorTool("ask_operator", { order: "x" }, teamContext(emptyDocument("p")))).error.code).toBe("operator_unavailable");
+  });
+
+  it("is a Coordinator tool only: the Operator's own tool is no Coordinator tool, and the Coordinator has no shell", () => {
+    expect(COORDINATOR_TOOLS.some((tool) => tool.name === "ask_operator")).toBe(true);
+    expect(COORDINATOR_TOOLS.some((tool) => tool.name === "run_command")).toBe(false);
+  });
+});
+
 describe("Coordinator tools for the full team (W09)", () => {
   it("read_team shows every figure with its role, and one figure with its moments and its skills", async () => {
     const context = teamContext(emptyDocument("p"));
     const team = parse(await runCoordinatorTool("read_team", {}, context));
-    expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(11);
+    expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(12);
     const guardian = team.specialists.find((s: { role: string }) => s.role === "regressionGuardian");
     expect(guardian).toMatchObject({ name: "Niente si rompe", fixedRole: true });
     expect(parse(await runCoordinatorTool("read_team", { specialistID: guardian.id }, context))).toMatchObject({
@@ -357,7 +402,7 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     const summary = await runCoordinatorTool("read_team", {}, context);
     expect(summary.content[0]!.text.length).toBeLessThan(20_000);
     const team = parse(summary);
-    expect(team).toMatchObject({ page: 1, pages: 3, specialistCount: 41 });
+    expect(team).toMatchObject({ page: 1, pages: 3, specialistCount: 42 });
     expect(team.specialists).toHaveLength(20);
     expect(team.specialists[0]).not.toHaveProperty("moments");
     expect(team.providers).toEqual([{ id: "codex", models: 1 }]);
@@ -365,7 +410,7 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     expect(team.automaticWork).toEqual([
       { work: "architectureReview", role: "cleanCode", state: "waiting", assignmentID: null, detail: "Aspetta che il team sia libero: 2 incarichi sono al lavoro.", startNow: "allowed" },
     ]);
-    expect(parse(await runCoordinatorTool("read_team", { page: 3 }, context)).specialists).toHaveLength(1);
+    expect(parse(await runCoordinatorTool("read_team", { page: 3 }, context)).specialists).toHaveLength(2);
     const one = parse(await runCoordinatorTool("read_team", { specialistID: "Dev 30" }, context));
     expect(one.assignment.result).toContain("Risultato lungo.");
     expect((await runCoordinatorTool("read_team", { specialistID: "Nessuno" }, context)).isError).toBe(true);
@@ -391,7 +436,14 @@ describe("read_team and the automatic work of the fixed roles (issue #231)", () 
     expect(requests).toEqual([{ kind: "architectureReview" }, { kind: "triage", issueNumber: 187 }]);
     expect((await runCoordinatorTool("start_automatic_work", { work: "triage", reason: "r" }, context)).isError).toBe(true);
     expect(developerInstructions("Demo")).toMatch(/start_automatic_work/);
+    // A block nobody in Trama can lift is told, never hidden behind "nothing to do" (2 October 2026).
+    expect(developerInstructions("Demo")).toMatch(/never tell the person they have nothing to do while the work stays stopped/);
     expect(developerInstructions("Demo")).toMatch(/never simulate it with assign_task/);
+    // Code moves through git only; a missing tool is said and the work stops (issues #547, #548).
+    expect(developerInstructions("Demo")).toMatch(/only through git/);
+    expect(developerInstructions("Demo")).toMatch(/not even cut in parts or encoded \(base64/);
+    expect(developerInstructions("Demo")).toMatch(/say it plainly to the person in your first sentence.*stop that work/);
+    expect(developerInstructions("Demo")).toMatch(/resume it with resume_assignment and tell it to call align_with_base/);
   });
 });
 

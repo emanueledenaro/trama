@@ -96,7 +96,10 @@ describe("specialist runtime (V04)", () => {
     const config = opened[0]!.params.config as { features: Record<string, boolean>; "permissions.trama_write": { filesystem: Record<string, string> } };
     const profile = config["permissions.trama_write"];
     expect(profile).toMatchObject({ filesystem: { ":minimal": "read", [worktree]: "write", [repo]: "read" }, network: { enabled: false } });
-    expect(Object.entries(profile.filesystem).filter(([, access]) => access === "write").map(([path]) => path)).toEqual([worktree]);
+    // Beside the worktree it writes only its own temporary folder, outside the project (2 October 2026).
+    const writable = Object.entries(profile.filesystem).filter(([, access]) => access === "write").map(([path]) => path);
+    expect(writable[0]).toBe(worktree);
+    expect(writable.slice(1)).toEqual([expect.stringMatching(/trama-agents\/[0-9a-f]{16}$/)]);
     expect(config.features).toMatchObject({ memories: false });
     expect(opened[0]!.params.developerInstructions).toContain("Instructions from the Coordinator:\n[lento:sempre] Scrivi una nota");
     expect(assignment.threadId).toBeTruthy();

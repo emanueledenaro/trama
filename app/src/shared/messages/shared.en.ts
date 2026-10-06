@@ -319,6 +319,9 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.role.devops": "DevOps",
   "shared.role.devops.tag": "DevOps",
   "shared.role.devops.competence": "Looks after the build, the package and the release.",
+  "shared.role.operator": "Operator",
+  "shared.role.operator.tag": "Operator",
+  "shared.role.operator.competence": "Runs commands on the Mac on the Coordinator's order, with secrets locked.",
   "shared.duty.spec.qa": "Names the test points to test.",
   "shared.duty.spec.ux": "Steps in when the spec touches the interface.",
   "shared.duty.spec.research": "Studies the unknown libraries and APIs.",
@@ -334,6 +337,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.duty.candidate.devops": "Checks the build and the package.",
   "shared.duty.candidate.documentation": "Checks that the documentation follows the diff.",
   "shared.duty.background.bugTriage": "Sorts incoming issues.",
+  "shared.duty.background.operator": "Runs on the Mac the commands the Coordinator orders, with secrets locked.",
   "shared.duty.background.cleanCode": "Proposes architecture improvements when the team is free.",
 
   // Fixed roles' automatic work (W11, issue #231)
@@ -388,8 +392,8 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.flow.domain-modeling": "Glossary and ADRs from the Pact's decisions",
   "shared.flow.to-spec": "Plan written as a spec",
   "shared.flow.to-tickets": "Vertical slices of the plan",
-  "shared.flow.implement": "Assignment to a developer, with implement and tdd",
-  "shared.flow.tdd": "Assignment to a developer, with implement and tdd",
+  "shared.flow.implement": "Assignment to a developer, tests before code",
+  "shared.flow.tdd": "Assignment to a developer, tests before code",
   "shared.flow.code-review": "Candidate review and deep review",
   "shared.flow.triage": "Issue triage, by the Bug triage and debugger role",
   "shared.flow.diagnosing-bugs": "Diagnosis of a defect, by the Bug triage and debugger role",

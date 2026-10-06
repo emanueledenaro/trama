@@ -292,6 +292,21 @@ export async function scanRepository(root: string, isDemo = false): Promise<Repo
       };
     })
     .sort((a, b) => naturalCompare(a.relativePath, b.relativePath));
+  // A project that has no code yet, as one just created, is one part: the whole project. Without it the mandate had
+  // nothing to name and the Coordinator could not ask for it (2 October 2026). The parts the work creates later join
+  // the mandate that covered the whole project (fullDelegation.ts, mandateForNewModules).
+  if (!modules.length) {
+    const root = moduleLocation(".");
+    modules.push({
+      ...root,
+      // The person reads "Tutto il progetto" in the mandate, not the folder's technical name.
+      name: t("main.scanner.wholeProject"),
+      summary: t("main.scanner.moduleSummary", { files: "0", path: root.relativePath }),
+      files: [],
+      dependencies: [],
+      symbol: "folder",
+    });
+  }
 
   const contextualInputHashes: Record<string, string> = {};
   for (const name of ["README.md", "CONTEXT.md"]) {

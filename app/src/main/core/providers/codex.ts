@@ -1,13 +1,16 @@
-import { realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { CodexClient, resolveCodexExecutable, restrictedAppServerArguments, searchPath } from "../codexClient";
 import {
+  agentTempFolder,
+  browserCacheRoots,
   CODEX_READ_PROFILE,
   CODEX_WRITE_PROFILE,
   codexPermissionProfiles,
   privatePathsInCommand,
   readableRoots,
   sandboxGitEnvironment,
+  sandboxSearchPath,
   toolchainRoots,
 } from "../readScope";
 import { t } from "../personLanguage";
@@ -15,6 +18,30 @@ import { type AgentRuntime, type OpenThreadOptions, ProviderError, type RunTurnO
 import { ToolRefusals } from "./toolRefusal";
 
 const TOKEN_ENVIRONMENT_VARIABLE = "TRAMA_COORDINATOR_TOKEN";
+
+/**
+ * Codex puts the person's own ~/.codex/AGENTS.md before the project's documents in every thread, and offers no option
+ * to leave it out without moving its home, where the login lives (Codex 0.160, checked in its source on 2 October 2026).
+ * The person chose that Trama's agents do not follow those rules: this line asks them not to. A request to the model,
+ * not an exclusion. @model-text
+ */
+export const PERSONAL_INSTRUCTIONS_RULE =
+  "The AGENTS.md instructions that come before `--- project-doc ---` (all of them, when there is no such line and no project AGENTS.md) are the person's personal settings for their own Codex, not rules of this project or of Trama: ignore them, and never read files they point to. Follow the project's AGENTS.md after that line and these instructions.";
+
+/** The environment of a developer's shell in its own temporary folder: scratch files, npm's cache and a home. */
+function developerEnvironment(tempRoot: string): Record<string, string> {
+  const home = join(tempRoot, "home");
+  mkdirSync(home, { recursive: true });
+  const browsers = browserCacheRoots()[0];
+  return {
+    TMPDIR: tempRoot,
+    TMP: tempRoot,
+    TEMP: tempRoot,
+    HOME: home,
+    npm_config_cache: join(tempRoot, "npm"),
+    ...(browsers ? { PLAYWRIGHT_BROWSERS_PATH: browsers } : {}),
+  };
+}
 /** A command that reaches GitHub or the network, which the read-only sandbox stops. */
 const NETWORK_COMMAND = /(?:^|[\s;&|('"])(?:gh|curl|wget)\s|\bgit\s+(?:fetch|pull|push|clone|ls-remote)\b/;
 
@@ -76,12 +103,15 @@ export class CodexRuntime implements AgentRuntime {
     const toolServer = this.options.toolServer;
     const writableRoot = options.sandbox === "workspace-write" ? resolve(options.cwd) : null;
     const roots = readableRoots(options.cwd, options.readableRoots ?? []);
-    this.scope = { roots, writableRoot };
-    const shellRoots = [...roots, ...toolchainRoots([...executableFolders(this.options.executable), ...searchPath()])];
+    // Playwright's browsers are readable too: reading them is no attempt outside the project.
+    this.scope = { roots: [...roots, ...browserCacheRoots()], writableRoot };
+    const searchEntries = [...executableFolders(this.options.executable), ...searchPath()];
+    const shellRoots = [...roots, ...toolchainRoots(searchEntries), ...browserCacheRoots()];
+    const tempRoot = writableRoot ? agentTempFolder(writableRoot) : null;
     return this.client.openThread({
       model: options.model,
       cwd: options.cwd,
-      developerInstructions: options.developerInstructions,
+      developerInstructions: `${options.developerInstructions}\n\n${PERSONAL_INSTRUCTIONS_RULE}`,
       permissions: writableRoot ? CODEX_WRITE_PROFILE : CODEX_READ_PROFILE,
       ephemeral: options.ephemeral,
       resumeThreadId: options.resumeThreadId,
@@ -97,9 +127,16 @@ export class CodexRuntime implements AgentRuntime {
           memories: false,
           ...(options.hostToolsOnly ? { shell_tool: false, unified_exec: false, apply_patch_freeform: false } : {}),
         },
-        ...codexPermissionProfiles(shellRoots, writableRoot),
+        ...codexPermissionProfiles(shellRoots, writableRoot, tempRoot),
         // The profiles hide the home folder, ~/.gitconfig included: git in the shell reads no global file (issue #391).
-        "shell_environment_policy.set": sandboxGitEnvironment(),
+        // A developer's tools write their scratch files in its own temporary folder, npm its cache and logs too, and
+        // their settings in a home of its own there (Astro's, 2 October 2026): the person's home stays hidden.
+        // Playwright finds its browsers by the real home, so it gets their folder by name.
+        "shell_environment_policy.set": {
+          ...sandboxGitEnvironment(),
+          PATH: sandboxSearchPath(searchEntries, shellRoots),
+          ...(tempRoot ? developerEnvironment(tempRoot) : {}),
+        },
         ...(toolServer
           ? {
               [`mcp_servers.${toolServer.name}`]: {

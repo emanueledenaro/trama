@@ -374,6 +374,13 @@ describe("diagnosis of failed checks (W11)", () => {
 });
 
 describe("architecture review when the team is free (W11)", () => {
+  it("does not count Documentation's work as a change of code (2 October 2026)", () => {
+    const document = project();
+    withCandidate(document);
+    document.team.specialists.find((s) => s.name === "Ada")!.role = "documentation";
+    expect(nextDuty(document, context())?.duty?.skill).not.toBe("improve-codebase-architecture");
+  });
+
   it("runs Clean Code read-only after the team changed code and is free, once per commit", () => {
     const document = project();
     expect(nextDuty(document, context())).toBeNull();
@@ -529,9 +536,13 @@ describe("sessions with the original skills (W11)", () => {
     expect(session(diagnosis!).prompt).toContain("1 failed");
     expect(session(diagnosis!).prompt).toContain("app, docs");
     expect(session(fix!).instructions).toContain("Git worktree");
+    // The sandbox opens no local server and no browser: those tests run in Trama's checks.
+    expect(session(fix!).instructions).toContain("tests that need one run in Trama's checks on your candidate");
     expect(session(review!).prompt).toContain(HEAD.slice(0, 7));
     expect(session(writing!).instructions).toContain("Git worktree");
     expect(session(writing!).prompt).toContain("**Bozza**:\nUn testo non ancora pubblicato.\n_Avoid_: Draft");
+    // The written files become a candidate: without checks it could never be declared.
+    expect(writing!.assignment.requiredChecks).toEqual(["git_status", "git_diff_check"]);
   });
 
   it("binds each skill to Trama without restating its method", async () => {

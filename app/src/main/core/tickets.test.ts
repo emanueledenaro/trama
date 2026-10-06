@@ -93,6 +93,10 @@ describe("tickets", () => {
     const partial = closeBlockers(parseChecklist(body), [{ number: 1, state: "MERGED", mergedAt: "t", checks: "success" }]);
     expect(partial.map((b) => blockerText(b, italian))).toEqual(["manca «Primo criterio»", "manca «Terzo criterio»"]);
     expect(closeBlockers([], []).map((b) => blockerText(b, italian))).toEqual(["la issue non ha criteri da spuntare", "nessuna pull request di questo lavoro è stata unita"]);
+    const noCi = [{ number: 1, state: "MERGED" as const, mergedAt: "t", checks: "none" as const }];
+    expect(closeBlockers(all, noCi).map(blockerMessage)).toEqual(["CI of #1 is none, not green."]);
+    expect(closeBlockers(all, noCi, new Set([1]))).toEqual([]);
+    expect(closeBlockers(all, [{ ...noCi[0]!, checks: "failure" }], new Set([1])).map(blockerMessage)).toEqual(["CI of #1 is failure, not green."]);
     const pending = closeBlockers(all, [{ number: 1234, state: "MERGED", mergedAt: "t", checks: "pending" }]);
     expect(pending.map((b) => blockerText(b, english))).toEqual(["the checks of PR #1234 are still running"]);
   });

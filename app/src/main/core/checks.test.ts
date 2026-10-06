@@ -1,8 +1,9 @@
+import { existsSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { availableChecks, detectLocalSandbox, lendNodeDependencies, localSandboxedCommand, nodePackage, runReadOnlyCheck, sandboxedCommand } from "./checks";
+import { availableChecks, detectLocalSandbox, lendNodeDependencies, nodeCheckCopy, localSandboxedCommand, nodePackage, runReadOnlyCheck, sandboxedCommand } from "./checks";
 import { git } from "./process";
 
 const fake = join(import.meta.dirname, "../../../test-fixtures/fake-codex.mjs");
@@ -34,6 +35,23 @@ describe("read-only checks", () => {
     await writeFile(join(repo, "app", "package.json"), JSON.stringify({ scripts: { test: "vitest run", typecheck: "tsc --noEmit" } }));
     expect(nodePackage(repo)).toEqual({ dir: "app", scripts: { test: "vitest run", typecheck: "tsc --noEmit" } });
     expect(availableChecks(repo)).toEqual(["git_status", "git_diff_check", "node_test", "node_typecheck"]);
+  });
+
+  it("copies the checkout for Node checks with its packages linked and the tools' caches of the copy's own", async () => {
+    const root = await mkdtemp(join(tmpdir(), "trama-copy-"));
+    await git(["init", "-b", "main"], root, false);
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+    await mkdir(join(root, "node_modules", "astro"), { recursive: true });
+    // A developer's own run left a real Vite cache in the checkout.
+    await mkdir(join(root, "node_modules", ".vite", "deps"), { recursive: true });
+    const scratch = await mkdtemp(join(tmpdir(), "trama-copy-scratch-"));
+    const copy = await nodeCheckCopy(root, scratch);
+    expect(copy).toBe(join(scratch, "checkout"));
+    expect(existsSync(join(copy, "package.json"))).toBe(true);
+    expect(existsSync(join(copy, ".git"))).toBe(false);
+    expect(await readlink(join(copy, "node_modules", "astro"))).toBe(join(root, "node_modules", "astro"));
+    expect((await lstat(join(copy, "node_modules", ".vite"))).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(copy, "node_modules", ".vite", "deps"))).toBe(false);
   });
 
   it("lends the checkout's dependencies to a worktree only when the lockfiles match, keeping git status clean", async () => {
@@ -81,14 +99,16 @@ describe("read-only checks", () => {
     await writeFile(
       join(repo, "probe.mjs"),
       `import net from "node:net";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 const reach = (port, host) => new Promise((ok) => net.connect(port, host).on("connect", function () { this.destroy(); ok(true); }).on("error", () => ok(false)));
 const server = net.createServer((c) => c.end()).listen(0, "127.0.0.1");
 await new Promise((ok) => server.on("listening", ok));
 console.log("loopback", await reach(server.address().port, "127.0.0.1"));
 server.close();
 console.log("internet", await reach(443, "1.1.1.1"));
-try { writeFileSync("escaped.txt", "x"); console.log("write", true); } catch { console.log("write", false); }
+try { writeFileSync(${JSON.stringify(join(repo, "escaped.txt"))}, "x"); console.log("write", true); } catch { console.log("write", false); }
+// A build writes its generated files beside the sources: in the copy it runs on, never in the checkout.
+try { mkdirSync(".astro", { recursive: true }); writeFileSync(".astro/types.d.ts", "x"); console.log("generated", true); } catch { console.log("generated", false); }
 `,
     );
     await git(["add", "."], repo, false);
@@ -97,6 +117,8 @@ try { writeFileSync("escaped.txt", "x"); console.log("write", true); } catch { c
     expect(result.output).toContain("loopback true");
     expect(result.output).toContain("internet false");
     expect(result.output).toContain("write false");
+    expect(result.output).toContain("generated true");
+    expect(existsSync(join(repo, ".astro"))).toBe(false);
     expect(result.checkoutUnchanged).toBe(true);
   });
 });

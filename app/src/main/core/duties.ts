@@ -117,8 +117,15 @@ export function dutyLedger(document: ProjectDocument): DutyLedger {
 const readLedger = (document: ProjectDocument): DutyLedger => document.duties ?? { issueBaseline: null, failures: [], checkoutChecks: {} };
 
 const allAssignments = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
-/** Finished work that changed code. */
-const codeWork = (document: ProjectDocument) => allAssignments(document).filter((a) => a.status === "completed" && a.tools.includes("edits"));
+/**
+ * Finished work that changed code. Documentation's work writes the glossary and the decisions, not code: on a project
+ * just created it would have started an architecture review of a project with no code (2 October 2026).
+ */
+const codeWork = (document: ProjectDocument) =>
+  document.team.specialists
+    .filter((s) => s.role !== "documentation")
+    .flatMap((s) => s.assignments)
+    .filter((a) => a.status === "completed" && a.tools.includes("edits"));
 const dutiesOf = (document: ProjectDocument, skill: AssignmentDuty["skill"]) => allAssignments(document).filter((a) => a.duty?.skill === skill);
 
 // MARK: Triggers
@@ -678,7 +685,8 @@ export function startDomainWriting(
         issueNumber: null,
         ...runner,
         tools: ["commands", "edits"],
-        requiredChecks: [],
+        // The written files become a candidate the person reviews: it needs checks to be declared (2 October 2026).
+        requiredChecks: ["git_status", "git_diff_check"],
         workspace: null,
         duty: { skill: "domain-modeling", trigger: { kind: "domainProposal", proposalId: proposal.id }, outcome: null },
       },

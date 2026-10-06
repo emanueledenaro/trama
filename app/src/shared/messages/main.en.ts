@@ -107,6 +107,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.folderIsRoot":
     "Choose a project folder, not the disk root or the Home folder.",
   "main.controller.folderNameInvalid": "Choose a valid folder name.",
+  "main.controller.repositoryNeedsGh": "GitHub CLI is not connected: connect it from the Welcome page and create the repository from there.",
+  "main.controller.repositoryNotCreated": "The project is created, but the GitHub repository is not: {reason}",
   "main.controller.folderExists":
     "A folder named {name} already exists in this location.",
   "main.controller.cloneRepositoryInvalid":
@@ -169,6 +171,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.messageSentSkills": "skills: {skills}",
   "main.controller.noReplyTitle": "The Coordinator did not write a reply",
   "main.controller.commandActivityFallback": "Command",
+  "main.controller.searchFoundNothing": "No results",
   "main.controller.commandExitCode": "Exit {code}",
   "main.controller.fileChangeTitle": "Changed {files} files",
   "main.controller.fileChangeTitle.one": "Changed {files} file",
@@ -179,6 +182,10 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
     'Understanding of the request "{request}".',
+  "main.controller.stepInChatSeams": "The Coordinator confirmed the test points of plan {plan}",
+  "main.controller.stepInChatSlices": "The Coordinator approved the {count} slices of plan {plan}",
+  "main.controller.stepInChatSlices.one": "The Coordinator approved the slice of plan {plan}",
+  "main.controller.stepInChatCorrect": "The mandate lets it do so without asking you. To change something, write it here or correct the step in Activity.",
   "main.controller.stepSeamsSummary": "Test points of plan {plan}: {seams}.",
   "main.controller.stepSlicesSummary": "Slices of plan {plan}: {slices}.",
   "main.controller.stepStillWriting":
@@ -283,6 +290,54 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Waiting for the temporary limit of {provider} to pass",
   "main.controller.waitingTemporaryLimitDetail":
     "It is not the account quota. Trama resumes the assignment by itself in {seconds} seconds, if the mandate still covers it.",
+  "main.controller.operatorRan": "{agent} ran a command: {command}",
+  "main.controller.operatorFailed": "{agent} ran a command that did not go well: {command}",
+  "main.controller.operatorWaiting": "{agent} waits for your yes on a command that cannot be undone: {command}",
+  "main.controller.operatorOutput": "Result of {agent}'s command",
+  "main.controller.operatorDeclined": "You said no: {agent}'s command does not run. {command}",
+  "main.controller.operatorOpened": "{agent} opened {site} in your Chrome",
+  "main.controller.operatorSent": "{agent} sent data to {site}",
+  "main.controller.operatorSendFailed": "{agent} tried to send data to {site}, but the send did not go through",
+  "main.controller.operatorSendWaiting": "{agent} waits for your yes on a send that cannot be undone: {site}",
+  "main.controller.operatorNeedsLogin": "{agent} stopped on {site}: you are not signed in. Sign in on the site in Chrome, then ask again. No agent types a password.",
+  "main.controller.siteConsentAsked": "{agent} waits for your consent to open {site}",
+  "main.controller.siteConsentFromPhrase": "Consent recorded for {site}, from your sentence \"{phrase}\"",
+  "main.controller.siteConsentFromButton": "Consent recorded for {site}, from your yes in Aspetta te",
+  "main.controller.siteConsentBlocked": "I do not record a consent for {site}: it is on the blocked sites and no agent opens it, with or without a consent.",
+  "main.controller.siteConsentAlready": "The consent for {site} is already there in this project.",
+  "main.controller.siteConsentNotRecorded": "I did not record the consent for {site}.",
+  "main.controller.siteConsentWithdrawnFromPhrase": "Consent withdrawn for {site}, from your sentence \"{phrase}\"",
+  "main.controller.siteConsentWithdrawn": "Consent withdrawn for {site}",
+  "main.controller.siteConsentDeclined": "You said no: {agent} does not open {site}.",
+  "main.controller.siteConsentNotFound": "This consent is gone.",
+  "main.controller.siteConsentRequestNotFound": "This request no longer waits for your yes.",
+  "main.controller.appConsentAsked": "{agent} waits for your consent to use the screen in {app}",
+  "main.controller.appConsentFromPhrase": "Consent recorded for the app {app}, from your sentence \"{phrase}\"",
+  "main.controller.appConsentFromButton": "Consent recorded for the app {app}, from your yes in Aspetta te",
+  "main.controller.appConsentAlready": "The consent for the app {app} is already in this project.",
+  "main.controller.appConsentNotRecorded": "I did not record the consent for the app {app}.",
+  "main.controller.appConsentWithdrawnFromPhrase": "Consent withdrawn for the app {app}, from your sentence \"{phrase}\"",
+  "main.controller.appConsentWithdrawn": "Consent withdrawn for the app {app}",
+  "main.controller.appConsentDeclined": "You said no: {agent} does not use the screen in {app}.",
+  "main.controller.screenPermission.accessibility": "Accessibility",
+  "main.controller.screenPermission.screenRecording": "Screen Recording",
+  "main.controller.screenPermissionMissing": "{agent} cannot use the screen. Missing macOS permissions: {permissions}. Grant them yourself in System Settings, Privacy & Security: Trama does not change system settings. Then ask to try again.",
+  "main.controller.screenPasswordField": "{agent} stopped in {app}: the focused field is a password. No agent types a password, you do.",
+  "main.controller.commandApprovalNotFound": "This command no longer waits for your yes.",
+  "main.controller.dependenciesInstalledTitle": "Packages installed by Trama",
+  "main.controller.dependenciesInstalledDetail": "Trama installed the project's {count} packages in the worktree, without running their install scripts.",
+  "main.controller.baseAlignedTitle": "{target} brought into the working copy",
+  "main.controller.baseAlignFailedTitle": "Realignment with the base failed",
+  "main.controller.baseAlignFailed.merge_in_progress": "A merge is already in progress in the working copy: the developer has to resolve it. Files in conflict: {detail}.",
+  "main.controller.baseAlignFailed.unreadable_base": "Trama cannot read the base branch in the working copy ({detail}).",
+  "main.controller.baseAlignFailed.merge_failed": "The merge did not start and the work in the copy is as it was. Git says: {detail}",
+  "main.controller.baseAlignFailed.ignored_files": "The merge would overwrite ignored files of the copy that git does not save: {detail}. Nothing changed: the developer moves them out of the copy and tries again.",
+  "main.controller.baseAligned.conflicts": "The merge waits for the Coordinator's commit. Files in conflict: {files}.",
+  "main.controller.baseAligned.merged": "The merge has no conflicts and waits for the Coordinator's commit.",
+  "main.controller.baseAligned.upToDate": "The working copy already has the whole base branch.",
+  "main.controller.baseAligned.savedWork": "The work that was not saved yet was put in a commit of Trama's before the merge.",
+  "main.controller.baseAligned.fetchError": "The base branch could not be fetched ({error}): Trama used the last known copy.",
+  "main.controller.dependenciesFailedTitle": "Package install failed",
   "main.controller.developerQuestionTitle":
     "Question {question} to the Coordinator",
   "main.controller.answerReceivedTitle": "Answer received",
@@ -364,6 +419,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.tramaQuitting": "Trama is closing.",
   "main.controller.noReadOnlyModelForReviewers":
     "No read-only model available for the reviewers of the candidate.",
+  "main.controller.sliceNoteTitle": "Note for this slice: {reviewer} has a finding on candidate {candidate} about this assignment's files",
   "main.controller.blockingFindingsTitle":
     "{reviewer} to {developer}: {count} blocking findings on candidate {candidate}",
   "main.controller.blockingFindingsTitle.one":
@@ -1413,9 +1469,11 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.running.assignWork": "Assigning the work",
   "main.statusLine.running.verifyTarget": "Checking {target}",
   "main.statusLine.running.verifyWork": "Checking the work",
+  "main.statusLine.running.startRoute": "Starting the route",
   "main.statusLine.running.answerQuestion": "Answering a developer",
   "main.statusLine.running.answerMessage": "Answering your message",
   "main.statusLine.running.clearCandidate": "Giving the candidate the green light",
+  "main.statusLine.running.study": "Studying the project",
   "main.statusLine.running.writingPlan": "Writing the plan",
   "main.statusLine.running.slicingPlan": "Splitting the plan into slices",
   "main.statusLine.next.preparePlan": "prepare the plan",
@@ -1426,6 +1484,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.statusLine.next.settleReview": "decide between the developer and the reviewers",
   "main.statusLine.next.clearCandidate": "give the candidate the green light",
   "main.statusLine.next.answerQuestion": "answer the developer",
+  "main.statusLine.next.startRoute": "start the route",
   "main.statusLine.next.waitForYou": "wait for you",
   "main.statusLine.nowThen": "{now}, then I {next}.",
   "main.statusLine.waitingForYou": "Waiting for you to go on.",
@@ -1521,6 +1580,16 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.continuousWork.block.reviewLoop": "disagreement between developer and reviewers",
   "main.continuousWork.moveFailed":
     "The automatic move did not succeed: {reason}",
+  "main.continuousWork.stall.unanswered":
+    "the Coordinator did not answer the developer's question.",
+  "main.continuousWork.questionHeld":
+    "Trama stopped retrying the developer's answer after {attempts} turns without one.",
+  "main.continuousWork.questionHeldDetail":
+    "The question stays open and its assignment paused. Trama tries again in an hour, or you can write to the Coordinator.",
+  "main.continuousWork.moveHeld":
+    "Trama stopped retrying the step \"{move}\" after {attempts} turns without a result.",
+  "main.continuousWork.moveHeldDetail":
+    "The work stays as it is. Write to the Coordinator to take it up again.",
   "main.continuousWork.stall.noPlan": "the Coordinator did not start the plan.",
   "main.continuousWork.stall.noAssignment":
     "the Coordinator did not assign the work.",
@@ -2007,6 +2076,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Cloning {repository} did not finish within 10 minutes.",
   "main.onboarding.cloneNeedsAccess":
     "{repository} cannot be cloned without access. If it is private, connect GitHub CLI with gh auth login and try again.",
+  "main.onboarding.repositoryCreateFailed": "Could not create the repository {name} on GitHub.",
   "main.onboarding.cloneFailed": "Cloning {repository} failed.",
   "main.onboarding.cloneFailedReason": "Cloning {repository} failed: {reason}",
   "main.onboarding.unsafePath": "Unsafe path in the exercise: {path}",
@@ -2053,6 +2123,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "File skipped because it exceeds {size} KB: {path}.",
   "main.scanner.unreadableFile":
     "Unreadable or non UTF-8 file skipped: {path}.",
+  "main.scanner.wholeProject": "The whole project",
   "main.scanner.moduleSummary":
     "{files} files found in {path}. For Swift only direct imports are listed; for the other languages the files and the resolvable relative imports stay available.",
   "main.scanner.contextSkipped": "Context file skipped: {name}. {detail}",

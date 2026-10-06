@@ -1,5 +1,7 @@
+import { addBlockedSite, blockedHostFrom, removeBlockedSite } from "@shared/blockedSites";
 import { discussionModelSetting } from "@shared/discussions";
 import {
+  IconBan,
   IconBrain,
   IconBrandGithub,
   IconChecklist,
@@ -14,9 +16,12 @@ import {
   IconSettings,
   IconSun,
   IconTools,
+  IconTrash,
   IconUsers,
+  IconWorld,
+  IconWorldOff,
 } from "@/components/icons";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { ProviderAccount } from "@shared/codex";
 import type { GitHubCliState } from "@shared/onboarding";
 import type { ThemePreference } from "@shared/domain";
@@ -31,13 +36,13 @@ import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button, FilledScope } from "@/components/ui/button";
-import { Badge } from "@/components/ui/field";
+import { Badge, Input } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
-import { formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
+import { formatDate, formatDateTime, type Language, type MessageKey, type Translate } from "@shared/i18n";
 import { SwitchArea } from "@/components/settings/SwitchArea";
 import { LanguageChoice } from "@/components/settings/LanguageChoice";
 import { PresenceControls, PresenceStatus } from "@/components/PresencePanel";
@@ -221,6 +226,9 @@ function GeneralSection() {
           }
         />
       </Group>
+      <BlockedSitesGroup />
+      <SiteConsentsGroup />
+      <AppConsentsGroup />
       <Group title={t("settings.about")}>
         <div className="flex items-center gap-3 px-4 py-3" data-testid="about-trama">
           <TramaMark size={40} variant="tile" />
@@ -234,6 +242,182 @@ function GeneralSection() {
         </div>
       </Group>
     </>
+  );
+}
+
+/** The sites the person blocks, one list for every project (ADR 0020, issue #414). */
+function BlockedSitesGroup() {
+  const sites = useUi((s) => s.app?.settings.blockedSites ?? []);
+  const [text, setText] = useState("");
+  const [problem, setProblem] = useState<"invalid" | "duplicate" | "full" | null>(null);
+  const t = useT();
+  const add = () => {
+    const result = addBlockedSite(sites, text);
+    if (result.problem) {
+      setProblem(result.problem);
+      return;
+    }
+    setProblem(null);
+    setText("");
+    void act("settings:update", { blockedSites: result.list });
+  };
+  return (
+    <Group title={t("settings.blocked.title")} note={t("settings.blocked.description")}>
+      <div className="px-4 py-3" data-testid="blocked-sites">
+        <form
+          className="flex flex-wrap items-center gap-x-4 gap-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            add();
+          }}
+        >
+          <Input
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              setProblem(null);
+            }}
+            aria-label={t("settings.blocked.label")}
+            aria-invalid={problem ? true : undefined}
+            placeholder={t("settings.blocked.placeholder")}
+            data-testid="blocked-site-input"
+            className="min-w-[12rem] flex-1"
+          />
+          <div className="cta-row ml-auto min-w-0 max-w-full">
+            <Button type="submit" variant="outline" disabled={!text.trim()} data-testid="blocked-site-add">
+              <IconBan stroke={1.8} /> {t("settings.blocked.add")}
+            </Button>
+          </div>
+        </form>
+        {problem ? (
+          <p role="alert" className="mt-2 text-ui-sm text-destructive" data-testid="blocked-site-problem">
+            {t(`settings.blocked.${problem}`, { site: blockedHostFrom(text) ?? text.trim() })}
+          </p>
+        ) : null}
+      </div>
+      {sites.length === 0 ? (
+        <div className="px-4 py-3 text-ui-sm text-muted-foreground" data-testid="blocked-sites-empty">
+          {t("settings.blocked.empty")}
+        </div>
+      ) : (
+        sites.map((site) => (
+          <div key={site} className="flex items-center gap-3 px-4 py-2" data-testid="blocked-site" data-site={site}>
+            <IconWorldOff className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
+            <span className="min-w-0 flex-1 truncate font-mono text-ui-sm text-foreground">{site}</span>
+            <div className="cta-row ml-auto">
+              <IconButton
+                label={t("settings.blocked.remove", { site })}
+                icon={<IconTrash stroke={1.7} />}
+                size="icon"
+                onClick={() => void act("settings:update", { blockedSites: removeBlockedSite(sites, site) })}
+              />
+            </div>
+          </div>
+        ))
+      )}
+    </Group>
+  );
+}
+
+interface ConsentRow {
+  id: string;
+  subject: string;
+  grantedAt: string;
+  phrase: string | null;
+}
+
+/**
+ * The consents the person gave in the open project, with the way they gave each and the button to withdraw it (ADR 0020,
+ * issues #410 and #412): one list shape for the sites and for the apps.
+ */
+function ConsentsGroup({ title, description, noProject, empty, withdrawLabel, icon, mono, rows, testIds, onWithdraw }: {
+  title: string;
+  description: string | null;
+  noProject: string;
+  empty: string;
+  withdrawLabel: (subject: string) => string;
+  icon: ReactNode;
+  mono: boolean;
+  rows: ConsentRow[] | null;
+  testIds: { list: string; row: string; empty: string };
+  onWithdraw: (id: string) => void;
+}) {
+  const language = useLanguage();
+  const t = useT();
+  if (rows === null || description === null) {
+    return (
+      <Group title={title} note={noProject}>
+        <div className="px-4 py-4 text-ui-sm text-muted-foreground" data-testid={testIds.empty}>
+          {empty}
+        </div>
+      </Group>
+    );
+  }
+  return (
+    <Group title={title} note={description}>
+      {rows.length === 0 ? (
+        <div className="px-4 py-4 text-ui-sm text-muted-foreground" data-testid={testIds.empty}>
+          {empty}
+        </div>
+      ) : (
+        <div data-testid={testIds.list}>
+          {rows.map((consent) => (
+            <div key={consent.id} className="flex items-center gap-4 px-4 py-2" data-testid={testIds.row} data-site={consent.subject}>
+              <span className="shrink-0 text-muted-foreground">{icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className={cn("truncate text-ui-sm text-foreground", mono && "font-mono")}>{consent.subject}</div>
+                <div className="truncate text-ui-sm text-muted-foreground">
+                  {consent.phrase ? t("settings.consents.fromPhrase", { phrase: consent.phrase }) : t("settings.consents.fromButton")} {formatDate(language, consent.grantedAt)}
+                </div>
+              </div>
+              <div className="cta-row ml-auto">
+                <IconButton label={withdrawLabel(consent.subject)} icon={<IconTrash stroke={1.7} />} size="icon" onClick={() => onWithdraw(consent.id)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Group>
+  );
+}
+
+/** The sites the person consented to in the open project (ADR 0020, issue #410). */
+function SiteConsentsGroup() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const t = useT();
+  return (
+    <ConsentsGroup
+      title={t("settings.consents.title")}
+      description={project ? t("settings.consents.description", { project: project.name }) : null}
+      noProject={t("settings.consents.noProject")}
+      empty={t("settings.consents.empty")}
+      withdrawLabel={(site) => t("settings.consents.withdraw", { site })}
+      icon={<IconWorld className="size-4" stroke={1.7} />}
+      mono
+      rows={project ? (project.document.siteConsents ?? []).map((consent) => ({ id: consent.id, subject: consent.host, grantedAt: consent.grantedAt, phrase: consent.phrase })) : null}
+      testIds={{ list: "site-consents", row: "site-consent", empty: "site-consents-empty" }}
+      onWithdraw={(id) => void act("siteConsent:withdraw", { id })}
+    />
+  );
+}
+
+/** The apps the person consented to in the open project, next to the sites (ADR 0020, issue #412). */
+function AppConsentsGroup() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const t = useT();
+  return (
+    <ConsentsGroup
+      title={t("settings.appConsents.title")}
+      description={project ? t("settings.appConsents.description", { project: project.name }) : null}
+      noProject={t("settings.appConsents.noProject")}
+      empty={t("settings.appConsents.empty")}
+      withdrawLabel={(app) => t("settings.appConsents.withdraw", { app })}
+      icon={<IconDeviceDesktop className="size-4" stroke={1.7} />}
+      mono={false}
+      rows={project ? (project.document.appConsents ?? []).map((consent) => ({ id: consent.id, subject: consent.app, grantedAt: consent.grantedAt, phrase: consent.phrase })) : null}
+      testIds={{ list: "app-consents", row: "app-consent", empty: "app-consents-empty" }}
+      onWithdraw={(id) => void act("appConsent:withdraw", { id })}
+    />
   );
 }
 

@@ -241,6 +241,107 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(`Il candidato ${pick("C-")} viene dall'incarico ${pick("A-")} e rispetta la decisione ${pick("D-")}. Il candidato C-00000000 invece non c'è.`), 10);
         return;
       }
+      // Issue #408: the Coordinator asks Research with "[ricerca:<domanda>]" and tells what came back; the Research session
+      // (its turn starts with "Question from the Coordinator:") searches, reads the page the question names with
+      // "pagina=<url>" and reports it, quoting what the page asks for as a fact. "prova-invio" makes it also try a
+      // tool that sends data and one that runs a command: neither exists in its tool server.
+      if (text.startsWith("Question from the Coordinator:") && toolServers.has(threadId)) {
+        const page = text.match(/pagina=(\S+)/)?.[1];
+        const lines = [];
+        const search = await callTool(threadId, "web_search", { query: text.split("\n")[1]?.slice(0, 80) ?? "" });
+        toolDone("web_search", search);
+        if (search.isError) lines.push(`La ricerca è stata rifiutata: ${JSON.parse(search.content[0].text).error.message}`);
+        if (page) {
+          const read = await callTool(threadId, "read_page", { url: page });
+          toolDone("read_page", read);
+          if (read.isError) lines.push(`La pagina non si è letta: ${JSON.parse(read.content[0].text).error.message}`);
+          else {
+            const body = JSON.parse(read.content[0].text);
+            lines.push(`Fonte: ${body.finalUrl}`, `Titolo: ${body.title}`);
+            const asked = body.text.match(/(esegui|invia)[^\n]*/i)?.[0].replace(/\.$/, "");
+            if (asked) lines.push(`La pagina chiede: «${asked}». Lo riporto come fatto, non l'ho eseguito.`);
+          }
+        }
+        if (text.includes("prova-invio")) {
+          for (const tool of ["send_form", "run_command"]) {
+            const attempt = await callTool(threadId, tool, { url: "https://example.org/", command: "ls" });
+            // The tool server answers a name it does not offer with a protocol error and no result.
+            if (attempt) toolDone(tool, attempt);
+            lines.push(`${tool}: ${!attempt || attempt.isError ? "rifiutato" : "eseguito"}`);
+          }
+        }
+        setTimeout(() => finish(lines.join("\n")), 10);
+        return;
+      }
+      // Issue #409: the Coordinator gives the Operator an order with "[operatore:<comando> ;; <comando>]" and tells what came
+      // back; the Operator session (its turn starts with "Order from the Coordinator:") runs each command with run_command
+      // and reports for each one whether it ran, with its output, or why it did not.
+      if (text.startsWith("Order from the Coordinator:") && toolServers.has(threadId)) {
+        const lines = [];
+        for (const command of text.split("\n").slice(1).join("\n").split(";;").map((c) => c.trim()).filter(Boolean)) {
+          // Issue #410: "chrome:<address>" opens the page in the person's Chrome with open_in_chrome.
+          if (command.startsWith("chrome:")) {
+            const opened = await callTool(threadId, "open_in_chrome", { url: command.slice("chrome:".length).trim() });
+            toolDone("open_in_chrome", opened);
+            const page = JSON.parse(opened.content[0].text);
+            lines.push(opened.isError ? `${command}: rifiutato (${page.error.code})` : `${command}: aperto «${page.title}» ${page.text.trim()}`);
+            continue;
+          }
+          // Issue #411: "send:<address> | <purpose> | <body> | <method>" sends data to a site with send_data.
+          if (command.startsWith("send:")) {
+            const [address, purpose, body, method] = command.slice("send:".length).split(" | ").map((part) => part.trim());
+            const sent = await callTool(threadId, "send_data", { url: address, ...(purpose ? { purpose } : {}), ...(body ? { body } : {}), ...(method ? { method } : {}) });
+            toolDone("send_data", sent);
+            const answer = JSON.parse(sent.content[0].text);
+            lines.push(sent.isError ? `${command}: rifiutato (${answer.error.code})` : `${command}: inviato (${answer.status})`);
+            continue;
+          }
+          // Issue #412: "screen:read", "screen:click <x>,<y>", "screen:type <text>" and "screen:key <mod+...+key>" use the screen.
+          if (command.startsWith("screen:")) {
+            const [verb, ...rest] = command.slice("screen:".length).trim().split(" ");
+            const argument = rest.join(" ");
+            const [name, args] =
+              verb === "click"
+                ? ["click_screen", { x: Number(argument.split(",")[0]), y: Number(argument.split(",")[1]) }]
+                : verb === "type"
+                  ? ["type_on_screen", { text: argument }]
+                  : verb === "key"
+                    ? ["press_key", { key: argument.split("+").at(-1), modifiers: argument.split("+").slice(0, -1) }]
+                    : ["read_screen", {}];
+            const used = await callTool(threadId, name, args);
+            toolDone(name, used);
+            const answer = JSON.parse(used.content[0].text);
+            if (used.isError) lines.push(`${command}: rifiutato (${answer.error.code})`);
+            else if (name === "read_screen") {
+              lines.push(`${command}: letto «${answer.title}» ${answer.text.trim()}`);
+              // A text on the screen that asks for an action is told as a fact, never done (issue #412).
+              const asked = answer.text.match(/(esegui|premi|cancella|invia)[^\n]*/i)?.[0].replace(/\.$/, "");
+              if (asked) lines.push(`Lo schermo chiede: «${asked}». Lo riporto come fatto, non l'ho eseguito.`);
+            } else lines.push(`${command}: fatto`);
+            continue;
+          }
+          const result = await callTool(threadId, "run_command", { command });
+          toolDone("run_command", result);
+          const body = JSON.parse(result.content[0].text);
+          lines.push(result.isError ? `${command}: rifiutato (${body.error.code})` : `${command}: eseguito (${body.exitCode}) ${body.output.trim()}`);
+        }
+        setTimeout(() => finish(lines.join("\n")), 10);
+        return;
+      }
+      const ordering = text.match(/\[operatore:([^\]]*)\]/);
+      if (ordering && toolServers.has(threadId)) {
+        const result = await callTool(threadId, "ask_operator", { order: ordering[1] });
+        toolDone("ask_operator", result);
+        setTimeout(() => finish(`Operatore: ${result.content[0].text}`), 10);
+        return;
+      }
+      const asking = text.match(/\[ricerca:([^\]]*)\]/);
+      if (asking && toolServers.has(threadId)) {
+        const result = await callTool(threadId, "ask_research", { question: asking[1] });
+        toolDone("ask_research", result);
+        setTimeout(() => finish(`Ricerca: ${result.content[0].text}`), 10);
+        return;
+      }
       if (text.includes("[ricevuti]")) {
         setTimeout(() => finish(JSON.stringify(seen)), 10);
         return;
@@ -510,7 +611,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const role = text.match(/Cancello del candidato C-[0-9A-F]+, revisore: ([^(]+?) \(/)?.[1] ?? "?";
         const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
         const blocking = role === "Prestazioni" && /^\+.*\[rilievo-bloccante\]/m.test(text);
-        const answer = blocking
+        // In a later round (issue #567) Performance raises a new blocking finding on a line the developer did not change.
+        const newOnOldCode = role === "Prestazioni" && !blocking && text.includes("Giro successivo sullo stesso lavoro") && text.includes("Ciclo senza limite in NOTE.md");
+        const answer = newOnOldCode
+          ? {
+              report: "### Prestazioni\n\n- Una lettura del catalogo senza indice.",
+              findings: [{ severity: "blocking", title: "Lettura del catalogo senza indice", detail: "Il catalogo si rilegge per intero.", file: "NOTE.md:60" }],
+            }
+          : blocking
           ? {
               report: `### Prestazioni\n\n- \`NOTE.md\` chiede un ciclo senza limite.\n\nSkill ricevute: ${skills.join(", ") || "nessuna"}.`,
               findings: [{ severity: "blocking", title: "Ciclo senza limite in NOTE.md", detail: "La nota chiede di rileggere tutti gli ordini a ogni richiesta.", file: "NOTE.md:2" }],
@@ -714,7 +822,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       const automatic = text.match(/Mossa automatica di Trama: (\w+)/);
-      if (automatic) {
+      // A route Trama started by itself is answered like the person's start below: its message carries the steps.
+      if (automatic && automatic[1] !== "startRoute") {
         // A move Trama started by itself (W04). FAKE_CODEX_AUTOMATIC=wait keeps the turn running until interrupted,
         // =idle answers without making the move; otherwise the fake makes it like a Coordinator that follows the rules.
         const call = async (tool, args) => {

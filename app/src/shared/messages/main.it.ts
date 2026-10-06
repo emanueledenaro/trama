@@ -108,6 +108,8 @@ export const mainIt = {
   "main.controller.folderIsRoot":
     "Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.",
   "main.controller.folderNameInvalid": "Scegli un nome di cartella valido.",
+  "main.controller.repositoryNeedsGh": "GitHub CLI non è collegato: collegalo dal Benvenuto e crea il repository da lì.",
+  "main.controller.repositoryNotCreated": "Il progetto è creato, ma il repository su GitHub no: {reason}",
   "main.controller.folderExists":
     "Esiste già una cartella {name} in questa posizione.",
   "main.controller.cloneRepositoryInvalid":
@@ -171,6 +173,7 @@ export const mainIt = {
   "main.controller.messageSentSkills": "skill: {skills}",
   "main.controller.noReplyTitle": "Il Coordinatore non ha scritto una risposta",
   "main.controller.commandActivityFallback": "Comando",
+  "main.controller.searchFoundNothing": "Nessun risultato",
   "main.controller.commandExitCode": "Uscita {code}",
   "main.controller.fileChangeTitle": "Modifica di {files} file",
   "main.controller.fileChangeTitle.one": "Modifica di {files} file",
@@ -181,7 +184,11 @@ export const mainIt = {
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary":
     'Comprensione della richiesta "{request}".',
-  "main.controller.stepSeamsSummary": "Seam del piano {plan}: {seams}.",
+  "main.controller.stepInChatSeams": "Il Coordinatore ha confermato i punti di prova del piano {plan}",
+  "main.controller.stepInChatSlices": "Il Coordinatore ha approvato le {count} fette del piano {plan}",
+  "main.controller.stepInChatSlices.one": "Il Coordinatore ha approvato la fetta del piano {plan}",
+  "main.controller.stepInChatCorrect": "Il mandato gli permette di farlo senza chiederti. Se vuoi cambiare qualcosa, scrivilo qui o correggi il passo in Attività.",
+  "main.controller.stepSeamsSummary": "Punti di prova del piano {plan}: {seams}.",
   "main.controller.stepSlicesSummary": "Fette del piano {plan}: {slices}.",
   "main.controller.stepStillWriting":
     "Il Coordinatore sta ancora scrivendo questo passo: correggilo quando ha finito.",
@@ -290,6 +297,54 @@ export const mainIt = {
     "In attesa che il limite temporaneo di {provider} passi",
   "main.controller.waitingTemporaryLimitDetail":
     "Non è la quota dell'account. Trama riprende da sola l'incarico tra {seconds} secondi, se il mandato lo copre ancora.",
+  "main.controller.operatorRan": "{agent} ha lanciato un comando: {command}",
+  "main.controller.operatorFailed": "{agent} ha lanciato un comando che non è andato a buon fine: {command}",
+  "main.controller.operatorWaiting": "{agent} aspetta il tuo sì per un comando che non si annulla: {command}",
+  "main.controller.operatorOutput": "Risultato del comando di {agent}",
+  "main.controller.operatorDeclined": "Hai detto di no: il comando di {agent} non parte. {command}",
+  "main.controller.operatorOpened": "{agent} ha aperto {site} nel tuo Chrome",
+  "main.controller.operatorSent": "{agent} ha inviato dati a {site}",
+  "main.controller.operatorSendFailed": "{agent} ha provato a inviare dati a {site}, ma l'invio non è andato a buon fine",
+  "main.controller.operatorSendWaiting": "{agent} aspetta il tuo sì per un invio che non si annulla: {site}",
+  "main.controller.operatorNeedsLogin": "{agent} si è fermato su {site}: non hai la sessione aperta. Entra tu nel sito in Chrome, poi chiedi di riprovare. Nessun agente scrive una password.",
+  "main.controller.siteConsentAsked": "{agent} aspetta il tuo consenso per aprire {site}",
+  "main.controller.siteConsentFromPhrase": "Consenso registrato per {site}, dalla tua frase «{phrase}»",
+  "main.controller.siteConsentFromButton": "Consenso registrato per {site}, dal tuo sì in Aspetta te",
+  "main.controller.siteConsentBlocked": "Non registro il consenso per {site}: è tra i siti vietati e nessun agente lo apre, con o senza consenso.",
+  "main.controller.siteConsentAlready": "Il consenso per {site} c'è già in questo progetto.",
+  "main.controller.siteConsentNotRecorded": "Non ho registrato il consenso per {site}.",
+  "main.controller.siteConsentWithdrawnFromPhrase": "Consenso ritirato per {site}, dalla tua frase «{phrase}»",
+  "main.controller.siteConsentWithdrawn": "Consenso ritirato per {site}",
+  "main.controller.siteConsentDeclined": "Hai detto di no: {agent} non apre {site}.",
+  "main.controller.siteConsentNotFound": "Questo consenso non c'è più.",
+  "main.controller.siteConsentRequestNotFound": "Questa richiesta non aspetta più il tuo sì.",
+  "main.controller.appConsentAsked": "{agent} aspetta il tuo consenso per usare lo schermo in {app}",
+  "main.controller.appConsentFromPhrase": "Consenso registrato per l'app {app}, dalla tua frase «{phrase}»",
+  "main.controller.appConsentFromButton": "Consenso registrato per l'app {app}, dal tuo sì in Aspetta te",
+  "main.controller.appConsentAlready": "Il consenso per l'app {app} c'è già in questo progetto.",
+  "main.controller.appConsentNotRecorded": "Non ho registrato il consenso per l'app {app}.",
+  "main.controller.appConsentWithdrawnFromPhrase": "Consenso ritirato per l'app {app}, dalla tua frase «{phrase}»",
+  "main.controller.appConsentWithdrawn": "Consenso ritirato per l'app {app}",
+  "main.controller.appConsentDeclined": "Hai detto di no: {agent} non usa lo schermo in {app}.",
+  "main.controller.screenPermission.accessibility": "Accessibilità",
+  "main.controller.screenPermission.screenRecording": "Registrazione schermo",
+  "main.controller.screenPermissionMissing": "{agent} non può usare lo schermo. Permessi di macOS mancanti: {permissions}. Concedili tu in Impostazioni di Sistema, Privacy e sicurezza: Trama non cambia le impostazioni di sistema. Poi chiedi di riprovare.",
+  "main.controller.screenPasswordField": "{agent} si è fermato in {app}: il campo con il fuoco è una password. Nessun agente scrive una password, la scrivi tu.",
+  "main.controller.commandApprovalNotFound": "Questo comando non aspetta più il tuo sì.",
+  "main.controller.dependenciesInstalledTitle": "Pacchetti installati da Trama",
+  "main.controller.dependenciesInstalledDetail": "Trama ha installato i {count} pacchetti del progetto nella copia di lavoro, senza eseguire i loro script di installazione.",
+  "main.controller.baseAlignedTitle": "{target} portato nella copia di lavoro",
+  "main.controller.baseAlignFailedTitle": "Allineamento con la base non riuscito",
+  "main.controller.baseAlignFailed.merge_in_progress": "Nella copia di lavoro c'è già un merge in corso: lo sviluppatore deve risolverlo. File in conflitto: {detail}.",
+  "main.controller.baseAlignFailed.unreadable_base": "Trama non riesce a leggere il branch base nella copia di lavoro ({detail}).",
+  "main.controller.baseAlignFailed.merge_failed": "Il merge non è partito e il lavoro della copia è com'era. Git dice: {detail}",
+  "main.controller.baseAlignFailed.ignored_files": "Il merge sovrascriverebbe file ignorati della copia che git non salva: {detail}. Non è cambiato nulla: lo sviluppatore li sposta fuori dalla copia e riprova.",
+  "main.controller.baseAligned.conflicts": "Il merge aspetta il commit del Coordinatore. File in conflitto: {files}.",
+  "main.controller.baseAligned.merged": "Il merge non ha conflitti e aspetta il commit del Coordinatore.",
+  "main.controller.baseAligned.upToDate": "La copia di lavoro ha già tutto il branch base.",
+  "main.controller.baseAligned.savedWork": "Il lavoro non ancora salvato è stato messo al sicuro in un commit di Trama prima del merge.",
+  "main.controller.baseAligned.fetchError": "Il branch base non si è potuto scaricare ({error}): Trama ha usato l'ultima copia nota.",
+  "main.controller.dependenciesFailedTitle": "Installazione dei pacchetti non riuscita",
   "main.controller.developerQuestionTitle":
     "Domanda {question} al Coordinatore",
   "main.controller.answerReceivedTitle": "Risposta ricevuta",
@@ -372,6 +427,7 @@ export const mainIt = {
   "main.controller.tramaQuitting": "Trama si sta chiudendo.",
   "main.controller.noReadOnlyModelForReviewers":
     "Nessun modello in sola lettura disponibile per i revisori del candidato.",
+  "main.controller.sliceNoteTitle": "Note per la fetta: {reviewer} ha un rilievo sul candidato {candidate} che riguarda i file di questo incarico",
   "main.controller.blockingFindingsTitle":
     "{reviewer} a {developer}: {count} rilievi bloccanti sul candidato {candidate}",
   "main.controller.blockingFindingsTitle.one":
@@ -460,8 +516,8 @@ export const mainIt = {
   "main.controller.planNotWaitingSeams":
     "Il piano non aspetta una risposta sui seam.",
   "main.controller.seamsCorrectionEmpty": "Scrivi cosa cambiare nei seam.",
-  "main.controller.seamsConfirmedTitle": "Seam del piano {plan} confermati",
-  "main.controller.seamsCorrectedTitle": "Seam del piano {plan} corretti",
+  "main.controller.seamsConfirmedTitle": "Punti di prova del piano {plan} confermati",
+  "main.controller.seamsCorrectedTitle": "Punti di prova del piano {plan} corretti",
   "main.controller.planNoSpecToPublish":
     "Il piano non ha una spec pronta da pubblicare.",
   "main.controller.specStaysInTrama":
@@ -1464,10 +1520,12 @@ export const mainIt = {
   "main.statusLine.running.assignWork": "Sto assegnando il lavoro",
   "main.statusLine.running.verifyTarget": "Sto verificando {target}",
   "main.statusLine.running.verifyWork": "Sto verificando il lavoro",
+  "main.statusLine.running.startRoute": "Sto avviando il percorso",
   "main.statusLine.running.answerQuestion":
     "Sto rispondendo a uno sviluppatore",
   "main.statusLine.running.answerMessage": "Sto rispondendo al tuo messaggio",
   "main.statusLine.running.clearCandidate": "Sto dando il via libera al candidato",
+  "main.statusLine.running.study": "Sto studiando il progetto",
   "main.statusLine.running.writingPlan": "Sto scrivendo il piano",
   "main.statusLine.running.slicingPlan": "Sto dividendo il piano in fette",
   "main.statusLine.next.preparePlan": "preparo il piano",
@@ -1478,6 +1536,7 @@ export const mainIt = {
   "main.statusLine.next.settleReview": "decido fra lo sviluppatore e i revisori",
   "main.statusLine.next.clearCandidate": "do il via libera al candidato",
   "main.statusLine.next.answerQuestion": "rispondo allo sviluppatore",
+  "main.statusLine.next.startRoute": "avvio il percorso",
   "main.statusLine.next.waitForYou": "aspetto te",
   "main.statusLine.nowThen": "{now}, poi {next}.",
   "main.statusLine.waitingForYou": "Aspetto te per andare avanti.",
@@ -1572,6 +1631,16 @@ export const mainIt = {
   "main.continuousWork.block.reviewLoop": "disaccordo fra sviluppatore e revisori",
   "main.continuousWork.moveFailed":
     "La mossa automatica non è riuscita: {reason}",
+  "main.continuousWork.stall.unanswered":
+    "il Coordinatore non ha risposto alla domanda dello sviluppatore.",
+  "main.continuousWork.questionHeld":
+    "Trama ha smesso di riprovare a rispondere allo sviluppatore dopo {attempts} turni senza risposta.",
+  "main.continuousWork.questionHeldDetail":
+    "La domanda resta aperta e il suo incarico in pausa. Trama riprova fra un'ora, oppure scrivi tu al Coordinatore.",
+  "main.continuousWork.moveHeld":
+    "Trama ha smesso di riprovare «{move}» dopo {attempts} turni senza esito.",
+  "main.continuousWork.moveHeldDetail":
+    "L'incarico resta com'è. Scrivi tu al Coordinatore per riprendere il lavoro.",
   "main.continuousWork.stall.noPlan":
     "il Coordinatore non ha avviato il piano.",
   "main.continuousWork.stall.noAssignment":
@@ -2071,6 +2140,7 @@ export const mainIt = {
     "La clonazione di {repository} non è finita entro 10 minuti.",
   "main.onboarding.cloneNeedsAccess":
     "{repository} non si clona senza accesso. Se è privato, collega GitHub CLI con gh auth login e riprova.",
+  "main.onboarding.repositoryCreateFailed": "Non sono riuscito a creare il repository {name} su GitHub.",
   "main.onboarding.cloneFailed":
     "La clonazione di {repository} non è riuscita.",
   "main.onboarding.cloneFailedReason":
@@ -2124,6 +2194,7 @@ export const mainIt = {
     "File ignorato perché supera {size} KB: {path}.",
   "main.scanner.unreadableFile":
     "File non leggibile o non UTF-8 ignorato: {path}.",
+  "main.scanner.wholeProject": "Tutto il progetto",
   "main.scanner.moduleSummary":
     "{files} file rilevati in {path}. Per Swift sono riportati solo gli import diretti; per gli altri linguaggi restano disponibili i file e gli import relativi risolvibili.",
   "main.scanner.contextSkipped": "File di contesto ignorato: {name}. {detail}",

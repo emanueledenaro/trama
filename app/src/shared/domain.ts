@@ -389,7 +389,9 @@ export type NextMove =
   /** With the full delegation (issue #423): the Coordinator takes the choices that wait for the person. */
   | "decideWithDelegation"
   /** With the full delegation and "fai tutti i ticket" (issue #423): the Coordinator takes the next open issue. */
-  | "takeTicket";
+  | "takeTicket"
+  /** An Ask Trama route the mandate or the delegation lets Trama start without the person's answer (issue #423). */
+  | "startRoute";
 
 /** The move the Coordinator chose among the allowed ones, with its one-line reason. */
 export interface NextStep {
@@ -479,7 +481,7 @@ export interface FixedBanRefusal {
   ban: import("./fixedBans").FixedBan;
   /** The command, the file or the branch the action named. */
   action: string;
-  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "trama" };
+  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "operator"; specialistId: string } | { kind: "trama" };
   refusedAt: string;
   acknowledgedAt: string | null;
 }
@@ -739,6 +741,8 @@ export interface WorktreeSession {
   worktreeRoot: string;
   branch: string;
   baseSHA: string;
+  /** The branch the work started from, kept so realigning never follows a checkout the person switched (issue #547). Absent in work started before. */
+  baseBranch?: string;
 }
 
 export interface AssignmentTurn {
@@ -801,6 +805,8 @@ export interface SpecialistAssignment {
   /** When the person removed the worktree after the work ended (T08); the session stays for history. */
   workspaceRemovedAt?: string | null;
   threadId: string | null;
+  /** Fingerprint of the developer rules the thread holds: a thread opened before they changed receives them once (issue #555). */
+  rulesSent?: string | null;
   turns: AssignmentTurn[];
   stops: AssignmentStop[];
   result: string | null;
@@ -1209,7 +1215,8 @@ export type TeamRole =
   | "regressionGuardian"
   | "security"
   | "performance"
-  | "devops";
+  | "devops"
+  | "operator";
 
 /** A color of the fixed agent palette (W15, `@shared/identity`). */
 export type AgentColor = "blue" | "indigo" | "violet" | "fuchsia" | "pink" | "copper" | "olive" | "teal" | "cyan";
@@ -1310,6 +1317,106 @@ export type SquadChangeKind = "rename" | "merge" | "split";
  * changed, so Activity tells it and the person can undo it: the squads as they were, the squads it created, the
  * specialists whose status it changed as they were, and the specialists it added.
  */
+/** A turn of the access switch, shown in Activity: who turned it, and the actions it stopped (issue #413). */
+export interface AccessChange {
+  id: string;
+  at: string;
+  on: boolean;
+  /** `person` with the switch, `pause` when the Coordinator's Pause turned it off or on again. */
+  by: "person" | "pause";
+  /** The actions in progress the switch stopped, with the agent that ran them. */
+  stopped: { agent: string; label: string }[];
+}
+
+/** A step of an agent that used computer access, shown in Activity: a search or a page Research read (issue #408), a command of the Operator (issue #409). */
+export interface AccessStep {
+  id: string;
+  at: string;
+  /** The agent that took the step, as the person sees it in Activity. */
+  agent: string;
+  kind: "search" | "page" | "command" | "browser" | "send" | "consent" | "screen";
+  /** What was searched, the page address without its query string and fragment (a page Research read or a site the Operator opened in Chrome), the command line without its secrets, or the site a consent is about. */
+  target: string;
+  /** `refused` when the switch was off, the address was not allowed or it carried a secret; `blocked` when the site is on the person's list of blocked sites (the detail is its host); `waiting` while a command waits for the person. */
+  outcome: "done" | "failed" | "refused" | "blocked" | "waiting";
+  /** Why it failed or was refused, or the host of a page that moved elsewhere; null when it went well. */
+  detail: string | null;
+}
+
+/**
+ * A command of the Operator that cannot be undone (a deletion, a send, a payment), which waits for the person's yes
+ * (ADR 0020, issue #409). Trama runs it itself after the yes; the Operator never sees the answer as an order.
+ */
+export interface CommandApproval {
+  id: string;
+  /** The agent that asked, as the person sees it. */
+  agent: string;
+  command: string;
+  /** The folder it would run in. Empty for a send of data. */
+  cwd: string;
+  /** Why it asks: `delete`, `send` or `payment`. */
+  reason: "delete" | "send" | "payment";
+  /** A send of data to a site that waits for the yes (issue #411): Trama sends it itself after the yes, and the yes is for this send only. */
+  send?: { address: string; method: "POST" | "PUT" | "PATCH" | "DELETE"; contentType: string; body: string };
+  askedAt: string;
+  status: "waiting" | "done" | "failed" | "declined";
+  endedAt: string | null;
+}
+
+/**
+ * The person's yes for one site, valid in the project where it is given until they withdraw it (ADR 0020, issue #410).
+ * Only the person gives one: with the button of an item of "Aspetta te" or with a message typed in the composer.
+ */
+export interface SiteConsent {
+  id: string;
+  /** The host the consent is for, without `www.`. It covers that host only, not another site. */
+  host: string;
+  grantedAt: string;
+  /** `button` from "Aspetta te", `composer` from a message the person typed. */
+  by: "button" | "composer";
+  /** The sentence the person wrote, quoted in the chat and in the list; null for the button. */
+  phrase: string | null;
+}
+
+/** The Operator wants to open a site that has no consent: the request waits in "Aspetta te" for the person's yes (issue #410). */
+export interface SiteConsentRequest {
+  id: string;
+  /** The agent that asked, as the person sees it. */
+  agent: string;
+  host: string;
+  /** The address it wanted to open, without its query string and fragment. */
+  address: string;
+  /** The request of the chat it came from: the lines that answer it go to the same place. */
+  requestId: string | null;
+  askedAt: string;
+  status: "waiting" | "granted" | "declined";
+  endedAt: string | null;
+}
+
+/**
+ * The person's yes for one app, valid in the project where it is given until they withdraw it (ADR 0020, issue #412).
+ * Same form as the consent for a site: the button of "Aspetta te" or a message typed in the composer give it.
+ */
+export interface AppConsent {
+  id: string;
+  /** The name of the app as the system shows it. A consent covers that app only. */
+  app: string;
+  grantedAt: string;
+  by: "button" | "composer";
+  phrase: string | null;
+}
+
+/** The Operator wants to use the screen on an app that has no consent: the request waits in "Aspetta te" (issue #412). */
+export interface AppConsentRequest {
+  id: string;
+  agent: string;
+  app: string;
+  requestId: string | null;
+  askedAt: string;
+  status: "waiting" | "granted" | "declined";
+  endedAt: string | null;
+}
+
 export interface SquadChange {
   id: string;
   kind: SquadChangeKind;
@@ -1835,6 +1942,20 @@ export interface ProjectDocument {
   overruledFindings?: OverruledFinding[];
   /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
   continuousWork?: ContinuousWorkRecord;
+  /** When computer access went off or on while this project was open, oldest first (issue #413); absent until the first. */
+  accessChanges?: AccessChange[];
+  /** The searches and pages Research read through computer access, oldest first (issue #408); absent until the first. */
+  accessSteps?: AccessStep[];
+  /** The Operator's commands that wait for the person's yes (issue #409); absent in documents written before. */
+  commandApprovals?: CommandApproval[];
+  /** The sites the person consented to in this project, oldest first (issue #410); absent until the first. */
+  siteConsents?: SiteConsent[];
+  /** The Operator's requests to open a site without consent, which wait for the person (issue #410); absent until the first. */
+  siteConsentRequests?: SiteConsentRequest[];
+  /** The apps the person consented to in this project, oldest first (issue #412); absent until the first. */
+  appConsents?: AppConsent[];
+  /** The Operator's requests to use the screen on an app without consent, which wait for the person (issue #412); absent until the first. */
+  appConsentRequests?: AppConsentRequest[];
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */
@@ -2176,6 +2297,11 @@ export interface GateFinding {
   overruled?: { findingId: string; reason: string; decisionIds: string[] } | null;
   /** The Pact decision the figure says the finding asks the work to go against; such a finding is advisory. */
   against?: string;
+  /**
+   * Why a new blocking finding stopped blocking after the first round (issue #567): it is about code nobody changed since
+   * the candidate the reviewers already read, or about a file that another slice's work changes (a note for that slice).
+   */
+  scope?: { kind: "unchanged" } | { kind: "otherSlice"; assignmentId: string };
 }
 
 /**
@@ -2236,6 +2362,8 @@ export interface CandidateGate {
   /** Required checks that did not pass: the reviewers do not start and the debugger takes the failure (W11). */
   checksFailed: string[];
   suite: SuiteComparison[];
+  /** The candidate of the same work the reviewers had read before this gate: they read only what changed since (issue #567). */
+  reviewedAgainst?: string | null;
   reviews: GateReview[];
   /**
    * The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. `held`
@@ -2437,6 +2565,15 @@ export interface AppSettings {
   sounds?: boolean;
   /** Continuous work (W04): Trama starts the Coordinator's own moves within the mandate. On unless the person turns it off. */
   continuousWork?: boolean;
+  /**
+   * Computer access (ADR 0020, issue #413): network, browser, commands outside the project and screen. On unless the
+   * person turns it off, or a Pause does; the work on the project's code does not depend on it.
+   */
+  computerAccess?: boolean;
+  /** The projects whose Pause turned the access off: it comes back on when the last of them resumes. */
+  computerAccessPausedBy?: string[];
+  /** The sites the person blocks (ADR 0020, issue #414): hosts, one list for every project. No agent opens them. */
+  blockedSites?: string[];
   /** What the learning loop may do (ADR 0014); missing keys take the defaults. */
   learning?: Partial<LearningSettings>;
   /**

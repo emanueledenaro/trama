@@ -46,7 +46,9 @@ export function plannedAreas(document: ProjectDocument, modules: RepositoryModul
     add(developer.moduleIds);
     for (const assignment of developer.assignments) if (!ENDED.includes(assignment.status)) add(assignment.moduleIds);
   }
-  return modules.filter((m) => planned.has(m.id)).map((m) => ({ name: m.name, moduleIds: [m.id] }));
+  // The whole project of a project with no code yet (repositoryScanner.ts) is the whole product's squad, not "Capo
+  // Tutto il progetto" (2 October 2026).
+  return modules.filter((m) => planned.has(m.id)).map((m) => ({ name: m.id === "root" && !m.files.length ? WHOLE_PRODUCT_SQUAD : m.name, moduleIds: [m.id] }));
 }
 
 const nameKey = (name: string) => name.trim().toLowerCase();
@@ -96,7 +98,10 @@ export function formSquads(document: ProjectDocument, modules: RepositoryModule[
   if (!isTeamConfirmed(document) || !developers(document).length) return null;
   const squads = (document.team.squads ??= []);
   const covered = new Set(squads.flatMap((s) => s.moduleIds));
-  let areas = plannedAreas(document, modules).filter((a) => a.moduleIds.some((id) => !covered.has(id)));
+  // A squad over the whole product covers the areas that appear later too, as the parts a project with no code gains
+  // once the work starts: they are not a new squad with a new developer beside the one the person confirmed (2 October 2026).
+  const wholeProduct = squads.some((s) => !s.moduleIds.length && teamSquads(document).includes(s));
+  let areas = wholeProduct ? [] : plannedAreas(document, modules).filter((a) => a.moduleIds.some((id) => !covered.has(id)));
   if (!squads.length && !areas.length) areas = [{ name: WHOLE_PRODUCT_SQUAD, moduleIds: [] }];
   const unplaced = developers(document).filter((s) => !squadOf(document, s.id));
   const staffed = new Map<SquadArea, Specialist[]>();

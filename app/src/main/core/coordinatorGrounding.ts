@@ -37,7 +37,10 @@ const BUTTON_WORDS: Array<{ move: NextMove; label: string; pattern: string }> = 
   ...Object.entries(PERSON_MOVE_LABELS).map(([move, label]) => ({ move: move as NextMove, label, pattern: escape(label) })),
   { move: "answerQuestions", label: "Rispondi alle domande", pattern: "Rispondi alle (?:\\d+ )?domande" },
   { move: "grantMandate", label: "Accetta la proposta", pattern: escape("Accetta la proposta") },
-  ...Object.entries(COORDINATOR_MOVES).map(([move, words]) => ({ move: move as CoordinatorMove, label: words.label, pattern: escape(words.label) })),
+  // A route starts from its own card, never from a declared step.
+  ...Object.entries(COORDINATOR_MOVES)
+    .filter(([move]) => move !== "startRoute")
+    .map(([move, words]) => ({ move: move as CoordinatorMove, label: words.label, pattern: escape(words.label) })),
 ];
 
 function escape(text: string): string {

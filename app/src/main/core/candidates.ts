@@ -397,6 +397,23 @@ export function contentFingerprint(document: ProjectDocument, candidate: Candida
   return createHash("sha256").update(`${candidate.snapshotId}\n${versions}\n${evidence}`).digest("hex");
 }
 
+/**
+ * Whether Trama's own checks prove a candidate: the required checks passed on its snapshot, a distinct reviewer approved
+ * it, nothing was left open and the Coordinator's green light still covers the candidate's content. `mergedHead` is the
+ * head GitHub merged: it must be the one Trama published, otherwise the proof is about other work. It stands in for CI
+ * on a repository without any.
+ */
+export function verifiedByTrama(document: ProjectDocument, candidate: Candidate, mergedHead: string | null | undefined): boolean {
+  const published = candidate.pullRequest?.headSHA;
+  if (!published || !mergedHead || published.toLowerCase() !== mergedHead.toLowerCase()) return false;
+  if (candidate.unresolvedChoices.length || !candidate.clearance || candidate.technicalReview?.verdict !== "approved") return false;
+  if (candidate.clearance.fingerprint !== contentFingerprint(document, candidate)) return false;
+  return candidate.requiredChecks.every((check) => {
+    const evidence = candidate.evidence[check];
+    return evidence !== undefined && evidence.snapshotId === candidate.snapshotId && evidence.result !== "fail";
+  });
+}
+
 export function candidateReport(document: ProjectDocument, candidate: Candidate, headSHA: IntegrationHeads): CandidateReport {
   // A merged candidate is finished work: the base it was built on is now behind the merge that took it, so no check on
   // the base or the worktree applies to it any more. Without this it fell back to "not ready yet" after every merge.

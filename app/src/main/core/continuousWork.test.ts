@@ -13,7 +13,9 @@ import {
   hasOpenWork,
   isPaused,
   KEPT_ROUNDS,
+  QUESTION_RETRY_MS,
   projectMove,
+  recordHeldMoves,
   recordRound,
   setPaused,
   stalledMove,
@@ -25,6 +27,8 @@ import { approveCandidate, clearCandidate, declareCandidate, recordEvidence, rec
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
+import { askCoordinator } from "./developerQuestions";
+import { statusLine } from "./statusLine";
 
 const free: ContinuationGuards = { enabled: true, paused: false, busy: false, unavailable: null };
 
@@ -395,6 +399,103 @@ describe("projectMove: events of the whole project and the round (A05)", () => {
     const document = verifying();
     document.focus = { taskId: null, pausedTaskIds: ["work:r1"] };
     expect(projectMove(document, "round", free)).toBeNull();
+  });
+});
+
+describe("a developer's open question (issue #549)", () => {
+  const asked = new Date(Date.UTC(2026, 9, 2, 18, 30));
+  const at = (minutes: number) => new Date(asked.getTime() + minutes * 60_000);
+
+  /** Ada paused by a question, and `attempts` automatic turns that did not answer it, five minutes apart. */
+  function pausedForQuestion(attempts: number) {
+    const document = confirmed();
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    const assignment = work(document, "r3");
+    assignment.status = "running";
+    askCoordinator(document, assignment.id, { question: "Un buono conta come pagamento?", context: null }, asked);
+    assignment.status = "paused";
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const turn = request(document, `a${attempt}`, { step: { move: "answerQuestion", by: "trama", trigger: "round" } });
+      turn.createdAt = at(attempt * 5).toISOString();
+      turn.completedAt = at(attempt * 5 + 1).toISOString();
+    }
+    return document;
+  }
+
+  it("starts the answer in the round while the question has none, and tells the person when a turn left it unanswered", () => {
+    const document = pausedForQuestion(1);
+    expect(projectMove(document, "round", free, at(20))?.move.move).toBe("answerQuestion");
+    // A turn that ended without the answer is a stalled move, shown in the chat and the status line.
+    expect(stalledMove(document, "a1")).toMatchObject({ move: "answerQuestion", reason: expect.stringContaining("non ha risposto alla domanda dello sviluppatore") });
+  });
+
+  it("stops after the round's attempts, says so, and tries again an hour after the last turn instead of staying silent for hours", () => {
+    const document = pausedForQuestion(3);
+    const held: { move: string; attempts: number; retryAt: number | null }[] = [];
+    const onHeld = (h: (typeof held)[number]) => held.push(h);
+    // Three turns in a row without an answer: the round does not repeat the same turn every five minutes...
+    expect(projectMove(document, "round", free, at(30), onHeld)).toBeNull();
+    expect(held).toEqual([expect.objectContaining({ move: "answerQuestion", attempts: 3, retryAt: at(16).getTime() + QUESTION_RETRY_MS })]);
+    // ...but the question is not left to wait for a new event that never comes: after the hour the round tries once more.
+    expect(projectMove(document, "round", free, at(16 + 59))).toBeNull();
+    expect(projectMove(document, "round", free, at(16 + 60))?.move.move).toBe("answerQuestion");
+    // The next attempt reads why the one before did not get there.
+    document.requests.find((r) => r.id === "a3")!.step!.stalled = stalledMove(document, "a3")!.reason;
+    request(document, "a4", { step: { move: "answerQuestion", by: "trama", trigger: "round" } });
+    expect(automaticMoveSection("answerQuestion", null, document, "a4")).toContain("Tentativo di nuovo");
+  });
+
+  it("shows the stall also when the turn declared the same next step without answering", () => {
+    const document = pausedForQuestion(1);
+    document.requests.find((r) => r.id === "a1")!.nextStep = { move: "answerQuestion", reason: "Rispondo.", declaredAt: at(6).toISOString() };
+    expect(stalledMove(document, "a1")).toMatchObject({ move: "answerQuestion" });
+  });
+
+  it("does not start a move for an answered question", () => {
+    const document = pausedForQuestion(1);
+    const question = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.questions?.length)!.questions![0]!;
+    question.answer = { kind: "facts", text: "Sì", sources: ["spec"], answeredAt: at(10).toISOString() };
+    expect(projectMove(document, "round", free, at(20))?.move.move).not.toBe("answerQuestion");
+    expect(stalledMove(document, "a1")).toBeNull();
+  });
+});
+
+describe("a move the round stopped starting, whichever it is (issue #557)", () => {
+  /** A ready plan with a confirmed team, and `attempts` automatic turns of assignWork that assigned nothing. */
+  function assignmentNotMade(attempts: number) {
+    const document = confirmed();
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    for (let attempt = 1; attempt <= attempts; attempt++) request(document, `a${attempt}`, { step: { move: "assignWork", by: "trama", trigger: "round" } });
+    return document;
+  }
+
+  it("writes one line in Activity and one in the status line, once per series, when the guard closes on assignWork", () => {
+    const document = assignmentNotMade(3);
+    const held: Parameters<typeof recordHeldMoves>[1] = [];
+    expect(projectMove(document, "round", free, new Date(), (h) => held.push(h))).toBeNull();
+    expect(held).toEqual([expect.objectContaining({ requestId: "a3", move: "assignWork", attempts: 3 })]);
+    expect(recordHeldMoves(document, held)).toEqual(["a3"]);
+    const lines = document.events.filter((e) => e.requestId === "a3" && e.content.type === "activity");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.content).toMatchObject({ tone: "error", title: expect.stringContaining("3 turni") });
+    expect(document.requests.find((r) => r.id === "a3")!.step!.stalled).toBe((lines[0]!.content as { title: string }).title);
+    expect(statusLine(document, null).reason).toContain("3 turni");
+    // The next round finds the guard still closed and says nothing more.
+    expect(recordHeldMoves(document, held)).toEqual([]);
+    expect(document.events.filter((e) => e.requestId === "a3" && e.content.type === "activity")).toHaveLength(1);
+  });
+
+  it("keeps the question's own words for answerQuestion and stays silent below the attempts", () => {
+    const document = assignmentNotMade(2);
+    const held: Parameters<typeof recordHeldMoves>[1] = [];
+    expect(projectMove(document, "round", free, new Date(), (h) => held.push(h))?.move.move).toBe("assignWork");
+    expect(held).toEqual([]);
+    expect(recordHeldMoves(document, [{ requestId: "a2", move: "answerQuestion", attempts: 3, retryAt: null }])).toEqual(["a2"]);
+    expect(document.events.at(-1)!.content).toMatchObject({ title: expect.stringContaining("rispondere allo sviluppatore") });
   });
 });
 
@@ -857,5 +958,36 @@ describe("the full delegation keeps the work going (issue #423)", () => {
     expect(ticketMove(document, issue, free, { model: "gpt-6-luna", effort: "high" })).toMatchObject({ move: "takeTicket", goalId: null, model: "gpt-6-luna" });
     expect(ticketMove(document, issue, { ...free, paused: true }, null)).toBeNull();
     expect(ticketMove(document, null, free, null)).toBeNull();
+  });
+});
+
+describe("stalledMove: no failure while every slice waits for another (issue #565)", () => {
+  it("tells no failed move when the work waits for the person and the other slices wait for it", () => {
+    const document = confirmed();
+    request(document, "r3");
+    const value = plan(document, "r3");
+    value.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S1", title: "Prima", blockedBy: [], issue: { number: 7, url: "https://github.com/o/r/issues/7" } },
+        { id: "S2", title: "Seconda", blockedBy: ["S1"] },
+      ],
+    } as never;
+    team(document);
+    request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+    const assignment = work(document, "r4");
+    assignment.slice = { planId: value.id, sliceId: "S1" };
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    const decision = document.decisions[0] ?? answerDecisionRequest(document, grill(document, "r4").id, { alternativeIndex: 1, freeText: null }).decision;
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    );
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Letto" });
+    // The automatic move that came after: nothing was assigned, and nothing could be.
+    request(document, "r5", { step: { move: "assignWork", by: "trama" } });
+    expect(stalledMove(document, "r5")).toBeNull();
   });
 });

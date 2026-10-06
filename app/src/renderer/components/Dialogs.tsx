@@ -1,3 +1,4 @@
+import { cn } from "@/lib/cn";
 import { useState } from "react";
 import { parseRepositoryInput } from "@shared/onboarding";
 import { Button, FilledScope } from "@/components/ui/button";
@@ -26,6 +27,10 @@ function CreateProjectDialog() {
   const setDialog = useUi((s) => s.setDialog);
   const [name, setName] = useState("");
   const [idea, setIdea] = useState("");
+  // The private repository on GitHub, on by default once GitHub CLI is connected (2 October 2026).
+  const ghReady = useUi((s) => s.app?.gitHubCli.status === "ready");
+  const [github, setGithub] = useState<boolean | null>(null);
+  const withGithub = ghReady && (github ?? true);
   return (
     <Dialog
       open={open}
@@ -40,7 +45,7 @@ function CreateProjectDialog() {
           <Button
             disabled={!name.trim()}
             onClick={() =>
-              void act("project:create", { name, idea }).then(() => {
+              void act("project:create", { name, idea, github: withGithub }).then(() => {
                 setName("");
                 setIdea("");
                 setDialog(null);
@@ -61,6 +66,19 @@ function CreateProjectDialog() {
           <Label>{t("dialogs.create.idea")}</Label>
           <TextArea value={idea} onChange={(e) => setIdea(e.target.value)} />
         </div>
+        <label className={cn("flex items-start gap-2 text-ui", ghReady ? "cursor-pointer" : "text-muted-foreground")} data-testid="create-github">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-[var(--color-text-accent)]"
+            checked={withGithub}
+            disabled={!ghReady}
+            onChange={(e) => setGithub(e.target.checked)}
+          />
+          <span>
+            {t("dialogs.create.github")}
+            <span className="block text-ui-xs text-muted-foreground">{t(ghReady ? "dialogs.create.githubHint" : "dialogs.create.githubOff")}</span>
+          </span>
+        </label>
       </div>
     </Dialog>
   );

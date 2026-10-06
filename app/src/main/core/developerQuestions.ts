@@ -27,13 +27,13 @@ export class QuestionError extends Error {
 export const ASK_COORDINATOR_TOOL: ToolDefinition = {
   name: "ask_coordinator",
   description:
-    `Ask the Coordinator a question about this assignment that you cannot answer from the code, the slice, the spec, the contract or the Pact decisions you received: a behaviour the spec leaves open, a missing decision, a contradiction. Never ask about a technical choice you can make yourself. Ask one question at a time and say in context what you need it for. Trama records the question and pauses your work: after the call, stop working, end your answer with the report of the assignment and list the question under \`${REPORT_HEADINGS.doubts}\`. Trama resumes this session with the answer, which comes from the Coordinator or, for a product choice, from the person.`,
+    `Ask the Coordinator a question about this assignment that you cannot answer from the code, the slice, the spec, the contract or the Pact decisions you received: a behaviour the spec leaves open, a missing decision, a contradiction. Never ask about a technical choice you can make yourself, and never put code or files in a question: code moves through git only. Ask one question at a time and say in context what you need it for. Trama records the question and pauses your work: after the call, stop working, end your answer with the report of the assignment and list the question under \`${REPORT_HEADINGS.doubts}\`. Trama resumes this session with the answer, which comes from the Coordinator or, for a product choice, from the person.`,
   properties: { question: { type: "string" }, context: { type: "string" } },
   required: ["question"],
   readOnly: false,
 };
 
-export const DEVELOPER_TOOL_SERVER_INSTRUCTIONS = "Trama's tool for a developer: ask the Coordinator a question about the assignment.";
+export const DEVELOPER_TOOL_SERVER_INSTRUCTIONS = "Trama's tools for a developer: ask the Coordinator a question about the assignment, install the npm dependencies of the worktree, and bring the updated base branch into the worktree (align_with_base). Code never travels through questions: it moves through git only.";
 
 /** A developer's work gets the tool: work the Coordinator assigned to a developer, never a fixed role's automatic work. */
 export const asksCoordinator = (specialist: Specialist, assignment: SpecialistAssignment) => specialist.role === "developer" && !assignment.duty;

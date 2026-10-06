@@ -96,7 +96,7 @@ describe("squads by product area (A10)", () => {
     expect(formation.hired).toEqual([]);
     // The shared roles belong to no squad.
     const shared = sharedRoleMembers(document);
-    expect(shared.map((s) => s.role)).toEqual(["ux", "research", "documentation", "bugTriage", "specReviewer", "cleanCode", "regressionGuardian", "security", "performance", "devops"]);
+    expect(shared.map((s) => s.role)).toEqual(["ux", "research", "documentation", "bugTriage", "specReviewer", "cleanCode", "regressionGuardian", "security", "performance", "devops", "operator"]);
     expect(shared.every((s) => squadOf(document, s.id) === null)).toBe(true);
   });
 
@@ -121,6 +121,15 @@ describe("squads by product area (A10)", () => {
     const document = project([["Ada", null]]);
     formSquads(document, MODULES, at(1));
     expect(teamSquads(document).map((s) => [s.name, s.moduleIds, names(document, s.developerIds)])).toEqual([[WHOLE_PRODUCT_SQUAD, [], ["Ada"]]]);
+  });
+
+  it("keeps the areas that appear later in the whole product's squad, with no new developer (2 October 2026)", () => {
+    const document = project([["Ada", null]], ["plan", "executeInWorktree", "composeTeam"]);
+    formSquads(document, MODULES, at(1));
+    work(document, "Ada", "root");
+    expect(formSquads(document, [...MODULES, module("root", "Tutto il progetto")], at(2))).toBeNull();
+    expect(teamSquads(document).map((s) => s.name)).toEqual([WHOLE_PRODUCT_SQUAD]);
+    expect(document.team.specialists.filter((s) => s.role === "developer").map((s) => s.name)).toEqual(["Ada"]);
   });
 
   it("adds a developer for an area nobody can take only within the mandate", () => {

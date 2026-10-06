@@ -54,3 +54,13 @@ describe("GitHub CLI status", () => {
     }
   });
 });
+
+describe("the GitHub repository of a project Trama creates (2 October 2026)", () => {
+  it("is named after the folder, in the characters GitHub keeps", async () => {
+    const { repositoryName } = await import("./onboarding");
+    expect(repositoryName("sito-gta6")).toBe("sito-gta6");
+    expect(repositoryName("Sito GTA 6")).toBe("Sito-GTA-6");
+    expect(repositoryName("caffè & co")).toBe("caff--co");
+    expect(repositoryName("...")).toBe("project");
+  });
+});

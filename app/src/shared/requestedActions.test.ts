@@ -3,7 +3,7 @@ import { activityLog } from "./activity";
 import { translator } from "./i18n";
 import type { RequestedAction } from "./domain";
 import { emptyDocument } from "../main/core/document";
-import { requestedActionEntries, requestedActionLine, requestedActionStatus } from "./requestedActions";
+import { requestedActionEntries, requestedActionLine, requestedActionStatus, showsStatusBadge } from "./requestedActions";
 import { waitingForYou } from "./waitingForYou";
 
 const action = (overrides: Partial<RequestedAction> = {}): RequestedAction => ({
@@ -28,7 +28,11 @@ describe("how an action the person asked for reads (issue #422)", () => {
       "Prima di fare un force push aspetto la tua conferma. Me l'hai chiesto: «sistema tu la situazione al meglio»",
     );
     expect(requestedActionLine(action({ status: "declined" }))).toMatch(/^Non faccio un force push: non l'hai confermato\./);
-    expect(requestedActionStatus(action({ status: "done" }))).toBe("Fatta");
+    // Done, the line says it in the past and needs no badge (2 October 2026).
+    expect(requestedActionLine(action({ status: "done" }))).toBe("Ho fatto un force push, come mi hai chiesto: «sistema tu la situazione al meglio»");
+    expect(requestedActionLine(action({ status: "done" }), "en")).toBe("I did a force push, as you asked me: “sistema tu la situazione al meglio”");
+    expect(showsStatusBadge(action({ status: "done" }))).toBe(false);
+    expect(showsStatusBadge(action({ status: "failed" }))).toBe(true);
     expect(requestedActionStatus(action({ status: "waiting" }), "en")).toBe("Waiting for your confirmation");
     for (const line of [requestedActionLine(action()), requestedActionLine(action(), "en")]) expect(line).not.toMatch(/[–—]/);
   });

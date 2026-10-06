@@ -4,8 +4,9 @@
  * projects and the rest of the home folder stay out, for every provider.
  */
 import { spawnSync } from "node:child_process";
-import { readdirSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { containedWriteTarget } from "./providers/providerSupport";
 import { isInside } from "./providers/types";
@@ -86,6 +87,22 @@ export function toolchainRoots(pathEntries: readonly string[], home = homedir(),
   return roots;
 }
 
+/**
+ * The search path of a sandboxed shell: only the folders it may read, in their order, then the system's. A folder the
+ * sandbox denies answers EPERM instead of "not found", and a program looked up by name stops there: npm could not
+ * start its scripts' `sh` behind ~/.codeium/windsurf/bin (2 October 2026).
+ */
+export function sandboxSearchPath(entries: readonly string[], readable: readonly string[]): string {
+  const kept: string[] = [];
+  for (const entry of [...entries, "/usr/bin", "/bin", "/usr/sbin", "/sbin"]) {
+    if (!isAbsolute(entry)) continue;
+    const folder = resolve(entry);
+    const allowed = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].includes(folder) || readable.some((root) => isInside(root, folder));
+    if (allowed && !kept.includes(folder)) kept.push(folder);
+  }
+  return kept.join(process.platform === "win32" ? ";" : ":");
+}
+
 /** Top-level folders of the platform that a sandboxed shell needs; every other one may hold projects or data. */
 const SYSTEM_TOP_LEVEL = new Set([
   "bin", "sbin", "usr", "lib", "lib32", "lib64", "libx32", "etc", "dev", "proc", "sys", "run", "tmp", "var", "opt", "nix", "boot",
@@ -117,10 +134,12 @@ function listRoot(): string[] {
 /**
  * Paths a shell command names that are private to the person: inside the home folder or Codex's home, but
  * outside every readable root. Used to record reads a sandbox blocked; system folders are not reported.
+ * Inside the script of a code interpreter (-c/-e argument or heredoc) only relative paths are ignored; shell -c text is analyzed as a command.
  */
 export function privatePathsInCommand(command: string, cwd: string, roots: readonly string[], home = homedir(), codexHome = codexHomeDirectory(home)): string[] {
+  const cleaned = stripScriptContent(command);
   const found: string[] = [];
-  for (const raw of command.split(/[\s;|&()<>`]+/)) {
+  for (const raw of cleaned.split(/[\s;|&()<>`]+/)) {
     const token = raw.replace(/^[^=]*=(?=[~/$])/, "").replace(/^["']+|["']+$/g, "");
     if (!/^(?:~|\$HOME|\$\{HOME\}|\/|\.\.)/.test(token)) continue;
     const expanded = expandHome(token, home);
@@ -132,6 +151,31 @@ export function privatePathsInCommand(command: string, cwd: string, roots: reado
   return found;
 }
 
+/** Relative path starts (`./`, `../`) not preceded by a path character. */
+const RELATIVE_PATH_START = /(?<![\w.~/$])\.{1,2}(?=\/)/g;
+
+/** A relative path inside script text only reaches the script's own working folder, so it is not a private read. */
+function withoutRelativePaths(script: string): string {
+  return script.replace(RELATIVE_PATH_START, "rel");
+}
+
+/**
+ * Neutralize relative paths in script text: the -c/-e argument of a code interpreter and the heredoc that feeds one.
+ * Home and Codex paths stay, so a real attempt is still reported. Shells are not touched, their -c text is a command.
+ */
+function stripScriptContent(command: string): string {
+  const quoted = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;|&]+`;
+  const interpreter = String.raw`\b(?:python3?|node|ruby|perl|deno|bun)\b`;
+  let result = command.replace(new RegExp(`(${interpreter}[^;|&]*?\\s+-[ce]\\s+)(${quoted})`, "g"), (_m, head: string, script: string) => head + withoutRelativePaths(script));
+
+  // The closing delimiter ends the line, the text, or a literal \n, and may be followed by the shell's own quote.
+  result = result.replace(
+    new RegExp(`(${interpreter}[^;|&]*?<<-?['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?)([\\s\\S]*?(?:^|\\n|\\\\n)\\2(?=$|[\\s"']|\\\\n))`, "gm"),
+    (_m, head: string, _delimiter: string, body: string) => head + withoutRelativePaths(body),
+  );
+  return result;
+}
+
 /** The permission profiles Trama gives each Codex thread: one for read-only turns, one for the worktree. */
 export const CODEX_READ_PROFILE = "trama_read";
 export const CODEX_WRITE_PROFILE = "trama_write";
@@ -140,8 +184,46 @@ export const CODEX_WRITE_PROFILE = "trama_write";
  * Codex permission profiles (`permissions.<id>` in the thread config): the platform's minimal folders, the
  * readable roots and nothing else, with no network. The write profile can also write `writableRoot` only.
  */
-export function codexPermissionProfiles(roots: readonly string[], writableRoot: string | null): Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> {
+/**
+ * System folders every runtime reads as it starts, beyond Codex's minimal set: OpenSSL's configuration and the
+ * certificates. Without them `node` fails before running anything ("OpenSSL configuration error ... fopen
+ * /System/Library/OpenSSL/openssl.cnf: Operation not permitted"), so a JavaScript project could not run its checks
+ * (2 October 2026). They hold no data of the person.
+ */
+export const SYSTEM_READ_ROOTS = process.platform === "darwin" ? ["/System/Library/OpenSSL", "/private/etc/ssl", "/etc/ssl"] : ["/etc/ssl", "/usr/lib/ssl"];
+
+/**
+ * Where Playwright keeps the browsers it downloaded, when the folder is there. A project's browser tests launch them
+ * from there; without reading it Playwright stops before the browser starts (2 October 2026). Binaries, no data.
+ */
+export function browserCacheRoots(home = homedir(), env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string[] {
+  const folder = env.PLAYWRIGHT_BROWSERS_PATH
+    ? env.PLAYWRIGHT_BROWSERS_PATH
+    : platform === "darwin"
+      ? join(home, "Library", "Caches", "ms-playwright")
+      : platform === "win32"
+        ? join(env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "ms-playwright")
+        : join(env.XDG_CACHE_HOME ?? join(home, ".cache"), "ms-playwright");
+  return existsSync(folder) ? [folder] : [];
+}
+
+/**
+ * The developer's own temporary folder for a worktree, outside it so nothing lands in the work's diff. Tools write
+ * their scratch files under TMPDIR, which the sandbox otherwise refuses (Playwright, 2 October 2026).
+ */
+export function agentTempFolder(writableRoot: string, base = tmpdir()): string {
+  const folder = join(realpathSync(base), "trama-agents", createHash("sha256").update(resolve(writableRoot)).digest("hex").slice(0, 16));
+  mkdirSync(folder, { recursive: true });
+  return folder;
+}
+
+export function codexPermissionProfiles(
+  roots: readonly string[],
+  writableRoot: string | null,
+  tempRoot: string | null = null,
+): Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> {
   const read: Record<string, string> = { ":minimal": "read" };
+  for (const root of SYSTEM_READ_ROOTS) read[root] = "read";
   for (const root of roots) read[root] = "read";
   const profiles: Record<string, { filesystem: Record<string, string>; network: { enabled: false } }> = {
     [`permissions.${CODEX_READ_PROFILE}`]: { filesystem: read, network: { enabled: false } },
@@ -149,6 +231,7 @@ export function codexPermissionProfiles(roots: readonly string[], writableRoot: 
   if (writableRoot) {
     const write = { ...read };
     for (const root of readableRoots(writableRoot)) write[root] = "write";
+    if (tempRoot) write[tempRoot] = "write";
     profiles[`permissions.${CODEX_WRITE_PROFILE}`] = { filesystem: write, network: { enabled: false } };
   }
   return profiles;

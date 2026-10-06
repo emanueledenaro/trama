@@ -375,7 +375,7 @@ describe("the Coordinator's line on its autonomy (A06)", () => {
     expect(autonomyLine(document)).toContain("restano della persona");
     mandate(document, ["plan", "composeTeam"]);
     const line = autonomyLine(document);
-    expect(line).toContain("comprensione confermata, team confermato, seam confermati, fette confermate");
+    expect(line).toContain("comprensione confermata, team confermato, punti di prova confermati, fette confermate");
     expect(line).toContain("propose_goal");
   });
 });

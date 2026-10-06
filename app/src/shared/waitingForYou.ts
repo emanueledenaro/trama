@@ -25,7 +25,10 @@ export type WaitingKind =
   | "candidate"
   | "memory"
   | "fixedBan"
-  | "confirmation";
+  | "confirmation"
+  | "commandApproval"
+  | "siteConsent"
+  | "appConsent";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
@@ -321,6 +324,48 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       title: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${oneLine(action.summary)}`,
       goalId: null,
       askedAt: action.confirmation?.askedAt ?? action.requestedAt,
+      blocks: 0,
+    });
+  }
+
+  // A command of the Operator that cannot be undone (issue #409): it runs only after the person's yes.
+  for (const approval of (document.commandApprovals ?? []).filter((a) => a.status === "waiting")) {
+    items.push({
+      key: `commandApproval:${approval.id}`,
+      kind: "commandApproval",
+      targetId: approval.id,
+      label: t(approval.send ? "commandApproval.send.waitingLabel" : "commandApproval.waiting.label"),
+      title: oneLine(approval.command),
+      goalId: null,
+      askedAt: approval.askedAt,
+      blocks: 0,
+    });
+  }
+
+  // The Operator wants a site that has no consent (issue #410): it opens only after the person's yes.
+  // The same for an app the Operator wants to use on the screen (issue #412).
+  for (const request of (document.appConsentRequests ?? []).filter((r) => r.status === "waiting")) {
+    items.push({
+      key: `appConsent:${request.id}`,
+      kind: "appConsent",
+      targetId: request.id,
+      label: t("appConsent.waiting.label"),
+      title: request.app,
+      goalId: null,
+      askedAt: request.askedAt,
+      blocks: 0,
+    });
+  }
+
+  for (const request of (document.siteConsentRequests ?? []).filter((r) => r.status === "waiting")) {
+    items.push({
+      key: `siteConsent:${request.id}`,
+      kind: "siteConsent",
+      targetId: request.id,
+      label: t("siteConsent.waiting.label"),
+      title: request.host,
+      goalId: null,
+      askedAt: request.askedAt,
       blocks: 0,
     });
   }

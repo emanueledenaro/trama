@@ -20,7 +20,7 @@ export interface ActionMap {
   "project:openDialog": [void, void];
   "project:open": [{ path: string }, void];
   "project:openDemo": [void, void];
-  "project:create": [{ name: string; idea: string }, void];
+  "project:create": [{ name: string; idea: string; github?: boolean }, void];
   /** Clones a GitHub repository (`owner/name` or its URL) into a folder the person chooses, then opens it (B02). */
   "project:clone": [{ repository: string }, void];
   "project:close": [void, void];
@@ -47,6 +47,8 @@ export interface ActionMap {
   "coordinator:interrupt": [void, void];
   /** Pauses or resumes the project's continuous work (A05): the Pause stops automatic moves, rounds and automatic work. */
   "coordinator:pause": [{ paused: boolean }, void];
+  /** Turns computer access (network, browser, commands outside the project, screen) on or off with the access switch (issue #413). */
+  "access:set": [{ on: boolean }, void];
   /** The person asks the Coordinator for a recap (A03): Trama writes it in the chat from the records. */
   "coordinator:recap": [{ goalId?: string | null }, void];
   "coordinator:retry": [void, void];
@@ -98,6 +100,14 @@ export interface ActionMap {
   "mandate:restrict": [{ scopeModuleIds: string[]; authorizedActions: MandateAction[] }, void];
   /** The person has seen an action a fixed ban stopped; it leaves Aspetta te (issue #244). */
   "fixedBan:acknowledge": [{ id: string }, void];
+  "commandApproval:confirm": [{ id: string }, void];
+  "commandApproval:decline": [{ id: string }, void];
+  "siteConsent:confirm": [{ id: string }, void];
+  "siteConsent:decline": [{ id: string }, void];
+  "siteConsent:withdraw": [{ id: string }, void];
+  "appConsent:confirm": [{ id: string }, void];
+  "appConsent:decline": [{ id: string }, void];
+  "appConsent:withdraw": [{ id: string }, void];
   /** The person confirms or declines an action they asked for that deletes something or cannot be undone (issue #422). */
   "requestedAction:confirm": [{ id: string }, void];
   "requestedAction:decline": [{ id: string }, void];
