@@ -177,6 +177,24 @@ describe("merge with the green light, interface candidates held for the person (
     expect(third.humanApproval).toMatchObject({ actor: "Persona" });
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Candidato ${third.id} unito con il tuo ok`)).toBe(true);
 
+    // 3b. A project without the screenshots script (issue #587), as one Trama creates: the interface candidate still
+    // waits for the person, and its field says why there are no screenshots instead of showing none.
+    const manifest = join(repo, "package.json");
+    await writeFile(manifest, JSON.stringify({ name: "negozio", private: true, scripts: {} }));
+    await git(["add", "package.json"], repo, false);
+    await git(["commit", "-m", "chore: drop the screenshots script"], repo, false);
+    await controller.send("[assegna] [interfaccia]", null, null, null);
+    const bare = ada.assignments.at(-1)!;
+    await until(() => bare.id !== again.id && bare.status === "completed");
+    await controller.send(`[candidato:${bare.id}:${decision.id}]`, null, null, null);
+    const withoutScript = document.candidates.at(-1)!;
+    await until(() => withoutScript.interfaceShots?.status === "unavailable", 30_000);
+    expect(withoutScript.interfaceShots).toMatchObject({ shots: [] });
+    expect(project().candidateReports[withoutScript.id]).toMatchObject({ mergeRoute: "interface" });
+    await until(() => waitingKeys().includes(`candidate:${withoutScript.id}`));
+    expect((project().waiting ?? []).find((w) => w.key === `candidate:${withoutScript.id}`)).toMatchObject({ label: "Interfaccia da guardare" });
+    expect(withoutScript.pullRequest).toBeNull();
+
     // 4. A merge that would change the repository's settings runs into a fixed ban: it stops and waits for the person.
     await controller.send("[assegna] [impostazioni]", null, null, null);
     const settings = ada.assignments.at(-1)!;

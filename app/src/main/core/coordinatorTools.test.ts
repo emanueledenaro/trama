@@ -1241,6 +1241,19 @@ describe("the full delegation in the Coordinator's tools (issue #423)", () => {
     expect(document.delegatedChoices?.at(-1)).toMatchObject({ kind: "interfaceCandidate", targetId: "C-00000001", doubt: "Il tema scuro ha poco contrasto" });
   });
 
+  it("does not approve an interface candidate without screenshots: it has the script added first (issue #587)", async () => {
+    const { document, context } = delegatedContext();
+    const approved: string[] = [];
+    (context as unknown as { approveWithDelegation: (id: string) => Promise<void> }).approveWithDelegation = async (id) => void approved.push(id);
+    document.candidates.push({ id: "C-00000002", assignmentId: "A-1", snapshotId: "S1", interfaceShots: { snapshotId: "S1", status: "unavailable", reason: "No script", shots: [], at: "2020-01-01T00:00:00.000Z" } } as never);
+    await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu in automatico" }, context);
+    const refused = parse(await runCoordinatorTool("approve_with_delegation", { candidate: "C-00000002", reason: "Coerente" }, context));
+    expect(refused.error.code).toBe("screenshots_missing");
+    expect(refused.error.message).toContain("resume_assignment");
+    expect(refused.error.message).toContain("docs/agents/screenshots.md");
+    expect(approved).toEqual([]);
+  });
+
   it("refuses words that are not the person's", async () => {
     const { context, changes } = delegatedContext();
     const refused = await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu senza di me" }, context);

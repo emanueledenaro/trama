@@ -13,6 +13,10 @@ describe("AI Hero skills", () => {
     const report = await prepareSkills(root, resources, "o/r");
     expect(report.pathsCreated).toContain(".agents/skills/tdd/SKILL.md");
     expect(report.pathsCreated).toContain("docs/agents/issue-tracker.md");
+    // Issue #587: the method asks for the screenshots script on the first interface work, with the contract of Trama.
+    expect(report.pathsCreated).toContain("docs/agents/screenshots.md");
+    const screenshots = await readFile(join(root, "docs/agents/screenshots.md"), "utf8");
+    for (const word of ["screenshots", "TRAMA_SCREENSHOTS_DIR", "TRAMA_THEME", "390", "1280"]) expect(screenshots).toContain(word);
     expect(report.existingPreserved).toEqual(["AGENTS.md"]);
     expect(report.warnings).toEqual(["Conflitto preservato: AGENTS.md."]);
     expect(await readFile(join(root, "AGENTS.md"), "utf8")).toBe("# Mie istruzioni\n");

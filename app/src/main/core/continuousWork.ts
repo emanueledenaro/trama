@@ -417,7 +417,9 @@ function waitingChoices(document: ProjectDocument): string[] {
       const blocker = inspectCandidate(document, c, null).find((b) => PERSON_BLOCKERS.includes(b.code));
       return blocker
         ? `- ${c.id}: fermo su ${blocker.code} (${blocker.detail}). Decidi tu con la delega e fai correggere il lavoro con assign_task, o dichiara un candidato nuovo.`
-        : `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`;
+        : c.interfaceShots?.snapshotId === c.snapshotId && c.interfaceShots.status === "unavailable"
+          ? `- ${c.id}: candidato di interfaccia senza schermate, perché il progetto non ha lo script screenshots. Non fermarti: fallo aggiungere con resume_assignment (leggere docs/agents/screenshots.md, script e test nella stessa copia di lavoro), poi guarda le schermate e approva.`
+          : `- ${c.id}: candidato di interfaccia che aspetta l'ok, con le schermate prima e dopo.`;
     });
   return [
     ...(questions.length ? ["Domande di prodotto aperte:", ...questions] : []),

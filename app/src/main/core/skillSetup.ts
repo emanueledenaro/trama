@@ -76,8 +76,11 @@ interface PlannedWrite {
 
 // @model-text: the documents below are written into the project for its agents. Their bytes are recorded in the
 // manifest, so they do not follow the interface language.
-const agentsPointer = "# Istruzioni del progetto\n\nLeggere docs/agents/aihero-setup.md prima di usare le skill tecniche incluse.";
+const agentsPointer =
+  "# Istruzioni del progetto\n\nLeggere docs/agents/aihero-setup.md prima di usare le skill tecniche incluse.\n\nSe il lavoro cambia l'interfaccia, leggere docs/agents/screenshots.md: il progetto deve avere lo script `screenshots`.";
 const SETUP_DOCUMENT = "docs/agents/aihero-setup.md";
+/** The method's page on the screenshots of an interface change (issue #587). */
+export const SCREENSHOTS_DOCUMENT = "docs/agents/screenshots.md";
 
 /** @model-text: project document for the agents. */
 function configurationDocument(repository: string): string {
@@ -130,6 +133,30 @@ const domainDocument = `# Documentazione di dominio
 Prima di esplorare il progetto, leggere \`CONTEXT.md\` alla radice quando esiste e le decisioni pertinenti in \`docs/adr/\`. Se i file non esistono, procedere senza crearli automaticamente.
 
 Usare il vocabolario definito nel contesto del progetto. Se una modifica contraddice una decisione esistente, segnalarlo senza riscrivere la decisione.`;
+
+// @model-text: project document for the agents. It follows the contract of app/src/main/core/interfaceShots.ts.
+const screenshotsDocument = `# Schermate dell'interfaccia
+
+Trama mostra alla persona le schermate prima e dopo di ogni lavoro che cambia l'interfaccia. Le fa il progetto: Trama non sa come disegna le sue schermate, quindi chiede uno script.
+
+## Lo script
+
+- Nome: \`screenshots\`, nella sezione \`scripts\` del \`package.json\` alla radice del progetto (o del pacchetto con l'interfaccia).
+- Trama lo lancia due volte per ogni lato, una volta con \`TRAMA_THEME=light\` e una con \`TRAMA_THEME=dark\`. Lo script usa quel tema per disegnare le schermate.
+- Salva i file PNG nella cartella indicata da \`TRAMA_SCREENSHOTS_DIR\`. Ogni nome di file è il nome della schermata, uguale prima e dopo: \`home-desktop.png\`, \`home-telefono.png\`.
+- Fa al massimo 6 schermate e finisce in meno di 3 minuti.
+- Non usa la rete, tranne il computer locale (loopback): avvia da solo il sito o l'app e poi lo chiude.
+- Esce con un errore se non riesce a salvare le schermate, così il lavoro non passa con schermate vuote.
+
+## Cosa ritrarre
+
+Le schermate principali dell'interfaccia, ciascuna alla misura del telefono (circa 390 x 844) e alla misura del computer (circa 1280 x 800). Un progetto con una sola pagina ha due schermate.
+
+## Quando aggiungerlo
+
+Il primo lavoro che crea o cambia l'interfaccia aggiunge lo script nella stessa fetta, con il suo test, nel modo che il framework del progetto rende più semplice (per esempio un browser automatico che apre la pagina). Se il progetto ha già lo script, il lavoro lo tiene aggiornato quando aggiunge una schermata.
+
+Senza lo script Trama non può mostrare le schermate e il lavoro con interfaccia resta fermo ad aspettare la persona.`;
 
 // @model-text: project document for the agents.
 const triageLabelsDocument = `# Etichette di triage
@@ -231,6 +258,7 @@ export async function prepareSkills(projectRoot: string, resourcesRoot: string, 
     { relativePath: "docs/agents/issue-tracker.md", data: Buffer.from(issueTrackerDocument(repository)) },
     { relativePath: "docs/agents/domain.md", data: Buffer.from(domainDocument) },
     { relativePath: "docs/agents/triage-labels.md", data: Buffer.from(triageLabelsDocument) },
+    { relativePath: SCREENSHOTS_DOCUMENT, data: Buffer.from(screenshotsDocument) },
     { relativePath: "AGENTS.md", data: Buffer.from(agentsPointer) },
   ].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 

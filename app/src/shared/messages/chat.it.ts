@@ -385,6 +385,9 @@ export const chatIt = {
   "chat.shots.dark": "scuro",
   "chat.shots.alt": "{side}, tema {theme}: {name}",
   "chat.shots.none": "Nessuna schermata",
+  "chat.shots.missing.title": "Mancano le schermate",
+  "chat.shots.missing.why": "Il progetto non ha ancora lo script che le fa. Trama non può mostrare come cambia l'interfaccia, quindi guarda il diff o prova il branch del lavoro.",
+  "chat.shots.missing.now": "Adesso il Coordinatore fa aggiungere lo script allo stesso lavoro. Quando c'è, le schermate prima e dopo partono da sole.",
   "chat.shots.capturing": "Trama sta facendo le schermate prima e dopo, in chiaro e in scuro.",
 
   // Plan slices

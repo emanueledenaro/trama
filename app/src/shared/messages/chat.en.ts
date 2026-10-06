@@ -385,6 +385,9 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.shots.dark": "dark",
   "chat.shots.alt": "{side}, {theme} theme: {name}",
   "chat.shots.none": "No screenshot",
+  "chat.shots.missing.title": "No screenshots yet",
+  "chat.shots.missing.why": "The project does not have the script that takes them yet. Trama cannot show how the interface changes, so look at the diff or try the work's branch.",
+  "chat.shots.missing.now": "Now the Coordinator has the script added to the same work. Once it is there, the before and after screenshots start by themselves.",
   "chat.shots.capturing": "Trama is taking the before and after screenshots, in light and in dark.",
 
   // Plan slices
