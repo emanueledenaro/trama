@@ -12,6 +12,7 @@ import { fixtureScreenDriver } from "./core/operatorScreen";
 import { fixtureWebFetcher } from "./core/webResearch";
 import { t } from "./core/personLanguage";
 import { type MenuCommand, menuTemplate } from "./menu";
+import { opensInBrowser } from "@shared/externalLinks";
 
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -339,7 +340,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "exercise:observe": ({ step }) => controller.observeExercise(step),
   "exercise:simulateRemoteChanges": () => controller.simulateRemoteChanges(),
   "shell:openExternal": async ({ url }) => {
-    if (/^https:\/\//.test(url)) await shell.openExternal(url);
+    if (opensInBrowser(url)) await shell.openExternal(url);
   },
 };
 

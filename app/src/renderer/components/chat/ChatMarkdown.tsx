@@ -11,19 +11,20 @@ import { useT, useLanguage } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { ChatBlockquote, ChatTable } from "./ChatBlocks";
 import { translator } from "@shared/i18n";
+import { opensInBrowser } from "@shared/externalLinks";
 
 /** Links to Trama's own records (issue #277) pass; every other URL goes through react-markdown's safe filter. */
 const urlTransform = (url: string) => (url.startsWith("trama:ref/") ? url : defaultUrlTransform(url));
 
 /**
- * A reference to a record of Trama opens it inside Trama (issue #277), an https link opens in the browser and a
- * link to a project file opens it in the inspector. Any other link has nowhere to go, so it stays plain text
+ * A reference to a record of Trama opens it inside Trama (issue #277), an https link or the project's local preview
+ * opens in the browser and a link to a project file opens it in the inspector. Any other link has nowhere to go, so it stays plain text
  * instead of a link that does nothing (W12).
  */
 function ChatLink({ href, children, title, ...rest }: ComponentProps<"a">) {
   const t = useT();
   const reference = href ? parseReferenceHref(href) : null;
-  const file = useUi((s) => (href && !reference && !href.startsWith("https://") ? projectFileLink(href, s.app?.project) : null));
+  const file = useUi((s) => (href && !reference && !opensInBrowser(href) ? projectFileLink(href, s.app?.project) : null));
   if (reference) {
     return (
       <a
@@ -41,7 +42,7 @@ function ChatLink({ href, children, title, ...rest }: ComponentProps<"a">) {
       </a>
     );
   }
-  if (!href || (!href.startsWith("https://") && !file)) return <span title={href}>{children}</span>;
+  if (!href || (!opensInBrowser(href) && !file)) return <span title={href}>{children}</span>;
   return (
     <a
       href={href}
