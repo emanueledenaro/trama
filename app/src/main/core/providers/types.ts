@@ -19,6 +19,8 @@ export interface HostToolServer {
   token: string;
   /** Names of the tools the server offers, so a refusal can name the one to use instead (issue #228). */
   tools?: readonly string[];
+  /** How long one tool call may last, where the provider sets it for the whole server (Codex); 120 seconds when absent. */
+  toolTimeoutSec?: number;
 }
 
 /**

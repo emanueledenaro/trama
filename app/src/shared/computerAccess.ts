@@ -127,7 +127,9 @@ function stepDetail(t: Translate, step: AccessStep): string | null {
           : t("activity.access.lockedBan")
       : code === "reason"
         ? t(`activity.access.reason.${value as "delete" | "send" | "payment"}`)
-        : code === "exit"
+        : code === "nothing"
+          ? t("activity.access.nothing")
+          : code === "exit"
           ? t("activity.access.exit", { code: value })
           : code === "expired"
             ? t("activity.access.timeout")

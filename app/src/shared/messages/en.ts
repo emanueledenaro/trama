@@ -1819,6 +1819,7 @@ export const en: Record<keyof typeof it, string> = {
   "activity.access.locked": "Locked: {place}.",
   "activity.access.lockedBan": "A fixed rule forbids it.",
   "activity.access.exit": "It ended with code {code}.",
+  "activity.access.nothing": "It found no results.",
   "activity.access.timeout": "It ran out of time.",
   "activity.access.start": "It could not start.",
   "activity.access.on": "Computer access turned on",

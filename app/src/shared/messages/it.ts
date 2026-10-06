@@ -1821,6 +1821,7 @@ export const it = {
   "activity.access.locked": "Sotto chiave: {place}.",
   "activity.access.lockedBan": "Lo vieta una regola fissa.",
   "activity.access.exit": "È finito con codice {code}.",
+  "activity.access.nothing": "Non ha trovato risultati.",
   "activity.access.timeout": "Ha superato il tempo concesso.",
   "activity.access.start": "Non è partito.",
   "activity.access.on": "Accesso al computer acceso",

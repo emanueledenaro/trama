@@ -92,14 +92,36 @@ function harness(): Harness {
 const call = (h: Harness, args: Record<string, unknown>, calls = new OperatorCalls()) => runOperatorTool("run_command", args, h.session, calls);
 
 describe("the Operator's commands (issue #409)", () => {
-  it("runs a command, leaves it in Activity and in the chat, and hands the output back as data", async () => {
+  it("runs a command, leaves it in Activity, and hands the output back as data; a read stays out of the chat (issue #583)", async () => {
     const h = harness();
     h.runner.output = "total 0\nREADME.md\n";
     const result = parse(await call(h, { command: "ls -la" }));
     expect(result).toMatchObject({ data: true, exitCode: 0, output: "total 0\nREADME.md\n", cwd: "/Users/ada/projects/app" });
     expect(h.ran).toEqual(["ls -la"]);
     expect(h.steps).toEqual([{ agent: "Operatore", kind: "command", target: "ls -la", outcome: "done", detail: null }]);
-    expect(h.announced).toEqual([["ls -la", "done"]]);
+    expect(h.announced).toEqual([]);
+  });
+
+  it("tells the chat about a command that changes something", async () => {
+    const h = harness();
+    await call(h, { command: "mkdir build" });
+    expect(h.announced).toEqual([["mkdir build", "done"]]);
+  });
+
+  it("does not take a search without results for a failure (issue #583)", async () => {
+    const h = harness();
+    h.runner.exitCode = 1;
+    const result = parse(await call(h, { command: 'rg "gta" docs' }));
+    expect(result).toMatchObject({ exitCode: 1, foundNothing: true });
+    expect(h.steps[0]).toMatchObject({ outcome: "done", detail: "nothing" });
+    expect(h.announced).toEqual([]);
+    // The same exit code from another command is a failure, and a failed command of the line before the search too.
+    const other = harness();
+    other.runner.exitCode = 1;
+    await call(other, { command: "test -f missing" });
+    expect(other.steps[0]).toMatchObject({ outcome: "failed", detail: "exit:1" });
+    await call(other, { command: 'false && rg "x"' });
+    expect(other.steps[1]).toMatchObject({ outcome: "failed" });
   });
 
   it("runs in the folder it is given, joined to the project's when relative", async () => {
