@@ -1,4 +1,4 @@
-import { cp, mkdtemp } from "node:fs/promises";
+import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -108,6 +108,36 @@ describe("Research reads the web and reports to the Coordinator as data (issue #
       ["Ricerca", "search", expect.any(String), "done"],
       ["Ricerca", "page", PAGE, "done"],
     ]);
+  }, 90_000);
+
+  it("keeps the verified facts after a context rollover, so the new session starts with the date and its sources (issue #589)", async () => {
+    const logs = await mkdtemp(join(tmpdir(), "trama-log-"));
+    const log = join(logs, "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    try {
+      const c = await open(fakeWeb());
+      await c.send(`[ricerca:Quando esce? pagina=${PAGE}] cerca la data`, null, null, null);
+      await until(() => replies(c).some((r) => r.startsWith("Ricerca: ")));
+      const document = c.snapshot.project!.document;
+      expect(document.researchReports).toHaveLength(1);
+      await until(() => document.requests.every((r) => r.state === "completed"));
+
+      // The turn passes the threshold: Trama reorders the context and the study goes to a new thread.
+      await c.send("[pieno] vai avanti", null, null, null);
+      await until(() => document.coordinator.pendingHandover === null && document.requests.length === 2 && document.requests.every((r) => r.state === "completed"), 30_000);
+      const study = (await readFile(log, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { method: string; params: { input?: { type: string; text?: string }[] } })
+        .filter((r) => r.method === "turn/start")
+        .map((r) => (r.params.input ?? []).map((i) => i.text ?? "").join("\n"))
+        .find((text) => text.includes("# Riepilogo di contesto scritto da Trama"))!;
+      expect(study).toContain("## Fatti verificati con Ricerca");
+      expect(study).toContain(c.snapshot.project!.document.researchReports![0]!.report.split("\n")[0]!.slice(0, 40));
+      expect(study).toContain(PAGE);
+    } finally {
+      delete process.env.FAKE_CODEX_LOG;
+    }
   }, 90_000);
 
   it("refuses a request at once when the switch is off, and tells Activity", async () => {
