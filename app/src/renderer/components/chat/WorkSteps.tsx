@@ -104,14 +104,14 @@ export function WorkLabel({ row, avatar = true }: { row: WorkRow; avatar?: boole
   // The specialist's identity leads the label (W15): avatar, name and tag in its color. A row of Activity shows the
   // avatar in its own column, so the label leaves it out there.
   const who = specialist ? <AgentName agent={specialist} avatar={avatar} size={32} className="mr-1" /> : null;
-  // Under a second there is no duration to read: the line says "Attività" instead.
+  // Under a second there is no duration to read: the line says that the work was done, without "per ...".
   const duration = row.durationMs !== null ? formatDuration(t, row.durationMs) : null;
   const label = row.running
     ? specialist ? <>{withNodes(t("chat.workSteps.specialistRunning"), { who })}</> : t("chat.workSteps.coordinatorRunning")
-    : duration !== null
+    : row.durationMs !== null
       ? specialist
-        ? <>{withNodes(t("chat.workSteps.specialistWorked", { duration }), { who })}</>
-        : t("chat.workSteps.worked", { duration })
+        ? <>{withNodes(t(duration !== null ? "chat.workSteps.specialistWorked" : "chat.workSteps.specialistWorkedShort", { duration: duration ?? "" }), { who })}</>
+        : t(duration !== null ? "chat.workSteps.worked" : "chat.workSteps.workedShort", { duration: duration ?? "" })
       : specialist
         ? <>{withNodes(t("chat.workSteps.specialistActivity"), { who })}</>
         : t("chat.workSteps.activity");

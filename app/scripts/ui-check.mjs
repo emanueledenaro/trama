@@ -1243,7 +1243,7 @@ const composed = await page.getByLabel("Messaggio al Coordinatore").inputValue()
 if (!composed.includes("@Sources/Orders/CancelPaidOrder.swift ")) throw new Error(`Mention not inserted: ${composed}`);
 await page.getByLabel("Messaggio al Coordinatore").fill("Cosa succede quando si annulla un ordine pagato?");
 await page.keyboard.press("Enter");
-await page.getByText("Ha lavorato per").first().waitFor({ timeout: 20_000 });
+await page.getByText("Ha lavorato").first().waitFor({ timeout: 20_000 });
 await shot("03-reply");
 // W01: a question for information leaves no step; a request for work ends with one step, on the right.
 if (await page.getByTestId("next-step").count()) throw new Error("A next step appeared after a question for information");
@@ -1441,7 +1441,7 @@ await answeredLine.getByText("Apri nel Patto").waitFor();
 await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
 // The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there, in the bottom
 // panel under the conversation (issue #337).
-await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
+await page.getByTestId("work-line").getByText("Ha lavorato").first().click();
 await page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
 await shot("04-work-expanded");
 // Issue #337: Activity in the bottom panel, under the editor with a horizontal sash as in VS Code. It never
@@ -7692,7 +7692,7 @@ const askTicket = async (text, reply) => {
 };
 // Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
 const ticketSteps = async (reply) => {
-  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato/ }).last().click();
   const steps = page.getByTestId("bottom-panel").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
   const step = steps.filter({ hasText: reply }).first();
   await step.waitFor({ timeout: 10_000 });
@@ -7798,7 +7798,7 @@ if ((await page.getByText("[attesa] Controlla i test dei resi", { exact: true })
 // that holds Trama's line is the resumed turn; on a slow runner the reply comes before the turn is closed.
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
 const reopenedRow = page.getByTestId("bottom-panel").getByText("Turno ripreso alla riapertura", { exact: true }).last();
-const turnLines = page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ });
+const turnLines = page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato/ });
 for (let index = (await turnLines.count()) - 1; index >= 0 && !(await reopenedRow.isVisible()); index -= 1) {
   await turnLines.nth(index).click();
   await page.waitForTimeout(300);
