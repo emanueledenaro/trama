@@ -638,3 +638,47 @@ describe("no assignment while every slice waits for another (issue #565)", () =>
     expect(moves(document, "r3")).toContain("assignWork");
   });
 });
+
+describe("no assignment while every developer is at work (issue #584)", () => {
+  /** Ada is the only developer: she corrects S3 while the Coordinator's stop holds S4 for later. */
+  function oneDeveloperBusy() {
+    const { document, assignment: held } = withAssignment();
+    for (const specialist of document.team.specialists) if (specialist.id !== held.specialistId) specialist.role = "qa";
+    held.slice = { planId: "P-1", sliceId: "S4" };
+    held.status = "stopped";
+    held.stops.push({ requestedBy: "Coordinatore", by: "coordinator", reason: "S3 first", requestedAt: at(3).toISOString(), thenRemove: false, confirmedAt: at(4).toISOString() });
+    document.plans[0]!.slicing = {
+      status: "approved",
+      tickets: [
+        { id: "S3", title: "Terza", blockedBy: [] },
+        { id: "S4", title: "Quarta", blockedBy: [] },
+      ],
+    } as never;
+    const fixing = work(document, "r3", 5);
+    fixing.slice = { planId: "P-1", sliceId: "S3" };
+    return { document, held, fixing };
+  }
+
+  it("offers no assignment while the only developer works on another slice", () => {
+    const { document } = oneDeveloperBusy();
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
+  it("offers the held slice again as soon as the developer is free, from the Coordinator's stop", () => {
+    const { document, fixing } = oneDeveloperBusy();
+    fixing.status = "completed";
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+
+  it("does not offer it while the developer waits for an answer", () => {
+    const { document, fixing } = oneDeveloperBusy();
+    fixing.status = "paused";
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
+  it("offers the assignment when a second developer is free", () => {
+    const { document } = oneDeveloperBusy();
+    document.team.specialists.find((s) => s.name === "Bruno")!.role = "developer";
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+});

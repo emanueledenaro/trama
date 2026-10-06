@@ -28,7 +28,7 @@ import { activeDevelopers, authorize, heldByPersonStop, isActive, isTeamConfirme
 import { parallelDevelopers } from "@shared/parallel";
 import type { MessageKey } from "@shared/i18n";
 import { t } from "./personLanguage";
-import { projectCapacity, roomForWork } from "@shared/squads";
+import { projectCapacity, roomForWork, squadLimitProblem } from "@shared/squads";
 
 /**
  * The phase of a request's work and the moves that take it on (W01). Trama computes both from the records
@@ -380,7 +380,12 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     const candidate = view.assignmentId ? latestCandidate(document, view.assignmentId) : null;
     return candidate !== null && candidateAwaitsOthers(document, candidate);
   };
-  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || (v.state === "verifying" && !awaitsOthers(v))));
+  // A developer is free when nothing of theirs runs or waits on a question, and the squads' limits let one more start. With
+  // every developer at work, assigning settles nothing: the Coordinator could not do it and the round would stall (issue #584).
+  const developerFree = document.team.specialists.some(
+    (s) => s.role === "developer" && s.status !== "removed" && !s.assignments.some((a) => isActive(a) || a.status === "paused") && !squadLimitProblem(document, s),
+  );
+  const assignable = !slices || (developerFree && roomForWork(document) && views.some((v) => v.state === "ready" || (v.state === "verifying" && !awaitsOthers(v))));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {

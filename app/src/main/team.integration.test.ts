@@ -226,6 +226,94 @@ describe("team flow", () => {
     await idle();
   }, 60_000);
 
+  it("does not propose assigning while the only developer is at work, and proposes it again once she is free (issue #584)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.updateSettings({ continuousWork: false });
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready", 30_000);
+    const project = controller.snapshot.project!;
+    const document = project.document;
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Ordini in revisione"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["plan", "executeInWorktree"],
+      limits: [],
+    });
+    await controller.send("[assegna]", null, null, null);
+    const ada = findSpecialist(document, "Ada")!;
+    await until(() => ada.assignments.length === 1 && project.runningRequestId === null, 30_000);
+    // The only developer works on one slice while the Coordinator's stop holds another for later.
+    const [working] = ada.assignments;
+    const requestId = working!.requestId!;
+    document.plans.push({
+      id: "P-584",
+      requestId,
+      orderedBy: "coordinator",
+      kind: "agreedTicket",
+      moduleIds: ["Sources/Orders"],
+      summary: "Revisione degli ordini",
+      issueNumber: null,
+      status: "ready",
+      proposal: null,
+      failure: null,
+      decisionRequestIds: [],
+      createdAt: new Date(Date.parse(working!.createdAt) - 1000).toISOString(),
+      updatedAt: working!.createdAt,
+      slicing: {
+        status: "approved",
+        tickets: [
+          { id: "S3", title: "Terza", whatToBuild: "Terza", acceptanceCriteria: ["Done"], blockedBy: [], issue: null },
+          { id: "S4", title: "Quarta", whatToBuild: "Quarta", acceptanceCriteria: ["Done"], blockedBy: [], issue: null },
+        ],
+      },
+    } as never);
+    working!.slice = { planId: "P-584", sliceId: "S3" };
+    working!.status = "running";
+    const held = {
+      ...working!,
+      id: "A-584-held",
+      slice: { planId: "P-584", sliceId: "S4" },
+      status: "stopped" as const,
+      createdAt: new Date(Date.parse(working!.createdAt) - 500).toISOString(),
+      stops: [{ requestedBy: "Coordinatore", by: "coordinator" as const, reason: "S3 first", requestedAt: working!.createdAt, thenRemove: false, confirmedAt: working!.createdAt }],
+    };
+    ada.assignments.push(held);
+    expect(workState(document, requestId).moves.map((m) => m.move)).not.toContain("assignWork");
+
+    // The round starts no Coordinator turn for it: no attempt is spent, and Trama does not stop asking the person for help.
+    await controller.updateSettings({ continuousWork: true });
+    for (let i = 0; i < 4; i++) await controller.runRound();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(document.requests.filter((r) => r.step?.by === "trama" && r.step.move === "assignWork")).toHaveLength(0);
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title.includes("assegna il lavoro"))).toBe(false);
+
+    // The developer is free: the held slice is offered again.
+    working!.status = "completed";
+    expect(workState(document, requestId).moves.map((m) => m.move)).toContain("assignWork");
+    delete process.env.FAKE_CODEX_AUTOMATIC;
+  }, 60_000);
+
   it("runs a read-only check for the Coordinator", async () => {
     const data = await mkdtemp(join(tmpdir(), "trama-data-"));
     const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
