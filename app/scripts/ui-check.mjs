@@ -1681,6 +1681,20 @@ await sharedRoles.getByTestId("team-figure").filter({ hasText: "Niente si rompe"
 if (await sharedRoles.locator('[data-role="qa"], [data-role="squadLead"]').count()) throw new Error("A member of the squad is among the shared roles");
 if (await teamPanel.getByText("Chiarimento e spec", { exact: true }).count()) throw new Error("The Squads view still lists the team moment by moment");
 await themeShots("04e-squads");
+// Issue #461: the README's team screenshot. The Squads view stays open while the chat goes back to the moment the person
+// asked for a team, so the conversation shows their own words and the proposal, not the later bracket commands.
+{
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByText("Puoi proporre un team per il modulo Orders?", { exact: true }).last().evaluate((node) => node.scrollIntoView({ block: "center" }));
+  // A little back up, so the next message hides behind the bar instead of showing its edge.
+  await page.mouse.move(800, 300);
+  await page.mouse.wheel(0, -50);
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(800);
+  await shot("04e0-readme-team");
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
 // Issue #461: the README screenshots are done; the rest of the run goes back to the usual fake Codex replies.
 await rm(readmeShotsFlag, { force: true });
 // W16: right after the team is generated, every agent rests with its eyes open; only an agent out of the team sleeps.
@@ -4521,6 +4535,33 @@ const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).rep
 await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
 await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
 if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
+// Issue #461: the README's computer access screenshot comes from this fresh project, where the chat holds only the
+// study. The request is written in plain words, so no bracket command shows, and the consent for the site waits open
+// in Aspetta te beside the composer with the globe switch on. Declining it leaves the state as it was.
+{
+  await writeFile(readmeShotsFlag, "");
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  await composer().fill("Apri la pagina dei prezzi su https://prezzi.example/listino.");
+  await page.keyboard.press("Enter");
+  await showWaiting();
+  const consentItem = page.getByTestId("side-bar").locator('[data-testid="waiting-item"][data-waiting-key^="siteConsent:"]').filter({ hasText: "prezzi.example" }).last();
+  await consentItem.waitFor({ timeout: 30_000 });
+  if ((await consentItem.getAttribute("data-open")) !== "true") await consentItem.getByRole("button").first().click();
+  const consentCard = consentItem.getByTestId("site-consent-card");
+  await consentCard.getByText("Il consenso vale solo in questo progetto", { exact: false }).waitFor();
+  await page.locator('[data-testid="composer-access"][data-access="on"]').waitFor();
+  await page.getByText("Operatore aspetta il tuo consenso per aprire prezzi.example", { exact: true }).last().waitFor({ timeout: 30_000 });
+  // A lower window leaves room only for this exchange, not for the study's own messages above it.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(600);
+  await shot("15i0-readme-computer-access");
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await consentCard.getByRole("button", { name: "No", exact: true }).click();
+  await consentItem.waitFor({ state: "detached", timeout: 20_000 });
+  await closePanels();
+  await rm(readmeShotsFlag, { force: true });
+}
 // ADR 0019: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
 // Trama's context summary; the meter shows only the percent, the tokens on hover, and "Riordina ora" on the right.
 // Light and dark, and no provider named in the texts.
