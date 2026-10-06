@@ -7,8 +7,10 @@ import { irreversibleReason, onlyReads, type IrreversibleReason } from "./comman
 import { BROWSER_TOOLS, OPEN_IN_CHROME_TOOL, type BrowserSession, runBrowserTool } from "./operatorBrowser";
 import { runScreenTool, SCREEN_TOOL_NAMES, SCREEN_TOOLS, type ScreenSession } from "./operatorScreen";
 import { runSendTool, SEND_DATA_TOOL, SEND_TOOLS, type SendSession } from "./operatorSend";
+import { sandboxedSpawn, sandboxWorks, type SandboxPlan } from "./operatorSandbox";
 import { findSensitiveData, redactSensitiveData } from "./redaction";
 import type { SecretLock } from "./secretLock";
+import { protectedTramaPaths, shownPath, tramaCommandReach, type TramaPlaces, type TramaReach } from "./tramaGuard";
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
 
 /**
@@ -48,12 +50,26 @@ export function cleanEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.P
   return Object.fromEntries(Object.entries(env).filter(([name]) => !SECRET_VARIABLE.test(name)));
 }
 
-/** The real runner: a shell line in its own process group, so stopping it stops every process it started. */
-export function shellCommandRunner(): CommandRunner {
+/**
+ * The real runner: a shell line in its own process group, so stopping it stops every process it started. On macOS the
+ * line runs inside the sandbox `sandbox` describes (issue #597); a sandbox that does not start stops the command.
+ */
+export function shellCommandRunner(options: { sandbox?: () => SandboxPlan | null; platform?: NodeJS.Platform } = {}): CommandRunner {
+  const platform = options.platform ?? process.platform;
+  // Each profile is tried once on this Mac; the answer is kept for the commands after it.
+  const tried = new Map<string, Promise<string | null>>();
   return {
-    run: (command, { cwd, signal, timeoutMs }) =>
-      new Promise((done, fail) => {
-        const child = spawn("/bin/sh", ["-c", command], { cwd, env: cleanEnvironment(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+    run: async (command, { cwd, signal, timeoutMs }) => {
+      const plan = platform === "darwin" ? (options.sandbox?.() ?? null) : null;
+      if (plan) {
+        const key = JSON.stringify(plan);
+        if (!tried.has(key)) tried.set(key, sandboxWorks(plan));
+        const problem = await tried.get(key)!;
+        if (problem) throw new Error(`The sandbox of the Operator's commands did not start, so nothing ran: ${problem}`);
+      }
+      const { file, args } = sandboxedSpawn(command, plan, platform);
+      return new Promise((done, fail) => {
+        const child = spawn(file, args, { cwd, env: cleanEnvironment(), stdio: ["ignore", "pipe", "pipe"], detached: true });
         let output = "";
         let timedOut = false;
         const stop = () => {
@@ -89,7 +105,8 @@ export function shellCommandRunner(): CommandRunner {
           signal.removeEventListener("abort", stop);
           done({ exitCode: code, output, timedOut });
         });
-      }),
+      });
+    },
   };
 }
 
@@ -136,6 +153,10 @@ const LOCKED_MESSAGE =
 const SECRET_MESSAGE = "The command carries a secret, so it did not run. It waits for the person in Aspetta te. Do not retry it.";
 
 /** @model-text */
+const TRAMA_MESSAGE =
+  "Trama stopped this command before it started: it would reach Trama itself (its window by script, its data, its installation or its process). That is a fixed ban that nobody can lift, the person included: there is nothing to approve and nothing waits in Aspetta te. Do not retry it, do not split it, do not look for another way; say in the report that this was off limits and go on with the rest.";
+
+/** @model-text */
 const waitingMessage = (reason: IrreversibleReason): string =>
   `This command cannot be undone (${reason}). Trama asked the person for a yes in Aspetta te and runs it itself if they agree. Do not run it again or try another way; go on with the rest and say in the report that it waits.`;
 
@@ -151,6 +172,8 @@ export interface OperatorSession extends Omit<BrowserSession, "role" | "announce
   announceSite: (host: string) => void;
   /** A command the lock or a fixed ban stopped: it waits for the person in "Aspetta te". */
   stopped: (command: string, stopper: { ban: FixedBan } | { place: string }) => void;
+  /** Trama's own folders and processes, read at every command: no command reaches them (issue #597). */
+  trama?: () => Promise<TramaPlaces> | TramaPlaces;
   /** A command that cannot be undone: it waits for the person's yes. */
   askApproval: (command: string, cwd: string, reason: IrreversibleReason) => CommandApproval;
   /** The line in the chat for a command that ran. */
@@ -235,6 +258,16 @@ export async function executeCommand(
   }
 }
 
+/** Why a command would reach Trama: by its words, or by a path into Trama's data or installation. Null when it does not. */
+async function tramaReach(command: string, cwd: string, session: OperatorSession): Promise<TramaReach | "data" | null> {
+  const places = await session.trama?.();
+  const byWords = tramaCommandReach(command, places?.pids ?? []);
+  if (byWords) return byWords;
+  if (!places) return null;
+  const folders = protectedTramaPaths(places, session.projectRoot).map((path) => ({ label: shownPath(path), path }));
+  return session.lock.reaches(command, { cwd }, folders) ? "data" : null;
+}
+
 /** Runs the Operator's tool through the gate: the switch and the role, the lock, the person's yes, then the command. */
 export async function runOperatorTool(name: string, args: Record<string, unknown>, session: OperatorSession, calls: OperatorCalls): Promise<ToolResult> {
   if (name === OPEN_IN_CHROME_TOOL) {
@@ -274,6 +307,12 @@ export async function runOperatorTool(name: string, args: Record<string, unknown
   }
 
   const cwd = workingFolder(session, args.cwd);
+  // Trama itself first: a fixed ban that no yes lifts, so it never becomes an item that waits for the person.
+  const reach = await tramaReach(command, cwd, session);
+  if (reach) {
+    session.stopped(command, { ban: "tramaControl" });
+    return refuse("trama_protected", TRAMA_MESSAGE, `trama:${reach}`);
+  }
   const stopper = session.lock.check(command, { cwd });
   if (stopper) {
     const place = "ban" in stopper ? null : stopper.locked.place;

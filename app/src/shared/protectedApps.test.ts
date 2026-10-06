@@ -27,7 +27,7 @@ describe("the apps the Operator never controls (issue #597)", () => {
     expect(protectedAppName(name)).toBe(kind);
   });
 
-  it.each(["Finder", "Google Chrome", "Safari", "Notes", "Terminale", "Tramonto", "Settings Panel for Cats"])("%s is not protected", (name) => {
+  it.each(["Finder", "Google Chrome", "Safari", "Notes", "Tramonto", "Settings Panel for Cats"])("%s is not protected", (name) => {
     expect(protectedAppName(name)).toBeNull();
   });
 
@@ -51,5 +51,16 @@ describe("the apps the Operator never controls (issue #597)", () => {
     ];
     expect(descendantPids(10, rows).sort()).toEqual([10, 11, 12]);
     expect(descendantPids(99, rows)).toEqual([99]);
+  });
+});
+
+describe("the apps where typed text runs as a command (issue #597)", () => {
+  it.each(["Terminal", "Terminale", "iTerm2", "Warp", "Ghostty", "Script Editor", "Automator", "Shortcuts"])("refuses %s", (app) => {
+    expect(protectedAppName(app)).toBe("commands");
+  });
+  it("knows them by bundle id too", () => {
+    expect(protectedAppKind({ name: "Qualcosa", bundleId: "com.apple.Terminal" })).toBe("commands");
+    expect(protectedAppKind({ name: "Qualcosa", bundleId: "com.googlecode.iterm2" })).toBe("commands");
+    expect(protectedAppName("Finder")).toBeNull();
   });
 });

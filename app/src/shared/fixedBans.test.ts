@@ -160,7 +160,7 @@ describe("fixed bans on files and pushes", () => {
   it("lists every ban once, with a reason for the person", () => {
     for (const language of LANGUAGES) {
       const bans = fixedBans(translator(language));
-      expect(new Set(bans.map((b) => b.id)).size).toBe(6);
+      expect(new Set(bans.map((b) => b.id)).size).toBe(7);
       for (const ban of bans) expect(ban.reason).toMatch(/\.$/);
     }
   });

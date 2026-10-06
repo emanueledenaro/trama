@@ -166,6 +166,8 @@ export const sharedIt = {
   "shared.ban.secrets.reason": "Segreti e credenziali restano alla persona.",
   "shared.ban.repositorySettings": "Modifiche alle impostazioni del repository",
   "shared.ban.repositorySettings.reason": "Le impostazioni del repository le cambia la persona.",
+  "shared.ban.tramaControl": "Controllo di Trama da parte di un agente",
+  "shared.ban.tramaControl.reason": "Consensi, mandato e approvazioni li dai solo tu nella finestra di Trama: nessun agente usa la sua finestra, i suoi dati o il suo processo, e nessun sì lo sblocca.",
 
   // Settled cards (issue #271)
   "shared.settled.mandateGranted": "Concesso, v{version}",

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccessStep, SiteConsent } from "@shared/domain";
 import { ComputerAccessGate } from "./computerAccess";
 import {
@@ -6,7 +6,9 @@ import {
   type BrowserOpening,
   type BrowserSession,
   BROWSER_TOOLS,
+  chromeDebuggingDriver,
   fixtureBrowserDriver,
+  isPersonChrome,
   OPEN_IN_CHROME_TOOL,
   runBrowserTool,
   signedOut,
@@ -206,5 +208,28 @@ describe("the Operator opens a site in the person's Chrome (issue #410)", () => 
     const signal = new AbortController().signal;
     expect(await driver.open("https://github.com/", { signal })).toEqual({ status: "opened", page: { finalAddress: "https://github.com/", title: "GitHub", text: "Home", asksForLogin: false } });
     expect(await driver.open("https://nowhere.example/", { signal })).toMatchObject({ status: "unavailable" });
+  });
+});
+
+describe("the Operator's Chrome is never Trama itself (issue #597)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("tells the person's Chrome from Electron at the debugging port", () => {
+    expect(isPersonChrome({ Browser: "Chrome/140.0.7339.80", "User-Agent": "Mozilla/5.0 (Macintosh) Chrome/140.0.7339.80 Safari/537.36" })).toBe(true);
+    expect(isPersonChrome({ Browser: "Chrome/140.0.7339.80", "User-Agent": "Mozilla/5.0 (Macintosh) Trama/0.4.0 Chrome/140.0 Electron/44.5.1 Safari/537.36" })).toBe(false);
+    expect(isPersonChrome({})).toBe(false);
+    expect(isPersonChrome(null)).toBe(false);
+  });
+
+  it("opens no tab when the port belongs to Electron", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      asked.push(url);
+      return new Response(JSON.stringify({ Browser: "Chrome/140.0", "User-Agent": "Electron/44.5.1 Chrome/140.0" }), { status: 200 });
+    });
+    const driver = chromeDebuggingDriver(9333);
+    const opened = await driver.open("https://example.com/", { signal: new AbortController().signal });
+    expect(opened).toMatchObject({ status: "unavailable" });
+    expect(asked).toEqual(["http://127.0.0.1:9333/json/version"]);
   });
 });

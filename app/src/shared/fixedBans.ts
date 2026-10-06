@@ -7,7 +7,7 @@
 
 import { type Translate, translator } from "./i18n";
 
-export type FixedBan = "forcePush" | "pushMainBranch" | "deleteRemoteRef" | "tagOrRelease" | "secrets" | "repositorySettings";
+export type FixedBan = "forcePush" | "pushMainBranch" | "deleteRemoteRef" | "tagOrRelease" | "secrets" | "repositorySettings" | "tramaControl";
 
 export interface FixedBanInfo {
   id: FixedBan;
@@ -17,7 +17,8 @@ export interface FixedBanInfo {
   reason: string;
 }
 
-export const FIXED_BAN_IDS: FixedBan[] = ["forcePush", "pushMainBranch", "deleteRemoteRef", "tagOrRelease", "secrets", "repositorySettings"];
+/** `tramaControl` (issue #597): no agent drives Trama's window, data or process; the person's request does not lift it. */
+export const FIXED_BAN_IDS: FixedBan[] = ["forcePush", "pushMainBranch", "deleteRemoteRef", "tagOrRelease", "secrets", "repositorySettings", "tramaControl"];
 
 export const fixedBanInfo = (t: Translate, ban: FixedBan): FixedBanInfo => ({ id: ban, label: t(`shared.ban.${ban}`), reason: t(`shared.ban.${ban}.reason`) });
 

@@ -88,6 +88,27 @@ interface CdpTarget {
 }
 
 /**
+ * Whether the program behind a debugging port is the person's Chrome, from its `/json/version`: Electron, and so Trama
+ * itself when it runs with a debugging port, answers there too, and its pages are never the Operator's (issue #597).
+ */
+export function isPersonChrome(version: unknown): boolean {
+  const fields = (version ?? {}) as { Browser?: unknown; "User-Agent"?: unknown };
+  const said = `${String(fields.Browser ?? "")} ${String(fields["User-Agent"] ?? "")}`;
+  return /\b(Chrome|HeadlessChrome|Chromium)\//.test(said) && !/\b(Electron|Trama)\//i.test(said);
+}
+
+/** The program at the port, asked before any tab opens: a program that is not Chrome gets nothing. */
+async function notChrome(base: string, signal: AbortSignal): Promise<string | null> {
+  try {
+    const answer = await fetch(`${base}/json/version`, { signal });
+    if (!answer.ok) return `Chrome answered ${answer.status}`;
+    return isPersonChrome(await answer.json()) ? null : "The program at the debugging port is not Chrome.";
+  } catch (error) {
+    return signal.aborted ? "stopped" : (error as Error).message;
+  }
+}
+
+/**
  * The real driver: the Chrome Debugging Protocol of a Chrome the person started with a debugging port (9222 unless
  * told). It asks for three things only: open a tab, read the title, the text and whether a password field shows, close
  * the tab. It never calls the protocol's cookie, storage, password or input commands.
@@ -96,6 +117,8 @@ export function chromeDebuggingDriver(port = 9222): BrowserDriver {
   const base = `http://127.0.0.1:${port}`;
   return {
     async send(request, { signal }) {
+      const other = await notChrome(base, signal);
+      if (other) return { status: "unavailable", reason: other };
       let target: CdpTarget;
       try {
         // The tab opens the site's own front page: the request is sent from there, so it is the site's own origin.
@@ -114,6 +137,8 @@ export function chromeDebuggingDriver(port = 9222): BrowserDriver {
       }
     },
     async open(address, { signal }) {
+      const other = await notChrome(base, signal);
+      if (other) return { status: "unavailable", reason: other };
       let target: CdpTarget;
       try {
         const created = await fetch(`${base}/json/new?${encodeURIComponent(address)}`, { method: "PUT", signal });

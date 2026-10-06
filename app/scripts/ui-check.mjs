@@ -56,6 +56,9 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// A yes (a mandate, an answer of the Pact, computer access on) counts only after a real key or click of the person in
+// the window (issue #597): the check presses Shift first, as a person's key would start the action.
+const personGesture = () => page.keyboard.press("Shift");
 // Chromium under xvfb now and then fails a capture with this protocol error even on a shown, painted window. For that
 // exact error only the capture is retried up to 3 times, 250ms apart; any other error, or a fourth failure, throws.
 const UNCAPTURED = "Protocol error (Page.captureScreenshot): Unable to capture screenshot";
@@ -3426,6 +3429,7 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
   await accessSwitch.waitFor({ timeout: 20_000 });
   // The settings call cannot turn the access back on: only the switch and the Pause move it.
+  await personGesture();
   await page.evaluate(() => window.trama.invoke("settings:update", { computerAccess: true }));
   await page.waitForTimeout(300);
   await accessIs("off");
@@ -6318,6 +6322,7 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), scopeProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-perimetro" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await personGesture();
 await page.evaluate(() =>
   window.trama.invoke("mandate:grant", {
     requestId: null,
@@ -6388,6 +6393,7 @@ await reviewWork.waitFor({ timeout: 20_000 });
 await reviewWork.getByText(/Senza un mandato concesso/).waitFor();
 if (!(await reviewWork.getByTestId("automatic-work-start").isDisabled())) throw new Error("The review can start without a mandate");
 await dutyPanel.locator('[data-testid="automatic-work"][data-work="triage"]').waitFor();
+await personGesture();
 await page.evaluate(() =>
   window.trama.invoke("mandate:grant", {
     requestId: null,
@@ -6447,6 +6453,7 @@ for (const dark of [false, true]) {
   const body = await page.locator("body").innerText();
   if (/Approfondire: /.test(body)) throw new Error("A Clean Code option repeats the verb of the question");
   if (/Skill ricevute/.test(body)) throw new Error("The Clean Code card shows the fake's delivery proof");
+  await personGesture();
   await page.evaluate((id) => window.trama.invoke("decision:answer", { requestId: id, alternativeIndex: 1, freeText: null }), requestId);
   await detailPane().getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first().waitFor({ timeout: 20_000 });
   if (/proposte da decidere/.test(await page.locator("body").innerText())) throw new Error("The review still asks to decide after the answer");
@@ -7539,6 +7546,7 @@ const redCheckWithMandate = async (path, title) => {
   await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), path);
   await page.getByTestId("dialog-title").filter({ hasText: title }).waitFor({ timeout: 30_000 });
   await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+  await personGesture();
   await page.evaluate(() =>
     window.trama.invoke("mandate:grant", {
       requestId: null,
@@ -7620,6 +7628,7 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), await problemProject("ticket", "https://github.com/trama-ui/ticket.git"));
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ticket" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await personGesture();
 await page.evaluate(() =>
   window.trama.invoke("mandate:grant", {
     requestId: null,
@@ -8400,8 +8409,17 @@ const stateUntil = async (check, what, timeout = 60_000) => {
   }
 };
 await stateUntil((_, project) => project.github.repository === "trama-ui/vetrina", "GitHub remote");
+// A yes that no gesture of the person started is refused, whoever calls it from the page (issue #597).
+await page.waitForTimeout(5_500);
+const scriptedYes = await page.evaluate(() =>
+  window.trama.invoke("pact:decide", { id: null, value: "Scritto da uno script", acceptedExample: "", rationale: "" }).then(() => "accepted", (error) => String(error)),
+);
+if (!scriptedYes.includes("Questo sì vale solo se lo dai tu")) throw new Error(`A yes without a gesture was not refused: ${scriptedYes}`);
+if ((await page.evaluate(() => window.trama.getState())).project.document.decisions.some((d) => d.value === "Scritto da uno script")) throw new Error("A yes without a gesture was recorded");
+await personGesture();
 await page.evaluate(() => window.trama.invoke("pact:decide", { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "Evita rimborsi errati" }));
 const vetrinaDecision = await stateUntil((document) => document.decisions[0]?.id, "Decision");
+await personGesture();
 await page.evaluate(() =>
   window.trama.invoke("mandate:grant", {
     requestId: null,

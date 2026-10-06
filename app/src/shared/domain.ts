@@ -120,6 +120,8 @@ export type EventContent =
        * answer, a withdrawal, a mandate) and older messages lack it: only a typed message can ask for a banned action.
        */
       composer?: boolean;
+      /** The texts the person pasted in the message (issue #597): they are not the person's own sentence. */
+      pasted?: string[];
     }
   | { type: "coordinatorText"; text: string; model: string | null; references: string[]; provider?: ProviderId | null }
   | { type: "activity"; title: string; detail: string | null; tone: "info" | "tool" | "error" }

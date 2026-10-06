@@ -19,7 +19,7 @@ export interface SelfIdentity {
   names?: readonly string[];
 }
 
-export type ProtectedKind = "trama" | "system" | "passwords";
+export type ProtectedKind = "trama" | "system" | "passwords" | "commands";
 
 const key = (value: string): string => value.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -48,6 +48,15 @@ const SYSTEM_BUNDLES = ["com.apple.systempreferences", "com.apple.securityagent"
 const PASSWORD_NAMES = ["1password", "bitwarden", "lastpass", "dashlane", "keepass", "enpass", "nordpass", "keeper", "proton pass", "roboform", "strongbox", "passwords", "password", "secrets"];
 const PASSWORD_BUNDLE_PARTS = ["1password", "agilebits", "bitwarden", "lastpass", "dashlane", "keepass", "enpass", "nordpass", "keepersecurity", "proton.pass", "roboform", "strongbox", "com.apple.passwords"];
 
+/**
+ * The apps where typed text runs as a command or a script: a terminal, the script editor, Automator, Shortcuts. Typing
+ * there would run a command outside the lock on secrets and the sandbox, with that app's own permissions, and could
+ * drive Trama's window (issue #597). Commands go through run_command.
+ */
+// i18n-exempt: names of apps, compared with what the system reports
+const COMMAND_NAMES = ["terminal", "terminale", "iterm", "iterm2", "warp", "alacritty", "kitty", "wezterm", "hyper", "ghostty", "tabby", "script editor", "editor di script", "automator", "shortcuts", "comandi rapidi"];
+const COMMAND_BUNDLES = ["com.apple.terminal", "com.googlecode.iterm2", "dev.warp.warp", "org.alacritty", "net.kovidgoyal.kitty", "com.github.wez.wezterm", "co.zeit.hyper", "com.mitchellh.ghostty", "org.tabby", "com.apple.scripteditor2", "com.apple.automator", "com.apple.shortcuts"];
+
 /** Trama's own names include the helpers Electron starts ("Trama Helper (Renderer)", "Electron Helper"). */
 function tramaName(name: string, extra: readonly string[]): boolean {
   const names = [...TRAMA_NAMES, ...extra.map(key)];
@@ -62,6 +71,7 @@ export function protectedAppKind(app: AppIdentity, self?: SelfIdentity): Protect
   if (TRAMA_BUNDLES.includes(bundle) || bundle.startsWith("dev.trama.") || bundle.startsWith("com.github.electron.")) return "trama";
   if (name && tramaName(name, self?.names ?? [])) return "trama";
   if (SYSTEM_BUNDLES.includes(bundle) || (name && SYSTEM_NAMES.some((own) => name === own || name.startsWith(`${own} `)))) return "system";
+  if (COMMAND_BUNDLES.some((own) => bundle === own || bundle.startsWith(`${own}.`) || bundle.startsWith(`${own}-`)) || (name && COMMAND_NAMES.some((own) => name === own || name.startsWith(`${own} `)))) return "commands";
   if (PASSWORD_BUNDLE_PARTS.some((part) => bundle.includes(part)) || (name && PASSWORD_NAMES.some((own) => name === own || name.startsWith(`${own} `) || (own.length > 6 && name.includes(own))))) return "passwords";
   return null;
 }

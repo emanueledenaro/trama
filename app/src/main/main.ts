@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import inspector from "node:inspector";
 import { release } from "node:os";
-import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, screen, shell, systemPreferences } from "electron";
+import { dirname, join } from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, screen, shell, systemPreferences } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
@@ -13,6 +14,14 @@ import { fixtureWebFetcher } from "./core/webResearch";
 import { t } from "./core/personLanguage";
 import { type MenuCommand, menuTemplate } from "./menu";
 import { opensInBrowser } from "@shared/externalLinks";
+import { fromTramaPage, needsPersonGesture } from "@shared/personGesture";
+import { debuggingRequested } from "./core/tramaGuard";
+
+// SIGUSR1 opens Node's inspector on a running process: with a listener of its own, Trama's main process never opens
+// it, so no other process can attach a debugger to it and act for the person (issue #597).
+process.on("SIGUSR1", () => undefined);
+// A packaged Trama never runs with a debugging port: whoever holds the port drives the window (issue #597).
+if (app.isPackaged && debuggingRequested(process.argv, inspector.url())) app.exit(1);
 
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -108,6 +117,11 @@ const controller = new TramaController(dataRoot, {
     ? join(process.resourcesPath, "DemoProject")
     : join(app.getAppPath(), "resources", "DemoProject"),
   codexExecutable: process.env.TRAMA_CODEX_PATH ?? null,
+  // What the Operator's commands never reach (issue #597): Electron's profile, and where Trama is installed or built.
+  tramaPlaces: {
+    data: [app.getPath("userData")],
+    install: [process.execPath.match(/^(.*?\.app)\//)?.[1] ?? dirname(process.execPath), app.getAppPath(), process.resourcesPath],
+  },
   // A check that runs the app reads its pages from a file, never from the network.
   ...(process.env.TRAMA_SHELL_FIXTURE ? { commandRunner: fixtureCommandRunner(JSON.parse(readFileSync(process.env.TRAMA_SHELL_FIXTURE, "utf8"))) } : {}),
   ...(process.env.TRAMA_BROWSER_FIXTURE ? { browserDriver: fixtureBrowserDriver(JSON.parse(readFileSync(process.env.TRAMA_BROWSER_FIXTURE, "utf8"))) } : {}),
@@ -219,8 +233,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     else void shell.openPath(target);
   },
   "project:readFile": ({ relativePath }) => controller.readFile(relativePath),
-  "coordinator:send": ({ text, moduleId, model, effort, images, provider, goalId }) =>
-    controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null),
+  "coordinator:send": ({ text, moduleId, model, effort, images, provider, goalId, pasted }) =>
+    controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null, true, null, null, [], Array.isArray(pasted) ? pasted : []),
   "coordinator:takeStep": ({ requestId }) => controller.takeStep(requestId),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:pause": ({ paused }) => controller.pauseContinuousWork(paused),
@@ -344,8 +358,21 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   },
 };
 
-ipcMain.handle("trama:state", () => controller.snapshot);
-ipcMain.handle("trama:action", async (_event, action: ActionName, payload: unknown) => {
+/** Whether an IPC call comes from Trama's own page in Trama's own window (issue #597). */
+const fromWindow = (event: IpcMainInvokeEvent): boolean =>
+  fromTramaPage(
+    { fromWindow: Boolean(window) && event.sender === window?.webContents, mainFrame: event.senderFrame === event.sender.mainFrame, url: event.senderFrame?.url ?? "" },
+    { file: join(__dirname, "../dist/index.html"), devServer: rendererUrl ?? null },
+  );
+
+ipcMain.handle("trama:state", (event) => {
+  if (!fromWindow(event)) throw new Error(t("main.ipc.notTramaWindow"));
+  return controller.snapshot;
+});
+ipcMain.handle("trama:action", async (event, action: ActionName, payload: unknown, meta?: { gesture?: unknown }) => {
+  if (!fromWindow(event)) throw new Error(t("main.ipc.notTramaWindow"));
+  // A yes counts only after a real click or key of the person in the window: never from a script (issue #597).
+  if (needsPersonGesture(action, payload) && meta?.gesture !== true) throw new Error(t("main.ipc.needsGesture"));
   const handler = handlers[action] as Handler<ActionName> | undefined;
   if (!handler) throw new Error(`Unknown action ${action}`);
   return handler(payload as never);

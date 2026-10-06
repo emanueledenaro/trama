@@ -318,7 +318,7 @@ const CONSENT_MESSAGE =
 
 /** @model-text */
 const PROTECTED_MESSAGE = (kind: ProtectedKind): string =>
-  `Trama never lets the Operator control ${kind === "trama" ? "its own window" : kind === "system" ? "System Settings or a window that grants a permission" : "a password manager"}. Nothing was done, no consent was asked and nothing waits for the person in Aspetta te: do not ask for one, do not tell the person to approve anything, do not retry or look for another way. Say in the report that this app is off limits and that the work needs another way.`;
+  `Trama never lets the Operator control ${kind === "trama" ? "its own window" : kind === "system" ? "System Settings or a window that grants a permission" : kind === "commands" ? "an app that runs typed commands or scripts (a terminal, the script editor, Automator, Shortcuts): commands go through run_command" : "a password manager"}. Nothing was done, no consent was asked and nothing waits for the person in Aspetta te: do not ask for one, do not tell the person to approve anything, do not retry or look for another way. Say in the report that this app is off limits and that the work needs another way.`;
 
 /** @model-text */
 const PASSWORD_MESSAGE = "The field with the focus is a password field. No agent types a password: the person does. Nothing was typed. Stop here and say in the report that you stopped for that.";

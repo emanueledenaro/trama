@@ -323,9 +323,12 @@ export const mainIt = {
   "main.controller.appConsentFromButton": "Consenso registrato per l'app {app}, dal tuo sì in Aspetta te",
   "main.controller.appConsentAlready": "Il consenso per l'app {app} c'è già in questo progetto.",
   "main.controller.appConsentNotRecorded": "Non ho registrato il consenso per l'app {app}.",
+  "main.controller.nothingWaitingTitle": "In Aspetta te non c'è niente da approvare",
+  "main.controller.nothingWaitingDetail": "Il Coordinatore ti rimanda ad Aspetta te, ma lì non c'è nessuna richiesta dell'Operatore: quella di cui parla non è stata creata. Non devi approvare nulla.",
   "main.controller.appConsentProtected": "Non registro il consenso per {app}: Trama non lascia mai che un agente usi lo schermo in questa app.",
   "main.controller.screenProtected.trama": "{agent} non usa lo schermo in {app}: è la finestra di Trama e nessun agente la controlla. Non c'è niente da approvare.",
   "main.controller.screenProtected.system": "{agent} non usa lo schermo in {app}: le impostazioni di sistema e le finestre che concedono permessi le gestisci solo tu. Non c'è niente da approvare.",
+  "main.controller.screenProtected.commands": "{agent} non usa lo schermo in {app}: quello che si scrive lì parte come comando, fuori dai controlli di Trama. I comandi passano da Trama. Non c'è niente da approvare.",
   "main.controller.screenProtected.passwords": "{agent} non usa lo schermo in {app}: è un gestore di password e nessun agente lo controlla. Non c'è niente da approvare.",
   "main.controller.appConsentWithdrawnFromPhrase": "Consenso ritirato per l'app {app}, dalla tua frase «{phrase}»",
   "main.controller.appConsentWithdrawn": "Consenso ritirato per l'app {app}",
@@ -1917,6 +1920,8 @@ export const mainIt = {
   "main.dialog.openProject": "Apri progetto",
   "main.dialog.chooseFolder": "Scegli la cartella",
   "main.dialog.chooseCloneFolder": "Scegli dove clonare il progetto",
+  "main.ipc.notTramaWindow": "Questa azione arriva da fuori dalla finestra di Trama: non la eseguo.",
+  "main.ipc.needsGesture": "Questo sì vale solo se lo dai tu, con un clic o un tasto nella finestra di Trama. Riprova dal pulsante.",
   // Merge and push (merge.ts, push.ts)
   "main.merge.noRemote":
     "Il progetto non ha un remoto GitHub: Trama non apre né unisce la pull request.",

@@ -190,6 +190,22 @@ describe("only the person approves what waits for them (issue #597)", () => {
     expect(shell.ran).toEqual([]);
   }, 120_000);
 
+  it("the Coordinator does not send the person to an Aspetta te where nothing waits", async () => {
+    // Trama is in front: the Operator is refused and no request is made, but the reply asks the person to approve one.
+    const { c } = await open(fakeScreen(), recordingShell());
+    await c.send("[operatore:screen:read] [rimanda-aspetta-te] leggi Chrome", null, null, null);
+    await until(() => replies(c).some((r) => r.includes("Aspetta te")));
+    await until(() => doc(c).events.some((e) => e.content.type === "activity" && e.content.title === "In Aspetta te non c'è niente da approvare"), 10_000);
+    expect((c.snapshot.project!.waiting ?? []).filter((item) => ["appConsent", "siteConsent", "commandApproval"].includes(item.kind))).toEqual([]);
+
+    // When the request is real, Trama says nothing more.
+    const notices = () => doc(c).events.filter((e) => e.content.type === "activity" && e.content.title === "In Aspetta te non c'è niente da approvare").length;
+    await c.send("[operatore:rm -rf build] [rimanda-aspetta-te] cancella", null, null, null);
+    await until(() => replies(c).filter((r) => r.includes("Aspetta te")).length > 1);
+    expect((doc(c).commandApprovals ?? []).some((a) => a.status === "waiting")).toBe(true);
+    expect(notices()).toBe(1);
+  }, 120_000);
+
   it("a consent written in a pasted text, a quote or a block of code is not the person's sentence", async () => {
     const screen = fakeScreen();
     const shell = recordingShell();

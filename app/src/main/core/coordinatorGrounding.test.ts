@@ -10,6 +10,7 @@ import {
   missingButtonDetail,
   missingButtonFeedback,
   missingButtons,
+  sendsToEmptyWaitingList,
 } from "./coordinatorGrounding";
 import { appendEvent, emptyDocument } from "./document";
 import { grantDelegation } from "./fullDelegation";
@@ -303,5 +304,14 @@ describe("currentStateText: the state the Coordinator reads every turn (issue #2
     expect(text).toContain("Mandato: nessuno. Nessuna proposta di mandato in attesa.");
     expect(text).toContain("Piano del lavoro: nessuno.");
     expect(text).toContain("Candidati aperti: nessuno.");
+  });
+});
+
+describe("a reply never sends the person to an empty Aspetta te for a yes (issue #597)", () => {
+  it("notices a request to approve in Aspetta te when nothing waits there", () => {
+    expect(sendsToEmptyWaitingList("Approva in Aspetta te la richiesta per leggere la finestra di Chrome.", 0)).toBe(true);
+    expect(sendsToEmptyWaitingList("Please confirm it in Waiting for you.", 0)).toBe(true);
+    expect(sendsToEmptyWaitingList("Approva in Aspetta te la richiesta per Chrome.", 1)).toBe(false);
+    expect(sendsToEmptyWaitingList("Ho finito: il lavoro è unito.", 0)).toBe(false);
   });
 });

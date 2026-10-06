@@ -52,6 +52,12 @@ export const SYSTEM_PLACES = ["/Library/Keychains", "/etc/shadow", "/etc/master.
 
 export type LockKind = "place" | "file" | "environment" | "keychain" | "secret";
 
+/** A place a command may not reach: the label the person reads and the paths it covers. */
+interface Place {
+  label: string;
+  paths: string[];
+}
+
 export interface Locked {
   kind: LockKind;
   /** What stopped the command, as the person reads it: the place (`~/.ssh`), `.env`, or the environment. */
@@ -118,7 +124,7 @@ function globReaches(glob: string, target: string): boolean {
 export class SecretLock {
   private readonly home: string;
   private readonly realpath: (path: string) => string | null;
-  private readonly places: { label: string; paths: string[] }[];
+  private readonly places: Place[];
 
   constructor(options: { home?: string; realpath?: (path: string) => string | null } = {}) {
     this.home = normalize(options.home ?? homedir());
@@ -137,12 +143,22 @@ export class SecretLock {
     const ban = commandBan(command);
     if (ban && ban !== "secrets") return { ban };
     if (ENVIRONMENT_DUMP.test(command)) return { locked: { kind: "environment", place: "env" } };
-    const locked = this.checkLine(command, context.cwd, 0);
+    const locked = this.checkLine(command, context.cwd, 0, this.places, true);
     // The ban on secrets reads the words too; the lock names the place when it can, the ban is the safety net.
     return locked ? { locked } : ban ? { ban } : null;
   }
 
-  private checkLine(line: string, startCwd: string, depth: number): Locked | null {
+  /**
+   * The first of `folders` a command reaches, read the way the secrets are: `~` and `$HOME` opened, `cd` followed,
+   * globs and links resolved, a folder above one read in depth. Used for Trama's own folders (issue #597).
+   */
+  reaches(command: string, context: Pick<LockContext, "cwd">, folders: readonly { label: string; path: string }[]): string | null {
+    if (!folders.length) return null;
+    const places = folders.map(({ label, path }) => ({ label, paths: [...new Set([normalize(path), this.realpath(path) ?? normalize(path)])] }));
+    return this.checkLine(command, context.cwd, 0, places, false)?.place ?? null;
+  }
+
+  private checkLine(line: string, startCwd: string, depth: number, places: readonly Place[], secrets: boolean): Locked | null {
     if (depth > 4) return null;
     let cwd = startCwd;
     for (const words of commandWords(line)) {
@@ -157,19 +173,19 @@ export class SecretLock {
         const flag = args.findIndex((a) => /^-[a-z]*c[a-z]*$/.test(a));
         const script = flag >= 0 ? args[flag + 1] : undefined;
         if (script) {
-          if (ENVIRONMENT_DUMP.test(script)) return { kind: "environment", place: "env" };
-          const inner = this.checkLine(script, cwd, depth + 1);
+          if (secrets && ENVIRONMENT_DUMP.test(script)) return { kind: "environment", place: "env" };
+          const inner = this.checkLine(script, cwd, depth + 1, places, secrets);
           if (inner) return inner;
         }
       }
-      if (program === "security" && /^(find|dump|export|delete|add|import|set)-/.test(args[0] ?? "")) return { kind: "keychain", place: "Keychain" };
+      if (secrets && program === "security" && /^(find|dump|export|delete|add|import|set)-/.test(args[0] ?? "")) return { kind: "keychain", place: "Keychain" };
       const deep = DEEP_READERS.has(program) || args.some((a) => a === "-r" || a === "-R" || a === "--recursive") || (program === "find" && args.some((a) => /^-(exec|execdir|ok|okdir)$/.test(a)));
       // A command that runs inside a locked place reads it, whatever its words say.
-      const inside = this.checkPlaces(cwd, false);
+      const inside = this.checkPlaces(cwd, false, places);
       if (inside && program !== "pwd") return inside;
       for (const word of words) {
         for (const fragment of [word, ...word.split(/[\s=:,;|&<>()`'"]+/)].filter(Boolean)) {
-          const hit = this.checkFragment(fragment, cwd, deep);
+          const hit = this.checkFragment(fragment, cwd, deep, places, secrets);
           if (hit) return hit;
         }
       }
@@ -183,26 +199,27 @@ export class SecretLock {
     return normalize(isAbsolute(opened) ? opened : join(cwd, opened));
   }
 
-  private checkFragment(fragment: string, cwd: string, deep: boolean): Locked | null {
+  private checkFragment(fragment: string, cwd: string, deep: boolean, places: readonly Place[], secrets: boolean): Locked | null {
     const looksLikePath = fragment.includes("/") || fragment.startsWith("~") || fragment.startsWith(".") || fragment.startsWith("$");
     // A bare word is no path to look at by name (`grep credentials src`), but it can be a link that points into a place.
     if (looksLikePath && /\$/.test(fragment.replace(/^\$\{?HOME\}?(?=\/|$)/, ""))) {
       // A variable the check cannot open: it still stops on a locked place written after it.
       const tail = fragment.replace(/\\/g, "/");
+      if (!secrets) return this.checkHiddenStart(tail, places);
       for (const place of HOME_PLACES) if (tail.endsWith(`/${place}`) || tail.includes(`/${place}/`)) return { kind: "place", place: `~/${place}` };
       return isSecretPath(tail) ? { kind: "file", place: tail.split("/").at(-1) ?? tail } : null;
     }
     const absolute = this.resolve(fragment, cwd);
-    if (GLOB.test(absolute)) return looksLikePath ? this.checkGlob(absolute) : null;
+    if (GLOB.test(absolute)) return looksLikePath ? this.checkGlob(absolute, places, secrets) : null;
     // The path as written, then what it really is: a link into a locked place is that place.
     const candidates = [absolute];
     const real = this.realOf(absolute);
     if (real !== absolute) candidates.push(real);
     for (const candidate of candidates) {
-      const hit = this.checkPlaces(candidate, deep);
+      const hit = this.checkPlaces(candidate, deep, places);
       if (hit) return hit;
     }
-    if (looksLikePath) for (const candidate of candidates) if (isSecretPath(candidate)) return { kind: "file", place: candidate.split(sep).at(-1) ?? candidate };
+    if (secrets && looksLikePath) for (const candidate of candidates) if (isSecretPath(candidate)) return { kind: "file", place: candidate.split(sep).at(-1) ?? candidate };
     return null;
   }
 
@@ -221,8 +238,24 @@ export class SecretLock {
     return path;
   }
 
-  private checkPlaces(path: string, deep: boolean): Locked | null {
-    for (const place of this.places) {
+  /**
+   * A path that starts with a variable the check cannot open (`$DIR/Library/...`): it reaches a place when what follows
+   * the variable is a run of at least two folders of the place's path, written after the home folder.
+   */
+  private checkHiddenStart(tail: string, places: readonly Place[]): Locked | null {
+    const written = tail.replace(/^.*\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/, "").replace(/\/+$/, "");
+    if (written.split("/").filter(Boolean).length < 2) return null;
+    for (const place of places) {
+      for (const locked of place.paths) {
+        const known = locked.startsWith(this.home + sep) ? locked.slice(this.home.length) : locked;
+        if (known.includes(written) || written.includes(known)) return { kind: "place", place: place.label };
+      }
+    }
+    return null;
+  }
+
+  private checkPlaces(path: string, deep: boolean, places: readonly Place[]): Locked | null {
+    for (const place of places) {
       for (const locked of place.paths) {
         if (path === locked || path.startsWith(locked + sep)) return { kind: "place", place: place.label };
         // A folder above a locked place, read in depth, reaches it.
@@ -232,12 +265,13 @@ export class SecretLock {
     return null;
   }
 
-  private checkGlob(glob: string): Locked | null {
-    for (const place of this.places) {
+  private checkGlob(glob: string, places: readonly Place[], secrets: boolean): Locked | null {
+    for (const place of places) {
       for (const locked of place.paths) {
         if (globReaches(glob, locked)) return { kind: "place", place: place.label };
       }
     }
+    if (!secrets) return null;
     const last = glob.split("/").at(-1) ?? "";
     // A pattern that starts with a dot reaches the env files; one that does not never matches a name with a leading dot.
     if (GLOB.test(last) && last.startsWith(".") && globExpression(last).test(".env")) return { kind: "file", place: ".env" };
