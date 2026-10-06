@@ -1,3 +1,4 @@
+import { Glossed } from "@/components/Term";
 import {
   IconBook2,
   IconBriefcase,
@@ -1621,7 +1622,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
     <>
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
-          {report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}
+          <Glossed term="clearance">{report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}</Glossed>
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />

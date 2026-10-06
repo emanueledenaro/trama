@@ -1,3 +1,4 @@
+import { Term } from "@/components/Term";
 import { IconFocus2, IconRotateClockwise } from "@/components/icons";
 import { plainText } from "@shared/plainLanguage";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
@@ -16,6 +17,7 @@ import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { Tooltip } from "@/components/ui/tooltip";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { plainSmellNames } from "@shared/smellNames";
 
 export const STATUS_TEXT: Record<FocusAudit["status"], MessageKey> = {
   checking: "audit.status.checking",
@@ -110,7 +112,7 @@ function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; a
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
         {finding.severity === "serious" ? <Badge tone="destructive">{t("audit.serious")}</Badge> : null}
-        <span className="text-ui-sm text-foreground">{finding.title}</span>
+        <span className="text-ui-sm text-foreground">{plainSmellNames(t, finding.title)}</span>
       </div>
       <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
         {t("audit.finding.proof")} {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(t, evidence)}</span> : evidenceLabel(t, evidence)}
@@ -300,7 +302,9 @@ function AuditBody({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
         {auditLenses(audit).length ? (
           <div className="flex items-center gap-2">
             <p className="min-w-0 flex-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
-              <span className="font-medium">{t("audit.lenses.title")}</span>
+              <span className="font-medium">
+                <Term term="lenses">{t("audit.lenses.title")}</Term>
+              </span>
               <Sep />
               {t("audit.lenses.note")}
             </p>
@@ -366,7 +370,9 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
     return (
       <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-4 last:border-b-0">
         <div className="mb-2 flex min-h-8 items-center gap-2">
-          <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
+          <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
+            <Term term="deepReview">{t("audit.title")}</Term>
+          </h4>
           {action}
         </div>
         <EmptyNote>{t("audit.none")}</EmptyNote>
@@ -377,7 +383,9 @@ export function AuditSection({ candidateId, auditId }: { candidateId: string; au
   return (
     <section className="border-b border-[color:var(--app-surface-divider)] px-4 py-4 last:border-b-0" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
       <div className="mb-2 flex min-h-8 items-center gap-2">
-        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.title")}</h4>
+        <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
+          <Term term="deepReview">{t("audit.title")}</Term>
+        </h4>
         {action}
       </div>
       <AuditBody audit={audit} checks={checks} />
@@ -411,7 +419,7 @@ function ScopedAuditSection({ audit }: { audit: FocusAudit }) {
     <section className="px-4 py-4" data-testid="focus-audit" data-status={audit.status} data-audit={audit.id}>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h4 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
-          {t("audit.title")} {focusTargetOf(t, audit.target)}
+          <Term term="deepReview">{t("audit.title")}</Term> {focusTargetOf(t, audit.target)}
         </h4>
         <div className="cta-row">
           {audit.status === "done" && linked && !audit.publication ? (

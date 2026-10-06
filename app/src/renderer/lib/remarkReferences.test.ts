@@ -44,9 +44,9 @@ describe("remarkReferences (issue #277)", () => {
     expect(html).toContain(">incarico di Luca</a>");
   });
 
-  it("leaves an unknown id as text with a hover, and existing links and code blocks alone", () => {
+  it("shows an unknown id as plain words with the id on hover, and leaves existing links and code blocks alone", () => {
     const html = render("C-AC540E8F non esiste. [la #13](https://github.com/o/r/issues/13)\n\n```\nC-55555555\n```");
-    expect(html).toContain('<span data-reference-unknown="C-AC540E8F" title="Trama non trova C-AC540E8F tra i dati di questo progetto">C-AC540E8F</span>');
+    expect(html).toContain('<span data-reference-unknown="C-AC540E8F" title="Trama non trova C-AC540E8F tra i dati di questo progetto">non più disponibile</span>');
     expect(html).toContain('<a href="https://github.com/o/r/issues/13">la #13</a>');
     expect(html).toContain("<code>C-55555555\n</code>");
   });

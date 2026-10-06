@@ -191,14 +191,18 @@ export function rowAnchors(row: TimelineRow): string[] {
   return [];
 }
 
-/** Durations as the Swift app formats them: "450 ms", "2,5 s" ("2.5 s" in English), "12 s", "1m 5s". */
-export function formatDuration(t: Translate, ms: number): string {
-  if (ms < 1_000) return t("shared.duration.ms", { value: Math.round(ms) });
+/**
+ * A duration in seconds or minutes: "2,5 s" ("2.5 s" in English), "12 s", "1 min 5 s". Under one second it is null:
+ * the person has nothing to read in "450 ms", so the caller leaves the duration out.
+ */
+export function formatDuration(t: Translate, ms: number): string | null {
+  if (ms < 1_000) return null;
   const seconds = ms / 1_000;
   if (seconds < 10) return t("shared.duration.s", { value: formatNumber(t.language, seconds, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
   if (seconds < 60) return t("shared.duration.s", { value: Math.round(seconds) });
   const minutes = Math.floor(seconds / 60);
-  return t("shared.duration.ms_minutes", { minutes, seconds: Math.round(seconds - minutes * 60) });
+  const rest = Math.round(seconds - minutes * 60);
+  return rest === 0 ? t("shared.duration.minutes", { count: minutes }) : t("shared.duration.ms_minutes", { minutes, seconds: rest });
 }
 
 export { isUnsupportedModelError } from "./providerFailure";

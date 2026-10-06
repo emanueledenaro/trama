@@ -106,6 +106,17 @@ const buttonAudit = () =>
       nameless: buttons.filter((node) => !nameOf(node)).map((node) => node.outerHTML.slice(0, 200)),
     };
   });
+// Plain words for the person: no internal id (P-B45FB56D, A-1B2C3D4E, PR-0A1B2C3D) and no duration in milliseconds in the
+// text a screen shows. An id stays on hover (title) and in data attributes, which innerText leaves out.
+const INTERNAL_ID = /(?<![\w-])(?:DQ|DM|AT|PR|[ACDEFGMPQRST])-[0-9A-F]{8}(?![\w-])/g;
+const MILLISECONDS = /(?<![\w.,])\d+(?:[.,]\d+)? ?ms(?![\w])/g;
+const textAudit = () =>
+  page.evaluate(({ id, ms }) => {
+    const text = document.body.innerText;
+    const found = (source) => [...text.matchAll(new RegExp(source, "g"))].map((m) => text.slice(Math.max(0, m.index - 30), m.index + m[0].length + 20).replace(/\s+/g, " "));
+    return { ids: found(id), milliseconds: found(ms) };
+  }, { id: INTERNAL_ID.source, ms: MILLISECONDS.source });
+const textScreens = {};
 // What every screenshot showed, written next to the screenshots for the review of the button rule.
 const buttonScreens = {};
 const shot = async (name) => {
@@ -119,6 +130,13 @@ const shot = async (name) => {
   await writeFile(join(out, "button-audit.json"), `${JSON.stringify(buttonScreens, null, 2)}\n`);
   if (audit.nameless.length) throw new Error(`A button without a name in ${name}: ${audit.nameless[0]}`);
   if (audit.filled.length > 1) throw new Error(`More than one filled button in ${name}: ${audit.filled.join(", ")}`);
+  const words = await textAudit();
+  if (words.ids.length || words.milliseconds.length) textScreens[name] = words;
+  await writeFile(join(out, "text-audit.json"), `${JSON.stringify(textScreens, null, 2)}\n`);
+  if (!process.env.UI_CHECK_REPORT_ONLY) {
+    if (words.ids.length) throw new Error(`An internal id in the text of ${name}: ${words.ids[0]}`);
+    if (words.milliseconds.length) throw new Error(`A duration in milliseconds in the text of ${name}: ${words.milliseconds[0]}`);
+  }
   console.log("saved", name);
 };
 // Issue #330: the window is laid out as VS Code. The activity bar picks a view, the side bar shows it; until the slices
@@ -1096,6 +1114,39 @@ await shot("02-demo-study");
     await activityBar().getByRole("button", { name: "Aspetta te", exact: true }).click();
     await page.getByTestId("side-bar").waitFor({ state: "detached" });
   }
+  // Names and plain words: every icon of the activity bar has a name and says what it opens, and a word that a new
+  // person may not know explains itself on hover.
+  for (const [icon, aria, hint] of [
+    ["Regole", /mandato.*Patto.*regole del codice/, /^Regole\s*Le regole del progetto/],
+    ["Memoria", /note che il Coordinatore conserva/, /^Memoria\s*Le note che il Coordinatore conserva/],
+  ]) {
+    const button = activityBar().getByRole("button", { name: icon, exact: true });
+    if (!aria.test((await button.getAttribute("aria-description")) ?? "")) throw new Error(`The ${icon} icon does not say what it opens`);
+    await button.hover();
+    await page.getByRole("tooltip").filter({ hasText: hint }).waitFor();
+    for (const dark of [false, true]) {
+      await setLookTo(windowLook.provider, dark);
+      await button.hover();
+      await page.getByRole("tooltip").filter({ hasText: hint }).waitFor();
+      await shot(`31-icon-name-${icon.toLowerCase()}-${dark ? "dark" : "light"}`);
+    }
+    await setLookTo(windowLook.provider, windowLook.dark);
+  }
+  await openView("Lavoro");
+  const sliceTerm = page.getByTestId("work-section-slices").locator('[data-term="slice"]').first();
+  await sliceTerm.waitFor();
+  for (const dark of [false, true]) {
+    await setLookTo(windowLook.provider, dark);
+    await sliceTerm.hover();
+    await page.getByRole("tooltip").filter({ hasText: "Una parte del piano che si può fare, provare e unire da sola." }).waitFor();
+    await shot(`31-term-slice-${dark ? "dark" : "light"}`);
+  }
+  await setLookTo(windowLook.provider, windowLook.dark);
+  await page.mouse.move(0, 0);
+  await openView("Regole", "Mandato");
+  await page.getByTestId("side-bar").locator('[data-term="mandate"]').first().waitFor();
+  await activityBar().getByRole("button", { name: "Regole", exact: true }).click();
+  await page.getByTestId("side-bar").waitFor({ state: "detached" });
   // A 1280x800 window at 120%: the side bar at its widest leaves the chat 420 px.
   await page.setViewportSize({ width: 1066, height: 666 });
   await openView("Regole");

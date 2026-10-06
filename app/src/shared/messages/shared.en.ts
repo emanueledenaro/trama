@@ -69,9 +69,8 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.duration.hours.one": "an hour",
   "shared.duration.days": "{count} days",
   "shared.duration.days.one": "a day",
-  "shared.duration.ms": "{value} ms",
   "shared.duration.s": "{value} s",
-  "shared.duration.ms_minutes": "{minutes}m {seconds}s",
+  "shared.duration.ms_minutes": "{minutes} min {seconds} s",
 
   // Mandate actions
   "shared.action.plan": "Prepare plans for agreed tickets and fixes",

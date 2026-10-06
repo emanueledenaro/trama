@@ -10,6 +10,7 @@ import type { MessageKey } from "@shared/i18n";
 import { plainText } from "@shared/plainLanguage";
 import { useT } from "@/lib/i18n";
 import { ReferenceText } from "./ReferenceText";
+import { plainSmellNames } from "@shared/smellNames";
 
 const RESULT: Record<"pass" | "fail" | "notRun", MessageKey> = { pass: "shared.suite.pass", fail: "shared.suite.fail", notRun: "shared.suite.notRun" };
 
@@ -40,7 +41,7 @@ function ReviewRow({ gate, review, document }: { gate: CandidateGate; review: Ga
             <li key={`${f.severity}-${f.title}-${f.file}`} data-testid="gate-finding" data-severity={f.severity} className="break-words">
               <span className={f.severity === "blocking" ? "text-destructive" : "text-muted-foreground"}>{f.severity === "blocking" ? t("chat.gate.blocking") : t("chat.gate.suggestion")}</span>
               <Sep />
-              <ReferenceText text={f.title} />
+              <ReferenceText text={plainSmellNames(t, f.title)} />
               {f.file ? (
                 <>
                   <Sep />

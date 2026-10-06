@@ -1,3 +1,4 @@
+import { Glossed } from "@/components/Term";
 import { IconBan, IconChevronRight, IconHourglass } from "@/components/icons";
 import { useEffect, useState } from "react";
 import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
@@ -177,7 +178,7 @@ export function MandateView({ modulesOpen = false, change }: { modulesOpen?: boo
         <p className="text-ui text-muted-foreground" data-testid="mandate-state">
           {granted ? (
             <>
-              <span className="font-medium text-foreground">{t("rules.mandate.title", { version: granted.version })}</span>
+              <span className="font-medium text-foreground"><Glossed term="mandate">{t("rules.mandate.title", { version: granted.version })}</Glossed></span>
               <Sep />
               <span>{granted.restriction ? t("rules.mandate.restricted", { date: formatDate(granted.grantedAt) }) : t("rules.mandate.granted", { date: formatDate(granted.grantedAt) })}</span>
             </>

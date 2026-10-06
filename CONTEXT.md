@@ -33,6 +33,7 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | Verifiche, verifica | Checks, check |
 | Revisori, revisione | Reviewers, review |
 | Esame approfondito | Deep review |
+| Lenti di Trama | Trama lenses |
 | Punti di prova | Test points |
 | Copia di lavoro | Working copy |
 | Patto Vivo, Patto | Living Pact, Pact |

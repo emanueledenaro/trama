@@ -1,3 +1,4 @@
+import { Glossed } from "@/components/Term";
 import { IconCheck, IconCircleCheck, IconCircleDashed, IconFileDiff, IconGitPullRequest, IconX } from "@/components/icons";
 import { useEffect, useRef } from "react";
 import { explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
@@ -198,7 +199,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
     <div data-testid="candidate-detail" data-candidate={candidate.id}>
       <div className="px-4 pt-4 pb-2" data-testid="candidate-header">
         <h2 className="truncate font-system-ui text-ui-lg font-medium text-foreground" title={candidate.id} data-record-id={candidate.id}>
-          {record ? asTitle(record.short ?? record.label) : t("chat.card.candidate.title")}
+          <Glossed term="candidate">{record ? asTitle(record.short ?? record.label) : t("chat.card.candidate.title")}</Glossed>
         </h2>
         <p className="mt-2 flex flex-wrap items-center gap-x-2 text-ui-sm text-muted-foreground" data-testid="candidate-author">
           {specialist ? <AgentName agent={specialist} size={24} /> : candidate.specialistId}
@@ -327,7 +328,9 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
             {candidate.humanApproval ? (
               <p>{report.approvalInvalidated ? t("candidate.history.approvalInvalidated") : t("candidate.history.approved", { time: formatRelativeTime(candidate.humanApproval.at) })}</p>
             ) : null}
-            {candidate.clearance ? <p>{report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}</p> : null}
+            {candidate.clearance ? <p>
+              <Glossed term="clearance">{report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}</Glossed>
+            </p> : null}
           </HistoryRow>
         ) : null}
         {candidate.pullRequest ? (
