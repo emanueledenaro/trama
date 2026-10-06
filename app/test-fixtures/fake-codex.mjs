@@ -280,6 +280,28 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const lines = [];
         for (const command of text.split("\n").slice(1).join("\n").split(";;").map((c) => c.trim()).filter(Boolean)) {
           // Issue #410: "chrome:<address>" opens the page in the person's Chrome with open_in_chrome.
+          // Issue #595: "show:<address>" shows it in the person's default browser with show_in_browser.
+          if (command.startsWith("show:")) {
+            const shown = await callTool(threadId, "show_in_browser", { url: command.slice("show:".length).trim() });
+            toolDone("show_in_browser", shown);
+            const body = JSON.parse(shown.content[0].text);
+            lines.push(shown.isError ? `${command}: rifiutato (${body.error.code})` : `${command}: mostrato ${body.shown}`);
+            continue;
+          }
+          // "background:<comando>" starts a command that keeps running; "stop:<id>" stops it.
+          if (command.startsWith("background:")) {
+            const started = await callTool(threadId, "run_command", { command: command.slice("background:".length).trim(), background: true });
+            toolDone("run_command", started);
+            const body = JSON.parse(started.content[0].text);
+            lines.push(started.isError ? `${command}: rifiutato (${body.error.code})` : `${command}: avviato ${body.running ? `id=${body.id}` : `finito (${body.exitCode})`}`);
+            continue;
+          }
+          if (command.startsWith("stop:")) {
+            const stopped = await callTool(threadId, "stop_background", { id: command.slice("stop:".length).trim() });
+            toolDone("stop_background", stopped);
+            lines.push(stopped.isError ? `${command}: rifiutato (${JSON.parse(stopped.content[0].text).error.code})` : `${command}: spento`);
+            continue;
+          }
           if (command.startsWith("chrome:")) {
             const opened = await callTool(threadId, "open_in_chrome", { url: command.slice("chrome:".length).trim() });
             toolDone("open_in_chrome", opened);

@@ -303,6 +303,8 @@ export const mainIt = {
   "main.controller.operatorOutput": "Risultato del comando di {agent}",
   "main.controller.operatorDeclined": "Hai detto di no: il comando di {agent} non parte. {command}",
   "main.controller.operatorOpened": "{agent} ha aperto {site} nel tuo Chrome",
+  "main.controller.operatorShown": "{agent} ha aperto {site} nel tuo browser",
+  "main.controller.operatorBackgroundStopped": "{agent} ha spento il server avviato in background: {command}",
   "main.controller.operatorSent": "{agent} ha inviato dati a {site}",
   "main.controller.operatorSendFailed": "{agent} ha provato a inviare dati a {site}, ma l'invio non è andato a buon fine",
   "main.controller.operatorSendWaiting": "{agent} aspetta il tuo sì per un invio che non si annulla: {site}",
