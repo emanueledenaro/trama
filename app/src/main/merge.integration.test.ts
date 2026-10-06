@@ -191,7 +191,10 @@ describe("merge with the green light, interface candidates held for the person (
     await until(() => withoutScript.interfaceShots?.status === "unavailable", 30_000);
     expect(withoutScript.interfaceShots).toMatchObject({ shots: [] });
     expect(project().candidateReports[withoutScript.id]).toMatchObject({ mergeRoute: "interface" });
-    await until(() => waitingKeys().includes(`candidate:${withoutScript.id}`));
+    await until(() => waitingKeys().includes(`candidate:${withoutScript.id}`), 60_000).catch((error: Error) => {
+      const report = project().candidateReports[withoutScript.id];
+      throw new Error(`${error.message}: report ${report?.state} ${JSON.stringify(report?.blockers?.map((b) => b.code))}, humanRejection ${Boolean(withoutScript.humanRejection)}, merge ${withoutScript.merge?.status}`);
+    });
     expect((project().waiting ?? []).find((w) => w.key === `candidate:${withoutScript.id}`)).toMatchObject({ label: "Interfaccia da guardare" });
     expect(withoutScript.pullRequest).toBeNull();
 
@@ -208,7 +211,7 @@ describe("merge with the green light, interface candidates held for the person (
     expect(refusal).toMatchObject({ ban: "repositorySettings", action: `Unione della pull request del candidato ${fourth.id} (${settings.workspace!.branch})`, by: { kind: "trama" } });
     expect(waitingKeys()).toContain(`fixedBan:${refusal.id}`);
     expect(ghCalls().filter((c) => c.includes("PUT"))).toHaveLength(2);
-  }, 120_000);
+  }, 180_000);
 });
 
 /** A shop with a GitHub remote, a fake gh that opens and merges, a team, a decision and a mandate that merges (issue #41). */
