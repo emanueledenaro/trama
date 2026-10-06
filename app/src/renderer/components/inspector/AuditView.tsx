@@ -5,7 +5,7 @@ import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudi
 import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
-import { RecordName } from "@/components/chat/ReferenceText";
+import { RecordName, ReferenceText } from "@/components/chat/ReferenceText";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -294,7 +294,7 @@ function AuditBody({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
         <div data-testid="audit-axis" data-axis="spec" data-status={audit.spec.status}>
           <h5 className="mb-1 flex items-center gap-2 text-ui-sm font-medium text-muted-foreground">
             {t("audit.spec")}
-            {audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
+            {audit.specSource ? <Badge tone="outline"><ReferenceText text={audit.specSource} links={false} /></Badge> : null}
           </h5>
           <AxisBody axis={audit.spec} name="spec" audit={audit} />
         </div>

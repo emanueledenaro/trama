@@ -7,6 +7,7 @@ import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTa
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { ReferenceText } from "@/components/chat/ReferenceText";
 import { examineAgain, FindingActions, FollowUpLine, isRunning, STATUS_TEXT, STATUS_TONE } from "@/components/inspector/AuditView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -91,7 +92,7 @@ function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
       {(["standards", "spec"] as const).map((name) => (
         <Step key={name} state={axisState(audit[name])} title={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
           <p className={cn("text-ui-sm", audit[name].status === "failed" ? "text-destructive" : "text-muted-foreground")}>{axisNote(audit[name], t)}</p>
-          {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{t("focus.specSource", { source: audit.specSource })}</p> : null}
+          {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground"><ReferenceText text={t("focus.specSource", { source: audit.specSource })} /></p> : null}
         </Step>
       ))}
       {lenses.length ? (
@@ -242,7 +243,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
         <section key={name} data-testid="audit-axis" data-axis={name} data-status={audit[name].status} aria-label={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
           <div className="mb-2 flex items-center gap-2">
             <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{AXIS_TITLE[name]}</h3>
-            {name === "spec" && audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
+            {name === "spec" && audit.specSource ? <Badge tone="outline"><ReferenceText text={audit.specSource} links={false} /></Badge> : null}
           </div>
           <ReviewBody audit={audit} review={audit[name]} reportLabel={t("focus.axis.report", { axis: AXIS_TITLE[name] })} selected={selected} onSelect={onSelect} />
         </section>

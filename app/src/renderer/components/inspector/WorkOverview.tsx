@@ -624,7 +624,7 @@ function ProblemBacklog() {
               <Badge tone="secondary">{t("issues.backlog.onlyTrama")}</Badge>
             )}
           </div>
-          <p className="mt-0.5 text-ui-xs text-muted-foreground">{problem.evidence.label}</p>
+          <p className="mt-0.5 text-ui-xs text-muted-foreground" title={problem.id}>{problem.evidence.label.replace(TRAILING_ID, "")}</p>
           {problem.placement ? (
             <p className="mt-1 text-ui-sm text-muted-foreground">
               <ReferenceText text={problem.placement.reason} />
@@ -635,6 +635,9 @@ function ProblemBacklog() {
     </ul>
   );
 }
+
+/** The evidence label ends with the id of the record it came from, in parentheses: the id stays on hover, not in the text. */
+const TRAILING_ID = / \((?:DQ|DM|AT|PR|[ACDEFGMPQRST])-[0-9A-F]{8}\)$/;
 
 const ISSUES_SHOWN = 6;
 

@@ -199,9 +199,11 @@ export function formatDuration(t: Translate, ms: number): string | null {
   if (ms < 1_000) return null;
   const seconds = ms / 1_000;
   if (seconds < 10) return t("shared.duration.s", { value: formatNumber(t.language, seconds, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
-  if (seconds < 60) return t("shared.duration.s", { value: Math.round(seconds) });
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds - minutes * 60);
+  const whole = Math.round(seconds);
+  // Rounding first keeps 59.6 s at "1 min" and 119.6 s at "2 min" instead of "60 s" and "1 min 60 s".
+  if (whole < 60) return t("shared.duration.s", { value: whole });
+  const minutes = Math.floor(whole / 60);
+  const rest = whole - minutes * 60;
   return rest === 0 ? t("shared.duration.minutes", { count: minutes }) : t("shared.duration.ms_minutes", { minutes, seconds: rest });
 }
 

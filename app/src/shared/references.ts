@@ -219,6 +219,12 @@ export function buildReferenceIndex(t: Translate, { document, modules, github }:
   for (const request of document.decisionRequests) {
     index.ids.set(request.id, make({ kind: "question", id: request.id }, request.id, t("shared.reference.question"), `«${clip(request.question, 48)}»`, clip(request.question, 160)));
   }
+  // A developer's question is named like a Pact card: by its words, never by its id.
+  for (const { assignment } of assignments) {
+    for (const question of assignment.questions ?? []) {
+      index.ids.set(question.id, make({ kind: "question", id: question.id }, question.id, t("shared.reference.question"), `«${clip(question.question, 48)}»`, clip(question.question, 160)));
+    }
+  }
   for (const request of document.mandateRequests) {
     const date = asked.format(new Date(`${request.askedAt.slice(0, 10)}T00:00:00Z`));
     index.ids.set(request.id, make({ kind: "mandate", id: request.id }, request.id, t("shared.reference.mandate"), t("shared.reference.mandateAsked", { date }), clip(request.reason, 160)));

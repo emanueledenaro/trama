@@ -112,9 +112,13 @@ const INTERNAL_ID = /(?<![\w-])(?:DQ|DM|AT|PR|[ACDEFGMPQRST])-[0-9A-F]{8}(?![\w-
 const MILLISECONDS = /(?<![\w.,])\d+(?:[.,]\d+)? ?ms(?![\w])/g;
 const textAudit = () =>
   page.evaluate(({ id, ms }) => {
-    const text = document.body.innerText;
+    // The tool's own error text stays as written in its technical detail (issue #392), so that detail is left out.
+    let text = document.body.innerText;
+    for (const detail of document.querySelectorAll('[data-testid="activity-tool-errors"]')) if (detail.innerText) text = text.split(detail.innerText).join(" ");
     const found = (source) => [...text.matchAll(new RegExp(source, "g"))].map((m) => text.slice(Math.max(0, m.index - 30), m.index + m[0].length + 20).replace(/\s+/g, " "));
-    return { ids: found(id), milliseconds: found(ms) };
+    // Report-only runs also name the element that holds each id, to find where it is drawn.
+    const holders = [...document.querySelectorAll("body *")].filter((el) => el.children.length === 0 && new RegExp(id).test(el.textContent ?? "")).map((el) => `${el.tagName.toLowerCase()}[${el.closest("[data-testid]")?.getAttribute("data-testid") ?? ""}]: ${(el.textContent ?? "").slice(0, 80)}`);
+    return { ids: found(id), milliseconds: found(ms), holders };
   }, { id: INTERNAL_ID.source, ms: MILLISECONDS.source });
 const textScreens = {};
 // What every screenshot showed, written next to the screenshots for the review of the button rule.
@@ -8358,7 +8362,7 @@ await app.close();
   await focusView.getByTestId("focus-progress").getByText("v1, ", { exact: false }).waitFor();
   await focusView.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
   const moduleFinding = focusView.locator('[data-testid="audit-axis"][data-axis="standards"] [data-testid="audit-finding"][data-status="verified"]');
-  await moduleFinding.getByText(/Mysterious Name in Sources\/Orders\/Order\.swift/).waitFor();
+  await moduleFinding.getByText(/Nome poco chiaro in Sources\/Orders\/Order\.swift/).waitFor();
   await focusView.getByTestId("focus-proof").getByText("Trama ha letto Sources/Orders/Order.swift:1 e la riga contiene il testo citato.").waitFor();
   // Each column stays inside the window at every size, with no horizontal scroll.
   const columnsFit = async (size) => {
