@@ -6,11 +6,12 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
-import { CONVERSATION_TAB, type SideBarView, VIEW_LABELS } from "@/lib/workbench";
+import { CONVERSATION_TAB, type SideBarView, VIEW_HINTS, VIEW_LABELS } from "@/lib/workbench";
 import { useSplitEditor } from "./EditorArea";
 
 function ActivityButton({
   label,
+  hint,
   active,
   onClick,
   badge,
@@ -18,6 +19,8 @@ function ActivityButton({
   children,
 }: {
   label: string;
+  /** What the button opens, in one sentence: under the name on hover, and read as the button's description. */
+  hint: string;
   active: boolean;
   onClick: () => void;
   badge?: number;
@@ -25,10 +28,19 @@ function ActivityButton({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip label={badge ? (badgeLabel ?? label) : label} side="right">
+    <Tooltip
+      label={
+        <span className="block max-w-56">
+          <span className="block font-medium">{badge ? (badgeLabel ?? label) : label}</span>
+          <span className="block text-muted-foreground">{hint}</span>
+        </span>
+      }
+      side="right"
+    >
       <button
         type="button"
         aria-label={label}
+        aria-description={hint}
         aria-pressed={active}
         data-active={active || undefined}
         onClick={onClick}
@@ -76,6 +88,7 @@ export function ActivityBar() {
   const view = (key: SideBarView, icon: React.ReactNode, badge?: number) => (
     <ActivityButton
       label={t(VIEW_LABELS[key])}
+      hint={t(VIEW_HINTS[key])}
       active={shown === key}
       onClick={() => openView(key)}
       badge={badge}
@@ -90,7 +103,7 @@ export function ActivityBar() {
       data-testid="activity-bar"
       className="flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)] bg-[var(--app-activitybar-surface)]"
     >
-      <ActivityButton label={t("workbench.view.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
+      <ActivityButton label={t("workbench.view.projects")} hint={t("workbench.hint.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
         <TramaIcon animated name="projects" />
       </ActivityButton>
       {project ? (
@@ -98,6 +111,7 @@ export function ActivityBar() {
           <div className="h-2" />
           <ActivityButton
             label={t("workbench.view.conversation")}
+            hint={t("workbench.hint.conversation")}
             active={mainView === "dialog" && !covered && !sidebarOpen}
             onClick={() => {
               // The conversation's tab comes forward; Progetti, Impostazioni and the details keep their tabs (issue #336).
@@ -118,6 +132,7 @@ export function ActivityBar() {
       <span className="flex-1" />
       <ActivityButton
         label={t("workbench.view.settings")}
+        hint={t("workbench.hint.settings")}
         active={mainView === "settings" && !covered}
         onClick={() => (mainView === "settings" && !covered ? closeSettings() : openSettings("general"))}
       >

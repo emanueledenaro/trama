@@ -68,9 +68,8 @@ export const sharedIt = {
   "shared.duration.hours.one": "un'ora",
   "shared.duration.days": "{count} giorni",
   "shared.duration.days.one": "un giorno",
-  "shared.duration.ms": "{value} ms",
   "shared.duration.s": "{value} s",
-  "shared.duration.ms_minutes": "{minutes}m {seconds}s",
+  "shared.duration.ms_minutes": "{minutes} min {seconds} s",
 
   // Mandate actions
   "shared.action.plan": "Preparare piani per ticket concordati e correzioni",

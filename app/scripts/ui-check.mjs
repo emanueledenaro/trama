@@ -106,6 +106,21 @@ const buttonAudit = () =>
       nameless: buttons.filter((node) => !nameOf(node)).map((node) => node.outerHTML.slice(0, 200)),
     };
   });
+// Plain words for the person: no internal id (P-B45FB56D, A-1B2C3D4E, PR-0A1B2C3D) and no duration in milliseconds in the
+// text a screen shows. An id stays on hover (title) and in data attributes, which innerText leaves out.
+const INTERNAL_ID = /(?<![\w-])(?:DQ|DM|AT|PR|[ACDEFGMPQRST])-[0-9A-F]{8}(?![\w-])/g;
+const MILLISECONDS = /(?<![\w.,])\d+(?:[.,]\d+)? ?ms(?![\w])/g;
+const textAudit = () =>
+  page.evaluate(({ id, ms }) => {
+    // The tool's own error text stays as written in its technical detail (issue #392), so that detail is left out.
+    let text = document.body.innerText;
+    for (const detail of document.querySelectorAll('[data-testid="activity-tool-errors"]')) if (detail.innerText) text = text.split(detail.innerText).join(" ");
+    const found = (source) => [...text.matchAll(new RegExp(source, "g"))].map((m) => text.slice(Math.max(0, m.index - 30), m.index + m[0].length + 20).replace(/\s+/g, " "));
+    // Report-only runs also name the element that holds each id, to find where it is drawn.
+    const holders = [...document.querySelectorAll("body *")].filter((el) => el.children.length === 0 && new RegExp(id).test(el.textContent ?? "")).map((el) => `${el.tagName.toLowerCase()}[${el.closest("[data-testid]")?.getAttribute("data-testid") ?? ""}]: ${(el.textContent ?? "").slice(0, 80)}`);
+    return { ids: found(id), milliseconds: found(ms), holders };
+  }, { id: INTERNAL_ID.source, ms: MILLISECONDS.source });
+const textScreens = {};
 // What every screenshot showed, written next to the screenshots for the review of the button rule.
 const buttonScreens = {};
 const shot = async (name) => {
@@ -119,6 +134,13 @@ const shot = async (name) => {
   await writeFile(join(out, "button-audit.json"), `${JSON.stringify(buttonScreens, null, 2)}\n`);
   if (audit.nameless.length) throw new Error(`A button without a name in ${name}: ${audit.nameless[0]}`);
   if (audit.filled.length > 1) throw new Error(`More than one filled button in ${name}: ${audit.filled.join(", ")}`);
+  const words = await textAudit();
+  if (words.ids.length || words.milliseconds.length) textScreens[name] = words;
+  await writeFile(join(out, "text-audit.json"), `${JSON.stringify(textScreens, null, 2)}\n`);
+  if (!process.env.UI_CHECK_REPORT_ONLY) {
+    if (words.ids.length) throw new Error(`An internal id in the text of ${name}: ${words.ids[0]}`);
+    if (words.milliseconds.length) throw new Error(`A duration in milliseconds in the text of ${name}: ${words.milliseconds[0]}`);
+  }
   console.log("saved", name);
 };
 // Issue #330: the window is laid out as VS Code. The activity bar picks a view, the side bar shows it; until the slices
@@ -1096,6 +1118,39 @@ await shot("02-demo-study");
     await activityBar().getByRole("button", { name: "Aspetta te", exact: true }).click();
     await page.getByTestId("side-bar").waitFor({ state: "detached" });
   }
+  // Names and plain words: every icon of the activity bar has a name and says what it opens, and a word that a new
+  // person may not know explains itself on hover.
+  for (const [icon, aria, hint] of [
+    ["Regole", /mandato.*Patto.*regole del codice/, /^Regole\s*Le regole del progetto/],
+    ["Memoria", /note che il Coordinatore conserva/, /^Memoria\s*Le note che il Coordinatore conserva/],
+  ]) {
+    const button = activityBar().getByRole("button", { name: icon, exact: true });
+    if (!aria.test((await button.getAttribute("aria-description")) ?? "")) throw new Error(`The ${icon} icon does not say what it opens`);
+    await button.hover();
+    await page.locator(".translucent-popup").filter({ hasText: hint }).waitFor();
+    for (const dark of [false, true]) {
+      await setLookTo(windowLook.provider, dark);
+      await button.hover();
+      await page.locator(".translucent-popup").filter({ hasText: hint }).waitFor();
+      await shot(`31-icon-name-${icon.toLowerCase()}-${dark ? "dark" : "light"}`);
+    }
+    await setLookTo(windowLook.provider, windowLook.dark);
+  }
+  await openView("Lavoro");
+  const sliceTerm = page.getByTestId("work-section-slices").locator('[data-term="slice"]').first();
+  await sliceTerm.waitFor();
+  for (const dark of [false, true]) {
+    await setLookTo(windowLook.provider, dark);
+    await sliceTerm.hover();
+    await page.locator(".translucent-popup").filter({ hasText: "Una parte del piano che si può fare, provare e unire da sola." }).waitFor();
+    await shot(`31-term-slice-${dark ? "dark" : "light"}`);
+  }
+  await setLookTo(windowLook.provider, windowLook.dark);
+  await page.mouse.move(0, 0);
+  await openView("Regole", "Mandato");
+  await page.getByTestId("side-bar").locator('[data-term="mandate"]').first().waitFor();
+  await activityBar().getByRole("button", { name: "Regole", exact: true }).click();
+  await page.getByTestId("side-bar").waitFor({ state: "detached" });
   // A 1280x800 window at 120%: the side bar at its widest leaves the chat 420 px.
   await page.setViewportSize({ width: 1066, height: 666 });
   await openView("Regole");
@@ -1192,7 +1247,7 @@ const composed = await page.getByLabel("Messaggio al Coordinatore").inputValue()
 if (!composed.includes("@Sources/Orders/CancelPaidOrder.swift ")) throw new Error(`Mention not inserted: ${composed}`);
 await page.getByLabel("Messaggio al Coordinatore").fill("Cosa succede quando si annulla un ordine pagato?");
 await page.keyboard.press("Enter");
-await page.getByText("Ha lavorato per").first().waitFor({ timeout: 20_000 });
+await page.getByText("Ha lavorato").first().waitFor({ timeout: 20_000 });
 await shot("03-reply");
 // W01: a question for information leaves no step; a request for work ends with one step, on the right.
 if (await page.getByTestId("next-step").count()) throw new Error("A next step appeared after a question for information");
@@ -1390,7 +1445,7 @@ await answeredLine.getByText("Apri nel Patto").waitFor();
 await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
 // The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there, in the bottom
 // panel under the conversation (issue #337).
-await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
+await page.getByTestId("work-line").getByText("Ha lavorato").first().click();
 await page.getByTestId("bottom-panel").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
 await shot("04-work-expanded");
 // Issue #337: Activity in the bottom panel, under the editor with a horizontal sash as in VS Code. It never
@@ -1876,7 +1931,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[rinomina:Giulia:Bea]")
 await page.keyboard.press("Enter");
 await page.getByText("Ho rinominato Giulia in Bea.").first().waitFor({ timeout: 20_000 });
 await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
-await page.getByText("ha lavorato per").first().waitFor();
+await page.getByText("ha lavorato").first().waitFor();
 await shot("04e5-team-renamed-in-chat");
 
 // W16: each agent is a bot in its own color; no two agents of the team share a body, the chat shows them too, the
@@ -4614,7 +4669,7 @@ if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the la
 await slowCard.getByRole("button", { name: "Ferma" }).click();
 await slowCard.getByText("Fermato", { exact: true }).waitFor({ timeout: 20_000 });
 // The turn's activities are one line in the chat; its steps open in Activity (issue #271).
-const stoppedTurn = page.getByRole("button", { name: /ha lavorato per/ }).first();
+const stoppedTurn = page.getByRole("button", { name: /ha lavorato/ }).first();
 await stoppedTurn.click();
 await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
 await stoppedTurn.scrollIntoViewIfNeeded();
@@ -4943,7 +4998,7 @@ await page.getByRole("button", { name: `Chiudi: Candidato ${blockedId}` }).click
 await fixedCandidate.scrollIntoViewIfNeeded();
 await shot("24a1-candidate-after-the-fix");
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
-await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
+await page.getByRole("button", { name: /ha lavorato/ }).last().click();
 await page.getByText("Candidato nuovo sulla copia di lavoro").last().waitFor({ timeout: 10_000 });
 // The step names the candidate, not its id (issue #392).
 const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
@@ -6349,7 +6404,7 @@ await page.evaluate(() => window.trama.invoke("settings:update", { theme: "syste
 await closePanels();
 const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
 // The chat's lines only: the side bar sits before the chat (issue #330) and its Activity lists the same names.
-for (const group of await page.getByRole("main").getByRole("button", { name: /ha lavorato per/ }).all()) {
+for (const group of await page.getByRole("main").getByRole("button", { name: /ha lavorato/ }).all()) {
   if (await blockedRead.count()) break;
   await group.click();
 }
@@ -7641,7 +7696,7 @@ const askTicket = async (text, reply) => {
 };
 // Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
 const ticketSteps = async (reply) => {
-  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato/ }).last().click();
   const steps = page.getByTestId("bottom-panel").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
   const step = steps.filter({ hasText: reply }).first();
   await step.waitFor({ timeout: 10_000 });
@@ -7747,7 +7802,7 @@ if ((await page.getByText("[attesa] Controlla i test dei resi", { exact: true })
 // that holds Trama's line is the resumed turn; on a slow runner the reply comes before the turn is closed.
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
 const reopenedRow = page.getByTestId("bottom-panel").getByText("Turno ripreso alla riapertura", { exact: true }).last();
-const turnLines = page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ });
+const turnLines = page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato/ });
 for (let index = (await turnLines.count()) - 1; index >= 0 && !(await reopenedRow.isVisible()); index -= 1) {
   await turnLines.nth(index).click();
   await page.waitForTimeout(300);
@@ -8307,7 +8362,7 @@ await app.close();
   await focusView.getByTestId("focus-progress").getByText("v1, ", { exact: false }).waitFor();
   await focusView.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
   const moduleFinding = focusView.locator('[data-testid="audit-axis"][data-axis="standards"] [data-testid="audit-finding"][data-status="verified"]');
-  await moduleFinding.getByText(/Mysterious Name in Sources\/Orders\/Order\.swift/).waitFor();
+  await moduleFinding.getByText(/Nome poco chiaro in Sources\/Orders\/Order\.swift/).waitFor();
   await focusView.getByTestId("focus-proof").getByText("Trama ha letto Sources/Orders/Order.swift:1 e la riga contiene il testo citato.").waitFor();
   // Each column stays inside the window at every size, with no horizontal scroll.
   const columnsFit = async (size) => {
