@@ -81,6 +81,7 @@ export function accessChangeEntries(t: Translate, changes: AccessChange[]): Acti
 /** The detail of a step as the person reads it: command steps keep a code in the record, words are chosen here. */
 function stepDetail(t: Translate, step: AccessStep): string | null {
   if (step.kind === "consent") return step.detail === "withdrawn" ? t("activity.access.consent.withdrawnDetail") : null;
+  if (step.kind === "browser" && step.detail === "shown") return null;
   if (step.kind === "browser" && (step.detail === "consent" || step.detail === "login" || step.detail === "start")) {
     return [t(step.outcome === "waiting" ? "activity.access.waiting" : "activity.access.failed"), t(`activity.access.browser.${step.detail}`)].join(" ");
   }
@@ -158,7 +159,7 @@ export function accessStepEntries(t: Translate, steps: AccessStep[]): ActivityEn
     requestId: null,
     move: null,
     trigger: null,
-    label: t(step.kind === "consent" && step.detail === "withdrawn" ? "activity.access.consentWithdrawn" : stepLabelKey[step.kind], { agent: step.agent, target: step.target }),
+    label: t(step.kind === "consent" && step.detail === "withdrawn" ? "activity.access.consentWithdrawn" : step.kind === "browser" && step.detail === "shown" ? "activity.access.browserShown" : stepLabelKey[step.kind], { agent: step.agent, target: step.target }),
     goalId: null,
     startedAt: step.at,
     endedAt: null,

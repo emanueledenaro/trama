@@ -470,11 +470,13 @@ import {
   operatorPrompt,
   runOperatorTool,
   safeOutput,
+  shellBackgroundStarter,
   shellCommandRunner,
   shownCommand,
   type CommandRunner,
   type OperatorSession,
 } from "./core/operatorCommands";
+import { BackgroundCommands, type BackgroundStarter } from "./core/backgroundCommands";
 import { chromeDebuggingDriver, type BrowserDriver } from "./core/operatorBrowser";
 import { macScreenDriver, type MissingPermission, type ScreenDriver, type ScreenPermissions } from "./core/operatorScreen";
 import { sendApproved } from "./core/operatorSend";
@@ -833,6 +835,8 @@ export interface ControllerHost {
   webFetcher?: WebFetcher;
   /** What Trama does on the Mac for the Operator (issue #409). The real one runs a shell; tests give a fake. */
   commandRunner?: CommandRunner;
+  /** Starts the commands the Operator leaves running; the real one by default (issue #595). */
+  backgroundStarter?: BackgroundStarter;
   /** What Trama does in the person's Chrome for the Operator (issue #410). The real one talks to Chrome; tests give a fake. */
   browserDriver?: BrowserDriver;
   /** What Trama does on the screen for the Operator (issue #412). The real one pilots macOS; tests give a fake. */
@@ -891,6 +895,8 @@ export class TramaController {
 
   private secretLock: SecretLock | null = null;
   private chrome: BrowserDriver | null = null;
+  /** The commands the Operator left running, such as a preview server: stopped when not needed, never left behind (issue #595). */
+  private readonly backgroundCommands = new BackgroundCommands();
   private screen: ScreenDriver | null = null;
 
   /** The powers of computer access ask this gate before they act; the access switch in the composer decides it (issue #413). */
@@ -1129,6 +1135,7 @@ export class TramaController {
 
   async stop(): Promise<void> {
     this.quitting = true;
+    this.backgroundCommands.stopAll();
     this.closeTurnForQuit();
     this.cancelProviderRetry(null);
     for (const [, planner] of this.planners) planner.stop();
@@ -2385,6 +2392,8 @@ export class TramaController {
   private parkSelectedProject(): void {
     void this.stopPresence();
     const project = this.state.project;
+    // A server the Operator left running for this project goes off with it (issue #595).
+    if (project) this.backgroundCommands.stopAll(project.rootPath);
     // The project picker still says who was working on a project the person left (B02).
     if (project?.presence) this.lastPresence.set(project.id, project.presence);
     // The Coordinator's turn stops with its runtime: it ends here, in its own project, before the late rejection arrives.
@@ -5988,6 +5997,11 @@ export class TramaController {
       needsPermission: (missing) => this.projectNotice(project, t("main.controller.screenPermissionMissing", { agent, permissions: this.screenPermissionNames(missing) }), requestId),
       passwordFieldStopped: (app) => this.projectNotice(project, t("main.controller.screenPasswordField", { agent, app }), requestId),
       announceSite: (host) => this.projectNotice(project, t("main.controller.operatorOpened", { agent, site: host }), requestId),
+      openExternal: (address) => this.host.openExternal(address),
+      announceShown: (site) => this.projectNotice(project, t("main.controller.operatorShown", { agent, site }), requestId),
+      background: this.backgroundCommands,
+      startBackground: this.host.backgroundStarter ?? shellBackgroundStarter,
+      announceBackgroundStopped: (command) => this.projectNotice(project, t("main.controller.operatorBackgroundStopped", { agent, command }), requestId),
       needsLogin: (host) => this.projectNotice(project, t("main.controller.operatorNeedsLogin", { agent, site: host }), requestId),
       signal,
       newId: randomUUID,
@@ -6175,6 +6189,8 @@ export class TramaController {
     request.status = given || consentFor(project.document.siteConsents, request.host) ? "granted" : "declined";
     request.endedAt = new Date().toISOString();
     this.changedIn(project);
+    // The work that stopped for this yes goes on: the Coordinator hears it and tries again (issue #595).
+    if (request.status === "granted") this.tellConsentGiven(translate(this.state.language, "siteConsent.message.granted", { site: request.host }));
   }
 
   /** The person's no to a request of the Operator for a site: nothing is recorded (issue #410). */
@@ -6243,6 +6259,16 @@ export class TramaController {
     request.status = given || appConsentFor(project.document.appConsents, request.app) ? "granted" : "declined";
     request.endedAt = new Date().toISOString();
     this.changedIn(project);
+    if (request.status === "granted") this.tellConsentGiven(translate(this.state.language, "appConsent.message.granted", { app: request.app }));
+  }
+
+  /**
+   * The person's yes to a consent request that waited reaches the Coordinator as their choice, so the work that
+   * stopped goes on (issue #595). It queues behind a turn that is running and starts one when the Coordinator is idle.
+   */
+  private tellConsentGiven(message: string): void {
+    if (this.quitting) return;
+    void this.send(message, null, null, null, [], null, null, false).catch((error: unknown) => console.error("The consent could not be told to the Coordinator", error));
   }
 
   /** The person's no to a request of the Operator for an app: nothing is recorded (issue #412). */

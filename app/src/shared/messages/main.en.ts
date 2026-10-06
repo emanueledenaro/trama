@@ -296,6 +296,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.operatorOutput": "Result of {agent}'s command",
   "main.controller.operatorDeclined": "You said no: {agent}'s command does not run. {command}",
   "main.controller.operatorOpened": "{agent} opened {site} in your Chrome",
+  "main.controller.operatorShown": "{agent} opened {site} in your browser",
+  "main.controller.operatorBackgroundStopped": "{agent} stopped the server started in the background: {command}",
   "main.controller.operatorSent": "{agent} sent data to {site}",
   "main.controller.operatorSendFailed": "{agent} tried to send data to {site}, but the send did not go through",
   "main.controller.operatorSendWaiting": "{agent} waits for your yes on a send that cannot be undone: {site}",

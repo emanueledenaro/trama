@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccessStep, CommandApproval } from "@shared/domain";
+import { BackgroundCommands } from "./backgroundCommands";
 import { ComputerAccessGate } from "./computerAccess";
 import {
   cleanEnvironment,
@@ -76,6 +77,11 @@ function harness(): Harness {
     consents: () => [],
     askConsent: () => undefined,
     announceSite: () => undefined,
+    openExternal: () => undefined,
+    announceShown: () => undefined,
+    background: new BackgroundCommands(),
+    startBackground: () => { throw new Error("not under test"); },
+    announceBackgroundStopped: () => undefined,
     needsLogin: () => undefined,
     // The screen tools have their own checks in operatorScreen.test.ts.
     screen: fixtureScreenDriver(() => ({ front: { app: "Finder" } })),
@@ -245,5 +251,65 @@ describe("the fixture runner of the checks", () => {
     const options = { cwd: "/", signal: new AbortController().signal, timeoutMs: 1 };
     expect(await runner.run("ls docs", options)).toEqual({ exitCode: 0, output: "a.md", timedOut: false });
     expect(await runner.run("other", options)).toEqual({ exitCode: 0, output: "", timedOut: false });
+  });
+});
+
+describe("commands left running in the background (issue #595)", () => {
+  const handleOf = (output: string, exitsWith?: number) => {
+    let end: (code: number | null) => void = () => undefined;
+    const exited = new Promise<number | null>((resolve) => (end = resolve));
+    if (exitsWith !== undefined) end(exitsWith);
+    const handle = { stopped: 0, stop: () => { handle.stopped += 1; end(null); }, output: () => output, exited };
+    return handle;
+  };
+
+  it("keeps a server as a process of Trama, tells the chat, and stops it with stop_background", async () => {
+    const h = harness();
+    const handle = handleOf("Local: http://127.0.0.1:4321/");
+    const started: string[] = [];
+    h.session.startBackground = (command) => (started.push(command), handle);
+    const calls = new OperatorCalls();
+    const result = parse(await call(h, { command: "npm run preview -- --port 4321", background: true }, calls));
+    expect(result).toMatchObject({ running: true, output: "Local: http://127.0.0.1:4321/" });
+    expect(started).toEqual(["npm run preview -- --port 4321"]);
+    expect(h.ran).toEqual([]);
+    expect(h.steps.at(-1)).toMatchObject({ kind: "command", outcome: "done", detail: "background" });
+    expect(h.session.background.count).toBe(1);
+    // The switch sees it as an action in progress.
+    expect(h.session.gate.actions()).toHaveLength(1);
+
+    const stopped = parse(await runOperatorTool("stop_background", { id: result.id }, h.session, calls));
+    expect(stopped.stopped).toEqual([result.id]);
+    await Promise.resolve();
+    expect(handle.stopped).toBe(1);
+    expect(h.session.background.count).toBe(0);
+    expect(h.session.gate.actions()).toEqual([]);
+    expect(parse(await runOperatorTool("stop_background", { id: result.id }, h.session, calls)).error.code).toBe("not_found");
+  });
+
+  it("stops the server the moment the switch goes off", async () => {
+    const h = harness();
+    const handle = handleOf("ready");
+    h.session.startBackground = () => handle;
+    await call(h, { command: "npm run preview", background: true });
+    await h.session.gate.stopAll();
+    expect(handle.stopped).toBe(1);
+  });
+
+  it("reports a command that ends at once and keeps nothing", async () => {
+    const h = harness();
+    h.session.startBackground = () => handleOf("EADDRINUSE", 1);
+    const result = parse(await call(h, { command: "npm run preview", background: true }));
+    expect(result).toMatchObject({ running: false, exitCode: 1, output: "EADDRINUSE" });
+    expect(h.session.background.count).toBe(0);
+    expect(h.steps.at(-1)).toMatchObject({ outcome: "failed", detail: "exit:1" });
+  });
+
+  it("goes through the lock and the switch like any command", async () => {
+    const h = harness();
+    h.session.startBackground = () => { throw new Error("must not start"); };
+    expect(parse(await call(h, { command: "cat ~/.ssh/id_rsa", background: true })).error.code).toBe("locked");
+    h.setOn(false);
+    expect(parse(await call(h, { command: "npm run preview", background: true })).error.code).toBe("access_off");
   });
 });
