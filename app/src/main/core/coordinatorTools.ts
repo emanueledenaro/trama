@@ -826,7 +826,7 @@ export const NEXT_STEP_RULES = [
 /** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. @model-text */
 const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
   coordinator: "Trama publishes the candidate as a pull request and merges it by itself with this green light; Activity and the recap tell the person.",
-  interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
+  interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat. When the screenshots are missing because the project has no screenshots script, have it added: resume_assignment on this work with the instructions to read docs/agents/screenshots.md and add the script, with its test, in the same working copy. The screenshots restart by themselves on the new version.",
   person: "The person reviews and publishes the candidate: the mandate does not cover its integration, or the project has no GitHub remote.",
 };
 
@@ -2455,6 +2455,12 @@ async function runTool(name: string, args: JsonObject, context: ToolContext): Pr
         const shots = candidate.interfaceShots;
         if (shots && shots.snapshotId === candidate.snapshotId && shots.status === "capturing") {
           return toolFailure("screenshots_pending", "Trama is still taking the screenshots before and after of this version: look at them first, then approve.");
+        }
+        if (shots && shots.snapshotId === candidate.snapshotId && shots.status === "unavailable") {
+          return toolFailure(
+            "screenshots_missing",
+            "The project has no screenshots script, so there is nothing to look at before approving. Have it added first: resume_assignment on this work, telling the developer to read docs/agents/screenshots.md and add the script with its test in the same working copy. The screenshots restart on the new version: then look at them and approve.",
+          );
         }
         const reason = typeof args.reason === "string" ? args.reason.trim() : "";
         recordChoice(document, { kind: "interfaceCandidate", subject: t("main.delegation.candidateSubject", { id: candidate.id }), choice: reason || t("main.delegation.approvedAfterShots"), doubt: typeof args.doubt === "string" ? args.doubt : null, targetId: candidate.id });

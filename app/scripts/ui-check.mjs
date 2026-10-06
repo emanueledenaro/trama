@@ -8532,11 +8532,35 @@ await sharedActivity.locator('[data-testid="activity-merge"]').filter({ hasText:
 await page.getByRole("button", { name: "Chiudi il pannello" }).click();
 await closePanels();
 
+// Issue #587: a project Trama created has no screenshots script. The interface candidate still waits for the person, and
+// its field says at the top why there are no screenshots and what happens now, in light and in dark.
+await writeFile(join(vetrina, "package.json"), JSON.stringify({ name: "vetrina", private: true, scripts: {} }));
+inVetrina("add", "package.json");
+inVetrina("commit", "-q", "-m", "chore: drop the screenshots script");
+await send("[assegna] [interfaccia]");
+const bareWork = await workDone(correctedWork);
+await send(`[candidato:${bareWork}:${vetrinaDecision}]`);
+const bareItem = await openWaiting("candidate", undefined, 60_000);
+const missingShots = bareItem.locator('[data-testid="interface-shots"][data-status="unavailable"]');
+await missingShots.waitFor({ timeout: 60_000 });
+await missingShots.getByText("Mancano le schermate", { exact: true }).waitFor();
+await missingShots.getByText("Adesso il Coordinatore fa aggiungere lo script", { exact: false }).waitFor();
+if (await bareItem.locator('[data-testid="interface-shot"]').count()) throw new Error("The candidate without the script shows screenshots");
+if (/[–—]/.test(await bareItem.innerText())) throw new Error("A dash in the candidate without screenshots");
+await missingShots.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30h-interface-candidate-without-screenshots");
+await bareItem.getByRole("button", { name: "Rifiuta", exact: true }).click();
+await bareItem.getByLabel("Motivo del rifiuto del candidato").fill("Prima aggiungi lo script delle schermate");
+await bareItem.getByRole("button", { name: "Rifiuta il candidato" }).click();
+await bareItem.waitFor({ state: "detached", timeout: 20_000 });
+await workDone(null);
+await closePanels();
+
 // Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
 // green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"
 // merges it as the person's act. The merge on the green light names the mandate version it ran under.
 await send("[assegna] [cancella]");
-const deletingWork = await workDone(correctedWork);
+const deletingWork = await workDone(bareWork);
 await send(`[candidato:${deletingWork}:${vetrinaDecision}]`);
 await stateUntil((document) => candidateOfWork(document, deletingWork)?.merge?.stop, "Destructive merge stopped");
 const stoppedItem = await openWaiting("candidate", undefined, 60_000);

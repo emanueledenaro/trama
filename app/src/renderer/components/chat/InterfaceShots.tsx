@@ -54,6 +54,15 @@ export function InterfaceShotsField({ candidate }: { candidate: Candidate }) {
       </p>
     );
   }
+  if (current.status === "unavailable") {
+    return (
+      <div className="space-y-1 rounded-md border border-[color:var(--color-border)] bg-[var(--app-chat-code-surface)] px-3 py-2 text-ui-sm" data-testid="interface-shots" data-status="unavailable">
+        <p className="font-medium text-foreground">{t("chat.shots.missing.title")}</p>
+        <p className="text-muted-foreground">{t("chat.shots.missing.why")}</p>
+        <p className="text-muted-foreground">{t("chat.shots.missing.now")}</p>
+      </div>
+    );
+  }
   if (current.status !== "ready") {
     return (
       <p className="text-ui-sm text-muted-foreground" data-testid="interface-shots" data-status={current.status}>

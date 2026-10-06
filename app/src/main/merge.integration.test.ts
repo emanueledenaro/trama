@@ -177,6 +177,29 @@ describe("merge with the green light, interface candidates held for the person (
     expect(third.humanApproval).toMatchObject({ actor: "Persona" });
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Candidato ${third.id} unito con il tuo ok`)).toBe(true);
 
+    // 3b. A project without the screenshots script (issue #587), as one Trama creates: the interface candidate still
+    // waits for the person, and its field says why there are no screenshots instead of showing none.
+    const manifest = join(repo, "package.json");
+    await writeFile(manifest, JSON.stringify({ name: "negozio", private: true, scripts: {} }));
+    await git(["add", "package.json"], repo, false);
+    await git(["commit", "-m", "chore: drop the screenshots script"], repo, false);
+    // The checkout's head is read by a scan: without it the new work looks built on an older base (BASE_CHANGED).
+    await controller.refreshProject(false);
+    await controller.send("[assegna] [interfaccia]", null, null, null);
+    const bare = ada.assignments.at(-1)!;
+    await until(() => bare.id !== again.id && bare.status === "completed");
+    await controller.send(`[candidato:${bare.id}:${decision.id}]`, null, null, null);
+    const withoutScript = document.candidates.at(-1)!;
+    await until(() => withoutScript.interfaceShots?.status === "unavailable", 30_000);
+    expect(withoutScript.interfaceShots).toMatchObject({ shots: [] });
+    expect(project().candidateReports[withoutScript.id]).toMatchObject({ mergeRoute: "interface" });
+    await until(() => waitingKeys().includes(`candidate:${withoutScript.id}`), 60_000).catch((error: Error) => {
+      const report = project().candidateReports[withoutScript.id];
+      throw new Error(`${error.message}: report ${report?.state} ${JSON.stringify(report?.blockers?.map((b) => b.code))}, humanRejection ${Boolean(withoutScript.humanRejection)}, merge ${withoutScript.merge?.status}`);
+    });
+    expect((project().waiting ?? []).find((w) => w.key === `candidate:${withoutScript.id}`)).toMatchObject({ label: "Interfaccia da guardare" });
+    expect(withoutScript.pullRequest).toBeNull();
+
     // 4. A merge that would change the repository's settings runs into a fixed ban: it stops and waits for the person.
     await controller.send("[assegna] [impostazioni]", null, null, null);
     const settings = ada.assignments.at(-1)!;
@@ -190,7 +213,7 @@ describe("merge with the green light, interface candidates held for the person (
     expect(refusal).toMatchObject({ ban: "repositorySettings", action: `Unione della pull request del candidato ${fourth.id} (${settings.workspace!.branch})`, by: { kind: "trama" } });
     expect(waitingKeys()).toContain(`fixedBan:${refusal.id}`);
     expect(ghCalls().filter((c) => c.includes("PUT"))).toHaveLength(2);
-  }, 120_000);
+  }, 180_000);
 });
 
 /** A shop with a GitHub remote, a fake gh that opens and merges, a team, a decision and a mandate that merges (issue #41). */
