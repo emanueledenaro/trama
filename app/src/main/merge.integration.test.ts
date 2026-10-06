@@ -183,6 +183,8 @@ describe("merge with the green light, interface candidates held for the person (
     await writeFile(manifest, JSON.stringify({ name: "negozio", private: true, scripts: {} }));
     await git(["add", "package.json"], repo, false);
     await git(["commit", "-m", "chore: drop the screenshots script"], repo, false);
+    // The checkout's head is read by a scan: without it the new work looks built on an older base (BASE_CHANGED).
+    await controller.refreshProject(false);
     await controller.send("[assegna] [interfaccia]", null, null, null);
     const bare = ada.assignments.at(-1)!;
     await until(() => bare.id !== again.id && bare.status === "completed");
