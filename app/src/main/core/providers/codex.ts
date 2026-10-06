@@ -143,7 +143,7 @@ export class CodexRuntime implements AgentRuntime {
                 url: toolServer.url,
                 bearer_token_env_var: TOKEN_ENVIRONMENT_VARIABLE,
                 default_tools_approval_mode: "approve",
-                tool_timeout_sec: 120,
+                tool_timeout_sec: toolServer.toolTimeoutSec ?? 120,
               },
               "shell_environment_policy.exclude": [TOKEN_ENVIRONMENT_VARIABLE],
             }

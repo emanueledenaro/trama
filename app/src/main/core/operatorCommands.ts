@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import type { CommandApproval, TeamRole } from "@shared/domain";
 import type { FixedBan } from "@shared/fixedBans";
-import { irreversibleReason, type IrreversibleReason } from "./commandRisk";
+import { searchFoundNothing } from "@shared/fixedBans";
+import { irreversibleReason, onlyReads, type IrreversibleReason } from "./commandRisk";
 import { BROWSER_TOOLS, OPEN_IN_CHROME_TOOL, type BrowserSession, runBrowserTool } from "./operatorBrowser";
 import { runScreenTool, SCREEN_TOOL_NAMES, SCREEN_TOOLS, type ScreenSession } from "./operatorScreen";
 import { runSendTool, SEND_DATA_TOOL, SEND_TOOLS, type SendSession } from "./operatorSend";
@@ -211,9 +212,12 @@ export async function executeCommand(
       session.record({ agent: session.agent, kind: "command", target: shown, outcome: "failed", detail: null });
       return { stopped: true, result: null, error: "stopped" };
     }
-    const ok = result.exitCode === 0 && !result.timedOut;
-    session.record({ agent: session.agent, kind: "command", target: shown, outcome: ok ? "done" : "failed", detail: result.timedOut ? "expired" : ok ? null : `exit:${result.exitCode ?? "?"}` });
-    session.announce(shown, ok ? "done" : "failed");
+    // A search that found nothing ends with 1 and is no failure, as for the developers (issue #583).
+    const nothing = !result.timedOut && searchFoundNothing(command, result.exitCode);
+    const ok = (result.exitCode === 0 && !result.timedOut) || nothing;
+    session.record({ agent: session.agent, kind: "command", target: shown, outcome: ok ? "done" : "failed", detail: result.timedOut ? "expired" : nothing ? "nothing" : ok ? null : `exit:${result.exitCode ?? "?"}` });
+    // The chat tells what changes something; a command that only reads stays in Activity.
+    if (!onlyReads(command)) session.announce(shown, ok ? "done" : "failed");
     return { stopped: false, result, error: null };
   } catch (error) {
     const stopped = controller.signal.aborted || session.signal.aborted;
@@ -288,7 +292,7 @@ export async function runOperatorTool(name: string, args: Record<string, unknown
   if (done.stopped) return toolFailure("stopped", "Stopped: computer access was turned off.");
   if (!done.result) return toolFailure(done.error === "access_off" ? "access_off" : "failed", done.error === "access_off" ? "Computer access is off." : "The command could not start.");
   const { text, truncated } = await safeOutput(done.result.output);
-  return toolSuccess({ data: true, note: DATA_NOTE, command: shown, cwd, exitCode: done.result.exitCode, timedOut: done.result.timedOut, truncated, output: text });
+  return toolSuccess({ data: true, note: DATA_NOTE, command: shown, cwd, exitCode: done.result.exitCode, ...(searchFoundNothing(command, done.result.exitCode) ? { foundNothing: true } : {}), timedOut: done.result.timedOut, truncated, output: text });
 }
 
 /** @model-text */

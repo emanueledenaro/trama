@@ -3489,15 +3489,16 @@ await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: tr
   await page.getByRole("button", { name: "Chiudi il pannello" }).click();
   await closePanels();
 }
-// Issue #409: the Coordinator gives the Operator an order. A safe command runs and leaves a row in the chat and one in
-// Activity; a command that touches a secret does not start and waits in Aspetta te with the place; a deletion waits for
+// Issue #409: the Coordinator gives the Operator an order. A safe command runs and leaves a row in Activity (and, when it
+// changes something, a line in the chat); a command that touches a secret does not start and waits in Aspetta te with the place; a deletion waits for
 // the person's yes and Trama runs it only then. The filter "Comandi e invii" of Activity shows exactly these rows.
 {
   await composer().fill("[operatore:ls docs ;; cat ~/.ssh/id_rsa ;; rm -rf build] controlla i documenti");
   await page.keyboard.press("Enter");
   await page.getByText("ls docs: eseguito", { exact: false }).first().waitFor({ timeout: 60_000 });
-  await page.getByText("Operatore ha lanciato un comando: ls docs", { exact: true }).first().waitFor({ timeout: 20_000 });
   await page.getByText("Operatore aspetta il tuo sì per un comando che non si annulla: rm -rf build", { exact: true }).first().waitFor({ timeout: 20_000 });
+  // Issue #583: a command that only reads stays in Activity and has no line in the chat.
+  if (await page.getByText("Operatore ha lanciato un comando: ls docs", { exact: true }).count()) throw new Error("A read of the Operator has a line in the chat");
   // These items have no reference in the chat: they open from the list of Aspetta te.
   const openItem = async (kind, text) => {
     await showWaiting();

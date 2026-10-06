@@ -458,6 +458,7 @@ import { keepsAwake } from "@shared/delegation";
 import { cleanBlockedSites } from "@shared/blockedSites";
 import { accessIsOn, followPause, personSwitch } from "@shared/computerAccess";
 import { ComputerAccessGate } from "./core/computerAccess";
+import { ASK_TIME_LIMIT_MS, ASK_TOOL_TIMEOUT_SEC, PartialReport, timeLimitFields } from "./core/askLimit";
 import {
   executeCommand,
   OPERATOR_ROLE,
@@ -840,6 +841,8 @@ export interface ControllerHost {
   screenPermissions?: () => ScreenPermissions;
   /** The lock on secrets of the Operator's commands. The default reads the real home folder; tests give their own. */
   secretLock?: SecretLock;
+  /** How long Research and the Operator may work for one request before Trama stops them (issue #583). Tests shorten it. */
+  askLimitMs?: number;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
   codexExecutable: string | null;
@@ -2568,7 +2571,8 @@ export class TramaController {
     }
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
-      toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
+      // Codex sets the limit per server: the Coordinator's calls to Research and the Operator need the long one.
+      toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames, toolTimeoutSec: ASK_TOOL_TIMEOUT_SEC },
       requestTimeoutMs: 15_000,
       language: () => this.state.language,
     });
@@ -5841,6 +5845,7 @@ export class TramaController {
     };
     const abort = new AbortController();
     let client: AgentRuntime | null = null;
+    const limit = this.limitedAsk(abort, () => client);
     // The whole session is one action of the switch: turning it off interrupts the turn and every request in progress.
     const session = this.computerAccess.begin({
       id: randomUUID(),
@@ -5882,16 +5887,48 @@ export class TramaController {
         ephemeral: true,
         hostToolsOnly: true,
       });
-      const report = await client.runTurn({ threadId: opening.threadId, prompt: researchPrompt(question), cwd: project.rootPath, model: choice.model, onEvent: () => undefined });
+      const report = await client.runTurn({ threadId: opening.threadId, prompt: researchPrompt(question), cwd: project.rootPath, model: choice.model, onEvent: limit.listen });
       return toolSuccess(researchEnvelope(agent, report.trim(), calls.pages));
     } catch (error) {
+      // The time limit ended the session: what Research has goes back with the reason, never an error.
+      if (limit.expired) return toolSuccess({ ...researchEnvelope(agent, limit.partial, calls.pages), ...timeLimitFields(limit.ms) });
       if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: Research stopped. Tell the person and go on without the web.");
       return toolFailure("research_failed", `Research could not finish: ${(error as Error).message}`);
     } finally {
+      limit.clear();
       session.done();
       client?.stop();
       toolServer.stop();
     }
+  }
+
+  /**
+   * The time limit of one request to Research or the Operator (issue #583). At the limit the same stop as the switch
+   * runs: the abort signal ends the command or the fetch in progress and the provider's process ends, so nothing is
+   * left running. `expired` tells the catch that the limit, not the switch, ended the session.
+   */
+  private limitedAsk(abort: AbortController, client: () => AgentRuntime | null) {
+    const report = new PartialReport();
+    const ms = this.host.askLimitMs ?? ASK_TIME_LIMIT_MS;
+    const state = { expired: false };
+    const timer = setTimeout(() => {
+      state.expired = true;
+      abort.abort();
+      client()?.stop();
+    }, ms);
+    return {
+      ms,
+      get expired() {
+        return state.expired;
+      },
+      get partial() {
+        return report.value;
+      },
+      listen: (event: TurnEvent) => {
+        if (event.type === "textDelta") report.add(event.delta);
+      },
+      clear: () => clearTimeout(timer),
+    };
   }
 
   /** The Operator's session as the tool and the person's yes both run commands: the trace, the lock, the lines in the chat. */
@@ -5972,6 +6009,7 @@ export class TramaController {
     const agent = specialist.name;
     const abort = new AbortController();
     let client: AgentRuntime | null = null;
+    const limit = this.limitedAsk(abort, () => client);
     const requestId = project.runningRequestId;
     const base = this.operatorSession(project, specialist, abort.signal, requestId);
     const session = this.computerAccess.begin({
@@ -6008,12 +6046,15 @@ export class TramaController {
         ephemeral: true,
         hostToolsOnly: true,
       });
-      const report = await client.runTurn({ threadId: opening.threadId, prompt: operatorPrompt(order), cwd: project.rootPath, model: choice.model, onEvent: () => undefined });
+      const report = await client.runTurn({ threadId: opening.threadId, prompt: operatorPrompt(order), cwd: project.rootPath, model: choice.model, onEvent: limit.listen });
       return toolSuccess(operatorEnvelope(agent, report.trim(), calls.commands));
     } catch (error) {
+      // The time limit ended the session and the command in progress: the report has what ran, with the reason.
+      if (limit.expired) return toolSuccess({ ...operatorEnvelope(agent, limit.partial, calls.commands), ...timeLimitFields(limit.ms) });
       if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: the Operator stopped. Tell the person and go on without commands on the Mac.");
       return toolFailure("operator_failed", `The Operator could not finish: ${(error as Error).message}`);
     } finally {
+      limit.clear();
       session.done();
       client?.stop();
       toolServer.stop();

@@ -46,7 +46,7 @@ function fakeWeb(): FakeWeb {
   return web;
 }
 
-async function open(web: WebFetcher): Promise<TramaController> {
+async function open(web: WebFetcher, askLimitMs?: number): Promise<TramaController> {
   controller = new TramaController(await mkdtemp(join(tmpdir(), "trama-data-")), {
     publish: () => undefined,
     openExternal: async () => undefined,
@@ -57,6 +57,7 @@ async function open(web: WebFetcher): Promise<TramaController> {
     demoResourceDirectory: "",
     codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     webFetcher: web,
+    ...(askLimitMs ? { askLimitMs } : {}),
   });
   const repo = await mkdtemp(join(tmpdir(), "trama-research-"));
   await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
@@ -137,5 +138,21 @@ describe("Research reads the web and reports to the Coordinator as data (issue #
     expect(change.stopped.every((action) => action.agent === "Ricerca")).toBe(true);
     expect(change.stopped.length).toBeGreaterThan(0);
     expect(c.computerAccess.actions()).toEqual([]);
+  }, 90_000);
+
+  it("hands back what Research has, with the reason, when its own time limit runs out (issue #583)", async () => {
+    const web = fakeWeb();
+    web.hang = true;
+    const c = await open(web, 600);
+    await c.send(`[ricerca:Quando esce? pagina=${PAGE}] cerca la data`, null, null, null);
+    await until(() => replies(c).some((r) => r.startsWith("Ricerca: ")));
+    const result = answer(c, 0) as ReturnType<typeof answer> & { stoppedBy?: string; note?: string };
+    // A report, not an error: the pages read so far and the reason stay with the Coordinator.
+    expect(result).toMatchObject({ kind: "data", source: "research", stoppedBy: "timeLimit", pagesRead: [] });
+    expect(result.error).toBeUndefined();
+    expect(result.note).toContain("time limit");
+    // The page in progress was stopped and nothing keeps running.
+    expect(c.computerAccess.actions()).toEqual([]);
+    expect(c.snapshot.project!.document.accessChanges ?? []).toEqual([]);
   }, 90_000);
 });
