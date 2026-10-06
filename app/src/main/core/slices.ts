@@ -1,5 +1,5 @@
 import type { PlanSlicing, ProjectDocument, SliceTicket, SliceView, SpecialistAssignment, WorkPlan } from "@shared/domain";
-import type { RepositoryModule, RepositorySnapshot } from "@shared/repository";
+import type { RepositorySnapshot } from "@shared/repository";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { deliverNativeSkill, type NativeSkill } from "./nativeSkills";
 import { t } from "./personLanguage";
@@ -222,21 +222,6 @@ export function sliceViews(document: ProjectDocument, plan: WorkPlan): SliceView
     views.push({ id: ticket.id, state, waitingFor, assignmentId: latest?.id ?? null });
   }
   return views;
-}
-
-const words = (text: string) => text.toLowerCase();
-
-/**
- * The modules a slice touches: the ones its text names (id, folder or name), within the plan's modules when the plan
- * has them; otherwise the plan's modules, or the modules its earlier slices were assigned.
- */
-export function sliceModules(ticket: SliceTicket, plan: WorkPlan, modules: RepositoryModule[], earlier: SpecialistAssignment[]): string[] {
-  const text = words([ticket.title, ticket.whatToBuild, ...(ticket.acceptanceCriteria ?? [])].filter(Boolean).join("\n"));
-  const pool = plan.moduleIds.length ? modules.filter((m) => plan.moduleIds.includes(m.id)) : modules;
-  const named = pool.filter((m) => [m.id, m.relativePath, m.name].some((label) => label.length > 2 && text.includes(words(label)))).map((m) => m.id);
-  if (named.length) return named;
-  if (plan.moduleIds.length) return plan.moduleIds;
-  return [...new Set(earlier.flatMap((a) => a.moduleIds))];
 }
 
 /**

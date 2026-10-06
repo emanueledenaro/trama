@@ -4,10 +4,8 @@ import type { FoundProblem, ProjectDocument, SliceTicket, SpecialistAssignment, 
 import { problemBacklog } from "@shared/problems";
 import type { RepositoryModule } from "@shared/repository";
 import { squadForModules, teamSquads } from "@shared/squads";
-import { sliceModules, sliceViews } from "./slices";
+import { sliceViews } from "./slices";
 import { workState } from "./workPhase";
-
-export { sliceModules };
 
 /**
  * The squads' backlogs (A13, Q20), read from the project's records: the slices of the current breakdowns that nobody
@@ -15,6 +13,21 @@ export { sliceModules };
  * order is Trama's rule, or the order the Coordinator wrote with its reasons; the places the person chose win over both.
  * Never from the model's judgement alone: an item the Coordinator did not list keeps its place by Trama's rule.
  */
+
+const words = (text: string) => text.toLowerCase();
+
+/**
+ * The modules a slice touches: the ones its text names (id, folder or name), within the plan's modules when the plan
+ * has them; otherwise the plan's modules, or the modules its earlier slices were assigned.
+ */
+export function sliceModules(ticket: SliceTicket, plan: WorkPlan, modules: RepositoryModule[], earlier: SpecialistAssignment[]): string[] {
+  const text = words([ticket.title, ticket.whatToBuild, ...ticket.acceptanceCriteria].join("\n"));
+  const pool = plan.moduleIds.length ? modules.filter((m) => plan.moduleIds.includes(m.id)) : modules;
+  const named = pool.filter((m) => [m.id, m.relativePath, m.name].some((label) => label.length > 2 && text.includes(words(label)))).map((m) => m.id);
+  if (named.length) return named;
+  if (plan.moduleIds.length) return plan.moduleIds;
+  return [...new Set(earlier.flatMap((a) => a.moduleIds))];
+}
 
 /** The assignments of a plan's slices, oldest first. */
 export const planAssignments = (document: ProjectDocument, planId: string) =>

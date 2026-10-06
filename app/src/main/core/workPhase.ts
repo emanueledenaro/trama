@@ -23,7 +23,7 @@ import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
 import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pullRequestConflicted } from "./merge";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
-import { sliceModules, sliceViews, slicesText } from "./slices";
+import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, findAssignment, heldByPersonStop, isActive, isTeamConfirmed, needsWorktree, workNotIndependent } from "./team";
 import { parallelDevelopers } from "@shared/parallel";
 import type { MessageKey } from "@shared/i18n";
@@ -385,14 +385,12 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const developerFree = document.team.specialists.some(
     (s) => s.role === "developer" && s.status !== "removed" && !s.assignments.some((a) => isActive(a) || a.status === "paused") && !squadLimitProblem(document, s),
   );
-  // A slice that touches the modules of work in progress is refused by assign_task (work_not_independent), with the same rule:
-  // when every ready slice is like that, assigning settles nothing either (issue #584). Without the project's map, the
-  // modules of a slice are the plan's, or those of its earlier slices.
+  // A slice that touches the modules of work in progress is refused by assign_task (work_not_independent), by the same rule:
+  // when every ready slice is like that, assigning settles nothing either (issue #584). Trama knows the modules of a slice
+  // from its earlier assignments (a stopped or corrected one); a slice nobody took yet has none until the Coordinator names
+  // them, and counts as independent.
   const independent = (view: SliceView) => {
-    const ticket = plan?.slicing?.tickets.find((t) => t.id === view.id);
-    if (!plan || !ticket) return true;
-    const earlier = allAssignments(document).filter((a) => a.slice?.planId === plan.id);
-    const moduleIds = sliceModules(ticket, plan, [], earlier);
+    const moduleIds = [...new Set(allAssignments(document).filter((a) => a.slice?.planId === plan?.id && a.slice?.sliceId === view.id).flatMap((a) => a.moduleIds))];
     return !moduleIds.length || workNotIndependent(document, moduleIds, null) === null;
   };
   const assignable =
