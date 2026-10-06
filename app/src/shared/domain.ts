@@ -1328,6 +1328,21 @@ export interface AccessChange {
   stopped: { agent: string; label: string }[];
 }
 
+/**
+ * What Research reported to the Coordinator (issue #589): the question, the pages it read and the report. Trama keeps
+ * it so the facts the Coordinator verified survive a context rollover, when the tool answer is no longer in the thread.
+ */
+export interface ResearchReport {
+  id: string;
+  at: string;
+  /** The agent that reported, as the person sees it. */
+  agent: string;
+  question: string;
+  /** The addresses of the pages Research read, without query string or fragment. */
+  pages: string[];
+  report: string;
+}
+
 /** A step of an agent that used computer access, shown in Activity: a search or a page Research read (issue #408), a command of the Operator (issue #409). */
 export interface AccessStep {
   id: string;
@@ -1946,6 +1961,8 @@ export interface ProjectDocument {
   accessChanges?: AccessChange[];
   /** The searches and pages Research read through computer access, oldest first (issue #408); absent until the first. */
   accessSteps?: AccessStep[];
+  /** The reports Research gave the Coordinator, oldest first (issue #589); absent until the first. */
+  researchReports?: ResearchReport[];
   /** The Operator's commands that wait for the person's yes (issue #409); absent in documents written before. */
   commandApprovals?: CommandApproval[];
   /** The sites the person consented to in this project, oldest first (issue #410); absent until the first. */

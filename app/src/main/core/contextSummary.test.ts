@@ -37,6 +37,21 @@ describe("the context summary (ADR 0019)", () => {
     expect(summary).not.toContain("risposta 8\n");
   });
 
+  it("carries what Research verified, with its sources, so a new session does not call it unverified (issue #589)", () => {
+    const document = emptyDocument("p");
+    exchange(document, 1);
+    expect(contextSummary({ document, waiting: [], headSHA: null })).not.toContain("Fatti verificati");
+    document.researchReports = [{ id: "r1", at: at(3).toISOString(), agent: "Ricerca", question: "Quando esce GTA 6?", pages: ["https://www.rockstargames.com/gta-vi"], report: "Il 19 novembre 2026." }];
+
+    const summary = contextSummary({ document, waiting: [], headSHA: null });
+    expect(summary).toContain("## Fatti verificati con Ricerca");
+    expect(summary).toContain('"Quando esce GTA 6?": Il 19 novembre 2026. Fonti: https://www.rockstargames.com/gta-vi.');
+    const person = personSummary({ document, waiting: [], headSHA: null });
+    expect(person).toContain("## Fatti verificati\n- Quando esce GTA 6?. Fonti: https://www.rockstargames.com/gta-vi");
+    expect(person).not.toContain("Il 19 novembre 2026");
+    expect(personSummary({ document, waiting: [], headSHA: null, language: "en" })).toContain("## Verified facts\n- Quando esce GTA 6?. Sources: https://www.rockstargames.com/gta-vi");
+  });
+
   it("gives the person the same records as plain sections, without the model's framing, in their language", () => {
     const document = emptyDocument("p");
     createGoal(document, { title: "Ordini annullati in revisione", outcome: "Un ordine pagato e annullato va in revisione", examples: [] }, at(0));
