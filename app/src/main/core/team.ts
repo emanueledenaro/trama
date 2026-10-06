@@ -480,14 +480,26 @@ export interface AssignmentOrder {
   workspace?: WorktreeSession | null;
 }
 
-function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
+/**
+ * The active assignment of another specialist that works on some of `moduleIds`, with the modules they share; null when
+ * the work is independent. The one rule behind work_not_independent: assign_task and the moves Trama offers read it here.
+ */
+export function workNotIndependent(
+  document: ProjectDocument,
+  moduleIds: string[],
+  specialistId: string | null,
+): { assignment: SpecialistAssignment; shared: string[] } | null {
   for (const other of activeAssignments(document)) {
-    if (other.specialistId === specialistId) continue;
+    if (specialistId !== null && other.specialistId === specialistId) continue;
     const shared = other.moduleIds.filter((id) => moduleIds.includes(id));
-    if (shared.length) {
-      throw new TeamError("work_not_independent", `Assignment ${other.id} is already working on ${shared.join(", ")}.`);
-    }
+    if (shared.length) return { assignment: other, shared };
   }
+  return null;
+}
+
+function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
+  const busy = workNotIndependent(document, moduleIds, specialistId);
+  if (busy) throw new TeamError("work_not_independent", `Assignment ${busy.assignment.id} is already working on ${busy.shared.join(", ")}.`);
 }
 
 /**
