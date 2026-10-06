@@ -151,7 +151,7 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
  * The state the Coordinator reads at the start of every turn (issue #269): the buttons the person sees, the mandate,
  * the plan of the work with its slices and the open candidates, computed now from the document. Pure. @model-text
  */
-export function currentStateText(document: ProjectDocument, requestId: string, headSHA: IntegrationHeads = null): string {
+export function currentStateText(document: ProjectDocument, requestId: string, headSHA: IntegrationHeads = null, running: RunningChecks = []): string {
   const buttons = availableButtons(document, requestId);
   const persons = buttons.filter((b) => b.actor === "person").map((b) => b.label);
   const lines = [
@@ -165,7 +165,7 @@ export function currentStateText(document: ProjectDocument, requestId: string, h
     autonomyLine(document),
     ...branchLines(document),
     ...planLines(document, requestId),
-    ...candidateLines(document, headSHA),
+    ...candidateLines(document, headSHA, running),
   ];
   return lines.join("\n");
 }
@@ -261,7 +261,7 @@ function planLines(document: ProjectDocument, requestId: string): string[] {
 }
 
 /** @model-text */
-function candidateLines(document: ProjectDocument, headSHA: IntegrationHeads): string[] {
+function candidateLines(document: ProjectDocument, headSHA: IntegrationHeads, running: RunningChecks): string[] {
   const assignments = document.team.specialists.flatMap((s) => s.assignments.map((a) => ({ assignment: a, specialist: s })));
   const open = assignments
     .map(({ assignment, specialist }) => ({ candidate: latestCandidate(document, assignment.id), specialist }))
@@ -269,13 +269,30 @@ function candidateLines(document: ProjectDocument, headSHA: IntegrationHeads): s
     .sort((a, b) => b.candidate.declaredAt.localeCompare(a.candidate.declaredAt))
     .slice(0, CANDIDATES_SHOWN);
   if (!open.length) return ["Candidati aperti: nessuno."];
-  return ["Candidati aperti (l'ultimo di ogni incarico, dal più recente):", ...open.map(({ candidate, specialist }) => `- ${candidate.id} di ${specialist.name} (incarico ${candidate.assignmentId}): ${candidateState(document, candidate, headSHA)}`)];
+  return ["Candidati aperti (l'ultimo di ogni incarico, dal più recente):", ...open.map(({ candidate, specialist }) => `- ${candidate.id} di ${specialist.name} (incarico ${candidate.assignmentId}): ${candidateState(document, candidate, headSHA)} ${checksLine(candidate, running)}`)];
 }
 
 const specialistOf = (document: ProjectDocument, candidateId: string) => {
   const candidate = document.candidates.find((c) => c.id === candidateId);
   return document.team.specialists.find((s) => s.id === candidate?.specialistId)?.name ?? null;
 };
+
+/** The checks Trama is running now on candidates, by candidate and check. */
+export type RunningChecks = ReadonlyArray<{ candidateId: string; check: string }>;
+
+/**
+ * Each required check of a candidate as it stands now: running at this moment, passed, failed or not run. A check a
+ * reply or an old tool result called "in corso" that is not in the running list has ended (issue #590).
+ * @model-text
+ */
+function checksLine(candidate: Candidate, running: RunningChecks): string {
+  const states = candidate.requiredChecks.map((check) => {
+    const evidence = candidate.evidence[check];
+    const state = running.some((r) => r.candidateId === candidate.id && r.check === check) ? "in corso ora" : evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non ancora eseguita";
+    return `${check} ${state}`;
+  });
+  return states.length ? `Verifiche adesso: ${states.join(", ")}. Dillo con questo stato, non con quello di un messaggio o di un risultato precedente.` : "";
+}
 
 /** @model-text */
 const files = (list: string[]) => (list.length > FILES_SHOWN ? `${list.slice(0, FILES_SHOWN).join(", ")} e altri ${list.length - FILES_SHOWN}` : list.join(", "));

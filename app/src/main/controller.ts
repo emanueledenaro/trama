@@ -175,7 +175,7 @@ import { candidateGoalId, findGoal, projectGoals, requestGoalId, goalPutAway } f
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { availableButtons, currentStateText, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
+import { availableButtons, currentStateText, type RunningChecks, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
 import {
   automaticMoveDetail,
   automaticMove,
@@ -3062,7 +3062,7 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
-      sections.push(currentStateText(document, request.id, this.knownHeads(project)));
+      sections.push(currentStateText(document, request.id, this.knownHeads(project), this.runningCandidateChecks()));
       if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null, document, request.id));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
@@ -4238,7 +4238,7 @@ export class TramaController {
     const requestId = document.requests.at(-1)?.id ?? null;
     const t = translator(this.state.language);
     // The model's brief and the person's view come from the same records; the person never reads the model's framing.
-    const summary = contextSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA });
+    const summary = contextSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA, runningChecks: this.runningCandidateChecks() });
     const candidateStates = Object.fromEntries(Object.entries(project.candidateReports ?? {}).map(([id, report]) => [id, report.state]));
     const forPerson = personSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA, candidateStates, language: this.state.language });
     const summaryEvent = appendEvent(document, "trama", { type: "activity", title: t("context.summary.activityTitle"), detail: forPerson, tone: "info" }, requestId);
@@ -7141,6 +7141,14 @@ export class TramaController {
 
   /** The checks that run now, by candidate or checkout and check: a second call waits for the one at work. */
   private readonly checksInFlight = new Map<string, Promise<CheckResult>>();
+
+  /** The candidate checks at work now, read from the keys of `checksInFlight`. */
+  private runningCandidateChecks(): RunningChecks {
+    return [...this.checksInFlight.keys()].flatMap((key) => {
+      const [kind, candidateId, check] = key.split(":");
+      return kind === "candidate" && candidateId && check ? [{ candidateId, check }] : [];
+    });
+  }
 
   private checkOnce(key: string, run: () => Promise<CheckResult>): Promise<CheckResult> {
     const running = this.checksInFlight.get(key);

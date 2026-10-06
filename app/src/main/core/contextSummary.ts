@@ -4,7 +4,7 @@ import { workingGoals } from "@shared/goals";
 import { openGrillingQuestions } from "@shared/grilling";
 import type { WaitingItem } from "@shared/waitingForYou";
 import { latestCandidate } from "./candidates";
-import { currentStateText } from "./coordinatorGrounding";
+import { currentStateText, type RunningChecks } from "./coordinatorGrounding";
 import { focusText } from "./focus";
 import { activeAssignments } from "./team";
 import { workState, workStateText } from "./workPhase";
@@ -31,6 +31,8 @@ export interface ContextSummaryInput {
   /** What waits for the person, as the main process computed it. */
   waiting: WaitingItem[];
   headSHA: string | null;
+  /** The candidate checks running now, so the state names them as running and no others. */
+  runningChecks?: RunningChecks;
 }
 
 const oneLine = (text: string, limit: number) => {
@@ -134,7 +136,7 @@ function exchangesSection(document: ProjectDocument): string[] {
 }
 
 /** The summary Trama hands to the Coordinator's new session. @model-text */
-export function contextSummary({ document, waiting, headSHA }: ContextSummaryInput): string {
+export function contextSummary({ document, waiting, headSHA, runningChecks }: ContextSummaryInput): string {
   const requestId = document.requests.at(-1)?.id ?? null;
   const focus = requestId ? focusText(document, requestId) : null;
   const sections = [
@@ -143,7 +145,7 @@ export function contextSummary({ document, waiting, headSHA }: ContextSummaryInp
     focus ? [focus] : [],
     pactSection(document),
     mandateSection(document),
-    requestId ? [currentStateText(document, requestId, headSHA)] : [],
+    requestId ? [currentStateText(document, requestId, headSHA, runningChecks)] : [],
     assignmentsSection(document),
     waitingSection(waiting),
     requestId ? [workStateText(workState(document, requestId))] : [],
