@@ -23,8 +23,8 @@ import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
 import { contentFingerprint, inspectCandidate, latestCandidate, worktreeChanged } from "./candidates";
 import { pullRequestConflicted } from "./merge";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
-import { sliceViews, slicesText } from "./slices";
-import { activeDevelopers, authorize, heldByPersonStop, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { sliceModules, sliceViews, slicesText } from "./slices";
+import { activeDevelopers, authorize, findAssignment, heldByPersonStop, isActive, isTeamConfirmed, needsWorktree, workNotIndependent } from "./team";
 import { parallelDevelopers } from "@shared/parallel";
 import type { MessageKey } from "@shared/i18n";
 import { t } from "./personLanguage";
@@ -385,7 +385,18 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const developerFree = document.team.specialists.some(
     (s) => s.role === "developer" && s.status !== "removed" && !s.assignments.some((a) => isActive(a) || a.status === "paused") && !squadLimitProblem(document, s),
   );
-  const assignable = !slices || (developerFree && roomForWork(document) && views.some((v) => v.state === "ready" || (v.state === "verifying" && !awaitsOthers(v))));
+  // A slice that touches the modules of work in progress is refused by assign_task (work_not_independent), with the same rule:
+  // when every ready slice is like that, assigning settles nothing either (issue #584). Without the project's map, the
+  // modules of a slice are the plan's, or those of its earlier slices.
+  const independent = (view: SliceView) => {
+    const ticket = plan?.slicing?.tickets.find((t) => t.id === view.id);
+    if (!plan || !ticket) return true;
+    const earlier = allAssignments(document).filter((a) => a.slice?.planId === plan.id);
+    const moduleIds = sliceModules(ticket, plan, [], earlier);
+    return !moduleIds.length || workNotIndependent(document, moduleIds, null) === null;
+  };
+  const assignable =
+    !slices || (developerFree && roomForWork(document) && views.some((v) => (v.state === "ready" || (v.state === "verifying" && !awaitsOthers(v))) && independent(v)));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
@@ -477,7 +488,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
  * waiting: the work goes back to its developer.
  */
 function candidateAwaitsOthers(document: ProjectDocument, candidate: Candidate): boolean {
-  if (candidateSuperseded(document, candidate) || worktreeChanged(document, candidate)) return false;
+  if (candidateSuperseded(document, candidate) || copyChanged(document, candidate)) return false;
   const blockers = hardBlockers(inspectCandidate(document, candidate, null));
   if (blockers.length) return blockers.every((b) => PERSON_BLOCKERS.includes(b.code));
   if (candidate.technicalReview?.verdict !== "approved") return false;
@@ -556,6 +567,22 @@ function fixUnderway(document: ProjectDocument, assignment: SpecialistAssignment
   );
 }
 
+/**
+ * Whether the working copy moved on after the candidate: the developer's turn changed it (issue #388), or a fixed role
+ * finished the fix of a diagnosed failure in it (issue #584). Nobody declares the candidate of a fix by itself, so the
+ * old candidate, with the red check it carried, no longer describes the work: the next move is the new candidate and its checks.
+ */
+function copyChanged(document: ProjectDocument, candidate: Candidate): boolean {
+  if (worktreeChanged(document, candidate)) return true;
+  const root = findAssignment(document, candidate.assignmentId)?.workspace?.worktreeRoot;
+  if (!root) return false;
+  return document.team.specialists.some((s) =>
+    s.assignments.some(
+      (a) => a.duty?.trigger.kind === "diagnosisFix" && a.status === "completed" && a.workspace?.worktreeRoot === root && a.updatedAt > candidate.declaredAt,
+    ),
+  );
+}
+
 /** The phase of assigned work: execution, verification, candidate, merged or blocked. Null when only read-only work ended. */
 function assignedWork(
   document: ProjectDocument,
@@ -625,7 +652,7 @@ function workOfOthers(
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
     if (isActive(assignment)) continue;
     // A candidate that lags its worktree (issue #388) is not the work: its blockers wait for the new candidate.
-    if (worktreeChanged(document, candidate)) continue;
+    if (copyChanged(document, candidate)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     // The review stopped this work again (issue #389, ADR 0023): the Coordinator settles the disagreement between the
     // developer and the reviewers, a technical block it resolves by itself; no identical round starts and nobody waits
@@ -702,7 +729,7 @@ function workOfOthers(
   const pending = edits.filter((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
   if (pending.length) {
     // A candidate that lags its worktree (issue #388) counts as none: the work is declared again before any check.
-    const declared = (i: (typeof pending)[number]) => (i.candidate && !worktreeChanged(document, i.candidate) ? i.candidate : null);
+    const declared = (i: (typeof pending)[number]) => (i.candidate && !copyChanged(document, i.candidate) ? i.candidate : null);
     // A candidate whose reviewers are at work is being verified already: there is nothing to start on it (issue #389).
     const reviewing = (candidate: Candidate) => inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_RUNNING");
     const actionable = pending.filter((i) => {

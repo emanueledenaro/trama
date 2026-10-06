@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordMerge } from "./merge";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
@@ -9,7 +9,10 @@ import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 import { setPersonLanguage } from "./personLanguage";
 import { BLOCK_PHRASES, COORDINATOR_MOVES, nextStepViews, PHASE_LABELS, workState, workStateText } from "./workPhase";
 
-afterEach(() => setPersonLanguage("it"));
+afterEach(() => {
+  vi.useRealTimers();
+  setPersonLanguage("it");
+});
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
 
@@ -348,6 +351,7 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     specialist.assignments.push({
       ...assignment,
       id: "A-FIX",
+      requestId: null,
       status: "running",
       duty: { skill: "diagnosing-bugs", trigger: { kind: "diagnosisFix", diagnosisId: "A-DIAG" }, outcome: null },
     });
@@ -677,8 +681,88 @@ describe("no assignment while every developer is at work (issue #584)", () => {
   });
 
   it("offers the assignment when a second developer is free", () => {
-    const { document } = oneDeveloperBusy();
+    const { document, fixing } = oneDeveloperBusy();
+    // Ada's work is on other modules than the held slice: assign_task would accept the second developer (issue #584).
+    fixing.moduleIds = ["Sources/Payments"];
     document.team.specialists.find((s) => s.name === "Bruno")!.role = "developer";
     expect(moves(document, "r3")).toContain("assignWork");
+  });
+});
+
+describe("no assignment while every ready slice touches work in progress (issue #584)", () => {
+  /** Ada is free and S4 is held for later, but Bruno works on the same modules. */
+  function freeDeveloperBlockedByWork() {
+    const { document, assignment: held } = withAssignment();
+    held.slice = { planId: "P-1", sliceId: "S4" };
+    held.status = "stopped";
+    held.stops.push({ requestedBy: "Coordinatore", by: "coordinator", reason: "S3 first", requestedAt: at(3).toISOString(), thenRemove: false, confirmedAt: at(4).toISOString() });
+    document.plans[0]!.slicing = { status: "approved", tickets: [{ id: "S4", title: "Quarta", blockedBy: [] }] } as never;
+    const bruno = document.team.specialists.find((s) => s.name === "Bruno")!;
+    bruno.role = "developer";
+    const running = work(document, "r3", 5, "Bruno");
+    return { document, running };
+  }
+
+  it("offers no assignment: assign_task would answer work_not_independent", () => {
+    const { document } = freeDeveloperBlockedByWork();
+    expect(moves(document, "r3")).not.toContain("assignWork");
+  });
+
+  it("offers it again once the work in progress ends", () => {
+    const { document, running } = freeDeveloperBlockedByWork();
+    running.status = "completed";
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+
+  it("offers it when the slice touches other modules than the work in progress", () => {
+    const { document, running } = freeDeveloperBlockedByWork();
+    running.moduleIds = ["Sources/Payments"];
+    expect(moves(document, "r3")).toContain("assignWork");
+  });
+});
+
+describe("a finished fix of a failed check leads to the new candidate and its checks (issue #584)", () => {
+  function fixedInTheCopy() {
+    const { document, assignment } = withAssignment();
+    assignment.workspace = { sourceRoot: "/p", worktreeRoot: "/w/a", branch: "feature/s1", baseSHA: "base" };
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(at(6));
+    const red = candidate(document, assignment.id, "fail", null);
+    const specialist = document.team.specialists.find((s) => s.assignments.includes(assignment))!;
+    const fix = {
+      ...assignment,
+      id: "A-FIX",
+      requestId: null,
+      status: "running" as "running" | "completed",
+      updatedAt: at(7).toISOString(),
+      duty: { skill: "diagnosing-bugs" as const, trigger: { kind: "diagnosisFix" as const, diagnosisId: "A-DIAG" }, outcome: null },
+    };
+    specialist.assignments.push(fix);
+    return { document, assignment, red, fix };
+  }
+
+  it("waits while the fix runs, as before", () => {
+    const { document } = fixedInTheCopy();
+    expect(workState(document, "r3")).toMatchObject({ phase: "execution", blocker: null });
+  });
+
+  it("proposes the new candidate and the checks once the fix ended in the copy, not new work", () => {
+    const { document, assignment, fix } = fixedInTheCopy();
+    fix.status = "completed";
+    fix.updatedAt = at(8).toISOString();
+    const state = workState(document, "r3");
+    expect(state).toMatchObject({
+      phase: "verification",
+      blocker: null,
+      verification: { undeclared: [assignment.id], unverified: [], outdated: [assignment.id] },
+    });
+    expect(state.moves.map((m) => m.move)).toEqual(["verifyCandidate"]);
+  });
+
+  it("keeps the red candidate's blocker when the fix ended before it", () => {
+    const { document, fix } = fixedInTheCopy();
+    fix.status = "completed";
+    fix.updatedAt = at(5).toISOString();
+    expect(workState(document, "r3")).toMatchObject({ phase: "blocked", block: "checkFailed" });
   });
 });

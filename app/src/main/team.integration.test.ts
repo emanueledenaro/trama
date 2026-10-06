@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { activityLog } from "@shared/activity";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
+import { declareCandidate, recordEvidence } from "./core/candidates";
 import { developers, findSpecialist } from "./core/team";
 import { sliceViews } from "./core/slices";
 import { workState } from "./core/workPhase";
@@ -311,6 +312,139 @@ describe("team flow", () => {
     // The developer is free: the held slice is offered again.
     working!.status = "completed";
     expect(workState(document, requestId).moves.map((m) => m.move)).toContain("assignWork");
+    delete process.env.FAKE_CODEX_AUTOMATIC;
+  }, 60_000);
+
+  /** Ada's first work has ended, in a project with a confirmed team and a mandate on Sources/Orders (issue #584). */
+  async function endedWork() {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.updateSettings({ continuousWork: false });
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready", 30_000);
+    const project = controller.snapshot.project!;
+    const document = project.document;
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    controller.recordDecision({ id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "Evita rimborsi errati" });
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Ordini in revisione"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["plan", "executeInWorktree"],
+      limits: [],
+    });
+    await controller.send("[assegna]", null, null, null);
+    const ada = findSpecialist(document, "Ada")!;
+    await until(() => ada.assignments.length === 1 && project.runningRequestId === null, 30_000);
+    return { project, document, ada, working: ada.assignments[0]!, requestId: ada.assignments[0]!.requestId! };
+  }
+
+  /** A fixed role's fix of a diagnosed failure, as Trama records it in the working copy of `of`. */
+  function fixIn(of: ReturnType<typeof findSpecialist> & object, working: { workspace: unknown; moduleIds: string[] }, document: Parameters<typeof developers>[0], status: "running" | "completed", updatedAt: string) {
+    const role = document.team.specialists.find((s) => s.role === "bugTriage")!;
+    role.assignments.push({
+      ...(of.assignments[0] as object),
+      id: "A-FIX-584",
+      specialistId: role.id,
+      requestId: null,
+      slice: null,
+      status,
+      updatedAt,
+      workspace: working.workspace,
+      moduleIds: working.moduleIds,
+      duty: { skill: "diagnosing-bugs", trigger: { kind: "diagnosisFix", diagnosisId: "A-DIAG" }, outcome: null },
+    } as never);
+    return role.assignments.at(-1)!;
+  }
+
+  it("does not propose assigning while every ready slice touches the work in progress, and does not stop after three turns (issue #584)", async () => {
+    const { document, ada, working, requestId } = await endedWork();
+    working.status = "completed";
+    // Ada is free and the Coordinator held slice S4 for later, but a fixed role fixes a failure on the same modules.
+    document.plans.push({
+      id: "P-584-B",
+      requestId,
+      orderedBy: "coordinator",
+      kind: "agreedTicket",
+      moduleIds: ["Sources/Orders"],
+      summary: "Revisione degli ordini",
+      issueNumber: null,
+      status: "ready",
+      proposal: null,
+      failure: null,
+      decisionRequestIds: [],
+      createdAt: new Date(Date.parse(working.createdAt) - 1000).toISOString(),
+      updatedAt: working.createdAt,
+      slicing: { status: "approved", tickets: [{ id: "S4", title: "Quarta", whatToBuild: "Quarta", acceptanceCriteria: ["Done"], blockedBy: [], issue: null }] },
+    } as never);
+    ada.assignments.push({
+      ...working,
+      id: "A-584-held",
+      slice: { planId: "P-584-B", sliceId: "S4" },
+      status: "stopped",
+      createdAt: new Date(Date.parse(working.createdAt) - 500).toISOString(),
+      stops: [{ requestedBy: "Coordinatore", by: "coordinator", reason: "S3 first", requestedAt: working.createdAt, thenRemove: false, confirmedAt: working.createdAt }],
+    } as never);
+    const fix = fixIn(ada, working, document, "running", working.createdAt);
+    expect(workState(document, requestId).moves.map((m) => m.move)).not.toContain("assignWork");
+
+    // The round starts no Coordinator turn for it: no attempt is spent, and Trama does not stop asking the person for help.
+    await controller!.updateSettings({ continuousWork: true });
+    for (let i = 0; i < 4; i++) await controller!.runRound();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(document.requests.filter((r) => r.step?.by === "trama" && r.step.move === "assignWork")).toHaveLength(0);
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title.includes("assegna il lavoro"))).toBe(false);
+
+    // The fix ends: the held slice is offered again.
+    fix.status = "completed";
+    expect(workState(document, requestId).moves.map((m) => m.move)).toContain("assignWork");
+    delete process.env.FAKE_CODEX_AUTOMATIC;
+  }, 60_000);
+
+  it("proposes the new candidate and its checks once a fix of a failed check ended in the developer's copy (issue #584)", async () => {
+    const { document, ada, working, requestId } = await endedWork();
+    working.workspace ??= { sourceRoot: "/p", worktreeRoot: "/w/a", branch: "feature/orders", baseSHA: "base" } as never;
+    // Ada's turn has ended; the run left her work as the fake provider recorded it.
+    working.status = "completed";
+    const decisionId = document.decisions[0]!.id;
+    const red = declareCandidate(
+      document,
+      { assignmentId: working.id, decisionIds: [decisionId], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-584", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    );
+    recordEvidence(document, red.id, { check: "git_status", passed: false, command: "git status", output: "", snapshotId: red.snapshotId });
+    const fix = fixIn(ada, working, document, "running", red.declaredAt);
+    // While the fix runs, the work waits for it.
+    expect(workState(document, requestId).moves.map((m) => m.move)).not.toContain("assignWork");
+    fix.status = "completed";
+    fix.updatedAt = new Date(Date.parse(red.declaredAt) + 1000).toISOString();
+    const state = workState(document, requestId);
+    expect(state.phase).toBe("verification");
+    expect(state.moves.map((m) => m.move)).toEqual(["verifyCandidate"]);
+
+    // Trama starts the move by itself, without waiting for the person to write.
+    await controller!.updateSettings({ continuousWork: true });
+    for (let i = 0; i < 2; i++) await controller!.runRound();
+    await until(() => document.requests.some((r) => r.step?.by === "trama" && r.step.move === "verifyCandidate"), 20_000);
+    expect(document.requests.some((r) => r.step?.by === "trama" && r.step.move === "assignWork")).toBe(false);
     delete process.env.FAKE_CODEX_AUTOMATIC;
   }, 60_000);
 
