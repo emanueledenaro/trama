@@ -2644,7 +2644,7 @@ await shot("09-mandate");
   for (const id of ["mandate-where", "mandate-can", "fixed-bans"]) await rulesBar.getByTestId(id).waitFor();
   if (!/Orders/.test(await rulesBar.getByTestId("mandate-where").innerText())) throw new Error("Dove does not name the modules of the mandate");
   // Critique of 29 September 2026: Mai is a short list, one fixed ban per line, not a dense sentence.
-  if ((await rulesBar.getByTestId("fixed-bans").getByTestId("fixed-ban").count()) !== 6) throw new Error("Mai does not list the six fixed bans one per line");
+  if ((await rulesBar.getByTestId("fixed-bans").getByTestId("fixed-ban").count()) !== 7) throw new Error("Mai does not list the seven fixed bans one per line");
   for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
     if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
   }
@@ -7354,7 +7354,7 @@ await page.getByTestId("waiting-summary").getByText("Mandato di progetto").waitF
 const projectMandate = await openWaiting("mandate");
 await projectMandate.getByText("Proposta di mandato di progetto").waitFor();
 const fixedBans = projectMandate.getByTestId("fixed-bans");
-if ((await fixedBans.locator("li").count()) !== 6) throw new Error("The project mandate does not list the six fixed bans");
+if ((await fixedBans.locator("li").count()) !== 7) throw new Error("The project mandate does not list the seven fixed bans");
 if (await fixedBans.locator("input, button, [role='switch']").count()) throw new Error("A fixed ban has a control to turn it on");
 await primaryLast(projectMandate.locator(".cta-row"), "Project mandate");
 await fixedBans.scrollIntoViewIfNeeded();
