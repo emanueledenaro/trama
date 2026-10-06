@@ -25,6 +25,10 @@ const YES_ACTIONS: readonly ActionName[] = [
   "requestedAction:confirm",
   "candidate:approve",
   "candidate:publish",
+  // A text that leaves for GitHub in the person's name: an issue, a comment on a colleague's pull request, a report.
+  "github:createIssue",
+  "presence:commentPullRequest",
+  "audit:publish",
   "pactDemo:approve",
   "team:answer",
   "route:answer",

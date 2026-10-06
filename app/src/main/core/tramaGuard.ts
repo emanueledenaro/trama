@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, relative, sep } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { commandWords } from "@shared/fixedBans";
 
 /**
@@ -20,6 +21,10 @@ export interface TramaPlaces {
   install: readonly string[];
   /** The processes of Trama: the app and its helpers. */
   pids: readonly number[];
+  /** Whether Trama runs from source, as "Electron": then that name and Electron's bundle id are Trama's too. */
+  fromSource?: boolean;
+  /** Whether the open project is Trama's own code: its build there is the work, not the installation. */
+  projectIsTrama?: boolean;
 }
 
 /** Why a command reaches Trama, as one code for Activity. */
@@ -40,16 +45,21 @@ const KEYWORDS: [RegExp, TramaReach][] = [
   [/\b(cgeventpost|cgeventcreate\w*|cgeventtap\w*|axuielement\w*|iohidpostevent)\b/i, "input"],
   [/\b(pyautogui|pynput|robotjs|nut-tree|nutjs)\b/i, "input"],
   [/--remote-debugging-(port|pipe)\b/i, "debugger"],
-  [/\b(connectovercdp|chrome-remote-interface)\b|devtools\/(browser|page)|\/json\/(version|list|new)\b/i, "debugger"],
+  [/\b(connectovercdp|chrome-remote-interface)\b|devtools\/(browser|page)\//i, "debugger"],
   [/\belectron_run_as_node\b/i, "launch"],
 ];
 
-/** Trama's names, its bundle ids and Electron's, which is what Trama is called when it runs from source. */
-const TRAMA_WORD = /(^|[^a-z0-9])(trama|electron|dev\.trama\.app|com\.github\.electron)([^a-z0-9]|$)/i;
+/** Trama's names and bundle id; Electron's too when Trama runs from source, where that is what it is called. */
+const TRAMA_WORD = /(^|[^a-z0-9])(trama|dev\.trama\.app)([^a-z0-9]|$)/i;
+const ELECTRON_WORD = /(^|[^a-z0-9])(electron|com\.github\.electron)([^a-z0-9]|$)/i;
 const USR1 = /^(-usr1|-sigusr1|-10|-30)$/i;
 
-/** Why a command reaches Trama by its words, or null. `pids` are Trama's processes. Pure. */
-export function tramaCommandReach(command: string, pids: readonly number[] = []): TramaReach | null {
+/**
+ * Why a command reaches Trama by its words, or null. `pids` are Trama's processes; `fromSource` says Trama runs as
+ * "Electron", so that name is Trama's too. A packaged Trama leaves the person's own Electron apps alone. Pure.
+ */
+export function tramaCommandReach(command: string, pids: readonly number[] = [], fromSource = false): TramaReach | null {
+  const named = (word: string) => TRAMA_WORD.test(word) || (fromSource && ELECTRON_WORD.test(word));
   for (const [pattern, reach] of KEYWORDS) if (pattern.test(command)) return reach;
   for (const words of commandWords(command)) {
     const program = (words[0] ?? "").split("/").at(-1)?.toLowerCase() ?? "";
@@ -60,13 +70,13 @@ export function tramaCommandReach(command: string, pids: readonly number[] = [])
     // A shell started with a script reads that script as a command line of its own.
     if (/^(sh|bash|zsh|dash|ksh|fish)$/.test(program)) {
       const flag = args.findIndex((a) => /^-[a-z]*c[a-z]*$/.test(a));
-      const inner = flag >= 0 ? tramaCommandReach(args[flag + 1] ?? "", pids) : null;
+      const inner = flag >= 0 ? tramaCommandReach(args[flag + 1] ?? "", pids, fromSource) : null;
       if (inner) return inner;
     }
-    const namesTrama = args.some((a) => TRAMA_WORD.test(a));
+    const namesTrama = args.some(named);
     const namesPid = args.some((a) => /^\d+$/.test(a) && pids.includes(Number(a)));
     if (program === "open" && namesTrama) return "launch";
-    if (program === "defaults" && /^(write|delete|import|rename)$/.test(args[0] ?? "") && TRAMA_WORD.test(args[1] ?? "")) return "settings";
+    if (program === "defaults" && /^(write|delete|import|rename)$/.test(args[0] ?? "") && named(args[1] ?? "")) return "settings";
     if (KILLERS.has(program)) {
       // SIGUSR1 opens Node's inspector on a process: Trama's main process would answer to a debugger.
       const signal = args.findIndex((a) => a === "-s" || a === "--signal");
@@ -85,12 +95,39 @@ const within = (path: string, folder: string): boolean => {
 };
 
 /**
- * The places of Trama a command may never reach, for the project at `projectRoot`. Trama's installation counts unless
- * the project is Trama's own code, when the person works on Trama with Trama: then the project is the work.
+ * The places of Trama a command may never reach, for the project at `projectRoot`. Trama's installation always counts,
+ * also when the project holds it (a project in the home folder). The one exception is a project that is Trama's own
+ * code, when the person works on Trama with Trama: the build inside that project is the work. An installation elsewhere
+ * still counts then.
  */
-export function protectedTramaPaths(places: Pick<TramaPlaces, "data" | "install">, projectRoot: string): string[] {
-  const install = places.install.filter((path) => !within(path, projectRoot) && !within(projectRoot, path));
+export function protectedTramaPaths(places: Pick<TramaPlaces, "data" | "install">, projectRoot: string, projectIsTrama = false): string[] {
+  const install = projectIsTrama ? places.install.filter((path) => !within(path, projectRoot)) : places.install;
   return [...new Set([...places.data, ...install].filter(Boolean))];
+}
+
+/** A file's text, or null when it cannot be read. */
+export function readTextOrNull(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a folder holds Trama's own code: its app's package says so (`productName` Trama, `build.appId` dev.trama.app),
+ * at the root or in `app/`. `read` returns a file's text or null. Pure but for the reads.
+ */
+export function holdsTramaCode(root: string, read: (path: string) => string | null): boolean {
+  for (const file of [join(root, "package.json"), join(root, "app", "package.json")]) {
+    try {
+      const pkg = JSON.parse(read(file) ?? "null") as { productName?: unknown; build?: { appId?: unknown } } | null;
+      if (pkg?.productName === "Trama" && pkg.build?.appId === "dev.trama.app") return true;
+    } catch {
+      // Not a package: not Trama's code.
+    }
+  }
+  return false;
 }
 
 /** A path as the person reads it: the home folder as `~`. */

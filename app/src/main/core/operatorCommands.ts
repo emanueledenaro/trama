@@ -54,8 +54,11 @@ export function cleanEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.P
  * The real runner: a shell line in its own process group, so stopping it stops every process it started. On macOS the
  * line runs inside the sandbox `sandbox` describes (issue #597); a sandbox that does not start stops the command.
  */
-export function shellCommandRunner(options: { sandbox?: () => SandboxPlan | null; platform?: NodeJS.Platform } = {}): CommandRunner {
+export function shellCommandRunner(
+  options: { sandbox?: () => SandboxPlan | null; platform?: NodeJS.Platform; probe?: (plan: SandboxPlan) => Promise<string | null> } = {},
+): CommandRunner {
   const platform = options.platform ?? process.platform;
+  const probe = options.probe ?? sandboxWorks;
   // Each profile is tried once on this Mac; the answer is kept for the commands after it.
   const tried = new Map<string, Promise<string | null>>();
   return {
@@ -63,7 +66,7 @@ export function shellCommandRunner(options: { sandbox?: () => SandboxPlan | null
       const plan = platform === "darwin" ? (options.sandbox?.() ?? null) : null;
       if (plan) {
         const key = JSON.stringify(plan);
-        if (!tried.has(key)) tried.set(key, sandboxWorks(plan));
+        if (!tried.has(key)) tried.set(key, probe(plan));
         const problem = await tried.get(key)!;
         if (problem) throw new Error(`The sandbox of the Operator's commands did not start, so nothing ran: ${problem}`);
       }
@@ -261,10 +264,10 @@ export async function executeCommand(
 /** Why a command would reach Trama: by its words, or by a path into Trama's data or installation. Null when it does not. */
 async function tramaReach(command: string, cwd: string, session: OperatorSession): Promise<TramaReach | "data" | null> {
   const places = await session.trama?.();
-  const byWords = tramaCommandReach(command, places?.pids ?? []);
+  const byWords = tramaCommandReach(command, places?.pids ?? [], places?.fromSource ?? false);
   if (byWords) return byWords;
   if (!places) return null;
-  const folders = protectedTramaPaths(places, session.projectRoot).map((path) => ({ label: shownPath(path), path }));
+  const folders = protectedTramaPaths(places, session.projectRoot, places.projectIsTrama ?? false).map((path) => ({ label: shownPath(path), path }));
   // The project itself stays open, also when Trama keeps it in its data folder (the demo project).
   return session.lock.reaches(command, { cwd }, folders, session.projectRoot) ? "data" : null;
 }

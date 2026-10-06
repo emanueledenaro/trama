@@ -483,7 +483,7 @@ import { macScreenDriver, ownProcessIdentity, type MissingPermission, type Scree
 import { sendApproved } from "./core/operatorSend";
 import { SecretLock } from "./core/secretLock";
 import { type SandboxPlan, systemPlaces } from "./core/operatorSandbox";
-import { protectedTramaPaths, type TramaPlaces } from "./core/tramaGuard";
+import { holdsTramaCode, protectedTramaPaths, readTextOrNull, type TramaPlaces } from "./core/tramaGuard";
 import {
   httpWebFetcher,
   RESEARCH_ROLE,
@@ -854,7 +854,7 @@ export interface ControllerHost {
    * Trama's own folders besides the data folder Trama is given: Electron's profile and the installation (issue #597).
    * The Operator's commands never reach them, nor the data folder.
    */
-  tramaPlaces?: { data: string[]; install: string[] };
+  tramaPlaces?: { data: string[]; install: string[]; fromSource?: boolean };
   /** How long Research and the Operator may work for one request before Trama stops them (issue #583). Tests shorten it. */
   askLimitMs?: number;
   demoResourceDirectory: string;
@@ -3171,12 +3171,10 @@ export class TramaController {
         if (missing.length) {
           appendEvent(document, "trama", { type: "activity", title: missingButtonTitle(), detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
         }
-        // After an order to the Operator, a reply that sends the person to Aspetta te for a consent or a yes while no such
-        // request waits there: the Operator's report named one that was never made, and Trama says so (issue #597).
-        const computerItems = this.operatorTurns.delete(request.id)
-          ? waitingForYou(this.t, document, this.waitingSources(project)).filter((item) => ["appConsent", "siteConsent", "commandApproval"].includes(item.kind)).length
-          : null;
-        if (computerItems !== null && sendsToEmptyWaitingList(reply, computerItems)) {
+        // After an order to the Operator, a reply that sends the person to Aspetta te for a yes while nothing at all waits
+        // there: the Operator's report named a request that was never made, and Trama says so (issue #597).
+        const waiting = this.operatorTurns.delete(request.id) ? waitingForYou(this.t, document, this.waitingSources(project)).length : null;
+        if (waiting !== null && sendsToEmptyWaitingList(reply, waiting)) {
           appendEvent(document, "trama", { type: "activity", title: t("main.controller.nothingWaitingTitle"), detail: t("main.controller.nothingWaitingDetail"), tone: "error" }, request.id);
         }
         // A write in this turn already reset its counter: the review it would have started is not due.
@@ -5972,22 +5970,26 @@ export class TramaController {
   }
 
   /** Trama's own folders and processes, which the Operator's commands never reach (issue #597). */
-  private async tramaPlaces(): Promise<TramaPlaces> {
+  private async tramaPlaces(project: ActiveProjectState): Promise<TramaPlaces> {
     const self = await (this.host.selfIdentity ?? ownProcessIdentity)();
     return {
-      data: [this.storage.root, ...(this.legacyRoot ? [this.legacyRoot] : []), ...(this.host.tramaPlaces?.data ?? [])],
+      data: this.tramaDataFolders(),
       install: this.host.tramaPlaces?.install ?? [],
       pids: self.pids,
+      fromSource: this.host.tramaPlaces?.fromSource ?? false,
+      projectIsTrama: holdsTramaCode(project.rootPath, readTextOrNull),
     };
+  }
+
+  /** Trama's data: its own folder, the old app's, Electron's profile. */
+  private tramaDataFolders(): string[] {
+    return [this.storage.root, ...(this.legacyRoot ? [this.legacyRoot] : []), ...(this.host.tramaPlaces?.data ?? [])];
   }
 
   /** The sandbox of the Operator's commands on macOS: Trama's folders hidden, the system's permissions and launch agents kept. */
   private operatorSandboxPlan(project: ActiveProjectState): SandboxPlan {
     const system = systemPlaces();
-    const trama = protectedTramaPaths(
-      { data: [this.storage.root, ...(this.legacyRoot ? [this.legacyRoot] : []), ...(this.host.tramaPlaces?.data ?? [])], install: this.host.tramaPlaces?.install ?? [] },
-      project.rootPath,
-    );
+    const trama = protectedTramaPaths({ data: this.tramaDataFolders(), install: this.host.tramaPlaces?.install ?? [] }, project.rootPath, holdsTramaCode(project.rootPath, readTextOrNull));
     return { hidden: [...trama, ...system.hidden], readOnly: system.readOnly, open: [project.rootPath] };
   }
 
@@ -5999,7 +6001,7 @@ export class TramaController {
       gate: this.computerAccess,
       runner: this.host.commandRunner ?? shellCommandRunner({ sandbox: () => this.operatorSandboxPlan(project) }),
       lock: this.host.secretLock ?? (this.secretLock ??= new SecretLock()),
-      trama: () => this.tramaPlaces(),
+      trama: () => this.tramaPlaces(project),
       agent,
       projectRoot: project.rootPath,
       record: (step) => {
@@ -6008,8 +6010,12 @@ export class TramaController {
         this.changedIn(project);
       },
       stopped: (command, stopper) => {
-        // A ban on Trama itself is no request: no yes lifts it, so the Coordinator has nothing to send the person to.
-        if (!("ban" in stopper && stopper.ban === "tramaControl")) calls.wait(command);
+        // A ban on Trama itself is no request: no yes lifts it, so nothing goes in Aspetta te; the chat tells the person.
+        if ("ban" in stopper && stopper.ban === "tramaControl") {
+          this.projectNotice(project, t("main.controller.tramaControlStopped", { agent, command: shownCommand(command) }), requestId);
+          return;
+        }
+        calls.wait(command);
         const place = "place" in stopper ? ` (${stopper.place})` : "";
         this.recordFixedBan(project, { type: "fixedBanRefused", itemId: randomUUID(), ban: "ban" in stopper ? stopper.ban : "secrets", action: `${shownCommand(command)}${place}` }, { kind: "operator", specialistId: specialist.id }, requestId);
       },

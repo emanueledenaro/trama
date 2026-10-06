@@ -48,3 +48,28 @@ describe("the sandbox of the Operator's commands on macOS (issue #597)", () => {
     expect(sandboxedSpawn(command, null, "darwin")).toEqual({ file: "/bin/sh", args: ["-c", command] });
   });
 });
+
+describe("a sandbox that does not start runs nothing (issue #597)", () => {
+  it("stops the command before it starts, and asks the Mac once per profile", async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { existsSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { shellCommandRunner } = await import("./operatorCommands");
+    const folder = await mkdtemp(join(tmpdir(), "trama-sandbox-"));
+    const probed: string[] = [];
+    const runner = shellCommandRunner({
+      sandbox: () => plan,
+      platform: "darwin",
+      probe: async (given) => {
+        probed.push(given.hidden[0]!);
+        return "sandbox-exec: profile not valid";
+      },
+    });
+    const options = { cwd: folder, signal: new AbortController().signal, timeoutMs: 5_000 };
+    await expect(runner.run("touch ran", options)).rejects.toThrow(/did not start, so nothing ran: sandbox-exec: profile not valid/);
+    await expect(runner.run("touch ran", options)).rejects.toThrow(/did not start/);
+    expect(existsSync(join(folder, "ran"))).toBe(false);
+    expect(probed).toHaveLength(1);
+  });
+});

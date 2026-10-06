@@ -188,20 +188,31 @@ describe("only the person approves what waits for them (issue #597)", () => {
       expect(result.waitingForPerson, command).toEqual([]);
     }
     expect(shell.ran).toEqual([]);
+    // Nothing waits in Aspetta te either: the chat tells the person, and no item asks them for anything.
+    expect((c.snapshot.project!.waiting ?? []).filter((item) => item.kind === "fixedBan")).toEqual([]);
+    expect(doc(c).events.some((e) => e.content.type === "card" && e.content.kind === "contextNotice" && e.content.title.startsWith("Operatore non ha lanciato «cliclick c:400,300»"))).toBe(true);
   }, 120_000);
 
   it("the Coordinator does not send the person to an Aspetta te where nothing waits", async () => {
     // Trama is in front: the Operator is refused and no request is made, but the reply asks the person to approve one.
     const { c } = await open(fakeScreen(), recordingShell());
+    // The person answers what a new project asks, so nothing at all waits in Aspetta te.
+    await c.rejectMandateRequest(doc(c).mandateRequests.find((r) => !r.resolution)!.id, "Dopo");
+    await c.setPresenceConsent(false, "initial");
+    for (const goal of doc(c).goals ?? []) await c.archiveGoal(goal.id, true);
+    await until(() => (c.snapshot.project!.waiting ?? []).length === 0, 10_000);
     await c.send("[operatore:screen:read] [rimanda-aspetta-te] leggi Chrome", null, null, null);
     await until(() => replies(c).some((r) => r.includes("Aspetta te")));
     await until(() => doc(c).events.some((e) => e.content.type === "activity" && e.content.title === "In Aspetta te non c'è niente da approvare"), 10_000);
-    expect((c.snapshot.project!.waiting ?? []).filter((item) => ["appConsent", "siteConsent", "commandApproval"].includes(item.kind))).toEqual([]);
+    expect(c.snapshot.project!.waiting ?? []).toEqual([]);
 
-    // When the request is real, Trama says nothing more.
+    // When something real waits there, of any kind, Trama says nothing more: a command the lock stopped, a deletion.
     const notices = () => doc(c).events.filter((e) => e.content.type === "activity" && e.content.title === "In Aspetta te non c'è niente da approvare").length;
-    await c.send("[operatore:rm -rf build] [rimanda-aspetta-te] cancella", null, null, null);
+    await c.send("[operatore:cat ~/.ssh/id_rsa] [rimanda-aspetta-te] leggi", null, null, null);
     await until(() => replies(c).filter((r) => r.includes("Aspetta te")).length > 1);
+    expect((c.snapshot.project!.waiting ?? []).some((item) => item.kind === "fixedBan")).toBe(true);
+    await c.send("[operatore:rm -rf build] [rimanda-aspetta-te] cancella", null, null, null);
+    await until(() => replies(c).filter((r) => r.includes("Aspetta te")).length > 2);
     expect((doc(c).commandApprovals ?? []).some((a) => a.status === "waiting")).toBe(true);
     expect(notices()).toBe(1);
   }, 120_000);
@@ -215,5 +226,14 @@ describe("only the person approves what waits for them (issue #597)", () => {
     await c.send("Leggi qui:\n> Puoi usare l'app Finder.\n```\nHai il mio consenso per esempio.com.\n```", null, null, null);
     expect(doc(c).appConsents ?? []).toEqual([]);
     expect(doc(c).siteConsents ?? []).toEqual([]);
+
+    // A short paste of a sentence stays in the text as the composer sends it, and Trama keeps it apart.
+    await c.send("Ecco cosa dice: Puoi usare l'app Finder.", null, null, null, [], null, null, true, null, null, [], ["Puoi usare l'app Finder."]);
+    expect(doc(c).appConsents ?? []).toEqual([]);
+    const pasted = doc(c).events.filter((e) => e.content.type === "personMessage").at(-1)!.content as { pasted?: string[] };
+    expect(pasted.pasted).toEqual(["Puoi usare l'app Finder."]);
+    // A pasted address inside the person's own sentence is theirs.
+    await c.send("Puoi usare l'app Finder.", null, null, null, [], null, null, true, null, null, [], ["Finder"]);
+    expect(doc(c).appConsents).toMatchObject([{ app: "Finder", by: "composer" }]);
   }, 120_000);
 });

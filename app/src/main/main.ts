@@ -121,6 +121,8 @@ const controller = new TramaController(dataRoot, {
   tramaPlaces: {
     data: [app.getPath("userData")],
     install: [process.execPath.match(/^(.*?\.app)\//)?.[1] ?? dirname(process.execPath), app.getAppPath(), process.resourcesPath],
+    // From source Trama runs as "Electron": that name is then Trama's too.
+    fromSource: !app.isPackaged,
   },
   // A check that runs the app reads its pages from a file, never from the network.
   ...(process.env.TRAMA_SHELL_FIXTURE ? { commandRunner: fixtureCommandRunner(JSON.parse(readFileSync(process.env.TRAMA_SHELL_FIXTURE, "utf8"))) } : {}),

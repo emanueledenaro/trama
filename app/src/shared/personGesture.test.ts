@@ -3,7 +3,7 @@ import { fromTramaPage, GESTURE_WINDOW_MS, GestureClock, needsPersonGesture } fr
 
 describe("a yes counts only after the person's gesture in Trama's window (issue #597)", () => {
   it("asks a gesture for every action that gives a yes, and not for the ones that take power away", () => {
-    for (const action of ["coordinator:send", "mandate:grant", "pact:decide", "decision:answer", "commandApproval:confirm", "siteConsent:confirm", "appConsent:confirm", "requestedAction:confirm", "candidate:approve", "candidate:publish"]) {
+    for (const action of ["github:createIssue", "presence:commentPullRequest", "audit:publish", "coordinator:send", "mandate:grant", "pact:decide", "decision:answer", "commandApproval:confirm", "siteConsent:confirm", "appConsent:confirm", "requestedAction:confirm", "candidate:approve", "candidate:publish"]) {
       expect(needsPersonGesture(action, { id: "x" }), action).toBe(true);
     }
     expect(needsPersonGesture("access:set", { on: true })).toBe(true);
