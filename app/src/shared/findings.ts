@@ -94,7 +94,7 @@ const TEST_CHECKS: ReadonlySet<string> = new Set(["swift_test", "node_test"]);
  * neither failed (or has not run yet). It reads recorded evidence only: it never says the work is ready.
  */
 export function failedBuildOrTests(audit: FocusAudit): "build" | "tests" | "both" | null {
-  const latest = new Map(audit.checks.map((c) => [c.check, c.result] as const));
+  const latest = new Map((audit.checks ?? []).map((c) => [c.check, c.result] as const));
   const failed = (names: ReadonlySet<string>) => [...latest].some(([check, result]) => names.has(check) && result === "fail");
   const build = failed(BUILD_CHECKS);
   const tests = failed(TEST_CHECKS);

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { CandidateReport } from "@shared/domain";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -12,8 +13,9 @@ import { approveBlockedReason } from "./candidateVerdict";
 export function ApproveCandidateButton({ candidateId, report, size }: { candidateId: string; report: CandidateReport; size?: "sm" }) {
   const t = useT();
   const reason = approveBlockedReason(t, report);
+  const reasonId = useId();
   const button = (
-    <Button size={size} variant="outline" disabled={Boolean(reason)} onClick={() => void act("candidate:approve", { candidateId })}>
+    <Button size={size} variant="outline" disabled={Boolean(reason)} aria-describedby={reason ? reasonId : undefined} onClick={() => void act("candidate:approve", { candidateId })}>
       {t("chat.card.candidate.approve")}
     </Button>
   );
@@ -23,6 +25,9 @@ export function ApproveCandidateButton({ candidateId, report, size }: { candidat
     <Tooltip label={reason}>
       <span className="inline-flex" tabIndex={0} data-testid="candidate-approve-blocked" data-reason={reason}>
         {button}
+        <span id={reasonId} className="sr-only">
+          {reason}
+        </span>
       </span>
     </Tooltip>
   );

@@ -1,6 +1,6 @@
 import type { Candidate, CandidateBlocker, CandidateReport } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
-import { blockerText, plainText } from "@shared/plainLanguage";
+import { blockerText } from "@shared/plainLanguage";
 import { checkName } from "@shared/states";
 import { CHECK_BLOCKERS } from "./CandidateFields";
 
@@ -22,6 +22,7 @@ export interface CandidateVerdict {
 export function conditionText(t: Translate, blocker: CandidateBlocker): string {
   const what = blockerText(t, blocker.code);
   if (blocker.code === "BASE_CHANGED" || blocker.code === "WORKTREE_CHANGED") return what;
+  if (!blocker.detail) return what;
   return `${what}: ${CHECK_BLOCKERS.has(blocker.code) ? checkName(t, blocker.detail) : blocker.detail}`;
 }
 
@@ -45,5 +46,5 @@ export function verdictText(t: Translate, verdict: CandidateVerdict): string {
 /** Why approving is off, for the button's hover; null when the candidate has nothing missing. */
 export function approveBlockedReason(t: Translate, report: CandidateReport): string | null {
   const first = report.blockers[0];
-  return first ? t("candidate.approve.blocked", { first: plainText(t, conditionText(t, first)) }) : null;
+  return first ? t("candidate.approve.blocked", { first: conditionText(t, first) }) : null;
 }

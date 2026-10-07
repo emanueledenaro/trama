@@ -234,7 +234,8 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
             )}
           </p>
         ) : null}
-        {missing ? (
+        {/* The line above says the first condition: the list is for when there are more. */}
+        {missing > 1 ? (
           <ul className="mt-2 space-y-1 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>

@@ -1559,8 +1559,9 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       ))}
     </ul>
   );
-  const blocked = report.blockers.length > 0 && report.state !== "superseded";
   const verdict = candidateVerdict(t, candidate, report);
+  // The box follows the verdict: a merged or superseded candidate is never drawn as blocked.
+  const blocked = verdict.outcome === "missing";
   // In the chat and in Aspetta te the first thing to read is the verdict: one line that says whether the work is
   // ready and, when it is not, how many conditions are missing and which one to fix first. The conditions themselves
   // are listed once, in the candidate's tab, which the line links to (docs/agents/design-rules.md).
