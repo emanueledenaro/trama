@@ -1,7 +1,7 @@
-import { IconFocus2, IconRotateClockwise } from "@/components/icons";
+import { IconCircleX, IconFocus2, IconRotateClockwise } from "@/components/icons";
 import { plainText } from "@shared/plainLanguage";
 import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
-import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, failedBuildOrTests, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary, summaryLines } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { RecordName } from "@/components/chat/ReferenceText";
@@ -196,8 +196,16 @@ function Verdict({ audit }: { audit: FocusAudit }) {
   const total = auditFindings(audit).length;
   const tally = findingTally(t, audit);
   const lensLine = lensSummary(audit, t);
+  // A build or tests that fail come first, before how the examination went and before the findings.
+  const notReady = failedBuildOrTests(audit);
   return (
     <div className="space-y-1" data-testid="focus-audit-verdict">
+      {notReady ? (
+        <p className="flex items-center gap-2 text-ui font-medium text-destructive" data-testid="focus-audit-not-ready" data-failed={notReady} role="alert">
+          <IconCircleX className="size-4 shrink-0" stroke={1.8} />
+          {t(`focus.notReady.${notReady}`)}
+        </p>
+      ) : null}
       <p
         className={cn("flex flex-wrap items-center gap-1.5 text-ui", audit.status === "failed" ? "text-destructive" : "text-foreground")}
         data-testid="focus-audit-status"
@@ -219,9 +227,11 @@ function Verdict({ audit }: { audit: FocusAudit }) {
       </p>
       {audit.status === "failed" && audit.failure ? <p className="text-ui-sm text-destructive">{audit.failure}</p> : null}
       {audit.summary ? (
-        <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
-          {plainText(t, audit.summary)}
-        </p>
+        <ul className="list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
+          {summaryLines(audit.summary).map((line) => (
+            <li key={line}>{plainText(t, line)}</li>
+          ))}
+        </ul>
       ) : null}
       {audit.summary && lensLine ? (
         <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-lens-summary">
