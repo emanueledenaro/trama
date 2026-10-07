@@ -341,7 +341,9 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (ordering && toolServers.has(threadId)) {
         const result = await callTool(threadId, "ask_operator", { order: ordering[1] });
         toolDone("ask_operator", result);
-        setTimeout(() => finish(`Operatore: ${result.content[0].text}`), 10);
+        // Issue #597: the reply sends the person to approve in Aspetta te a request the Operator's report only talks about.
+        const reply = text.includes("[rimanda-aspetta-te]") ? "Approva in Aspetta te la richiesta per leggere la finestra di Chrome, poi riprovo." : `Operatore: ${result.content[0].text}`;
+        setTimeout(() => finish(reply), 10);
         return;
       }
       const asking = text.match(/\[ricerca:([^\]]*)\]/);

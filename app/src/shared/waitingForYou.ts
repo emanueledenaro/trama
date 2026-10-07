@@ -3,6 +3,7 @@ import { fixedBanInfo } from "./fixedBans";
 import { workingGoals } from "./goals";
 import type { Translate } from "./i18n";
 import { workRequests } from "./grilling";
+import { protectedAppName } from "./protectedApps";
 import { requestedActionName } from "./requestedActions";
 import { blockedReviews, candidateHeld } from "./reviewLoop";
 
@@ -344,7 +345,7 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
 
   // The Operator wants a site that has no consent (issue #410): it opens only after the person's yes.
   // The same for an app the Operator wants to use on the screen (issue #412).
-  for (const request of (document.appConsentRequests ?? []).filter((r) => r.status === "waiting")) {
+  for (const request of (document.appConsentRequests ?? []).filter((r) => r.status === "waiting" && !protectedAppName(r.app))) {
     items.push({
       key: `appConsent:${request.id}`,
       kind: "appConsent",

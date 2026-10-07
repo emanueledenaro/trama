@@ -100,7 +100,7 @@ const order = async (c: TramaController, commands: string, count: number) => {
   await c.send(`[operatore:${commands}] fai`, null, null, null);
   await until(() => replies(c).filter((r) => r.startsWith("Operatore: ")).length > count);
   const text = replies(c).filter((r) => r.startsWith("Operatore: "))[count]!.slice("Operatore: ".length);
-  return JSON.parse(text) as { report?: string };
+  return JSON.parse(text) as { report?: string; waitingForPerson?: string[]; waitingNote?: string };
 };
 
 describe("the Operator uses the screen only on apps the person consented to (issue #412)", () => {
@@ -250,5 +250,54 @@ describe("the Operator uses the screen only on apps the person consented to (iss
     await until(() => replies(c).some((r) => r.startsWith("Operatore: ")));
     expect(replies(c).find((r) => r.startsWith("Operatore: "))).toContain("access_off");
     expect(screen.moves).toEqual([]);
+  }, 120_000);
+
+  it("never lets the Operator control Trama's own window: no request, no consent, no move (issue #597)", async () => {
+    const screen = fakeScreen();
+    const c = await open(screen);
+    screen.state.front = { app: "Electron", secureField: false };
+    const result = await order(c, "screen:read ;; screen:click 10,20 ;; screen:type ciao ;; screen:key return", 0);
+    expect(result.report).toContain("screen:read: rifiutato (protected_app)");
+    expect(result.report).toContain("screen:click 10,20: rifiutato (protected_app)");
+    expect(result.report).toContain("screen:key return: rifiutato (protected_app)");
+    expect(screen.moves).toEqual([]);
+    // Nothing was put in Aspetta te, so the Coordinator has nothing to send the person to.
+    expect(result.waitingForPerson).toEqual([]);
+    expect(doc(c).appConsentRequests ?? []).toEqual([]);
+    expect((c.snapshot.project!.waiting ?? []).some((item) => item.kind === "appConsent")).toBe(false);
+    expect(chatLines(c)).toContain("Operatore non usa lo schermo in Electron: è la finestra di Trama e nessun agente la controlla. Non c'è niente da approvare.");
+
+    // A consent the person writes for Trama is not recorded either, and the chat says why.
+    await c.send("Puoi usare l'app Trama.", null, null, null);
+    expect(doc(c).appConsents ?? []).toEqual([]);
+    expect(chatLines(c)).toContain("Non registro il consenso per Trama: Trama non lascia mai che un agente usi lo schermo in questa app.");
+
+    // A consent saved by an older version is ignored.
+    doc(c).appConsents = [{ id: "old", app: "Electron", grantedAt: "2026-10-05T10:00:00.000Z", by: "button", phrase: null }];
+    expect((await order(c, "screen:read ;; screen:click 1,1", 1)).report).toContain("rifiutato (protected_app)");
+    expect(screen.moves).toEqual([]);
+  }, 120_000);
+
+  it("refuses System Settings and a password manager the same way", async () => {
+    const screen = fakeScreen();
+    const c = await open(screen);
+    for (const [index, app] of ["Impostazioni di Sistema", "1Password"].entries()) {
+      screen.state.front = { app, secureField: false };
+      const result = await order(c, "screen:read", index);
+      expect(result.report).toContain("rifiutato (protected_app)");
+      expect(result.waitingForPerson).toEqual([]);
+    }
+    expect(doc(c).appConsentRequests ?? []).toEqual([]);
+    expect(screen.moves).toEqual([]);
+  }, 120_000);
+
+  it("gives the Coordinator, from Trama itself, the items that really wait for the person", async () => {
+    const screen = fakeScreen();
+    screen.state.front = { app: "Finder", secureField: false };
+    const c = await open(screen);
+    const result = await order(c, "screen:read", 0);
+    expect(result.waitingForPerson).toEqual(["Finder"]);
+    expect(result.waitingNote).toMatch(/only items/);
+    expect((c.snapshot.project!.waiting ?? []).filter((item) => item.kind === "appConsent")).toHaveLength(1);
   }, 120_000);
 });

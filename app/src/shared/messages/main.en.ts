@@ -316,6 +316,14 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.appConsentFromButton": "Consent recorded for the app {app}, from your yes in Aspetta te",
   "main.controller.appConsentAlready": "The consent for the app {app} is already in this project.",
   "main.controller.appConsentNotRecorded": "I did not record the consent for the app {app}.",
+  "main.controller.tramaControlStopped": "{agent} did not run «{command}»: it reached Trama itself (its window, its data, its installation or its process). It is a fixed ban: there is nothing to approve.",
+  "main.controller.nothingWaitingTitle": "Nothing to approve in Waiting for you",
+  "main.controller.nothingWaitingDetail": "The Coordinator sends you to Waiting for you, but nothing is there now: the request it mentions was not created. There is nothing for you to approve.",
+  "main.controller.appConsentProtected": "I did not record a consent for {app}: Trama never lets an agent use the screen in this app.",
+  "main.controller.screenProtected.trama": "{agent} does not use the screen in {app}: it is Trama's own window and no agent controls it. There is nothing to approve.",
+  "main.controller.screenProtected.system": "{agent} does not use the screen in {app}: system settings and the windows that grant permissions are yours alone. There is nothing to approve.",
+  "main.controller.screenProtected.commands": "{agent} does not use the screen in {app}: what is typed there runs as a command, outside Trama's checks. Commands go through Trama. There is nothing to approve.",
+  "main.controller.screenProtected.passwords": "{agent} does not use the screen in {app}: it is a password manager and no agent controls it. There is nothing to approve.",
   "main.controller.appConsentWithdrawnFromPhrase": "Consent withdrawn for the app {app}, from your sentence \"{phrase}\"",
   "main.controller.appConsentWithdrawn": "Consent withdrawn for the app {app}",
   "main.controller.appConsentDeclined": "You said no: {agent} does not use the screen in {app}.",
@@ -1853,6 +1861,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   // Dialogs of main.ts; the application menu's labels are the "menu.*" keys of the interface catalogs (issue #345)
   "main.dialog.openProject": "Open Project",
   "main.dialog.chooseFolder": "Choose the folder",
+  "main.ipc.notTramaWindow": "This action comes from outside Trama's window: I am not running it.",
+  "main.ipc.needsGesture": "This yes counts only when you give it, with a click or a key in Trama's window. Try again from the button.",
   "main.dialog.chooseCloneFolder": "Choose where to clone the project",
   // Merge and push (merge.ts, push.ts)
   "main.merge.noRemote":

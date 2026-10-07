@@ -75,6 +75,8 @@ import type {
   SiteConsentRequest,
   AppConsentRequest,
 } from "@shared/domain";
+import { protectedAppName, type SelfIdentity } from "@shared/protectedApps";
+import { ownWords, pastedSentences } from "@shared/personWords";
 import { addAppConsent, appConsentFor, appConsentStatements, withdrawAppConsent } from "@shared/appConsents";
 import { addConsent, consentFor, consentStatements, shownSite, withdrawConsent } from "@shared/siteConsents";
 import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
@@ -175,7 +177,7 @@ import { candidateGoalId, findGoal, projectGoals, requestGoalId, goalPutAway } f
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { availableButtons, currentStateText, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
+import { availableButtons, currentStateText, memorySection, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle, sendsToEmptyWaitingList } from "./core/coordinatorGrounding";
 import {
   automaticMoveDetail,
   automaticMove,
@@ -477,9 +479,11 @@ import {
   type OperatorSession,
 } from "./core/operatorCommands";
 import { chromeDebuggingDriver, type BrowserDriver } from "./core/operatorBrowser";
-import { macScreenDriver, type MissingPermission, type ScreenDriver, type ScreenPermissions } from "./core/operatorScreen";
+import { macScreenDriver, ownProcessIdentity, type MissingPermission, type ScreenDriver, type ScreenPermissions } from "./core/operatorScreen";
 import { sendApproved } from "./core/operatorSend";
 import { SecretLock } from "./core/secretLock";
+import { type SandboxPlan, systemPlaces } from "./core/operatorSandbox";
+import { holdsTramaCode, protectedTramaPaths, readTextOrNull, type TramaPlaces } from "./core/tramaGuard";
 import {
   httpWebFetcher,
   RESEARCH_ROLE,
@@ -840,10 +844,17 @@ export interface ControllerHost {
   browserDriver?: BrowserDriver;
   /** What Trama does on the screen for the Operator (issue #412). The real one pilots macOS; tests give a fake. */
   screenDriver?: ScreenDriver;
+  /** Trama's own processes, for the screen: tests give the pids they want to treat as Trama. */
+  selfIdentity?: () => Promise<SelfIdentity> | SelfIdentity;
   /** Which of the two macOS permissions for the screen are granted. It only asks, never prompts. Without it none is. */
   screenPermissions?: () => ScreenPermissions;
   /** The lock on secrets of the Operator's commands. The default reads the real home folder; tests give their own. */
   secretLock?: SecretLock;
+  /**
+   * Trama's own folders besides the data folder Trama is given: Electron's profile and the installation (issue #597).
+   * The Operator's commands never reach them, nor the data folder.
+   */
+  tramaPlaces?: { data: string[]; install: string[]; fromSource?: boolean };
   /** How long Research and the Operator may work for one request before Trama stops them (issue #583). Tests shorten it. */
   askLimitMs?: number;
   demoResourceDirectory: string;
@@ -890,6 +901,8 @@ export class TramaController {
     removable: boolean;
     /** The next step the message takes, when the person pressed its button (W04). */
     step: RequestStep | null;
+    /** The texts the person pasted in it: not their own sentence (issue #597). */
+    pasted: string[];
   }[] = [];
 
   private secretLock: SecretLock | null = null;
@@ -2866,6 +2879,8 @@ export class TramaController {
     retry: ResumedTurn | null = null,
     /** Bundled skills without a Trama flow that a started Ask Trama route runs, delivered with their original text (M07). */
     routeSkills: string[] = [],
+    /** The texts the person pasted in the composer: a consent or a quote in them is not the person's own sentence (issue #597). */
+    pasted: string[] = [],
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
@@ -2895,6 +2910,7 @@ export class TramaController {
         queuedAt: new Date().toISOString(),
         removable,
         step,
+        pasted,
       });
       if (typed) project.document.composerDraft = "";
       // What the person types goes before Trama's automatic move (ADR 0023): the move gives way, never their own turn.
@@ -2970,11 +2986,14 @@ export class TramaController {
           imageCount: attachments.length,
           // Only a message the person typed can ask for an action a fixed ban stops (issue #422).
           ...(typed ? { composer: true } : {}),
+          // What they pasted in it is kept apart: it is not their sentence (issue #597).
+          ...(typed && pastedSentences(pasted).length ? { pasted: pastedSentences(pasted) } : {}),
         },
         request.id,
       );
-      // Only a message the person typed in the composer can give or withdraw a consent (issue #410).
-      if (typed) this.applyConsentMessage(project, trimmed, request.id);
+      // Only a message the person typed in the composer can give or withdraw a consent (issue #410), and only with
+      // their own words: not a pasted text, a quoted line or a block of code (issue #597).
+      if (typed) this.applyConsentMessage(project, ownWords(trimmed, pasted), request.id);
     }
     project.runningRequestId = request.id;
     // The running request now keeps the Coordinator busy in place of the starting move.
@@ -3151,6 +3170,12 @@ export class TramaController {
         const missing = missingButtons(reply, buttons);
         if (missing.length) {
           appendEvent(document, "trama", { type: "activity", title: missingButtonTitle(), detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
+        }
+        // After an order to the Operator, a reply that sends the person to Aspetta te for a yes while nothing at all waits
+        // there: the Operator's report named a request that was never made, and Trama says so (issue #597).
+        const waiting = this.operatorTurns.delete(request.id) ? waitingForYou(this.t, document, this.waitingSources(project)).length : null;
+        if (waiting !== null && sendsToEmptyWaitingList(reply, waiting)) {
+          appendEvent(document, "trama", { type: "activity", title: t("main.controller.nothingWaitingTitle"), detail: t("main.controller.nothingWaitingDetail"), tone: "error" }, request.id);
         }
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
@@ -3411,7 +3436,7 @@ export class TramaController {
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
     if (!next) return false;
-    void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId, next.removable, next.step).catch((error) =>
+    void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId, next.removable, next.step, null, [], next.pasted).catch((error) =>
       this.fail(error),
     );
     return true;
@@ -5944,14 +5969,39 @@ export class TramaController {
     };
   }
 
+  /** Trama's own folders and processes, which the Operator's commands never reach (issue #597). */
+  private async tramaPlaces(project: ActiveProjectState): Promise<TramaPlaces> {
+    const self = await (this.host.selfIdentity ?? ownProcessIdentity)();
+    return {
+      data: this.tramaDataFolders(),
+      install: this.host.tramaPlaces?.install ?? [],
+      pids: self.pids,
+      fromSource: this.host.tramaPlaces?.fromSource ?? false,
+      projectIsTrama: holdsTramaCode(project.rootPath, readTextOrNull),
+    };
+  }
+
+  /** Trama's data: its own folder, the old app's, Electron's profile. */
+  private tramaDataFolders(): string[] {
+    return [this.storage.root, ...(this.legacyRoot ? [this.legacyRoot] : []), ...(this.host.tramaPlaces?.data ?? [])];
+  }
+
+  /** The sandbox of the Operator's commands on macOS: Trama's folders hidden, the system's permissions and launch agents kept. */
+  private operatorSandboxPlan(project: ActiveProjectState): SandboxPlan {
+    const system = systemPlaces();
+    const trama = protectedTramaPaths({ data: this.tramaDataFolders(), install: this.host.tramaPlaces?.install ?? [] }, project.rootPath, holdsTramaCode(project.rootPath, readTextOrNull));
+    return { hidden: [...trama, ...system.hidden], readOnly: system.readOnly, open: [project.rootPath] };
+  }
+
   /** The Operator's session as the tool and the person's yes both run commands: the trace, the lock, the lines in the chat. */
-  private operatorSession(project: ActiveProjectState, specialist: Specialist, signal: AbortSignal, requestId: string | null): OperatorSession {
+  private operatorSession(project: ActiveProjectState, specialist: Specialist, signal: AbortSignal, requestId: string | null, calls: OperatorCalls): OperatorSession {
     const document = project.document;
     const agent = specialist.name;
     return {
       gate: this.computerAccess,
-      runner: this.host.commandRunner ?? shellCommandRunner(),
+      runner: this.host.commandRunner ?? shellCommandRunner({ sandbox: () => this.operatorSandboxPlan(project) }),
       lock: this.host.secretLock ?? (this.secretLock ??= new SecretLock()),
+      trama: () => this.tramaPlaces(project),
       agent,
       projectRoot: project.rootPath,
       record: (step) => {
@@ -5960,12 +6010,19 @@ export class TramaController {
         this.changedIn(project);
       },
       stopped: (command, stopper) => {
+        // A ban on Trama itself is no request: no yes lifts it, so nothing goes in Aspetta te; the chat tells the person.
+        if ("ban" in stopper && stopper.ban === "tramaControl") {
+          this.projectNotice(project, t("main.controller.tramaControlStopped", { agent, command: shownCommand(command) }), requestId);
+          return;
+        }
+        calls.wait(command);
         const place = "place" in stopper ? ` (${stopper.place})` : "";
         this.recordFixedBan(project, { type: "fixedBanRefused", itemId: randomUUID(), ban: "ban" in stopper ? stopper.ban : "secrets", action: `${shownCommand(command)}${place}` }, { kind: "operator", specialistId: specialist.id }, requestId);
       },
       askApproval: (command, cwd, reason) => {
         const approval: CommandApproval = { id: randomUUID(), agent, command: command.trim(), cwd, reason, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
         (document.commandApprovals ??= []).push(approval);
+        calls.wait(command);
         appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorWaiting", { agent, command: shownCommand(command) }), detail: null, referenceId: null }, requestId);
         this.changedIn(project);
         return approval;
@@ -5983,6 +6040,7 @@ export class TramaController {
           endedAt: null,
         };
         (document.commandApprovals ??= []).push(approval);
+        calls.wait(label);
         appendEvent(document, "trama", { type: "card", kind: "contextNotice", title: t("main.controller.operatorSendWaiting", { agent, site: label }), detail: null, referenceId: null }, requestId);
         this.changedIn(project);
         return approval;
@@ -5994,10 +6052,18 @@ export class TramaController {
       },
       browser: this.host.browserDriver ?? (this.chrome ??= chromeDebuggingDriver()),
       consents: () => document.siteConsents ?? [],
-      askConsent: (host, address) => this.askSiteConsent(project, agent, host, address, requestId),
+      askConsent: (host, address) => {
+        this.askSiteConsent(project, agent, host, address, requestId);
+        calls.wait(host);
+      },
       screen: this.host.screenDriver ?? (this.screen ??= macScreenDriver(this.host.screenPermissions ?? (() => ({ accessibility: false, screenRecording: false })))),
+      self: this.host.selfIdentity ?? ownProcessIdentity,
+      protectedApp: (app, kind) => this.projectNotice(project, t(`main.controller.screenProtected.${kind}`, { agent, app }), requestId),
       appConsents: () => document.appConsents ?? [],
-      askAppConsent: (app) => this.askAppConsent(project, agent, app, requestId),
+      askAppConsent: (app) => {
+        this.askAppConsent(project, agent, app, requestId);
+        if (!protectedAppName(app)) calls.wait(app);
+      },
       needsPermission: (missing) => this.projectNotice(project, t("main.controller.screenPermissionMissing", { agent, permissions: this.screenPermissionNames(missing) }), requestId),
       passwordFieldStopped: (app) => this.projectNotice(project, t("main.controller.screenPasswordField", { agent, app }), requestId),
       announceSite: (host) => this.projectNotice(project, t("main.controller.operatorOpened", { agent, site: host }), requestId),
@@ -6024,7 +6090,9 @@ export class TramaController {
     let client: AgentRuntime | null = null;
     const limit = this.limitedAsk(abort, () => client);
     const requestId = project.runningRequestId;
-    const base = this.operatorSession(project, specialist, abort.signal, requestId);
+    if (requestId) this.operatorTurns.add(requestId);
+    const calls = new OperatorCalls();
+    const base = this.operatorSession(project, specialist, abort.signal, requestId, calls);
     const session = this.computerAccess.begin({
       id: randomUUID(),
       power: "command",
@@ -6040,7 +6108,6 @@ export class TramaController {
       base.record({ agent, kind: "command", target: order.slice(0, 120), outcome: "refused", detail: null });
       return toolFailure("access_off", "Computer access is off: the person turned it off. Tell them and go on without commands on the Mac.");
     }
-    const calls = new OperatorCalls();
     const toolServer = new CoordinatorToolServer(OPERATOR_TOOLS, (name, args) => runOperatorTool(name, args, base, calls), OPERATOR_TOOL_SERVER_INSTRUCTIONS);
     const choice = runner.chosen?.(specialist) ?? { provider: runner.provider, model: runner.model };
     try {
@@ -6060,10 +6127,10 @@ export class TramaController {
         hostToolsOnly: true,
       });
       const report = await client.runTurn({ threadId: opening.threadId, prompt: operatorPrompt(order), cwd: project.rootPath, model: choice.model, onEvent: limit.listen });
-      return toolSuccess(operatorEnvelope(agent, report.trim(), calls.commands));
+      return toolSuccess(operatorEnvelope(agent, report.trim(), calls.commands, calls.waiting));
     } catch (error) {
       // The time limit ended the session and the command in progress: the report has what ran, with the reason.
-      if (limit.expired) return toolSuccess({ ...operatorEnvelope(agent, limit.partial, calls.commands), ...timeLimitFields(limit.ms) });
+      if (limit.expired) return toolSuccess({ ...operatorEnvelope(agent, limit.partial, calls.commands, calls.waiting), ...timeLimitFields(limit.ms) });
       if (abort.signal.aborted) return toolFailure("stopped", "Computer access was turned off: the Operator stopped. Tell the person and go on without commands on the Mac.");
       return toolFailure("operator_failed", `The Operator could not finish: ${(error as Error).message}`);
     } finally {
@@ -6206,6 +6273,8 @@ export class TramaController {
    */
   private askAppConsent(project: ActiveProjectState, agent: string, app: string, requestId: string | null): void {
     const document = project.document;
+    // Never a request for Trama, the system's permission windows or a password manager (issue #597).
+    if (protectedAppName(app)) return;
     if (document.appConsentRequests?.some((request) => request.status === "waiting" && request.app.toLowerCase() === app.toLowerCase())) return;
     const request: AppConsentRequest = { id: randomUUID(), agent, app, requestId, askedAt: new Date().toISOString(), status: "waiting", endedAt: null };
     (document.appConsentRequests ??= []).push(request);
@@ -6216,6 +6285,10 @@ export class TramaController {
   private grantAppConsent(project: ActiveProjectState, app: string, by: "button" | "composer", phrase: string | null, requestId: string | null): boolean {
     const result = addAppConsent(project.document.appConsents ?? [], { app, by, phrase, id: randomUUID(), at: new Date().toISOString() });
     const name = result.consent?.app ?? app;
+    if (result.problem === "protected") {
+      this.projectNotice(project, t("main.controller.appConsentProtected", { app: name }), requestId);
+      return false;
+    }
     if (result.problem === "duplicate") {
       this.projectNotice(project, t("main.controller.appConsentAlready", { app: name }), requestId);
       return false;
@@ -6275,7 +6348,7 @@ export class TramaController {
     if (!approval || approval.status !== "waiting") throw new DomainError(t("main.controller.commandApprovalNotFound"));
     const specialist = project.document.team.specialists.find((s) => s.role === OPERATOR_ROLE && s.status !== "removed");
     if (!specialist) throw new DomainError(t("main.controller.commandApprovalNotFound"));
-    const session = this.operatorSession(project, specialist, new AbortController().signal, null);
+    const session = this.operatorSession(project, specialist, new AbortController().signal, null, new OperatorCalls());
     if (approval.send) {
       // A send of data: the yes is for this send only, and the switch, the blocked sites, the filter and the consent are asked again.
       approval.status = (await sendApproved({ ...approval.send }, { ...session, role: OPERATOR_ROLE })) ? "done" : "failed";
@@ -9491,6 +9564,8 @@ export class TramaController {
   private readonly turnToolIterations = new Map<string, number>();
   /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
   private readonly turnToolErrors = new Map<string, string[]>();
+  /** The Coordinator's requests whose turn gave the Operator an order: their reply is checked against Aspetta te (issue #597). */
+  private readonly operatorTurns = new Set<string>();
   /** The Activity line of each refused memory write of a turn, in order, until its tool call is reported (issue #305). */
   private readonly turnMemoryRefusals = new Map<string, { line: string; repeated: boolean }[]>();
   /** Projects whose log already has the line about a context reading Trama ignored (issue #305). */

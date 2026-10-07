@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationEvent, ProjectDocument, RequestedAction } from "@shared/domain";
 import { commandBan, type CurrentBranch, MAIN_BRANCHES, needsConfirmation, runnableCommand } from "@shared/fixedBans";
 import { shortId } from "@shared/ids";
+import { ownWords } from "@shared/personWords";
 
 /**
  * The person's written request (issue #422, ADR 0021): when the person writes in the composer to do something, even in
@@ -38,6 +39,11 @@ const normalize = (text: string) =>
 export const isTypedByPerson = (event: ConversationEvent): boolean =>
   event.origin === "person" && event.content.type === "personMessage" && event.content.composer === true;
 
+const ownText = (event: ConversationEvent): string => {
+  const content = event.content as { text: string; pasted?: string[] };
+  return ownWords(content.text, content.pasted ?? []);
+};
+
 /**
  * The newest message the person typed in this project's composer that contains `quote`, written after `after` when
  * given; throws when there is none. The quote is the proof: Trama never takes the Coordinator's word for it.
@@ -49,7 +55,8 @@ export function findPersonRequest(document: Pick<ProjectDocument, "events">, quo
   }
   const found = [...document.events]
     .reverse()
-    .find((event) => isTypedByPerson(event) && (!after || event.createdAt > after) && normalize((event.content as { text: string }).text).includes(wanted));
+    // Only the person's own words: a text they pasted, a quoted line or a block of code is not their request (issue #597).
+    .find((event) => isTypedByPerson(event) && (!after || event.createdAt > after) && normalize(ownText(event)).includes(wanted));
   if (!found) {
     throw new PersonRequestError(
       "not_the_person",

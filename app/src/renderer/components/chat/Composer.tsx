@@ -106,6 +106,8 @@ export function Composer() {
   const [text, setText] = useState(selection.composerDraft);
   const [images, setImages] = useState<DraftImage[]>([]);
   const [pastes, setPastes] = useState<{ id: string; text: string }[]>([]);
+  // Short pastes go in the text as typed; Trama still keeps them apart from the person's own sentence (issue #597).
+  const inlinePastes = useRef<string[]>([]);
   const [dragging, setDragging] = useState(false);
   // Where dragged images land (W17): the seam while they are over the composer.
   const dropSeam = useSeam("fileDrop", { active: dragging, radius: "var(--composer-radius)" });
@@ -260,11 +262,13 @@ export function Composer() {
     // A draft save still pending would write the sent text back as the dialog's draft.
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
+    const pasted = inlinePastes.current.filter((part) => message.includes(part.trim()));
+    inlinePastes.current = [];
     setPastes([]);
     setText("");
     const attached = images.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 }));
     setImages([]);
-    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached, provider: selectedProvider, goalId: goal?.id ?? null });
+    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached, provider: selectedProvider, goalId: goal?.id ?? null, pasted });
   };
 
   return (
@@ -390,7 +394,7 @@ export function Composer() {
                 if (pasted && shouldCollapsePaste(pasted)) {
                   event.preventDefault();
                   setPastes((current) => [...current, { id: crypto.randomUUID(), text: normalizePaste(pasted) }]);
-                }
+                } else if (pasted) inlinePastes.current = [...inlinePastes.current, normalizePaste(pasted)].slice(-20);
               }}
               onKeyDown={(event) => {
                 if (mention && candidates.length) {

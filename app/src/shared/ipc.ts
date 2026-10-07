@@ -39,6 +39,8 @@ export interface ActionMap {
       provider?: ProviderId | null;
       /** The goal the chat was filtered on when the message was sent (U01); absent or null is the whole project. */
       goalId?: string | null;
+      /** What the person pasted in the composer, as it was pasted (issue #597): not their own sentence. */
+      pasted?: string[];
     },
     void,
   ];

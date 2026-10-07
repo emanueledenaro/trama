@@ -1,4 +1,5 @@
 import type { AppConsent } from "./domain";
+import { protectedAppName } from "./protectedApps";
 import { GRANT, MAXIMUM_CONSENTS, NOT_A_YES, quotedPhrase, sentences, WITHDRAW } from "./siteConsents";
 
 /**
@@ -55,11 +56,13 @@ export function appConsentStatements(message: string): AppConsentStatement[] {
 
 /** The consent for an app, or null. A consent covers the app it names and no other. Pure. */
 export function appConsentFor(list: readonly AppConsent[] | undefined, app: string): AppConsent | null {
+  // Trama, the system's permission windows and the password managers have no consent, even one saved before (issue #597).
+  if (protectedAppName(app)) return null;
   const key = appKey(app);
   return list?.find((consent) => appKey(consent.app) === key) ?? null;
 }
 
-export type AppConsentProblem = "invalid" | "duplicate" | "full";
+export type AppConsentProblem = "invalid" | "duplicate" | "full" | "protected";
 
 /** Records a consent. Returns the list, the consent that was added and why nothing was. Pure. */
 export function addAppConsent(
@@ -68,6 +71,7 @@ export function addAppConsent(
 ): { list: AppConsent[]; consent: AppConsent | null; problem: AppConsentProblem | null } {
   const app = appName(input.app);
   if (!app) return { list: [...list], consent: null, problem: "invalid" };
+  if (protectedAppName(app)) return { list: [...list], consent: null, problem: "protected" };
   if (appConsentFor(list, app)) return { list: [...list], consent: null, problem: "duplicate" };
   if (list.length >= MAXIMUM_CONSENTS) return { list: [...list], consent: null, problem: "full" };
   const consent: AppConsent = { id: input.id, app, grantedAt: input.at, by: input.by, phrase: input.phrase };
@@ -76,6 +80,8 @@ export function addAppConsent(
 
 /** The list without the consent for an app, and the consent that was withdrawn. Pure. */
 export function withdrawAppConsent(list: readonly AppConsent[], app: string): { list: AppConsent[]; consent: AppConsent | null } {
-  const consent = appConsentFor(list, app);
+  // Read without the protected-app rule: a consent saved before it must still be possible to withdraw.
+  const name = appKey(app);
+  const consent = list.find((item) => appKey(item.app) === name) ?? null;
   return { list: list.filter((item) => item !== consent), consent };
 }

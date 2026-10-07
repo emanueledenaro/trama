@@ -167,6 +167,8 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   "shared.ban.secrets.reason": "Secrets and credentials stay with the person.",
   "shared.ban.repositorySettings": "Changes to the repository settings",
   "shared.ban.repositorySettings.reason": "The person changes the repository settings.",
+  "shared.ban.tramaControl": "An agent controlling Trama",
+  "shared.ban.tramaControl.reason": "Only you give consents, the mandate and approvals, in Trama's window: no agent uses its window, its data or its process, and no yes unlocks it.",
 
   // Settled cards (issue #271)
   "shared.settled.mandateGranted": "Granted, v{version}",
