@@ -329,6 +329,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       const ordering = text.match(/\[operatore:([^\]]*)\]/);
+      // Issue #461: with the README shots flag a person can ask in plain words, "Apri <address>", and the Operator gets
+      // the order for that address; the reply is a sentence, not a tool result.
+      const plainOpening = readmeShots() ? text.match(/Apri la pagina .*?(https?:\/\/[^\s]+?)\.?(?:\s|$)/) : null;
+      if (plainOpening && toolServers.has(threadId)) {
+        const result = await callTool(threadId, "ask_operator", { order: `chrome:${plainOpening[1]}` });
+        toolDone("ask_operator", result);
+        setTimeout(() => finish("Ho passato la richiesta all'Operatore: per aprire il sito aspetta il tuo consenso."), 10);
+        return;
+      }
       if (ordering && toolServers.has(threadId)) {
         const result = await callTool(threadId, "ask_operator", { order: ordering[1] });
         toolDone("ask_operator", result);

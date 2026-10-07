@@ -15,7 +15,7 @@
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Providers](#providers) · [Status](#status-and-known-limits) · [Contributing](#contributing)
 
-<img src="docs/images/readme/candidate.png" alt="Trama showing a verified candidate with its decisions, check results and diff" width="860">
+<img src="docs/images/readme/candidate.png" alt="Trama showing a candidate that is ready, with its diff, the checks and the reviewers' verdicts" width="860">
 
 <sub>The sample project with a candidate, its linked decision, the check results and the diff Trama captured. Screenshot taken on Linux with the fake Codex server used by the tests.</sub>
 
@@ -52,6 +52,7 @@ Trama puts one **Coordinator** between you and the agents:
 - **A publishing standard.** Trama reads a project's own conventions first (`AGENTS.md`, `CONTRIBUTING.md`, commitlint config, existing branch prefixes) and falls back to Conventional Commits and Conventional Branch. It writes the commit message and branch name itself, and publishes a candidate only when it is verified, the message is valid, no secrets or sensitive files are staged, `git diff --check` is clean, the linked issue exists and no Pact question is still open ([its ADR](docs/adr/0016-conventional-commits-e-standard-di-pubblicazione.md)).
 - **A guided first run, in your language.** Welcome is a tab of the editor, next to the Conversation once a project is open, with four blocks: Start (open, create or clone a project, try the sample, or formulate your first goal), Recent (your last five projects, with phase, blockers and active colleagues), Configure (language first, then provider, GitHub and the AI Hero method, each step skippable and resumable) and Learn (four guided exercises). Without a project Welcome is the only thing in the window; reopen it anytime from the Help menu, the project name or Settings ([#404](https://github.com/emanueledenaro/trama/pull/404)). A brief animated intro plays once, in Welcome's own header, at the very first launch.
 - **Editorial typography, a native feel.** Chat messages, cards and markdown content are set in Newsreader; the interface stays in Inter, code in JetBrains Mono, all three bundled with the app so nothing loads over the network ([verification log](docs/verifiche/tipografia-editoriale-2026-09-28.md)). Panel separators follow VS Code's own sash, no line at rest, a 1px border, the provider's accent only on hover or drag, and the app's own woven-ribbon icon shows on macOS, Windows and Linux, packaged or run from source.
+- **Computer access, under your switch.** Research reads web pages and reports them to the Coordinator as data, never as orders; the Operator runs commands on your Mac with secrets locked, opens sites only with your consent per site, sends data only after a secret check, and asks for your yes on every payment, deletion or command that cannot be undone. A globe icon next to the model picker turns it all on or off (see the screenshot below), and Settings keeps a list of sites no agent may visit ([ADR 0020](docs/adr/0020-accesso-al-computer-fuori-dal-mandato.md)). See the known limits below before turning it on.
 - **Checks Trama runs itself.** `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` and `node_typecheck`, with Node checks in a sandbox that allows only local networking.
 - **Goals with examples.** Outcomes with accepted and rejected examples that tasks, candidates and decisions link to explicitly.
 - **Memory and learning.** The Coordinator keeps notes on you and the project, searches past conversations and maintains the skills it learns.
@@ -70,6 +71,15 @@ Trama puts one **Coordinator** between you and the agents:
   </tr>
 </table>
 
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/readme/computer-access.png" alt="The composer with the globe switch on, and a card in Aspetta te asking for your consent before the Operator opens a site"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Computer access: the globe switch beside the model picker, and a site that waits for your yes.</sub></td>
+  </tr>
+</table>
+
 The app interface follows the language you choose, Italian or English: the choice at first launch and in Settings ([#303](https://github.com/emanueledenaro/trama/pull/303)) now carries through the Coordinator's own process, the shared logic behind cards and Activity, and the whole chat ([#375](https://github.com/emanueledenaro/trama/pull/375), [#365](https://github.com/emanueledenaro/trama/pull/365), [#361](https://github.com/emanueledenaro/trama/pull/361)). A few panels outside those slices still show Italian regardless of the language chosen: the sidebar, the project dialogs, the search palette, the onboarding exercises panel, and some inspector fields such as the Pact's reason field, the goal card's own buttons and the "Aspetta te" title. Most of the documentation in `docs/` is in Italian.
 
 ## Quick start
@@ -84,16 +94,16 @@ The app interface follows the language you choose, Italian or English: the choic
 
 The latest release is on the [Releases page](https://github.com/emanueledenaro/trama/releases/latest).
 
-| Platform | File |
+| Platform | File (`<version>` is the release number, for example `0.4.0`) |
 | --- | --- |
-| macOS Apple Silicon | `Trama-0.2.0-arm64.dmg` |
-| macOS Intel | `Trama-0.2.0-x64.dmg` |
-| Windows | `Trama-0.2.0-x64.exe` (NSIS installer) |
-| Linux | `Trama-0.2.0-x86_64.AppImage` |
+| macOS Apple Silicon | `Trama-<version>-arm64.dmg` |
+| macOS Intel | `Trama-<version>-x64.dmg` |
+| Windows | `Trama-<version>-x64.exe` (NSIS installer) |
+| Linux | `Trama-<version>-x86_64.AppImage` |
 
 Packages are not signed or notarized yet, so the operating system warns you before it lets you run one: macOS Gatekeeper says it cannot verify the developer (right-click the app, Open, or System Settings, Privacy & Security, Open anyway); Windows SmartScreen shows "Windows protected your PC" (More info, then Run anyway); the Linux AppImage carries no signature and needs `chmod +x` before it runs.
 
-Check what you downloaded against the release's `SHA256SUMS.txt`: `sha256sum -c SHA256SUMS.txt --ignore-missing` on Linux, `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` on macOS, `Get-FileHash .\Trama-0.2.0-x64.exe` on Windows, compared by hand against that file's line.
+Check what you downloaded against the release's `SHA256SUMS.txt`: `sha256sum -c SHA256SUMS.txt --ignore-missing` on Linux, `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` on macOS, `Get-FileHash .\Trama-<version>-x64.exe` on Windows, compared by hand against that file's line.
 
 **Or run from source**
 
@@ -145,7 +155,7 @@ The vocabulary (Coordinator, Pact, mandate, candidate, moment, presence, focus m
 
 | Provider | Adapter | Tested with a real account |
 | --- | --- | --- |
-| Codex (ChatGPT) | yes | Live in the Electron app on 26 September with real `gpt-6-luna`: study, team, mandate, assignment contract and a developer's finished worktree. Stopped before a verified candidate, on a bug in `verify_candidate` since fixed ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204), [#211](https://github.com/emanueledenaro/trama/pull/211)); `docs/verifiche` does not yet record a new live run |
+| Codex (ChatGPT) | yes | Live from 2 to 6 October with real `gpt-6.1-sol`: a new project built from an idea, five slices verified, reviewed and merged on a real GitHub repository ([verification log](docs/verifiche/simulazione-sito-gta6-2026-10.md)) |
 | Claude | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Pi | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Cursor, Grok, Devin, OpenCode | yes | No, fake CLIs and servers only |
@@ -207,10 +217,11 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 
 ## Status and known limits
 
-- **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` since fixed ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204), [#211](https://github.com/emanueledenaro/trama/pull/211)); `docs/verifiche` does not yet record a new live run confirming the fix end to end.
+- **End to end.** From 2 to 6 October Trama built a fan site from an idea with real Codex `gpt-6.1-sol` and the real `gh`: it created a private repository, planned seven slices, and verified, reviewed and merged five pull requests there ([verification log](docs/verifiche/simulazione-sito-gta6-2026-10.md)). It still needed the person a few times: to approve interface changes by hand, and to restart work that stopped on bugs since fixed. The full cycle on this repository, with its own CI, is not verified yet ([#601](https://github.com/emanueledenaro/trama/issues/601)).
 - **Candidate gate.** Verified with the fake Codex only, not yet with a real model ([verification log](docs/verifiche/w10-cancello-candidato-2026-09-27.md)). The regression guardian compares the build and test checks the candidate requires, not a suite the assignment did not name. The messages between reviewers and developers are recorded in the developer's work; their own threads come with [#144](https://github.com/emanueledenaro/trama/issues/144).
-- **Pull requests and merges.** Publishing and the merge of a clear-cut candidate are both tested with a fake `gh` only; no real pull request has been opened or merged from the app on GitHub ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)). Recognizing an interface change relies on file paths, so a UI file with an unusual name or path could be missed.
+- **Pull requests and merges.** Opened and merged on GitHub with the real `gh` during the October run ([verification log](docs/verifiche/simulazione-sito-gta6-2026-10.md)); the automated tests still use a fake `gh` ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)). Recognizing an interface change relies on file paths, so a UI file with an unusual name or path could be missed.
 - **Language.** English now covers the Coordinator's own process, the shared logic and the chat ([#303](https://github.com/emanueledenaro/trama/pull/303), [#375](https://github.com/emanueledenaro/trama/pull/375), [#365](https://github.com/emanueledenaro/trama/pull/365), [#361](https://github.com/emanueledenaro/trama/pull/361)); the sidebar, the project dialogs, the search palette, the onboarding exercises panel and a few inspector fields, the Pact's reason field, the goal card's own buttons and the "Aspetta te" title among them, still show Italian regardless of the language chosen.
+- **Computer access.** Until [#597](https://github.com/emanueledenaro/trama/issues/597) is fixed, keep the globe switch off: with an app consent for Trama itself, the Operator could click approvals meant for you. The Operator cannot reach your everyday Chrome (Chrome 136 refuses the debugging port on the default profile), and screen, mouse and keyboard control has not been tried on a real Mac yet.
 - **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox. The Linux `bubblewrap` path is coded but not tested on a real Linux machine.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
 - **Presence.** Verified against a local bare remote and, once, directly against GitHub. A remote other than GitHub or a local folder, and a repository whose CI triggers on any push, are not verified.
