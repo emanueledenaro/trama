@@ -5277,8 +5277,19 @@ if (!(checksAt >= 0 && checksAt < standardsAt && standardsAt < specAt)) throw ne
 const summaryList = focusAudit.getByTestId("focus-audit-summary");
 await summaryList.locator("li").filter({ hasText: /^Standards: 1 rilievo/ }).waitFor();
 await summaryList.locator("li").filter({ hasText: /^Spec: 2 rilievi/ }).waitFor();
-// Its checks pass: focus mode says nothing about the build or the tests failing.
-if (await focusAudit.getByTestId("focus-audit-not-ready").count()) throw new Error("Focus mode: a failing build is announced although the checks pass");
+// The first line follows the real results of the build and test checks: it says what fails, before the status, and says nothing when they pass.
+const failedChecks = await focusAudit.locator('[data-testid="candidate-evidence"][data-result="fail"]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-check")));
+const failedBuild = failedChecks.some((check) => ["swift_build", "node_typecheck"].includes(check));
+const failedTests = failedChecks.some((check) => ["swift_test", "node_test"].includes(check));
+const expectedNotReady = failedBuild && failedTests ? "Non pronto: la build e i test falliscono" : failedBuild ? "Non pronto: la build fallisce" : failedTests ? "Non pronto: i test falliscono" : null;
+const notReadyLine = focusAudit.getByTestId("focus-audit-not-ready");
+if (expectedNotReady) {
+  if ((await notReadyLine.first().innerText()).trim() !== expectedNotReady) throw new Error(`Focus mode: the first line is not "${expectedNotReady}": ${await notReadyLine.first().innerText()}`);
+  const firstLine = await focusAudit.getByTestId("focus-audit-verdict").evaluate((node) => node.firstElementChild?.getAttribute("data-testid"));
+  if (firstLine !== "focus-audit-not-ready") throw new Error(`Focus mode: the build or test failure is not the first line of the verdict: ${firstLine}`);
+} else if (await notReadyLine.count()) {
+  throw new Error("Focus mode: a failing build is announced although the checks pass");
+}
 // F02: each finding shows its proof and its state. Trama reread the Standards line; the stronger model confirmed the
 // serious Spec finding; the minor one, whose command is not one of Trama's checks, stays a hypothesis.
 const auditFinding = (axis, status) => focusAudit.locator(`[data-testid="audit-axis"][data-axis="${axis}"] [data-testid="audit-finding"][data-status="${status}"]`);
