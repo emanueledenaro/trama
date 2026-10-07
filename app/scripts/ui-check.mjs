@@ -4805,7 +4805,7 @@ const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
 await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
-await failedCard.getByText("Verifica non superata").waitFor();
+await failedCard.getByTestId("candidate-verdict").getByText("Verifica non superata").waitFor();
 // UI wave of 30 September: what a candidate is missing comes before its checks, right after who did the work.
 // The conditions are listed once, in the candidate's tab: the card has the verdict line, not the list.
 const missingFirst = await failedCard.evaluate((card) => {
