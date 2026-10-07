@@ -23,6 +23,7 @@ import { asTitle, useRecord } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
 import { AuditSection } from "./AuditView";
 import { CandidateActions } from "./CandidateActions";
+import { candidateVerdict, verdictText } from "./candidateVerdict";
 import { CandidateOverlaps, CHECK_BLOCKERS, CONFLICT_LABEL, DecisionLink, MergeLine, MergeStopField, QualityField, TechnicalReviewField, TestedSeamsField } from "./CandidateFields";
 import { EmptyNote } from "./Inspector";
 
@@ -178,8 +179,8 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
   const squad = specialist ? squadOf(project.document, specialist.id) : null;
   const merged = Boolean(candidate.pullRequest?.mergedAt);
   const superseded = report.state === "superseded";
-  const missing = merged || superseded ? 0 : report.blockers.length;
-  const outcome = merged ? "merged" : superseded ? "superseded" : missing ? "missing" : "ready";
+  const verdict = candidateVerdict(t, candidate, report);
+  const { outcome, count: missing } = verdict;
   const route = report.mergeRoute ?? "person";
   // As in the card: "open" is a candidate with nothing missing, waiting to be merged.
   const open = outcome === "ready";
@@ -193,6 +194,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
   const conflicts = (project.document.conflicts ?? []).filter(
     (a) => a.candidateId === candidate.id && a.classification !== "clean" && !explainedByDivergence(project.document, a) && !otherSideSuperseded(project.document, a),
   );
+  const routeNote = !merged && !superseded && route === "person" ? (report.mergeRouteReason ?? null) : null;
   const OutcomeIcon = outcome === "ready" || outcome === "merged" ? IconCircleCheck : IconCircleDashed;
   return (
     <div data-testid="candidate-detail" data-candidate={candidate.id}>
@@ -213,8 +215,16 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
       <section className="px-4 py-4" data-testid="candidate-to-merge" data-outcome={outcome} aria-label={t("candidate.toMerge")}>
         <p className={cn("flex items-center gap-2 text-ui font-medium", outcome === "ready" || outcome === "merged" ? "text-success" : "text-foreground")} data-testid="candidate-outcome">
           <OutcomeIcon className={cn("size-4 shrink-0", outcome === "missing" || outcome === "superseded" ? "text-muted-foreground" : null)} stroke={1.8} />
-          {outcome === "missing" ? t("candidate.outcome.missing", { count: missing }) : t(`candidate.outcome.${outcome}`)}
+          <span className="min-w-0">
+            <ReferenceText text={verdictText(t, verdict)} />
+          </span>
         </p>
+        {/* Why Trama cannot merge it alone (no GitHub remote, a mandate that does not cover it) comes first, not after the list. */}
+        {routeNote ? (
+          <p className="mt-2 text-ui-sm text-muted-foreground" data-testid="candidate-route-note">
+            {routeNote}
+          </p>
+        ) : null}
         {superseded ? (
           <p className="mt-2 text-ui-sm text-muted-foreground" data-testid="candidate-superseded" data-declared={candidate.supersession ? "coordinator" : undefined}>
             {candidate.supersession ? (
@@ -239,7 +249,7 @@ export function CandidateView({ id, audit, diff }: { id: string; audit?: string;
             ))}
           </ul>
         ) : null}
-        <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={approved} />
+        <MergeLine candidate={candidate} route={route} routeReason={routeNote ? null : (report.mergeRouteReason ?? null)} open={open} approved={approved} />
         {stop && open ? <MergeStopField stop={stop} /> : null}
         <div className="mt-4">
           <CandidateActions candidate={candidate} report={report} repository={project.github.repository} publishable={quality.every((i) => i.passed)} />

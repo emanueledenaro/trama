@@ -85,3 +85,26 @@ export function fixedPointText(t: Translate, audit: FocusAudit): string {
   const ref = audit.fixedPointRef ?? short;
   return ref === short || audit.fixedPoint.startsWith(ref) ? short : `${ref}, ${short}`;
 }
+
+const BUILD_CHECKS: ReadonlySet<string> = new Set(["swift_build", "node_typecheck"]);
+const TEST_CHECKS: ReadonlySet<string> = new Set(["swift_test", "node_test"]);
+
+/**
+ * Whether the build or the tests failed in the checks Trama ran for the examination, by their latest result; null when
+ * neither failed (or has not run yet). It reads recorded evidence only: it never says the work is ready.
+ */
+export function failedBuildOrTests(audit: FocusAudit): "build" | "tests" | "both" | null {
+  const latest = new Map(audit.checks.map((c) => [c.check, c.result] as const));
+  const failed = (names: ReadonlySet<string>) => [...latest].some(([check, result]) => names.has(check) && result === "fail");
+  const build = failed(BUILD_CHECKS);
+  const tests = failed(TEST_CHECKS);
+  return build && tests ? "both" : build ? "build" : tests ? "tests" : null;
+}
+
+/** The skill's one-line summary as a short list: one entry per axis ("Standards: ...", "Spec: ..."). */
+export function summaryLines(summary: string): string[] {
+  return summary
+    .split(/\s+(?=(?:Standards|Spec): )/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}

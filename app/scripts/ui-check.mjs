@@ -3200,10 +3200,10 @@ const candidatePageRules = async (label, { interfaceChange = false, diffOpen = f
     throw new Error(`Candidate page (${label}): ${what}: ${JSON.stringify(facts)}`);
   };
   if (facts.order.some((y) => y === null) || facts.order.some((y, i) => i && y <= facts.order[i - 1])) fail("the parts are not in the order title, outcome, diff, proof, history");
-  if (!/^(Non è ancora pronto: (manca 1 cosa|mancano \d+ cose)|Pronto|Unito|Superato)$/.test(facts.outcome ?? "")) fail("the outcome is not one line of the vocabulary");
-  const outcomeOf = { Pronto: "ready", Unito: "merged", Superato: "superseded" };
+  if (!/^(Non pronto: (manca 1 condizione|mancano \d+ condizioni)\. Da sistemare.+|Pronto( da approvare)?|Unito|Superato)$/.test(facts.outcome ?? "")) fail("the outcome is not one line of the vocabulary");
+  const outcomeOf = { Pronto: "ready", "Pronto da approvare": "ready", Unito: "merged", Superato: "superseded" };
   if (facts.dataOutcome !== (outcomeOf[facts.outcome] ?? "missing")) fail("the outcome and its state disagree");
-  if (/Pronto|Unito|Superato|Non è ancora pronto/.test(facts.header)) fail("a state repeats the outcome in the header");
+  if (/Pronto|Unito|Superato|Non pronto/.test(facts.header)) fail("a state repeats the outcome in the header");
   if (facts.filled) fail("a button is filled");
   if (facts.short.length) fail("a clickable part is under 32 px");
   if (facts.boxes || facts.radius !== "0px") fail("a box sits inside another");
@@ -4807,14 +4807,16 @@ await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().w
 await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
 await failedCard.getByText("Verifica non superata").waitFor();
 // UI wave of 30 September: what a candidate is missing comes before its checks, right after who did the work.
+// The conditions are listed once, in the candidate's tab: the card has the verdict line, not the list.
 const missingFirst = await failedCard.evaluate((card) => {
-  const missing = card.querySelector('[data-testid="candidate-blockers"]');
+  const missing = card.querySelector('[data-testid="candidate-verdict"]');
   const checks = card.querySelector('[data-testid="candidate-evidence"]');
   return Boolean(missing && checks && missing.compareDocumentPosition(checks) & Node.DOCUMENT_POSITION_FOLLOWING);
 });
 if (!missingFirst) throw new Error("What a candidate is missing does not come before its checks");
+if (await failedCard.getByTestId("candidate-blockers").count()) throw new Error("The card lists the conditions the candidate's tab lists");
 // Design rules: the card opens with a verdict line and the person's actions come right after it, before the checks.
-await failedCard.getByTestId("candidate-verdict").getByText(/^Non è ancora pronto: /).waitFor();
+await failedCard.getByTestId("candidate-verdict").getByText(/^Non pronto: /).waitFor();
 const actionsBeforeChecks = await failedCard.evaluate((card) => {
   const verdict = card.querySelector('[data-testid="candidate-verdict"]');
   const actions = card.querySelector(".cta-row");
@@ -4827,7 +4829,10 @@ await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
 await failedOutput.getByText(/trailing whitespace\./).waitFor();
 await failedOutput.getByText(/git -C .* diff --check HEAD/).waitFor();
-if (await failedCard.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("A candidate with a failed check can be approved");
+if (!(await failedCard.getByRole("button", { name: "Approva questo candidato" }).isDisabled())) throw new Error("A candidate with a failed check can be approved");
+// The reason is on hover, in the wrapper of the off button.
+await failedCard.getByTestId("candidate-approve-blocked").hover();
+await page.getByRole("tooltip").getByText(/^Non si può ancora approvare\. Da sistemare per prima: Verifica non superata/).waitFor();
 await failedCard.scrollIntoViewIfNeeded();
 await shot("18b-candidate-check-failed");
 await app.evaluate(({ nativeTheme }) => {
@@ -5212,7 +5217,7 @@ for (const check of ["swift_build", "swift_test"]) {
   await sliceCandidate.locator(`[data-testid="candidate-evidence"][data-check="${check}"][data-result="missing"]`).waitFor();
 }
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).last().waitFor({ timeout: 20_000 });
-if (await sliceCandidate.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("A slice candidate without Trama's checks can be approved");
+if (!(await sliceCandidate.getByRole("button", { name: "Approva questo candidato" }).isDisabled())) throw new Error("A slice candidate without Trama's checks can be approved");
 await sliceCandidate.scrollIntoViewIfNeeded();
 await shot("19a-slice-candidate-seams");
 await app.evaluate(({ nativeTheme }) => {
@@ -5267,7 +5272,12 @@ await specAxis.locator('a[data-reference="slice"][data-reference-id="S1"]').filt
 // The sections of the examination, in order: the verdict's summary names the axes too, so the headings count.
 const [checksAt, standardsAt, specAt] = ["Verifiche reali", "Standards", "Spec"].map((heading) => auditBlocks.findIndex((block) => block.startsWith(heading)));
 if (!(checksAt >= 0 && checksAt < standardsAt && standardsAt < specAt)) throw new Error("Focus mode: the checks are not first, or Standards and Spec are out of order");
-await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rilievo.*Spec: 2 rilievi/).waitFor();
+// The summary is a short list, one entry per axis.
+const summaryList = focusAudit.getByTestId("focus-audit-summary");
+await summaryList.locator("li").filter({ hasText: /^Standards: 1 rilievo/ }).waitFor();
+await summaryList.locator("li").filter({ hasText: /^Spec: 2 rilievi/ }).waitFor();
+// Its checks pass: focus mode says nothing about the build or the tests failing.
+if (await focusAudit.getByTestId("focus-audit-not-ready").count()) throw new Error("Focus mode: a failing build is announced although the checks pass");
 // F02: each finding shows its proof and its state. Trama reread the Standards line; the stronger model confirmed the
 // serious Spec finding; the minor one, whose command is not one of Trama's checks, stays a hypothesis.
 const auditFinding = (axis, status) => focusAudit.locator(`[data-testid="audit-axis"][data-axis="${axis}"] [data-testid="audit-finding"][data-status="${status}"]`);
@@ -8039,9 +8049,9 @@ for (const kind of conflictShots) {
   }
 }
 // The proved case blocks the green light of the newer candidate; the hypothesis next to it does not.
-const blockedCandidate = page.locator('[data-testid="candidate-blockers"]').filter({ hasText: "Incompatibile con un altro lavoro" });
+const blockedCandidate = page.locator('[data-testid="candidate-verdict"]').filter({ hasText: "Incompatibile con un altro lavoro" });
 await blockedCandidate.waitFor({ timeout: 10_000 });
-if ((await blockedCandidate.locator("li").filter({ hasText: "Incompatibile" }).count()) !== 1) throw new Error("Conflicts: the hypothesis blocks the green light too");
+if (!/manca 1 condizione/.test(await blockedCandidate.innerText())) throw new Error("Conflicts: the hypothesis blocks the green light too");
 await blockedCandidate.evaluate((element) => element.scrollIntoView({ block: "center" }));
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
