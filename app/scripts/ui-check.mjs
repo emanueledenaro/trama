@@ -4959,7 +4959,8 @@ await blockedGate.locator('[data-testid="gate-review"][data-role="devops"][data-
 await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i rilievi bloccanti/).waitFor();
 // The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
 await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
-await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
+// The card says it is not ready in its verdict line; the gate above has the reviewers' findings, the tab the full list of conditions.
+await secretCandidate.locator('[data-testid="candidate-verdict"][data-verdict="blocked"]').getByText(/^Non pronto: /).waitFor();
 await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 // Ada is fixing the secret: the blocked candidate is still the work of now.
