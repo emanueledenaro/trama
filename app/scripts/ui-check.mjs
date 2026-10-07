@@ -4832,7 +4832,8 @@ await failedOutput.getByText(/git -C .* diff --check HEAD/).waitFor();
 if (!(await failedCard.getByRole("button", { name: "Approva questo candidato" }).isDisabled())) throw new Error("A candidate with a failed check can be approved");
 // The reason is on hover, in the wrapper of the off button.
 await failedCard.getByTestId("candidate-approve-blocked").hover();
-await page.getByRole("tooltip").getByText(/^Non si può ancora approvare\. Da sistemare per prima: Verifica non superata/).waitFor();
+await page.locator(".translucent-popup").filter({ hasText: /^Non si può ancora approvare\. Da sistemare per prima: Verifica non superata/ }).first().waitFor({ timeout: 5_000 });
+await page.mouse.move(0, 0);
 await failedCard.scrollIntoViewIfNeeded();
 await shot("18b-candidate-check-failed");
 await app.evaluate(({ nativeTheme }) => {
