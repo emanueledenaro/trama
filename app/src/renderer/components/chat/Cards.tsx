@@ -84,6 +84,8 @@ import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
 import { CandidateOverlaps, CHECK_BLOCKERS, CONFLICT_LABEL, MergeLine, MergeStopField, QUALITY_LABEL, TestedSeamsField } from "@/components/inspector/CandidateFields";
+import { ApproveCandidateButton } from "@/components/inspector/ApproveCandidateButton";
+import { candidateVerdict, verdictText } from "@/components/inspector/candidateVerdict";
 
 export function CardFrame({
   icon,
@@ -1557,10 +1559,12 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       ))}
     </ul>
   );
-  const blocked = report.blockers.length > 0 && report.state !== "superseded";
+  const verdict = candidateVerdict(t, candidate, report);
+  // The box follows the verdict: a merged or superseded candidate is never drawn as blocked.
+  const blocked = verdict.outcome === "missing";
   // In the chat and in Aspetta te the first thing to read is the verdict: one line that says whether the work is
-  // ready and, when it is not, how much is missing (docs/agents/design-rules.md). The candidate's tab keeps its own
-  // "what is missing to merge it" heading, so it shows the list alone.
+  // ready and, when it is not, how many conditions are missing and which one to fix first. The conditions themselves
+  // are listed once, in the candidate's tab, which the line links to (docs/agents/design-rules.md).
   const blockersField =
     blocked && layout === "detail" ? (
       <Field label={t("chat.card.candidate.missing")}>{blockerList}</Field>
@@ -1568,14 +1572,25 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       <div className="mt-2 flex flex-col gap-2 rounded-lg bg-destructive/10 px-4 py-2" data-testid="candidate-verdict" data-verdict="blocked">
         <p className="flex items-start gap-2 text-ui font-medium text-destructive">
           <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
-          <span>{t("chat.card.candidate.verdict.blocked", { count: report.blockers.length })}</span>
+          <span>
+            <ReferenceText text={verdictText(t, verdict)} />
+          </span>
         </p>
-        {blockerList}
+        {verdict.count > 1 ? (
+          <button
+            type="button"
+            className="self-start text-ui-sm text-[var(--color-text-accent)] hover:underline"
+            data-testid="candidate-conditions-link"
+            onClick={() => setInspector({ kind: "candidate", id: candidate.id })}
+          >
+            {t("candidate.conditions.open")}
+          </button>
+        ) : null}
       </div>
     ) : layout === "card" && open ? (
       <p className="mt-2 flex items-start gap-2 rounded-lg bg-success/10 px-4 py-2 text-ui font-medium text-success" data-testid="candidate-verdict" data-verdict="ready">
         <IconCircleCheck className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
-        <span>{t("chat.card.candidate.verdict.ready")}</span>
+        <span>{verdictText(t, verdict)}</span>
       </p>
     ) : null;
   const otherWork = (
@@ -1617,14 +1632,21 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
       ) : null}
     </>
   );
+  // Why Trama cannot merge it alone (no GitHub remote, a mandate that does not cover it) sits right under the verdict.
+  const routeNote = !merged && report.state !== "superseded" && route === "person" ? (report.mergeRouteReason ?? null) : null;
   const mergeLines = (
     <>
+      {routeNote ? (
+        <p className="mt-2 text-ui-sm text-muted-foreground" data-testid="candidate-route-note">
+          {routeNote}
+        </p>
+      ) : null}
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}
         </p>
       ) : null}
-      <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
+      <MergeLine candidate={candidate} route={route} routeReason={routeNote ? null : (report.mergeRouteReason ?? null)} open={open} approved={Boolean(approved)} />
       {stop && open ? <MergeStopField stop={stop} /> : null}
       {candidate.pullRequest ? (
         <button
@@ -1654,10 +1676,8 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
             onClick={() => void examineCandidate(candidateId)}
           />
         )}
-        {route === "person" && report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
-          <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
-            {t("chat.card.candidate.approve")}
-          </Button>
+        {route === "person" && !approved && report.state !== "superseded" && (report.blockers.length === 0 || !merged) ? (
+          <ApproveCandidateButton candidateId={candidateId} report={report} size="sm" />
         ) : null}
         {decidable && !rejecting ? (
           <>

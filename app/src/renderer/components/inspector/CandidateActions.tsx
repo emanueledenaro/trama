@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/field";
 import { useT } from "@/lib/i18n";
 import { act } from "@/lib/store";
+import { ApproveCandidateButton } from "./ApproveCandidateButton";
 import { MergeStopActions } from "./CandidateFields";
 
 /**
@@ -36,7 +37,9 @@ export function CandidateActions({
   // An interface candidate waits for the person's ok; a destructive change the Coordinator stopped waits for their choice.
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
   const stop = candidate.merge?.status === "stopped" ? (candidate.merge.stop ?? null) : null;
-  const canApprove = route === "person" && report.blockers.length === 0 && !approved && !superseded;
+  const merged = Boolean(candidate.pullRequest?.mergedAt);
+  // The button shows while conditions are missing too, off, with the reason on hover; a merged candidate has nothing to approve.
+  const canApprove = route === "person" && !approved && !superseded && (report.blockers.length === 0 || !merged);
   const canPrepare = route === "person" && approved && publishable && !superseded && !candidate.pullRequest && Boolean(repository) && !preview;
   const stopped = Boolean(stop && open && !approved);
   if (!canApprove && !decidable && !stopped && !canPrepare && !preview) return null;
@@ -45,9 +48,7 @@ export function CandidateActions({
       {decidable && rejecting ? null : (
         <div className="cta-row" data-testid="candidate-actions">
           {canApprove ? (
-            <Button variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
-              {t("chat.card.candidate.approve")}
-            </Button>
+            <ApproveCandidateButton candidateId={candidateId} report={report} />
           ) : null}
           {decidable ? (
             <>

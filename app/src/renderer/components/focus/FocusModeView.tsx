@@ -2,7 +2,7 @@ import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocu
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
-import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, failedBuildOrTests, findingStatusText, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary, summaryLines } from "@shared/findings";
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
@@ -319,12 +319,20 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
  * The verdict in one line, on top: how the examination went and how many findings, then its summary. It is what the
  * person reads first; the columns below are for the long reading.
  */
-function Verdict({ audit, running }: { audit: FocusAudit; running: boolean }) {
+export function Verdict({ audit, running }: { audit: FocusAudit; running: boolean }) {
   const t = useT();
   const total = auditFindings(audit).length;
   const failed = audit.status === "failed";
+  // A build or tests that fail come first, before how the examination went and before the findings.
+  const notReady = failedBuildOrTests(audit);
   return (
     <section className="chat-surface-divider shrink-0 space-y-1 px-4 py-2" aria-label={t("focus.verdict")} data-testid="focus-audit-verdict">
+      {notReady ? (
+        <p className="flex items-center gap-2 text-ui font-medium text-destructive" data-testid="focus-audit-not-ready" data-failed={notReady} role="alert">
+          <IconCircleX className="size-4 shrink-0" stroke={1.8} />
+          {t(`focus.notReady.${notReady}`)}
+        </p>
+      ) : null}
       <p className={cn("flex flex-wrap items-center gap-2 text-ui", failed ? "text-destructive" : "text-foreground")} data-testid="focus-audit-status">
         {running ? <Spinner /> : null}
         <span className="font-medium">{t(STATUS_TEXT[audit.status])}</span>
@@ -347,9 +355,11 @@ function Verdict({ audit, running }: { audit: FocusAudit; running: boolean }) {
         </p>
       ) : null}
       {audit.summary ? (
-        <p className="text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
-          {plainText(t, audit.summary)}
-        </p>
+        <ul className="list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/85" data-testid="focus-audit-summary">
+          {summaryLines(audit.summary).map((line) => (
+            <li key={line}>{plainText(t, line)}</li>
+          ))}
+        </ul>
       ) : null}
     </section>
   );
