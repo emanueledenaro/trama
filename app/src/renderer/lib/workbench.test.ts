@@ -16,6 +16,7 @@ import {
   PANEL_MIN_HEIGHT,
   SIDE_BAR_MIN_WIDTH,
   TAB_LABELS,
+  VIEW_HINTS,
   VIEW_LABELS,
   VIEW_OF,
   VIEW_TABS,
@@ -214,5 +215,23 @@ describe("editor tabs (issue #336)", () => {
     expect(fitPanels(1500, null, 900).sideBar).toBe(0);
     expect(fitPanels(1500, null, 900).detail).toBe(900);
     expect(fitPanels(1066, 720, null)).toEqual({ sideBar: 1066 - 48 - 420, detail: 0 });
+  });
+});
+
+describe("what each icon of the activity bar says (names and hints)", () => {
+  it("gives every view a name and a sentence that says what it opens, in both languages", () => {
+    for (const catalog of [italian, en]) {
+      for (const view of Object.keys(VIEW_LABELS) as (keyof typeof VIEW_LABELS)[]) {
+        expect(catalog[VIEW_LABELS[view]]?.trim(), `${view} name`).toBeTruthy();
+        expect(catalog[VIEW_HINTS[view]]?.trim(), `${view} hint`).toBeTruthy();
+      }
+    }
+  });
+
+  it("says what the shield and the brain open", () => {
+    expect(italian[VIEW_HINTS.rules]).toMatch(/mandato.*Patto|Patto.*mandato/);
+    expect(italian[VIEW_HINTS.memory]).toMatch(/note/);
+    expect(en[VIEW_HINTS.rules]).toMatch(/mandate/i);
+    expect(en[VIEW_HINTS.memory]).toMatch(/notes/);
   });
 });

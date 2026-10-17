@@ -143,6 +143,9 @@ describe("shared texts in English (issue #301)", () => {
     expect(formatDuration(en, 3 * 24 * 60)).toBe("3 days");
     expect(formatMs(it, 2_500)).toBe("2,5 s");
     expect(formatMs(en, 2_500)).toBe("2.5 s");
+    expect(formatMs(it, 59_600)).toBe("1 min");
+    expect(formatMs(it, 119_600)).toBe("2 min");
+    expect(formatMs(it, 65_000)).toBe("1 min 5 s");
     const reading = { state: "near" as const, percent: 75, usedTokens: 12_000, contextWindow: 16_000 };
     expect(contextMeterLines(en, reading).usage).toBe("75% used, 12,000 of 16,000 tokens");
     expect(contextMeterLines(it, reading).usage).toBe("75% usato, 12.000 su 16.000 token");

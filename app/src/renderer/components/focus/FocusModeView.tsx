@@ -1,3 +1,4 @@
+import { Term } from "@/components/Term";
 import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2, IconRotateClockwise, IconX } from "@/components/icons";
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
@@ -6,6 +7,7 @@ import { auditFindings, auditLenses, evidenceLabel, findingStatusText, findingTa
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { ReferenceText } from "@/components/chat/ReferenceText";
 import { examineAgain, FindingActions, FollowUpLine, isRunning, STATUS_TEXT, STATUS_TONE } from "@/components/inspector/AuditView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -16,6 +18,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
+import { plainSmellNames } from "@shared/smellNames";
 
 type StepState = "done" | "running" | "waiting" | "failed" | "skipped";
 
@@ -89,7 +92,7 @@ function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
       {(["standards", "spec"] as const).map((name) => (
         <Step key={name} state={axisState(audit[name])} title={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
           <p className={cn("text-ui-sm", audit[name].status === "failed" ? "text-destructive" : "text-muted-foreground")}>{axisNote(audit[name], t)}</p>
-          {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{t("focus.specSource", { source: audit.specSource })}</p> : null}
+          {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground"><ReferenceText text={t("focus.specSource", { source: audit.specSource })} /></p> : null}
         </Step>
       ))}
       {lenses.length ? (
@@ -128,7 +131,7 @@ function FindingButton({ finding, auditId, actionable, selected, onSelect }: { f
         <span className="flex flex-wrap items-center gap-1.5">
           <Badge tone={STATUS_TONE[finding.status]}>{findingStatusText(t, finding.status)}</Badge>
           {finding.severity === "serious" ? <Badge tone="destructive">{t("focus.serious")}</Badge> : null}
-          <span className="text-ui text-foreground">{finding.title}</span>
+          <span className="text-ui text-foreground">{plainSmellNames(t, finding.title)}</span>
         </span>
         <span className="block text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
           {withNodes(t("focus.evidence"), {
@@ -240,7 +243,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
         <section key={name} data-testid="audit-axis" data-axis={name} data-status={audit[name].status} aria-label={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
           <div className="mb-2 flex items-center gap-2">
             <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{AXIS_TITLE[name]}</h3>
-            {name === "spec" && audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
+            {name === "spec" && audit.specSource ? <Badge tone="outline"><ReferenceText text={audit.specSource} links={false} /></Badge> : null}
           </div>
           <ReviewBody audit={audit} review={audit[name]} reportLabel={t("focus.axis.report", { axis: AXIS_TITLE[name] })} selected={selected} onSelect={onSelect} />
         </section>
@@ -248,7 +251,9 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
       {lenses.length ? (
         <section aria-label={t("audit.lenses.title")}>
           <div className="mb-2 flex items-center gap-2">
-            <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.lenses.title")}</h3>
+            <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">
+              <Term term="lenses">{t("audit.lenses.title")}</Term>
+            </h3>
             <Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>
           </div>
           <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
@@ -279,7 +284,7 @@ function Proof({ finding }: { finding: AuditFinding | null }) {
   return (
     <div className="space-y-4" data-testid="focus-proof" data-finding={finding.id}>
       {/* The state and the gravity of the finding stay in its row on the left: not repeated here. */}
-      <p className="text-ui font-medium text-foreground">{finding.title}</p>
+      <p className="text-ui font-medium text-foreground">{plainSmellNames(t, finding.title)}</p>
       <div>
         <h4 className="text-ui-sm font-medium text-muted-foreground">{t("focus.proof.title")}</h4>
         {!evidence ? (
@@ -410,7 +415,9 @@ export function FocusModeView() {
         <div className="flex min-w-[12rem] flex-1 items-center gap-2">
           <IconFocus2 className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
           <h1 className="min-w-0 truncate font-system-ui text-ui text-foreground" data-testid="focus-mode-title">
-            <span className="font-medium">{t("focus.title")}</span> <span className="text-muted-foreground">{focusTargetOf(t, audit.target, assignment?.objective)}</span>
+            <span className="font-medium">
+              <Term term="deepReview">{t("focus.title")}</Term>
+            </span> <span className="text-muted-foreground">{focusTargetOf(t, audit.target, assignment?.objective)}</span>
           </h1>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-4">

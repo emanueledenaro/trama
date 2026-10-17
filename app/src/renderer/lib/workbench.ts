@@ -22,6 +22,16 @@ export const VIEW_LABELS: Record<SideBarView, MessageKey> = {
   memory: "workbench.view.memory",
 };
 
+/** What each view of the activity bar opens, in one sentence: shown under its name on hover. */
+export const VIEW_HINTS: Record<SideBarView, MessageKey> = {
+  projects: "workbench.hint.projects",
+  waiting: "glossary.waiting.hint",
+  work: "workbench.hint.work",
+  teams: "workbench.hint.teams",
+  rules: "workbench.hint.rules",
+  memory: "workbench.hint.memory",
+};
+
 /** Where each panel of today opens: the view of the activity bar closest to it (issue #330). */
 export const VIEW_OF: Record<TargetKind, Exclude<SideBarView, "projects">> = {
   waiting: "waiting",

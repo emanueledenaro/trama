@@ -6,6 +6,7 @@ import { type Discussion, type DiscussionState, discussionState, isDiscussion, m
 import type { MessageKey, Translate } from "@shared/i18n";
 import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { TramaMark } from "@/components/brand/TramaMark";
+import { ReferenceText } from "@/components/chat/ReferenceText";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
@@ -217,7 +218,8 @@ function MessageRow({ message, specialists, discussion }: { message: AgentThread
         {agent ? <AgentTag agent={agent} className="shrink-0" /> : null}
         <span className="ml-auto shrink-0 text-ui-xs text-muted-foreground">{formatDate(message.at)}</span>
       </div>
-      <p className="content-text mt-1 whitespace-pre-wrap text-foreground/90">{messageText(t, message, discussion)}</p>
+      <p className="content-text mt-1 whitespace-pre-wrap text-foreground/90"><ReferenceText text={messageText(t, message, discussion)} />
+      </p>
       {message.proposal ? (
         <p className="mt-1.5 rounded-lg border border-[color:var(--app-surface-divider)] px-2 py-1 text-ui-sm text-foreground" data-testid="discussion-proposal">
           <span className="text-muted-foreground">{t("discussion.proposal")}</span>

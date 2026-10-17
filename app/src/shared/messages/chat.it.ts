@@ -343,6 +343,8 @@ export const chatIt = {
   "chat.workSteps.coordinatorRunning": "Il Coordinatore sta lavorando",
   "chat.workSteps.specialistWorked": "{who}ha lavorato per {duration}",
   "chat.workSteps.worked": "Ha lavorato per {duration}",
+  "chat.workSteps.workedShort": "Ha lavorato",
+  "chat.workSteps.specialistWorkedShort": "{who}ha lavorato",
   "chat.workSteps.specialistActivity": "{who}attività",
   "chat.workSteps.activity": "Attività",
 

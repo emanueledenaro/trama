@@ -1,3 +1,4 @@
+import { Glossed } from "@/components/Term";
 import { IconHourglass, IconRosetteDiscountCheck } from "@/components/icons";
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import { useWaiting } from "@/components/WaitingView";
@@ -64,7 +65,7 @@ export function VerifiedCandidates() {
     >
       <h3 className="flex items-center gap-1.5 px-3 pb-1 text-ui-sm font-medium text-[var(--color-text-accent)]">
         <IconRosetteDiscountCheck className="size-3.5 shrink-0" stroke={1.8} />
-        {t("work.verified.title", { count: verified.length })}
+        <Glossed term="candidate">{t("work.verified.title", { count: verified.length })}</Glossed>
       </h3>
       <div className="flex flex-col gap-0.5 px-1">
         {verified.map((candidate) => {

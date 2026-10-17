@@ -34,6 +34,20 @@ La stessa tabella sta in `app/src/shared/plainLanguage.ts`. Un test controlla ch
 
 Nei testi per la persona un lavoro si chiama per nome: lo sviluppatore, la fetta, l'obiettivo. L'id che Trama registra (per esempio `A-1B2C3D4E`) resta disponibile al passaggio del mouse sul nome, che è anche un collegamento a quello che nomina.
 
+Se il lavoro nominato non esiste più, il testo dice "non più disponibile" e l'id resta solo al passaggio del mouse. Un test (`app/src/shared/visibleText.test.ts`) controlla i testi dei cataloghi, e `ui-check` controlla il testo di ogni schermata: un id interno visibile li fa fallire.
+
+## Durate
+
+Le durate si mostrano in secondi o in minuti ("2,5 s", "1 min 5 s"). Sotto un secondo non si mostrano: nessuna durata in millisecondi.
+
+## Definizioni al passaggio del mouse
+
+Otto parole hanno una definizione di una frase, che compare al passaggio del mouse o con la tastiera, dove la parola compare per la prima volta in una vista: Patto, mandato, candidato, fetta, via libera, lenti di Trama, esame approfondito, Aspetta te. Il componente è `Term` (`app/src/renderer/components/Term.tsx`). Le frasi stanno nei cataloghi in italiano e in inglese (`glossary.*`) e riscrivono le definizioni di `CONTEXT.md`, la fonte unica del vocabolario. I nomi sono quelli della tabella di `CONTEXT.md`: un test controlla che coincidano.
+
+## Nomi inglesi dei difetti del codice
+
+I rilievi dell'esame approfondito possono citare i difetti del codice con il nome inglese del catalogo di Fowler, per esempio "Mysterious Name". Con l'interfaccia in italiano Trama lo mostra nella lingua della persona ("Nome poco chiaro"). I nomi stanno nei cataloghi (`smell.*`).
+
 ## Codici tecnici
 
 I codici che Trama usa internamente, come `WORKTREE_CONFLICT` o `GATE_BLOCKED`, non arrivano alla persona: la scheda dice cosa significano in una frase. Lo stesso vale per le frasi fisse delle skill in inglese, come "no spec available", che la persona legge come "Nessun piano da confrontare", e per il percorso completo di una skill, che diventa il suo nome.

@@ -149,11 +149,15 @@ describe("timeline", () => {
     expect(rows[2]).toMatchObject({ references: ["src/app/main.ts"] });
   });
 
-  it("formats durations like the Swift app", () => {
-    expect(formatDuration(t, 450)).toBe("450 ms");
+  it("formats durations in seconds and minutes, and leaves out less than a second", () => {
+    expect(formatDuration(t, 450)).toBeNull();
+    expect(formatDuration(t, 999)).toBeNull();
+    expect(formatDuration(t, 1_000)).toBe("1,0 s");
     expect(formatDuration(t, 2_500)).toBe("2,5 s");
     expect(formatDuration(t, 12_000)).toBe("12 s");
-    expect(formatDuration(t, 65_000)).toBe("1m 5s");
+    expect(formatDuration(t, 65_000)).toBe("1 min 5 s");
+    expect(formatDuration(t, 120_000)).toBe("2 min");
+    expect(formatDuration(translator("en"), 2_500)).toBe("2.5 s");
   });
 });
 

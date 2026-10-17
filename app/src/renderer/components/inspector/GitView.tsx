@@ -1,3 +1,4 @@
+import { RecordLabel } from "@/components/chat/ReferenceText";
 import { IconExternalLink } from "@/components/icons";
 import type { ActiveProjectState } from "@shared/domain";
 import { Button } from "@/components/ui/button";
@@ -94,7 +95,7 @@ export function PullRequestView({ number }: { number: number }) {
         ) : null}
         {candidate ? (
           <Row label="Candidato">
-            <Go onClick={() => openReference({ kind: "candidate", id: candidate.id })}>{candidate.id}</Go>
+            <Go onClick={() => openReference({ kind: "candidate", id: candidate.id })}><RecordLabel id={candidate.id} /></Go>
           </Row>
         ) : null}
         {!pr && !candidate ? <EmptyNote>GitHub non ha ancora dato i dettagli di questa pull request a Trama.</EmptyNote> : null}
@@ -122,7 +123,7 @@ export function CommitView({ sha }: { sha: string }) {
       <InspectorSection title="Dove compare">
         {candidates.map((candidate) => (
           <Row key={candidate.id} label="Base di">
-            <Go onClick={() => openReference({ kind: "candidate", id: candidate.id })}>{candidate.id}</Go>
+            <Go onClick={() => openReference({ kind: "candidate", id: candidate.id })}><RecordLabel id={candidate.id} /></Go>
           </Row>
         ))}
         {branches.map((branch) => (
@@ -182,7 +183,7 @@ export function BranchView({ name }: { name: string }) {
         ))}
         {candidates.map((candidate) => (
           <Row key={candidate.id} label="Candidato">
-            <Go onClick={() => openReference({ kind: "candidate", id: candidate.id })}>{candidate.id}</Go>
+            <Go onClick={() => openReference({ kind: "candidate", id: candidate.id })}><RecordLabel id={candidate.id} /></Go>
           </Row>
         ))}
         {!remote && !pulls.length && !work.length && !candidates.length ? <EmptyNote>Trama non collega questo branch a un incarico o a una PR.</EmptyNote> : null}

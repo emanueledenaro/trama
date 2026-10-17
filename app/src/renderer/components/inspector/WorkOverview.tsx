@@ -1,3 +1,5 @@
+import type { InterfaceTerm } from "@shared/interfaceTerms";
+import { Glossed } from "@/components/Term";
 import {
   IconAlertTriangle,
   IconChevronDown,
@@ -78,6 +80,7 @@ function IconAction({ label, onClick, children, pressed }: { label: string; onCl
 function Section({
   id,
   title,
+  term,
   count,
   actions,
   open,
@@ -86,6 +89,8 @@ function Section({
 }: {
   id: WorkSection;
   title: string;
+  /** The word of the title that has a definition on hover. */
+  term?: InterfaceTerm;
   count?: number | null;
   actions?: React.ReactNode;
   open: boolean;
@@ -104,7 +109,15 @@ function Section({
           onClick={onToggle}
         >
           {open ? <IconChevronDown className="size-3.5 shrink-0" stroke={1.8} /> : <IconChevronRight className="size-3.5 shrink-0" stroke={1.8} />}
-          <h3 className="min-w-0 truncate">{title}</h3>
+          <h3 className="min-w-0 truncate">
+            {term ? (
+              <Glossed term={term} inControl>
+                {title}
+              </Glossed>
+            ) : (
+              title
+            )}
+          </h3>
           {count != null ? <span className="shrink-0 text-ui-xs font-normal tabular-nums text-muted-foreground/70">{count}</span> : null}
         </button>
         {actions ? <div className="flex shrink-0 items-center gap-0.5">{actions}</div> : null}
@@ -167,7 +180,9 @@ function Summary({ slices, planTitle, onShow }: { slices: SliceRow[]; planTitle:
       ) : null}
       {slices.length ? (
         <p className="mt-1.5 truncate text-ui-sm text-muted-foreground" data-testid="work-slice-progress">
-          <span className="text-foreground/90">{t("work.status.slices", { done: groups.done.length, total: slices.length })}</span>
+          <span className="text-foreground/90">
+            <Glossed term="slice">{t("work.status.slices", { done: groups.done.length, total: slices.length })}</Glossed>
+          </span>
           {groups.active.length ? (
             <>
               <Sep />
@@ -609,7 +624,7 @@ function ProblemBacklog() {
               <Badge tone="secondary">{t("issues.backlog.onlyTrama")}</Badge>
             )}
           </div>
-          <p className="mt-0.5 text-ui-xs text-muted-foreground">{problem.evidence.label}</p>
+          <p className="mt-0.5 text-ui-xs text-muted-foreground" title={problem.id}>{problem.evidence.label.replace(TRAILING_ID, "")}</p>
           {problem.placement ? (
             <p className="mt-1 text-ui-sm text-muted-foreground">
               <ReferenceText text={problem.placement.reason} />
@@ -620,6 +635,9 @@ function ProblemBacklog() {
     </ul>
   );
 }
+
+/** The evidence label ends with the id of the record it came from, in parentheses: the id stays on hover, not in the text. */
+const TRAILING_ID = / \((?:DQ|DM|AT|PR|[ACDEFGMPQRST])-[0-9A-F]{8}\)$/;
 
 const ISSUES_SHOWN = 6;
 
@@ -812,6 +830,7 @@ export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; 
       <VerifiedCandidates />
       <Section
         id="slices"
+        term="slice"
         title={planTitle ? t("work.slices.titleOf", { plan: planTitle }) : t("work.slices.title")}
         count={slices.length || null}
         open={!closed.has("slices")}
@@ -835,6 +854,7 @@ export function WorkOverview({ focus, backlog = false }: { focus?: WorkSection; 
       </Section>
       <Section
         id="candidates"
+        term="candidate"
         title={t("work.candidates.title")}
         count={listedCandidates || null}
         open={!closed.has("candidates")}

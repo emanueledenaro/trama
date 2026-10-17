@@ -219,6 +219,12 @@ export function buildReferenceIndex(t: Translate, { document, modules, github }:
   for (const request of document.decisionRequests) {
     index.ids.set(request.id, make({ kind: "question", id: request.id }, request.id, t("shared.reference.question"), `«${clip(request.question, 48)}»`, clip(request.question, 160)));
   }
+  // A developer's question is named like a Pact card: by its words, never by its id.
+  for (const { assignment } of assignments) {
+    for (const question of assignment.questions ?? []) {
+      index.ids.set(question.id, make({ kind: "question", id: question.id }, question.id, t("shared.reference.question"), `«${clip(question.question, 48)}»`, clip(question.question, 160)));
+    }
+  }
   for (const request of document.mandateRequests) {
     const date = asked.format(new Date(`${request.askedAt.slice(0, 10)}T00:00:00Z`));
     index.ids.set(request.id, make({ kind: "mandate", id: request.id }, request.id, t("shared.reference.mandate"), t("shared.reference.mandateAsked", { date }), clip(request.reason, 160)));
@@ -447,6 +453,23 @@ export function referenceText(reference: Reference, written: string, before: str
 /** The hover of a reference: the id Trama records and what it names. */
 export function referenceTitle(reference: Reference): string {
   return reference.detail ? `${reference.id}: ${reference.detail}` : reference.id;
+}
+
+/** What the person reads in place of an id that names nothing of the project: the id stays on hover only. */
+export const unknownReferenceText = (t: Translate): string => t("reference.unknown");
+
+/** The hover of an id that looks like one of Trama's and names nothing of the project. */
+export const unknownReferenceTitle = (t: Translate, id: string): string => t("reference.unknown.hover", { id });
+
+/** A text as the person reads it: each reference by its name, each id that names nothing by neutral words, never by the id. */
+export function readableReferences(t: Translate, text: string, index: ReferenceIndex): string {
+  let written = "";
+  let readable = "";
+  for (const part of splitReferences(text, index)) {
+    readable += "reference" in part ? referenceText(part.reference, part.text, written) : "unknown" in part ? unknownReferenceText(t) : part.text;
+    written += part.text;
+  }
+  return readable;
 }
 
 /** The ids `text` cites that look like Trama's and name nothing of this project, once each (issue #277). */

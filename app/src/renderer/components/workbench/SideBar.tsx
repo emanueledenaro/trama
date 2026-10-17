@@ -1,3 +1,5 @@
+import { Glossed, Term } from "@/components/Term";
+import type { InterfaceTerm } from "@shared/interfaceTerms";
 import { IconArrowNarrowLeft, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@/components/icons";
 import { InspectorBody, InspectorTitle, targetTitle } from "@/components/inspector/Inspector";
 import { ProjectsView } from "@/components/sidebar/Sidebar";
@@ -25,6 +27,9 @@ export interface SideBarWidth {
  * the slices B02-B08 build the new views, a view lists the panels of today as tabs; a detail (a module, a candidate,
  * a person of the team) opens in the same place with a way back.
  */
+/** The tabs that name a word with a definition. */
+const TAB_TERMS: Partial<Record<TargetKind, InterfaceTerm>> = { mandate: "mandate", pact: "pact", candidate: "candidate" };
+
 export function SideBar({ size }: { size: SideBarWidth }) {
   const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
@@ -79,7 +84,7 @@ export function SideBar({ size }: { size: SideBarWidth }) {
           <InspectorTitle target={target} />
         ) : (
           <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui font-medium text-foreground" data-testid="side-bar-title">
-            {viewName}
+            {view === "waiting" ? <Term term="waiting" /> : viewName}
           </h2>
         )}
         <Tooltip label={isWide ? t("workbench.sideBar.normalWidth") : t("workbench.sideBar.widen")}>
@@ -132,7 +137,13 @@ export function SideBar({ size }: { size: SideBarWidth }) {
                   )}
                   onClick={() => setInspector({ kind } as InspectorTarget)}
                 >
-                  {t(TAB_LABELS[kind]!)}
+                  {TAB_TERMS[kind] ? (
+                    <Glossed term={TAB_TERMS[kind]!} inControl>
+                      {t(TAB_LABELS[kind]!)}
+                    </Glossed>
+                  ) : (
+                    t(TAB_LABELS[kind]!)
+                  )}
                   {count ? <span className="ml-1.5 tabular-nums text-muted-foreground">{count}</span> : null}
                 </button>
               );

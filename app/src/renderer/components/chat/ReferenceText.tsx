@@ -1,6 +1,16 @@
 import { plainText } from "@shared/plainLanguage";
-import { leadingPunctuation, lookupReference, type Reference, type ReferenceIndex, referenceText, referenceTitle, splitReferences } from "@shared/references";
-import { unknownReferenceTitle } from "@/lib/remarkReferences";
+import type { Translate } from "@shared/i18n";
+import {
+  leadingPunctuation,
+  lookupReference,
+  type Reference,
+  type ReferenceIndex,
+  referenceText,
+  referenceTitle,
+  splitReferences,
+  unknownReferenceText,
+  unknownReferenceTitle,
+} from "@shared/references";
 import { openReference, useRecord, useReferenceIndex } from "@/lib/references";
 import { useT } from "@/lib/i18n";
 
@@ -32,7 +42,7 @@ function ReferenceName({ reference, children }: { reference: Reference; children
 }
 
 /** A stretch of plain text with its references as buttons; `before` is what the text wrote just before it. */
-function linked(text: string, index: ReferenceIndex, before: string, key: string, links: boolean): { nodes: React.ReactNode[]; written: string } {
+function linked(t: Translate, text: string, index: ReferenceIndex, before: string, key: string, links: boolean): { nodes: React.ReactNode[]; written: string } {
   const Name = links ? ReferenceButton : ReferenceName;
   let written = before;
   const parts = splitReferences(text, index);
@@ -53,8 +63,8 @@ function linked(text: string, index: ReferenceIndex, before: string, key: string
     }
     if ("unknown" in part) {
       return (
-        <span key={`${key}-${position}`} data-reference-unknown={part.unknown} title={unknownReferenceTitle(part.unknown)}>
-          {part.text}
+        <span key={`${key}-${position}`} data-reference-unknown={part.unknown} title={unknownReferenceTitle(t, part.unknown)}>
+          {unknownReferenceText(t)}
         </span>
       );
     }
@@ -79,7 +89,7 @@ export function ReferenceText({ text, links = true }: { text: string; links?: bo
     <>
       {stretches.flatMap<React.ReactNode>((stretch, position) => {
         if (position % 2 === 0) {
-          const { nodes, written } = linked(stretch, index, before, String(position), links);
+          const { nodes, written } = linked(t, stretch, index, before, String(position), links);
           before = written;
           return nodes;
         }
@@ -102,16 +112,19 @@ export function ReferenceText({ text, links = true }: { text: string; links?: bo
 
 /**
  * A record by its name, as a link that opens it, with the id on hover (issue #270): "incarico di Ada, fetta 2, ...".
- * `short` drops the noun for a text that already wrote it. An id that names nothing shows as written.
+ * `short` drops the noun for a text that already wrote it. An id that names nothing shows as "non più disponibile",
+ * with the id on hover.
  */
 /** A record's name as plain text, for a place that is already a button; the id on hover (issue #270). */
 export function RecordLabel({ id, short = false }: { id: string; short?: boolean }) {
+  const t = useT();
   const reference = useRecord(id);
-  return <span title={id}>{reference ? (short ? reference.short : reference.label) : id}</span>;
+  return <span title={id}>{reference ? (short ? reference.short : reference.label) : unknownReferenceText(t)}</span>;
 }
 
 export function RecordName({ id, short = false }: { id: string; short?: boolean }) {
+  const t = useT();
   const reference = useRecord(id);
-  if (!reference) return <span className="font-mono text-[0.92em]">{id}</span>;
+  if (!reference) return <span title={id}>{unknownReferenceText(t)}</span>;
   return <ReferenceButton reference={reference}>{short ? reference.short : reference.label}</ReferenceButton>;
 }

@@ -343,6 +343,8 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.workSteps.coordinatorRunning": "The Coordinator is working",
   "chat.workSteps.specialistWorked": "{who}worked for {duration}",
   "chat.workSteps.worked": "Worked for {duration}",
+  "chat.workSteps.workedShort": "Worked",
+  "chat.workSteps.specialistWorkedShort": "{who}worked",
   "chat.workSteps.specialistActivity": "{who}activity",
   "chat.workSteps.activity": "Activity",
 

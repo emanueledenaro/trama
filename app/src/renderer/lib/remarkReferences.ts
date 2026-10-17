@@ -1,11 +1,19 @@
 import type { InlineCode, Link, PhrasingContent, Root, Text } from "mdast";
 import { SKIP, visit } from "unist-util-visit";
-import type { Translate } from "@shared/i18n";
+import { translator, type Translate } from "@shared/i18n";
 import { plainText } from "@shared/plainLanguage";
-import { lookupReference, type Reference, type ReferenceIndex, referenceHref, referenceText, referenceTitle, splitReferences } from "@shared/references";
-
-/** The hover of an id that looks like one of Trama's and names nothing of the project. */
-export const unknownReferenceTitle = (id: string) => `Trama non trova ${id} tra i dati di questo progetto`;
+import {
+  lookupReference,
+  type Reference,
+  type ReferenceIndex,
+  referenceHref,
+  referenceText,
+  referenceTitle,
+  splitReferences,
+  unknownReferenceText,
+  unknownReferenceTitle,
+} from "@shared/references";
+import { currentLanguage } from "@/lib/i18n";
 
 function link(reference: Reference, children: PhrasingContent[]): Link {
   return {
@@ -17,8 +25,14 @@ function link(reference: Reference, children: PhrasingContent[]): Link {
   };
 }
 
+/** An id that names nothing: the text reads "non più disponibile", and the id stays in the data and on hover. */
 function unknown(value: string): Text {
-  return { type: "text", value, data: { hName: "span", hProperties: { "data-reference-unknown": value, title: unknownReferenceTitle(value) }, hChildren: [{ type: "text", value }] } };
+  const t = translator(currentLanguage());
+  return {
+    type: "text",
+    value: unknownReferenceText(t),
+    data: { hName: "span", hProperties: { "data-reference-unknown": value, title: unknownReferenceTitle(t, value) }, hChildren: [{ type: "text", value: unknownReferenceText(t) }] },
+  };
 }
 
 /**

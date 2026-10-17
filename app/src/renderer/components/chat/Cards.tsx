@@ -1,3 +1,4 @@
+import { Glossed } from "@/components/Term";
 import {
   IconBook2,
   IconBriefcase,
@@ -65,7 +66,7 @@ import type { MessageKey, Translate } from "@shared/i18n";
 import { actionLabel } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { FOLD_BODY, InFold } from "./Fold";
-import { RecordName, ReferenceText } from "./ReferenceText";
+import { RecordLabel, RecordName, ReferenceText } from "./ReferenceText";
 import { blockerText, plainConflictReference, plainText } from "@shared/plainLanguage";
 import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
@@ -1035,7 +1036,7 @@ export function DomainProposalCard({ proposalId }: { proposalId: string }) {
             <span key={id}>
               {index ? ", " : null}
               <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
-                {id}
+                <RecordLabel id={id} />
               </button>
             </span>
           ))}
@@ -1621,7 +1622,7 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
     <>
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
-          {report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}
+          <Glossed term="clearance">{report.clearanceInvalidated ? t("chat.card.candidate.clearanceInvalidated") : t("chat.card.candidate.clearance")}</Glossed>
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />

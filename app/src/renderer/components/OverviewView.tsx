@@ -1,3 +1,4 @@
+import { Glossed } from "@/components/Term";
 import {
   IconAlertTriangle,
   IconChevronDown,
@@ -119,7 +120,7 @@ function OverviewBody() {
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-ui-lg font-medium text-foreground">{t("overview.title")}</h2>
-            <p className="mt-1 text-ui-sm text-muted-foreground">{t("overview.intro")}</p>
+            <p className="mt-1 text-ui-sm text-muted-foreground"><Glossed term="waiting">{t("overview.intro")}</Glossed></p>
           </div>
           <IconButton label={t("overview.refresh")} icon={loading ? <Spinner /> : <IconRefresh />} size="icon" onClick={load} disabled={loading} />
         </div>
