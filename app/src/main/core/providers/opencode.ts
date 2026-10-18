@@ -6,7 +6,7 @@
  *
  * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { accessSync, constants, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -46,6 +46,7 @@ import {
 import { currentUsageLimit, PendingTurn, usageLimitError } from "./providerSupport";
 import { externalToolKind, refusalReason } from "./toolRefusal";
 import { t } from "../personLanguage";
+import { stopProcess, trackServer } from "./opencodeProcesses";
 
 const HOSTNAME = "127.0.0.1";
 const SERVER_USERNAME = "opencode";
@@ -185,48 +186,6 @@ function freePort(): Promise<number> {
 
 function basicAuthorization(password: string): string {
   return `Basic ${Buffer.from(`${SERVER_USERNAME}:${password}`, "utf8").toString("base64")}`;
-}
-
-/**
- * Every `opencode serve` Trama started and has not seen exit: none may outlive the process that started it. Without
- * this, a test process or an app that ended before the SIGKILL fallback left the server and its children running, and
- * they piled up by the hundred.
- */
-const liveServers = new Set<ChildProcess>();
-let exitHookInstalled = false;
-
-function trackServer(child: ChildProcess): void {
-  liveServers.add(child);
-  child.once("exit", () => liveServers.delete(child));
-  if (exitHookInstalled) return;
-  exitHookInstalled = true;
-  // Whatever ends Trama's process normally (the app quitting, a test worker ending), the servers go with it.
-  process.once("exit", () => {
-    for (const server of liveServers) killGroup(server, "SIGKILL");
-  });
-}
-
-/** Signals the server and every process it started: it runs in its own process group off Windows. */
-function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid === undefined) return;
-  try {
-    if (process.platform === "win32") child.kill(signal);
-    else process.kill(-child.pid, signal);
-  } catch {
-    try {
-      child.kill(signal);
-    } catch {
-      // Already gone.
-    }
-  }
-}
-
-function stopProcess(child: ChildProcess): void {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  killGroup(child, "SIGTERM");
-  setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) killGroup(child, "SIGKILL");
-  }, 1_500).unref();
 }
 
 /**

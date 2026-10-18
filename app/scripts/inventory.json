@@ -1133,6 +1133,7 @@
     "src/main/core/providers/opencode.test.ts :: server config > describes Trama's tools as a remote MCP server with a bearer token",
     "src/main/core/providers/opencode.test.ts :: server config > disables the person's MCP servers and denies risky tools",
     "src/main/core/providers/opencode.test.ts :: server config > parses the ready line and redacts secrets in startup output",
+    "src/main/core/providers/opencodeProcesses.test.ts :: OpenCode server ownership > removes only the owned process tree on ${termination}",
     "src/main/core/providers/pi.test.ts :: Pi account and models > keeps only active, complete OpenCode Zen catalog models",
     "src/main/core/providers/pi.test.ts :: Pi account and models > lists provider-qualified models with Pi's thinking levels",
     "src/main/core/providers/pi.test.ts :: Pi account and models > reads the account from the SDK credentials",
@@ -2084,6 +2085,7 @@
   "skipped": [
     "src/main/controller.test.ts :: TramaController > saves a goal before reporting it and keeps nothing when the save fails (UX01)",
     "src/main/core/providers/claudeAgent.argv.test.ts :: keeps the tool token out of the Claude CLI argv and environment",
+    "src/main/core/providers/opencodeProcesses.test.ts :: OpenCode server ownership > removes only the owned process tree on ${termination}",
     "src/main/core/skillBundle.test.ts :: AI Hero bundle (M08) > equals a local upstream checkout byte by byte after the substitutions"
   ],
   "shots": [
