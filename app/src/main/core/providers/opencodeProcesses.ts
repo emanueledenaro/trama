@@ -52,4 +52,3 @@ export function stopProcess(child: ChildProcess): void {
     if (child.exitCode === null && child.signalCode === null) killGroup(child, "SIGKILL");
   }, 1_500).unref();
 }
-
